@@ -51,7 +51,7 @@ import {
   stratoStatistics,
   stratoThreshold,
 } from '../../sdk/weather/cloud-field';
-import { type Atmosphere } from '../../sdk/weather/atmosphere';
+import { softCoverLevel } from '../../sdk/weather/soft-clouds';
 import {
   cloudLayerWind,
   type CloudLayer,
@@ -64,12 +64,7 @@ import {
   generateCloudNoiseVolumes,
   releaseCloudNoiseVolumes,
 } from './scenery-cloud-noise';
-import {
-  CLOUD_ATMOSPHERE_CONDENSATE,
-  CLOUD_ATMOSPHERE_HALF,
-  CLOUD_ATMOSPHERE_SIZE,
-  CloudAtmosphereVolume,
-} from './scenery-cloud-atmosphere';
+import { CLOUD_COVER_SIZE, CloudCoverMap } from './scenery-cloud-cover';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import type {
   SceneryCloudVolumeDebug,
@@ -98,6 +93,10 @@ export type CloudVolumeQualityLevel = {
   stratoSamples: number;
   /** a size of cumulus is drawn as its clouds while they are this many pixels across; smaller, as their mean */
   pixels: number;
+  /** stretches along each run of a view through the soft clouds' layer (`soft`) */
+  softSamples: number;
+  /** stretches toward the light from each stretch in the soft clouds: its skin, then the rest */
+  softLightSamples: number;
 };
 
 /**
@@ -117,6 +116,8 @@ export const CLOUD_VOLUME_QUALITY: Readonly<
     lightSamples: 1,
     stratoSamples: 16,
     pixels: 3,
+    softSamples: 24,
+    softLightSamples: 2,
   },
   medium: {
     resolution: 0.5,
@@ -125,6 +126,8 @@ export const CLOUD_VOLUME_QUALITY: Readonly<
     lightSamples: 2,
     stratoSamples: 24,
     pixels: 2,
+    softSamples: 32,
+    softLightSamples: 2,
   },
   high: {
     resolution: 0.75,
@@ -133,6 +136,8 @@ export const CLOUD_VOLUME_QUALITY: Readonly<
     lightSamples: 2,
     stratoSamples: 32,
     pixels: 1.5,
+    softSamples: 48,
+    softLightSamples: 3,
   },
   ultra: {
     resolution: 1,
@@ -141,6 +146,8 @@ export const CLOUD_VOLUME_QUALITY: Readonly<
     lightSamples: 3,
     stratoSamples: 48,
     pixels: 1,
+    softSamples: 64,
+    softLightSamples: 4,
   },
 };
 
@@ -180,13 +187,21 @@ const PERIOD_DETAIL = 600;
 const LOCAL_EDGE = 0.2;
 // The image's depth: log2 of the distance over this many doublings (cloud-volume-composite.glsl).
 const DEPTH_RANGE = '32.0';
-// The reference's march (debug: SceneryCloudVolumeDebug.reference): the shortest step (metres)
-// and the step's growth with distance.
-const REFERENCE_STEP = 10;
-const REFERENCE_GROWTH = 0.0015;
-// The extinction of cloud per g/kg of condensate (1/m): some 150 / m per kg/m³ of liquid water
-// (droplets some 10 µm across), in air of some 1 kg/m³.
-const EXTINCTION_PER_CONDENSATE = 0.15;
+// The soft clouds (`soft`): their cover map's texel (metres, at scale 1: its tile 2048 of them),
+// the extinction inside them (1 / metre, at density 1), and the size of a cloud (metres, at
+// scale 1: how a stretch of cloud and sky mixed hides what lies behind). Their lumps are the
+// shape volume tiled this many times over the map's tile.
+const SOFT_TEXEL = 100;
+const SOFT_EXTINCTION = 0.03;
+const SOFT_CHUNK = 1500;
+const SOFT_LUMP_TILES = 100;
+// How the cover a column needs rises up the soft clouds' layer (a power): domed tops over flat
+// bases.
+const SOFT_DOME = 2;
+// The most short steps through each part of a soft clouds' step holding cloud
+// (cloud-volume-march.glsl, softFine): a part up to 16 mean free paths long is walked in steps of
+// 2, a longer one in longer steps.
+const SOFT_FINE_STEPS = 8;
 // The most the composite draws the clouds nearer than their depth, to take in the spread of a
 // texel's depth over a slanting layer: 2 % of the distance, in the image's depth units.
 const DEPTH_MARGIN = (Math.log2(1 / 0.98) / Number(DEPTH_RANGE)).toFixed(7);
@@ -209,11 +224,19 @@ export type CloudVolumeSettings = {
   /** how much they spend for how they look (cloudVolumeQuality) */
   quality: CloudVolumeQualityLevel;
   /**
-   * the atmosphere the clouds come out of (sdk/weather/atmosphere.ts), drawn instead of the
-   * layer as the reference (debug) draws it; null for none
+   * the low layer drawn as soft clouds instead (a spike: SceneryCloudVolumeSoft, resolved); null
+   * for the layer's own form
    */
-  atmosphere: Atmosphere | null;
+  soft: CloudVolumeSoft | null;
   debug: SceneryCloudVolumeDebug;
+};
+
+/** A {@link CloudVolumeSettings}'s soft clouds: each of SceneryCloudVolumeSoft's, resolved. */
+export type CloudVolumeSoft = {
+  softness: number;
+  lumps: number;
+  towering: number;
+  masses: number;
 };
 
 // The clouds' image: premultiplied colour and alpha, and the distance to their front as depth
@@ -265,7 +288,6 @@ const createCompositeMaterial = (
   });
 
 const size = new Vector2();
-const lightWay = new Vector3();
 const east = new Vector3();
 const fromCentre = new Vector3();
 const toWorld = new Matrix3();
@@ -276,9 +298,9 @@ const gridVectors = () =>
 
 /**
  * The 3D clouds of a `SceneryCloudVolume` (see `documents/clouds.md`): one layer of a local
- * weather, cumulus or strato, marched along each pixel's view at a share of the screen's
- * resolution every frame, and laid over the scene at the depth of their front. Drawn from its
- * {@link composite}'s `onBeforeRender`, with the camera drawing it.
+ * weather, cumulus or strato (or soft clouds, a spike: `soft`), marched along each pixel's view
+ * at a share of the screen's resolution every frame, and laid over the scene at the depth of
+ * their front. Drawn from its {@link composite}'s `onBeforeRender`, with the camera drawing it.
  */
 export class CloudVolumeRenderer {
   /** drawn in the scene, last (`LAYERS.OVERLAY` in an `OITRenderPass`) */
@@ -297,13 +319,10 @@ export class CloudVolumeRenderer {
   private readonly sky: SceneryMaterial;
   private readonly marchScene = new Scene();
   private readonly target = createImage();
-  // The atmosphere's clouds baked into a density volume (the reference's: debug).
-  private readonly atmosphere = new CloudAtmosphereVolume();
-  // The clock's time they count from (s): 0, or the first seen where that is far from it (an
-  // epoch's seconds), so their drift keeps its precision in the shaders.
-  private origin: number | null = null;
+  // The soft clouds' cover map (`soft`), drawn once they are.
+  private readonly cover = new CloudCoverMap();
   private settings: CloudVolumeSettings | null = null;
-  private form: ReturnType<typeof cloudVolumeFormOf> = null;
+  private form: CloudVolumeForm | 'soft' | null = null;
   // The cumulus's grids (cumulusGrids), for the clock and the drift.
   private grids: ReturnType<typeof cumulusGrids>['grids'] = [];
   // The noise volumes of the renderer drawing it (one at a time).
@@ -371,8 +390,13 @@ export class CloudVolumeRenderer {
           Array.from({ length: CUMULUS_GRIDS }, () => new Vector2()),
         ),
         uCloudGridTurns: new Uniform(
-          Array.from({ length: CUMULUS_GRIDS }, (_, k) =>
-            new Vector2(Math.cos(cumulusGridTurn(k)), Math.sin(cumulusGridTurn(k))),
+          Array.from(
+            { length: CUMULUS_GRIDS },
+            (_, k) =>
+              new Vector2(
+                Math.cos(cumulusGridTurn(k)),
+                Math.sin(cumulusGridTurn(k)),
+              ),
           ),
         ),
         uCloudGridMeans: new Uniform(gridVectors()),
@@ -398,27 +422,14 @@ export class CloudVolumeRenderer {
         uCloudLightSamples: new Uniform(1),
         uCloudDebug: new Uniform(0),
         uCloudAir: new Uniform(1),
-        uCloudAtmosphere: new Uniform<Texture>(this.atmosphere.from.density),
-        uCloudAtmosphereNext: new Uniform<Texture>(this.atmosphere.to.density),
-        uCloudBlend: new Uniform(0),
-        uCloudDomain: new Uniform(
-          new Vector4(
-            CLOUD_ATMOSPHERE_HALF,
-            0,
-            1,
-            (2 * CLOUD_ATMOSPHERE_HALF) / CLOUD_ATMOSPHERE_SIZE[0],
-          ),
+        uSoftCover: new Uniform<Texture>(this.cover.target.texture),
+        uSoftMap: new Uniform(
+          new Vector4(CLOUD_COVER_SIZE * SOFT_TEXEL, 0, 0, SOFT_TEXEL),
         ),
-        uCloudExtent: new Uniform(this.atmosphere.extent),
-        uCloudDrift: new Uniform(new Vector4()),
-        uCloudDriftNext: new Uniform(new Vector4()),
-        uCloudLight: new Uniform<Texture>(this.atmosphere.from.light),
-        uCloudLightNext: new Uniform<Texture>(this.atmosphere.to.light),
-        uCloudLightBake: new Uniform(new Vector2(100, 10)),
-        uCloudRefMarch: new Uniform(
-          new Vector4(REFERENCE_STEP, REFERENCE_GROWTH, 16, 8),
-        ),
-        uCloudRefSteps: new Uniform(1500),
+        uSoftLevel: new Uniform(new Vector4(1, 1, 0.01, 2)),
+        uSoftLumps: new Uniform(new Vector4(1000, 0, SOFT_CHUNK, 0)),
+        uSoftLightSamples: new Uniform(4),
+        uSoftFineSteps: new Uniform(SOFT_FINE_STEPS),
         uCloudJitter: new Uniform(new Vector2()),
         uCloudColor: new Uniform(new Color(1, 1, 1)),
       },
@@ -457,35 +468,19 @@ export class CloudVolumeRenderer {
     const u = this.marchMaterial.uniforms;
     const layer = settings.layer;
     const form = layer ? cloudVolumeFormOf(layer.type) : null;
-    const atmosphere = settings.atmosphere;
-    this.form = atmosphere ? 'cumulus' : form && layer && layer.cover > 0 ? form : null;
-    // The strato and the cumulus are two programs: the other's code left out; and the
-    // atmosphere's reference (debug) a third.
-    const strato = !atmosphere && form === 'strato';
+    // Drawn soft (a spike), whatever the layer's type; else as its type is drawn.
+    const soft = !!settings.soft && !!layer && layer.cover > 0;
+    this.form = soft ? 'soft' : form && layer && layer.cover > 0 ? form : null;
+    // The strato, the cumulus and the soft clouds are a program each: the others' code left out.
+    const strato = !soft && form === 'strato';
     if ('CLOUD_STRATO' in this.marchMaterial.defines !== strato) {
       if (strato) this.marchMaterial.defines.CLOUD_STRATO = '';
       else delete this.marchMaterial.defines.CLOUD_STRATO;
       this.marchMaterial.needsUpdate = true;
     }
-    const referenced = !!atmosphere;
-    if ('CLOUD_REFERENCE' in this.marchMaterial.defines !== referenced) {
-      if (referenced) this.marchMaterial.defines.CLOUD_REFERENCE = '';
-      else delete this.marchMaterial.defines.CLOUD_REFERENCE;
-      this.marchMaterial.needsUpdate = true;
-    }
-    // Its light from the light volume, or marched in full: a program each, so neither carries
-    // the other's code (and registers).
-    const marched = referenced && settings.debug.reference?.bakedLight === false;
-    if ('CLOUD_REF_MARCHED_LIGHT' in this.marchMaterial.defines !== marched) {
-      if (marched) this.marchMaterial.defines.CLOUD_REF_MARCHED_LIGHT = '';
-      else delete this.marchMaterial.defines.CLOUD_REF_MARCHED_LIGHT;
-      this.marchMaterial.needsUpdate = true;
-    }
-    // Blended between the bakes the clock lies between, or stepped from one to the next.
-    const stepped = referenced && settings.debug.reference?.blend === false;
-    if ('CLOUD_REF_STEPPED' in this.marchMaterial.defines !== stepped) {
-      if (stepped) this.marchMaterial.defines.CLOUD_REF_STEPPED = '';
-      else delete this.marchMaterial.defines.CLOUD_REF_STEPPED;
+    if ('CLOUD_SOFT_CLOUDS' in this.marchMaterial.defines !== soft) {
+      if (soft) this.marchMaterial.defines.CLOUD_SOFT_CLOUDS = '';
+      else delete this.marchMaterial.defines.CLOUD_SOFT_CLOUDS;
       this.marchMaterial.needsUpdate = true;
     }
     // A local weather's middle as the anchor lies now, until it says.
@@ -508,9 +503,11 @@ export class CloudVolumeRenderer {
     );
     const look = u.uCloudLook.value as Vector4;
     look.set(
-      strato
-        ? (STRATO_DEPTH * settings.density) / (top - base)
-        : CUMULUS_EXTINCTION * settings.density,
+      soft
+        ? SOFT_EXTINCTION * settings.density
+        : strato
+          ? (STRATO_DEPTH * settings.density) / (top - base)
+          : CUMULUS_EXTINCTION * settings.density,
       PERIOD_DETAIL * scale,
       scale,
       0,
@@ -542,9 +539,23 @@ export class CloudVolumeRenderer {
     (u.uCloudMarch.value as Vector4).set(
       Math.max(Math.round(quality.iterations), 1),
       Math.max(quality.samples, 0.5),
-      Math.max(Math.round(quality.stratoSamples), 1),
+      Math.max(
+        Math.round(soft ? quality.softSamples : quality.stratoSamples),
+        1,
+      ),
       (u.uCloudMarch.value as Vector4).w,
     );
+    u.uSoftLightSamples.value = Math.max(
+      Math.round(quality.softLightSamples),
+      1,
+    );
+    // The soft clouds' map's period and lumps' tile, by their scale.
+    const period = CLOUD_COVER_SIZE * SOFT_TEXEL * scale;
+    (u.uSoftMap.value as Vector4).x = period;
+    (u.uSoftMap.value as Vector4).w = period / CLOUD_COVER_SIZE;
+    const lumps = u.uSoftLumps.value as Vector4;
+    lumps.x = period / SOFT_LUMP_TILES;
+    lumps.z = SOFT_CHUNK * scale;
     u.uCloudPixels.value = Math.max(quality.pixels, 0.25);
     u.uCloudLightSamples.value = Math.max(Math.round(quality.lightSamples), 1);
     u.uCloudDebug.value =
@@ -555,23 +566,6 @@ export class CloudVolumeRenderer {
           : 0;
     u.uCloudAir.value = settings.debug.air === false ? 0 : 1;
     (u.uCloudColor.value as Color).copy(settings.color);
-
-    // The atmosphere's clouds, baked at the next render; and the reference's march.
-    if (atmosphere) {
-      this.atmosphere.set(atmosphere, settings.seed, settings.wind);
-      (u.uCloudDomain.value as Vector4).y = this.atmosphere.mixedTop;
-      (u.uCloudDomain.value as Vector4).z =
-        CLOUD_ATMOSPHERE_CONDENSATE * EXTINCTION_PER_CONDENSATE * settings.density;
-      const reference: NonNullable<SceneryCloudVolumeDebug['reference']> =
-        settings.debug.reference ?? {};
-      (u.uCloudRefMarch.value as Vector4).set(
-        REFERENCE_STEP,
-        REFERENCE_GROWTH,
-        Math.max(Math.round(reference.lightSamples ?? 16), 1),
-        Math.max(Math.round(reference.skySamples ?? 8), 1),
-      );
-      u.uCloudRefSteps.value = Math.max(Math.round(reference.steps ?? 1500), 1);
-    }
   }
 
   /** Whether there is anything to draw: a layer of a form drawn, with cover. */
@@ -689,6 +683,11 @@ export class CloudVolumeRenderer {
     const time = this.time;
     const driftE = this.wind.x * speed * time;
     const driftN = this.wind.y * speed * time;
+    // The soft clouds' map, carried by the wind, wrapped to its period (the lumps' tile repeats
+    // within it, so they wrap with it).
+    const map = u.uSoftMap.value as Vector4;
+    map.y = wrap(driftE, map.x);
+    map.z = wrap(driftN, map.x);
 
     // Each grid's drift, wrapped to its cells' period, and its clock.
     this.grids.forEach((grid, k) => {
@@ -744,47 +743,27 @@ export class CloudVolumeRenderer {
     generateCloudNoiseVolumes(renderer, this.noise(renderer));
   }
 
-  // The atmosphere's clouds at the clock's time and their light from the light's way now (the
-  // sun's, or the moon's once the sun's light is gone, as cloudLightWay picks at the weather's
-  // middle): baked as CloudAtmosphereVolume.update says; between bakes, the march carries the
-  // volume on with the wind at each height. After updateCamera: on the field's frame as it is.
-  private updateAtmosphere(renderer: WebGLRenderer) {
+  // The soft clouds' cover map drawn (`soft`), and the levels of it their layer's cover and
+  // profile pick, from its distribution: false until that is read back.
+  private updateSoft(renderer: WebGLRenderer): boolean {
+    const settings = this.settings!;
+    const soft = settings.soft!;
+    if (!this.cover.update(renderer, settings.seed, soft.masses)) return false;
+    const stats = this.cover.statistics!;
     const u = this.marchMaterial.uniforms;
-    const volume = this.atmosphere;
-    this.origin ??= Math.abs(this.time) < 1e7 ? 0 : this.time;
-    const now = this.time - this.origin;
-    const sun = u.uSkySunDirection.value as Vector3;
-    const light =
-      this.frameM.dot(sun) > -0.105 ? sun : (u.uSkyMoonDirection.value as Vector3);
-    lightWay
-      .set(light.dot(this.frameE), light.dot(this.frameN), light.dot(this.frameM))
-      .normalize();
-    volume.update(renderer, this.noise(renderer).shape.texture, now, this.rate, lightWay);
-    // Blended: the clouds the clock has passed and those it is coming to, each carried on by the
-    // wind from its own time. Stepped (debug): the last it has reached, alone.
-    const from = volume.from;
-    const to = volume.to;
-    const blend = volume.blend(now);
-    const shown = 'CLOUD_REF_STEPPED' in this.marchMaterial.defines && blend >= 1 ? to : from;
-    u.uCloudAtmosphere.value = shown.density;
-    u.uCloudLight.value = shown.light;
-    u.uCloudAtmosphereNext.value = to.density;
-    u.uCloudLightNext.value = to.light;
-    u.uCloudBlend.value = blend;
-    (u.uCloudLightBake.value as Vector2).copy(volume.lightTexel);
-    const wind = volume.wind;
-    (u.uCloudDrift.value as Vector4).set(
-      wind.x * (now - shown.time),
-      wind.y * (now - shown.time),
-      wind.z,
-      wind.w,
+    const cover = MathUtils.clamp(settings.layer?.cover ?? 0, 0, 1);
+    // At its base the layer's share under cloud passes; at its top, the strongest columns of
+    // it: more of them the more it towers.
+    const base = softCoverLevel(stats, cover);
+    const top = softCoverLevel(stats, cover * (0.02 + 0.3 * soft.towering));
+    (u.uSoftLevel.value as Vector4).set(
+      base,
+      Math.max(top, base + 1e-4),
+      Math.max(soft.softness * stats.deviation, 1e-4),
+      SOFT_DOME,
     );
-    (u.uCloudDriftNext.value as Vector4).set(
-      wind.x * (now - to.time),
-      wind.y * (now - to.time),
-      wind.z,
-      wind.w,
-    );
+    (u.uSoftLumps.value as Vector4).y = soft.lumps * stats.deviation;
+    return true;
   }
 
   /**
@@ -808,7 +787,7 @@ export class CloudVolumeRenderer {
     if (this.target.width !== width || this.target.height !== height)
       this.target.setSize(width, height);
     this.updateCamera(camera, height);
-    if (settings.atmosphere) this.updateAtmosphere(renderer);
+    if (this.form === 'soft' && !this.updateSoft(renderer)) return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
     const autoClear = renderer.autoClear;
@@ -834,7 +813,7 @@ export class CloudVolumeRenderer {
   dispose() {
     this.target.dispose();
     this.march.geometry.dispose();
-    this.atmosphere.dispose();
+    this.cover.dispose();
     if (this.volumes) releaseCloudNoiseVolumes(this.volumes.renderer);
     this.volumes = null;
   }

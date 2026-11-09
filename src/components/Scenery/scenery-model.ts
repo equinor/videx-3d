@@ -19,7 +19,6 @@ import {
   directionFromCompass,
 } from '../../sdk/utils/vector-operations';
 import type { CloudLayer, CloudLayersPreset } from '../../sdk/weather/weather';
-import type { Atmosphere } from '../../sdk/weather/atmosphere';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
@@ -127,22 +126,30 @@ export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
  * What a {@link SceneryCloudVolumeProps}'s clouds show instead of themselves, to see how they
  * are made: `view` `'cost'` the march's iterations along each view (blue none, through green and
  * yellow, to red at the quality's most), `'unlit'` white, as opaque as they are; `air` false
- * leaves out the air's haze between them and the camera. `reference`: how an `atmosphere`'s
- * clouds are marched (`steps` along a view); their light taken from a baked light volume beyond
- * a point's near cloud (`bakedLight`, default), or marched in full by brute force
- * (`lightSamples` toward the light and `skySamples` straight up); and blended between the bakes
- * the clock lies between (`blend`, default), or stepped from one to the next. Slow.
+ * leaves out the air's haze between them and the camera.
  */
 export type SceneryCloudVolumeDebug = {
   view?: 'cost' | 'unlit';
   air?: boolean;
-  reference?: {
-    steps?: number;
-    lightSamples?: number;
-    skySamples?: number;
-    bakedLight?: boolean;
-    blend?: boolean;
-  };
+};
+
+/**
+ * A {@link SceneryCloudVolumeProps}'s low layer drawn as soft clouds (a spike, 2026-11-09):
+ * rounded masses of many sizes, domed over flat bases, soft-edged, from a map of how much each
+ * column is clouded over (fixed to the Earth, drifting with the wind) and a profile up the
+ * layer; the layer's cover, base and top as given. Each sample takes in what its stretch of the
+ * view holds, never finer, so they hold still however fast and far the camera moves. Shares and
+ * weights from 0 to 1.
+ */
+export type SceneryCloudVolumeSoft = {
+  /** how soft their edges are. Default 0.05 */
+  softness?: number;
+  /** how far lumps of a few hundred metres move their surface, close up. Default 0.3 */
+  lumps?: number;
+  /** how many of their columns reach the layer's top: few, flat clouds; many, tall. Default 0.4 */
+  towering?: number;
+  /** how much rounded masses weigh against broad patches in their pattern. Default 0.6 */
+  masses?: number;
 };
 
 /**
@@ -191,14 +198,10 @@ export type SceneryCloudVolumeProps = {
   /** what they show instead of themselves, to see how they are made. Default none */
   debug?: SceneryCloudVolumeDebug;
   /**
-   * the atmosphere the clouds come out of (`Atmosphere`, `ATMOSPHERE_PRESETS`: the air's
-   * temperature and moisture with height, its inversion, the surface's heating): drawn instead
-   * of `layers`, over a square some 16 km across about the middle, marched by brute force. Its
-   * clouds live on the enclosing `Weather`'s clock (each thermal's cloud forms, grows, spreads
-   * and evaporates, and its place starts another) and drift with its wind, leaning with the
-   * atmosphere's `shear`. Being built (2026-11-08): slow. Default none
+   * the low layer drawn as soft clouds (a spike: `SceneryCloudVolumeSoft`), whatever its type;
+   * `true` for the defaults. Default none: the layer's own form
    */
-  atmosphere?: Atmosphere;
+  soft?: SceneryCloudVolumeSoft | boolean;
 };
 
 /**
@@ -646,6 +649,7 @@ export const sceneryDefaults = {
     color: '#ffffff',
     seed: 0,
     quality: 'medium' as SceneryCloudVolumeQuality,
+    soft: { softness: 0.05, lumps: 0.3, towering: 0.4, masses: 0.6 },
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

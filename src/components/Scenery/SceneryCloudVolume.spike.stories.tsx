@@ -39,11 +39,6 @@ import {
   type SkyPreset,
   type WeatherState,
 } from '../../sdk/weather/weather';
-import {
-  ATMOSPHERE_PRESETS,
-  type Atmosphere,
-  type AtmospherePreset,
-} from '../../sdk/weather/atmosphere';
 import { Weather } from '../Weather/Weather';
 import { World } from '../World/World';
 import { Scenery } from './Scenery';
@@ -57,10 +52,12 @@ import {
   type SceneryCloudVolumeQuality,
 } from './scenery-model';
 
-// The 3D clouds (documents/clouds.md) being rebuilt: one layer of a local weather, cumulus or
-// strato, over the Scenery's sky and sun alone — no sea, no relief, no bakes — from sea level
-// to space. The views to judge them from are the stories below; the panel moves the camera to
-// set altitudes and runs a timelapse.
+// The 3D clouds (documents/clouds.md) being rebuilt: one layer of a local weather, drawn as soft
+// clouds (`soft`, a spike: rounded masses from a cover map fixed to the Earth) or as its own
+// form, cumulus or strato, over the Scenery's sky and sun alone — no sea, no relief, no bakes —
+// from sea level to space, without tone mapping. The views to judge them from are the stories
+// below; the clouds' panel (top right) sets the layer, the soft clouds, the light and the
+// views, and the scenery's moves the camera to set altitudes and runs a timelapse.
 
 // The low types drawn, and the skies (SKY_PRESETS) whose low layer is one of them.
 const TYPES: CloudType[] = [
@@ -102,35 +99,27 @@ type CloudVolumeArgs = {
   debugView: 'none' | 'cost' | 'unlit';
   /** the air's haze between the clouds and the camera */
   debugAir: boolean;
-  /** the atmosphere the clouds come out of: a preset, its conditions changed ('custom'), or none */
-  atmosphere: 'off' | 'custom' | AtmospherePreset;
-  /** how far into the atmosphere's clouds' lives to jump the weather's clock to (minutes) */
+  /** the low layer drawn as soft clouds (`soft`), else as its own form */
+  soft: boolean;
+  softness: number;
+  lumps: number;
+  towering: number;
+  masses: number;
+  /** how far on to jump the weather's clock (minutes): the clouds drift with the wind */
   cloudMinutes: number;
   /** the weather clock's rate (weather seconds a second) */
   cloudRate: number;
-  referenceSteps: number;
-  referenceLightSamples: number;
-  referenceSkySamples: number;
-  /** the light from the baked light volume beyond a point's near cloud, not marched in full */
-  referenceBakedLight: boolean;
-  /** the clouds blended between the bakes the clock lies between, not stepped from one to the next */
-  referenceBlend: boolean;
   /** the sun as one of the light conditions, or as the sun's controls set it ('custom') */
   light: LightArg;
   /** the weather's clock held: the clouds stand still */
   weatherPaused: boolean;
 } & SceneryArgs &
-  ProgressArgs &
-  Atmosphere;
-
-// The atmosphere's conditions, as the story's args name them.
-const ATMOSPHERE_KEYS = Object.keys(ATMOSPHERE_PRESETS.fair) as (keyof Atmosphere)[];
-const atmosphereOf = (args: CloudVolumeArgs): Atmosphere =>
-  Object.fromEntries(ATMOSPHERE_KEYS.map(key => [key, args[key]])) as Atmosphere;
+  ProgressArgs;
 
 // Light conditions to judge the clouds in: the sun's elevation and bearing (degrees).
-type LightArg = 'custom' | 'mid' | 'high' | 'sunset' | 'night';
+type LightArg = 'custom' | 'low' | 'mid' | 'high' | 'sunset' | 'night';
 const LIGHTS: Record<Exclude<LightArg, 'custom'>, [number, number]> = {
+  low: [10, 150],
   mid: [35, 200],
   high: [70, 180],
   sunset: [2, 250],
@@ -200,19 +189,7 @@ const cloudLayerDecorator: Decorator = Story => {
     seen.current = args;
     if (!before) return;
     let changes: Partial<CloudVolumeArgs> = {};
-    if (
-      args.atmosphere !== before.atmosphere &&
-      args.atmosphere !== 'off' &&
-      args.atmosphere !== 'custom'
-    )
-      changes = { ...ATMOSPHERE_PRESETS[args.atmosphere] };
-    else if (
-      args.atmosphere !== 'off' &&
-      args.atmosphere !== 'custom' &&
-      ATMOSPHERE_KEYS.some(key => args[key] !== before[key])
-    )
-      changes = { atmosphere: 'custom' };
-    else if (args.preset !== before.preset && args.preset !== 'custom')
+    if (args.preset !== before.preset && args.preset !== 'custom')
       changes = presetArgs(args.preset);
     else if (args.layerType !== before.layerType)
       changes = { ...heightsOf(args.layerType, args.cover), preset: 'custom' };
@@ -241,79 +218,84 @@ const flyFromArgs = (args: CloudVolumeArgs) => ({
   ahead: 6000,
 });
 
-// Views to judge the atmosphere's clouds from (scene metres: X east, Z south; the square they are
-// baked over spans ±8 km about the middle): the camera's place and what it looks at.
-const VIEWS: Record<string, [Vec3, Vec3]> = {
-  side: [
-    [0, 2500, 16000],
-    [0, 2500, 0],
-  ],
-  close: [
-    [-2500, 2200, 4500],
-    [0, 2500, 0],
-  ],
-  below: [
-    [800, 200, 1800],
-    [0, 2200, 0],
-  ],
-  above: [
-    [-9000, 9000, 9000],
-    [2000, 1500, -1000],
-  ],
-  far: [
-    [-30000, 2500, 30000],
-    [2000, 2000, -1000],
-  ],
-  grazing: [
-    [-14000, 1800, 2500],
-    [14000, 1800, 2500],
-  ],
-  top: [
-    [0, 30000, 1],
-    [0, 0, 0],
-  ],
-};
+// Views to judge the clouds from by the layer's heights (scene metres: X east, Z south; the
+// local weather's middle at 0, 0): the camera's place and what it looks at. LEVEL in the layer
+// looking along it, the hardest view to march; HORIZON just over its top.
+function viewsOf(args: CloudVolumeArgs): Record<string, [Vec3, Vec3]> {
+  const base = args.base;
+  const top = args.base + Math.max(args.thickness, 10);
+  const middle = 0.5 * (base + top);
+  return {
+    level: [
+      [0, middle, 16000],
+      [0, middle, 0],
+    ],
+    over: [
+      [-9000, top + 1500, 9000],
+      [6000, middle, -6000],
+    ],
+    below: [
+      [0, 40, 0],
+      [3000, base + 400, -2000],
+    ],
+    horizon: [
+      [0, top + 200, 0],
+      [40000, top, 0],
+    ],
+    far: [
+      [-40000, middle, 40000],
+      [0, middle, 0],
+    ],
+    high: [
+      [0, 30000, 20000],
+      [0, 0, 0],
+    ],
+    top: [
+      [0, 30000, 1],
+      [0, 0, 0],
+    ],
+  };
+}
 
-const ATMOSPHERES: CloudVolumeArgs['atmosphere'][] = [
-  'off',
+const LIGHT_NAMES: LightArg[] = [
+  'low',
+  'mid',
+  'high',
+  'sunset',
+  'night',
   'custom',
-  'fair',
-  'marine-sc',
-  'stratus',
-  'stratus-veil',
-  'fog',
-  'altostratus',
-  'unstable',
-  'spreading',
 ];
-const LIGHT_NAMES: LightArg[] = ['mid', 'high', 'sunset', 'night', 'custom'];
+const QUALITIES: SceneryCloudVolumeQuality[] = [
+  'low',
+  'medium',
+  'high',
+  'ultra',
+];
 const RESOLUTIONS = [0.35, 0.5, 0.75, 1];
-// The weather clock's rates (weather seconds a second): real time to ten minutes a second.
-const RATES = [1, 10, 60, 600];
-// The reference's light (toward the light, straight up, and from the light volume): marched in
-// full, marched fast, or baked.
-const SAMPLES: Record<string, [number, number, boolean]> = {
-  ref: [16, 8, false],
-  fast: [4, 2, false],
-  baked: [16, 8, true],
-};
-// The conditions' sliders: the arg, its range and step, and its label.
-const SLIDERS: [keyof Atmosphere, number, number, number, string][] = [
-  ['temperature', -10, 35, 0.5, 'temperature °C'],
-  ['dewPoint', -15, 30, 0.5, 'dew point °C'],
-  ['mixedLayer', 0, 4000, 50, 'mixed layer m'],
-  ['lapseRate', 3, 9.8, 0.1, 'lapse K/km'],
-  ['humidity', 0, 1.1, 0.01, 'humidity'],
-  ['inversionHeight', 100, 10000, 50, 'inversion m'],
-  ['inversionStrength', 0, 10, 0.1, 'inversion K'],
-  ['lapseAbove', 3, 9.8, 0.1, 'lapse above'],
-  ['humidityAbove', 0, 1.1, 0.01, 'humidity above'],
-  ['moistLayerHeight', 0, 10000, 50, 'moist layer m'],
-  ['moistLayerDepth', 50, 3000, 50, 'moist depth m'],
-  ['moistLayerHumidity', 0, 1.1, 0.01, 'moist humidity'],
-  ['shear', 0, 6, 0.1, 'shear m/s/km'],
-  ['heating', 0, 1, 0.01, 'heating'],
-  ['patchiness', 0, 1, 0.01, 'patchiness'],
+// The weather clock's rates (weather seconds a second): real time to ten minutes a second; 0
+// held.
+const RATES = [0, 1, 10, 60, 600];
+const DEBUG_VIEWS: CloudVolumeArgs['debugView'][] = ['none', 'cost', 'unlit'];
+
+// The args holding a number.
+type NumberArg = {
+  [K in keyof CloudVolumeArgs]-?: CloudVolumeArgs[K] extends number ? K : never;
+}[keyof CloudVolumeArgs];
+// The panel's sliders: the arg, its range and step, and its label.
+const SLIDERS: [NumberArg, number, number, number, string][] = [
+  ['cover', 0, 1, 0.01, 'cover'],
+  ['base', 0, 6000, 50, 'base m'],
+  ['thickness', 100, 6000, 50, 'depth m'],
+  ['softness', 0, 1, 0.01, 'softness'],
+  ['lumps', 0, 1, 0.01, 'lumps'],
+  ['towering', 0, 1, 0.01, 'towering'],
+  ['masses', 0, 1.5, 0.01, 'masses'],
+  ['volumeScale', 0.25, 4, 0.05, 'scale'],
+  ['density', 0.1, 3, 0.05, 'density'],
+  ['volumeSeed', 0, 20, 1, 'seed'],
+  ['cloudMinutes', 0, 240, 1, 'jump to min'],
+  ['windSpeed', 0, 30, 0.5, 'wind m/s'],
+  ['windDirection', 0, 355, 5, 'wind toward °'],
 ];
 
 const PANEL: CSSProperties = {
@@ -341,7 +323,7 @@ const ROW: CSSProperties = {
 const BUTTON: CSSProperties = { fontSize: 11, padding: '1px 5px' };
 const ON: CSSProperties = { ...BUTTON, fontWeight: 'bold' };
 
-// A condition's slider: shown as it is dragged, set (and the clouds baked again) as it is let go.
+// A slider: shown as it is dragged, set as it is let go.
 const PanelSlider = ({
   label,
   value,
@@ -381,8 +363,39 @@ const PanelSlider = ({
   );
 };
 
-// The panel over the canvas: the atmosphere's presets and conditions, the light, the views and
-// the resolution, so the shared page (without Storybook's controls) can drive the clouds.
+// A row of buttons, one an option, the chosen ones bold.
+function Choices<T>({
+  label,
+  options,
+  chosen,
+  name = String,
+  pick,
+}: {
+  label: string;
+  options: readonly T[];
+  chosen: (option: T) => boolean;
+  name?: (option: T) => string;
+  pick: (option: T) => void;
+}) {
+  return (
+    <div style={ROW}>
+      <span style={{ width: 40 }}>{label}</span>
+      {options.map(option => (
+        <button
+          key={name(option)}
+          style={chosen(option) ? ON : BUTTON}
+          onClick={() => pick(option)}
+        >
+          {name(option)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// The panel over the canvas: the layer's sky, the clouds' form, the light, the views, the
+// clock, the quality and the sliders, so the shared page (without Storybook's controls) can
+// drive the clouds.
 const CloudPanel = ({
   args,
   update,
@@ -391,9 +404,12 @@ const CloudPanel = ({
   update: (args: Partial<CloudVolumeArgs>) => void;
 }) => {
   const [open, setOpen] = useReactState(true);
+  const views = viewsOf(args);
   const view = (name: string) => {
-    const [position, target] = VIEWS[name];
-    dispatchEvent(new CameraLookAtEvent({ position, target, transition: false }));
+    const [position, target] = views[name];
+    dispatchEvent(
+      new CameraLookAtEvent({ position, target, transition: false }),
+    );
   };
   return (
     // Top right, left of the scenery's own panel where that is shown; the stats are bottom left.
@@ -402,139 +418,76 @@ const CloudPanel = ({
         <button style={BUTTON} onClick={() => setOpen(!open)}>
           {open ? 'hide' : 'clouds'}
         </button>
-        {open && <span>atmosphere: {args.atmosphere}</span>}
+        {open && (
+          <span>
+            {args.soft ? 'soft clouds' : `own form: ${args.layerType}`}
+          </span>
+        )}
       </div>
       {open && (
         <>
-          <div style={ROW}>
-            {ATMOSPHERES.map(name => (
-              <button
-                key={name}
-                style={args.atmosphere === name ? ON : BUTTON}
-                onClick={() => update({ atmosphere: name })}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-          <div style={ROW}>
-            <span style={{ width: 40 }}>light</span>
-            {LIGHT_NAMES.map(name => (
-              <button
-                key={name}
-                style={args.light === name ? ON : BUTTON}
-                onClick={() => update({ light: name })}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-          <div style={ROW}>
-            <span style={{ width: 40 }}>view</span>
-            {Object.keys(VIEWS).map(name => (
-              <button key={name} style={BUTTON} onClick={() => view(name)}>
-                {name}
-              </button>
-            ))}
-          </div>
-          <div style={ROW}>
-            <span style={{ width: 40 }}>time</span>
-            <button
-              style={args.weatherPaused ? ON : BUTTON}
-              onClick={() => update({ weatherPaused: true })}
-            >
-              pause
-            </button>
-            {RATES.map(rate => (
-              <button
-                key={rate}
-                style={!args.weatherPaused && args.cloudRate === rate ? ON : BUTTON}
-                onClick={() => update({ weatherPaused: false, cloudRate: rate })}
-              >
-                {rate}×
-              </button>
-            ))}
-          </div>
-          <PanelSlider
-            label="jump to min"
-            value={args.cloudMinutes}
-            min={0}
-            max={240}
-            step={1}
-            set={value => update({ cloudMinutes: value })}
+          <Choices
+            label="sky"
+            options={PRESETS}
+            chosen={preset => args.preset === preset}
+            pick={preset => update({ preset })}
           />
-          <PanelSlider
-            label="wind m/s"
-            value={args.windSpeed}
-            min={0}
-            max={30}
-            step={0.5}
-            set={value => update({ windSpeed: value })}
+          <Choices
+            label="form"
+            options={[true, false]}
+            name={soft => (soft ? 'soft' : 'own')}
+            chosen={soft => args.soft === soft}
+            pick={soft => update({ soft })}
           />
-          <PanelSlider
-            label="wind toward °"
-            value={args.windDirection}
-            min={0}
-            max={355}
-            step={5}
-            set={value => update({ windDirection: value })}
+          <Choices
+            label="light"
+            options={LIGHT_NAMES}
+            chosen={light => args.light === light}
+            pick={light => update({ light })}
           />
-          <div style={ROW}>
-            <span style={{ width: 40 }}>light</span>
-            {Object.entries(SAMPLES).map(([name, [light, sky, baked]]) => (
-              <button
-                key={name}
-                style={
-                  baked
-                    ? args.referenceBakedLight
-                      ? ON
-                      : BUTTON
-                    : !args.referenceBakedLight &&
-                        args.referenceLightSamples === light &&
-                        args.referenceSkySamples === sky
-                      ? ON
-                      : BUTTON
-                }
-                onClick={() =>
-                  update({
-                    referenceLightSamples: light,
-                    referenceSkySamples: sky,
-                    referenceBakedLight: baked,
-                  })
-                }
-              >
-                {baked ? name : `${name} ${light}+${sky}`}
-              </button>
-            ))}
-          </div>
-          <div style={ROW}>
-            <span style={{ width: 40 }}>bakes</span>
-            {[true, false].map(blend => (
-              <button
-                key={String(blend)}
-                style={args.referenceBlend === blend ? ON : BUTTON}
-                onClick={() => update({ referenceBlend: blend })}
-              >
-                {blend ? 'blend' : 'step'}
-              </button>
-            ))}
-          </div>
-          <div style={ROW}>
-            <span style={{ width: 40 }}>res</span>
-            {RESOLUTIONS.map(resolution => (
-              <button
-                key={resolution}
-                style={
-                  args.ownResolution && args.resolution === resolution
-                    ? ON
-                    : BUTTON
-                }
-                onClick={() => update({ ownResolution: true, resolution })}
-              >
-                {resolution}
-              </button>
-            ))}
-          </div>
+          <Choices
+            label="view"
+            options={Object.keys(views)}
+            chosen={() => false}
+            pick={view}
+          />
+          <Choices
+            label="time"
+            options={RATES}
+            name={rate => (rate ? `${rate}×` : 'pause')}
+            chosen={rate =>
+              rate
+                ? !args.weatherPaused && args.cloudRate === rate
+                : args.weatherPaused
+            }
+            pick={rate =>
+              update(
+                rate
+                  ? { weatherPaused: false, cloudRate: rate }
+                  : { weatherPaused: true },
+              )
+            }
+          />
+          <Choices
+            label="quality"
+            options={QUALITIES}
+            chosen={quality => !args.ownResolution && args.quality === quality}
+            pick={quality => update({ quality, ownResolution: false })}
+          />
+          <Choices
+            label="res"
+            options={RESOLUTIONS}
+            chosen={resolution =>
+              args.ownResolution && args.resolution === resolution
+            }
+            pick={resolution => update({ ownResolution: true, resolution })}
+          />
+          <Choices
+            label="debug"
+            options={DEBUG_VIEWS}
+            chosen={debugView => args.debugView === debugView}
+            pick={debugView => update({ debugView })}
+          />
           {SLIDERS.map(([key, min, max, step, label]) => (
             <PanelSlider
               key={key}
@@ -595,8 +548,7 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
       >
         <Scenery {...sceneryPropsFromArgs(args)}>
           <SceneryArgsFeatures args={args} ocean={false} abyss={false} />
-          {/* The atmosphere's clouds alone: 'off', none. */}
-          {args.volume && args.atmosphere !== 'off' && (
+          {args.volume && (
             <SceneryCloudVolume
               scale={args.volumeScale}
               density={args.density}
@@ -606,15 +558,15 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
               debug={{
                 view: args.debugView === 'none' ? undefined : args.debugView,
                 air: args.debugAir,
-                reference: {
-                  steps: args.referenceSteps,
-                  lightSamples: args.referenceLightSamples,
-                  skySamples: args.referenceSkySamples,
-                  bakedLight: args.referenceBakedLight,
-                  blend: args.referenceBlend,
-                },
               }}
-              atmosphere={atmosphereOf(args)}
+              soft={
+                args.soft && {
+                  softness: args.softness,
+                  lumps: args.lumps,
+                  towering: args.towering,
+                  masses: args.masses,
+                }
+              }
             />
           )}
         </Scenery>
@@ -765,66 +717,52 @@ const meta = {
     },
     light: {
       control: { type: 'inline-radio' },
-      options: ['custom', 'mid', 'high', 'sunset', 'night'],
+      options: ['custom', 'low', 'mid', 'high', 'sunset', 'night'],
       description:
-        'The sun as a light condition to judge the clouds in: MID 35°, HIGH 70°, SUNSET 2° in the west, NIGHT (the moon). CUSTOM: the sun’s own controls.',
-      table: { category: 'Reference' },
+        'The sun as a light condition to judge the clouds in: LOW 10° in the south-east, MID 35°, HIGH 70°, SUNSET 2° in the west, NIGHT (the moon). CUSTOM: the sun’s own controls.',
+      table: { category: 'Cloud volume' },
     },
-    atmosphere: {
-      control: { type: 'select' },
-      options: ATMOSPHERES,
+    soft: {
+      control: { type: 'boolean' },
       description:
-        'ATMOSPHERE: the clouds come out of these conditions (a simplified sounding and the surface’s heating): FAIR summer cumulus under an inversion, MARINE-SC a deck under a strong low inversion, STRATUS, STRATUS-VEIL, FOG, ALTOSTRATUS a veil aloft, UNSTABLE towering cumulus, SPREADING cumulus in moist air under an inversion that spread into stratocumulus as they lose their lift. Fills the conditions below; changing one makes it CUSTOM. OFF: no clouds. Slow.',
-      table: { category: 'Atmosphere' },
+        'Soft clouds (`soft`, a spike): rounded masses of many sizes, domed over flat bases, soft-edged, from a map of the cover fixed to the Earth, whatever the layer’s type. Off: the layer’s own form (cumulus or strato).',
+      table: { category: 'Soft clouds' },
     },
-    temperature: range(-10, 35, 0.5, 'Air temperature at the surface (°C).', 'Atmosphere'),
-    dewPoint: range(-15, 30, 0.5, 'Dew point at the surface (°C): how moist the surface air is. Condenses some 125 m up per degree under the temperature.', 'Atmosphere'),
-    mixedLayer: range(0, 4000, 50, 'How high the surface air is mixed (m). Over its condensation height and under the inversion: a sheet (stratus, a deck, fog).', 'Atmosphere'),
-    lapseRate: range(3, 9.8, 0.1, 'How fast the air cools from the mixed layer up to the inversion (K/km): over some 6, saturated thermals keep rising.', 'Atmosphere'),
-    humidity: range(0, 1.1, 0.01, 'Relative humidity from the mixed layer up to the inversion: drier air eats the thermals’ clouds as they mix it in.', 'Atmosphere'),
-    inversionHeight: range(100, 10000, 50, 'Height of the inversion (m): where the thermals stop, their tops flattening and spreading.', 'Atmosphere'),
-    inversionStrength: range(0, 10, 0.1, 'How much warmer the air gets across the inversion (K): 0 for none.', 'Atmosphere'),
-    lapseAbove: range(3, 9.8, 0.1, 'How fast the air cools over the inversion (K/km).', 'Atmosphere'),
-    humidityAbove: range(0, 1.1, 0.01, 'Relative humidity over the inversion.', 'Atmosphere'),
-    moistLayerHeight: range(0, 10000, 50, 'Base of a moist layer aloft (m): air lifted toward saturation, as ahead of a warm front.', 'Atmosphere'),
-    moistLayerDepth: range(50, 3000, 50, 'How deep the moist layer is (m).', 'Atmosphere'),
-    moistLayerHumidity: range(0, 1.1, 0.01, 'Relative humidity in the moist layer (0 for none). Over 1, the share condensed: just over, a thin veil; more, a deck.', 'Atmosphere'),
-    heating: range(0, 1, 0.01, 'How strongly the surface heats the air: how many thermals rise, and how strong.', 'Atmosphere'),
-    patchiness: range(0, 1, 0.01, 'How patchy the heating and the moisture are: clusters of thermals, holes in sheets.', 'Atmosphere'),
-    shear: range(0, 6, 0.1, 'How much stronger the wind gets over the mixed layer (m/s per km): clouds lean and stretch downwind as they rise.', 'Atmosphere'),
-    cloudMinutes: range(0, 240, 1, 'Jump the weather’s clock to this far into the clouds’ lives (minutes): each thermal’s cloud forms, grows, spreads and evaporates, and its place starts another.', 'Atmosphere'),
+    softness: range(0, 1, 0.01, 'How soft their edges are.', 'Soft clouds'),
+    lumps: range(
+      0,
+      1,
+      0.01,
+      'How far lumps of a few hundred metres move their surface, close up.',
+      'Soft clouds',
+    ),
+    towering: range(
+      0,
+      1,
+      0.01,
+      'How many of their columns reach the layer’s top: few, flat clouds; many, tall.',
+      'Soft clouds',
+    ),
+    masses: range(
+      0,
+      1.5,
+      0.01,
+      'How much rounded masses weigh against broad patches in their pattern.',
+      'Soft clouds',
+    ),
+    cloudMinutes: range(
+      0,
+      240,
+      1,
+      'Jump the weather’s clock this far on (minutes): the clouds drift with the wind.',
+      'Weather',
+    ),
     cloudRate: {
       control: { type: 'select' },
-      options: RATES,
-      description: 'The weather clock’s rate (weather seconds a second): 1 real time. Paused with WEATHER PAUSED.',
-      table: { category: 'Atmosphere' },
-    },
-    referenceSteps: range(50, 3000, 50, 'Most steps along a view.', 'Reference'),
-    referenceLightSamples: range(
-      1,
-      64,
-      1,
-      'Samples toward the sun (or the moon) through every cloud.',
-      'Reference',
-    ),
-    referenceSkySamples: range(
-      1,
-      32,
-      1,
-      'Samples straight up through every cloud: how much of the sky’s light from above reaches a point.',
-      'Reference',
-    ),
-    referenceBakedLight: {
-      control: { type: 'boolean' },
+      options: RATES.filter(rate => rate > 0),
       description:
-        'The light from a baked light volume beyond a point’s near cloud (fast), instead of marched in full with the samples above (the reference).',
-      table: { category: 'Reference' },
-    },
-    referenceBlend: {
-      control: { type: 'boolean' },
-      description:
-        'The clouds blended between the two bakes the clock lies between, baked ahead of it (smooth), instead of stepped from one bake to the next.',
-      table: { category: 'Reference' },
+        'The weather clock’s rate (weather seconds a second): 1 real time. Held with WEATHER PAUSED.',
+      table: { category: 'Weather' },
     },
   },
   args: {
@@ -850,16 +788,11 @@ const meta = {
     volumeSeed: sceneryDefaults.cloudVolume.seed,
     debugView: 'none',
     debugAir: true,
-    atmosphere: 'fair',
-    ...ATMOSPHERE_PRESETS.fair,
+    soft: true,
+    ...sceneryDefaults.cloudVolume.soft,
     cloudMinutes: 0,
     cloudRate: 1,
-    referenceSteps: 1500,
-    referenceLightSamples: 16,
-    referenceSkySamples: 8,
-    referenceBakedLight: true,
-    referenceBlend: true,
-    light: 'custom',
+    light: 'low',
     weatherPaused: false,
   } as CloudVolumeArgs,
 } satisfies Meta<typeof CloudVolumeStory>;
@@ -867,10 +800,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Over the field from 3 km, looking out over the cumulus's tops. */
+/** Over the field from 3 km in a low sun, looking out over the soft clouds. */
 export const Default: Story = {};
 
-/** From 40 m over the sea, looking up into the cumulus's bases. */
+/** From 40 m over the sea, looking up into their bases. */
 export const Below: Story = {
   parameters: {
     cameraPosition: [0, 40, 0],
@@ -886,13 +819,26 @@ export const Grazing: Story = {
   },
 };
 
-/** A marine stratocumulus deck, drawn as strato, from over it. */
+/** Just over the layer's top, looking out to the horizon. */
+export const Horizon: Story = {
+  parameters: {
+    cameraPosition: [0, 2600, 0],
+    cameraTarget: [40000, 2400, 0],
+  },
+};
+
+/** A marine stratocumulus deck, broken, low and thin, from over it. */
 export const Strato: Story = {
   args: { preset: 'marine-sc', ...presetArgs('marine-sc') },
   parameters: {
     cameraPosition: [-9000, 2000, 9000],
     cameraTarget: [6000, 600, -6000],
   },
+};
+
+/** The layer's own form, cumulus, not soft: to compare. */
+export const Cumulus: Story = {
+  args: { soft: false, light: 'mid' },
 };
 
 /** The local weather from 200 km up. */
@@ -908,72 +854,5 @@ export const Earth: Story = {
   parameters: {
     cameraPosition: [0, 14000000, 14000000],
     cameraTarget: [0, 0, 0],
-  },
-};
-
-// The atmosphere's clouds (`atmosphere`): a summer afternoon's conditions ('fair') over a square
-// some 16 km across about the middle (scene X/Z 0, 0), marched by brute force at half the
-// screen's resolution, in the sun at mid height. Change the conditions, or pick another preset.
-const REFERENCE_ARGS: Partial<CloudVolumeArgs> = {
-  atmosphere: 'fair',
-  ...ATMOSPHERE_PRESETS.fair,
-  light: 'mid',
-  ownResolution: true,
-  resolution: 0.5,
-  panel: false,
-  weatherPaused: true,
-};
-
-/** REFERENCE, from the side at the clouds' height, 16 km off, the sun behind the camera. */
-export const ReferenceSide: Story = {
-  args: REFERENCE_ARGS,
-  parameters: {
-    cameraPosition: [0, 2500, 16000],
-    cameraTarget: [0, 2500, 0],
-  },
-};
-
-/** REFERENCE, close to the congestus's side, 5 km off. */
-export const ReferenceClose: Story = {
-  args: REFERENCE_ARGS,
-  parameters: {
-    cameraPosition: [-2500, 2200, 4500],
-    cameraTarget: [0, 2500, 0],
-  },
-};
-
-/** REFERENCE, from under the congestus's base, looking up. */
-export const ReferenceBelow: Story = {
-  args: REFERENCE_ARGS,
-  parameters: {
-    cameraPosition: [800, 200, 1800],
-    cameraTarget: [0, 2200, 0],
-  },
-};
-
-/** REFERENCE, from above, looking down on the tops some 30°. */
-export const ReferenceAbove: Story = {
-  args: REFERENCE_ARGS,
-  parameters: {
-    cameraPosition: [-9000, 9000, 9000],
-    cameraTarget: [2000, 1500, -1000],
-  },
-};
-
-/** REFERENCE, from 40 km off at the clouds' height. */
-export const ReferenceFar: Story = {
-  args: REFERENCE_ARGS,
-  parameters: {
-    cameraPosition: [-30000, 2500, 30000],
-    cameraTarget: [2000, 2000, -1000],
-  },
-};
-
-/** REFERENCE, inside the layer looking along it, past the clouds. */
-export const ReferenceGrazing: Story = {
-  args: REFERENCE_ARGS,
-  parameters: {
-    cameraPosition: [-14000, 1800, 2500],
-    cameraTarget: [14000, 1800, 2500],
   },
 };

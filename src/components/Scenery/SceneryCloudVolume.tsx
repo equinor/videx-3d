@@ -73,7 +73,7 @@ export const SceneryCloudVolume = ({
   quality = sceneryDefaults.cloudVolume.quality,
   resolution,
   debug = NO_DEBUG,
-  atmosphere,
+  soft,
 }: SceneryCloudVolumeProps) => {
   const registry = useContext(SceneryRegistryContext);
   const gl = useThree(state => state.gl);
@@ -141,8 +141,12 @@ export const SceneryCloudVolume = ({
   const windFrom = weather?.wind?.from;
   const debugView = debug.view;
   const debugAir = debug.air;
-  const debugReference = debug.reference ? JSON.stringify(debug.reference) : '';
-  const atmosphereKey = atmosphere ? JSON.stringify(atmosphere) : '';
+  const softKey = soft
+    ? JSON.stringify({
+        ...sceneryDefaults.cloudVolume.soft,
+        ...(soft === true ? {} : soft),
+      })
+    : '';
 
   useLayoutEffect(() => {
     if (!volume) return;
@@ -165,12 +169,8 @@ export const SceneryCloudVolume = ({
       color: new Color(colorHex),
       seed,
       quality: cloudVolumeQuality(quality, { resolution }),
-      atmosphere: atmosphereKey ? JSON.parse(atmosphereKey) : null,
-      debug: {
-        view: debugView,
-        air: debugAir,
-        reference: debugReference ? JSON.parse(debugReference) : undefined,
-      },
+      soft: softKey ? JSON.parse(softKey) : null,
+      debug: { view: debugView, air: debugAir },
     });
   }, [
     volume,
@@ -186,8 +186,7 @@ export const SceneryCloudVolume = ({
     resolution,
     debugView,
     debugAir,
-    debugReference,
-    atmosphereKey,
+    softKey,
   ]);
 
   // Hidden until its programs are compiled: drawn before, the browser waits for them.

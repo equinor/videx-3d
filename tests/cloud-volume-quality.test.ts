@@ -17,6 +17,10 @@ describe('cloudVolumeQuality', () => {
       expect(more.samples).toBeGreaterThanOrEqual(less.samples);
       expect(more.lightSamples).toBeGreaterThanOrEqual(less.lightSamples);
       expect(more.stratoSamples).toBeGreaterThanOrEqual(less.stratoSamples);
+      expect(more.softSamples).toBeGreaterThan(less.softSamples);
+      expect(more.softLightSamples).toBeGreaterThanOrEqual(
+        less.softLightSamples,
+      );
       // Drawn as themselves down to smaller clouds.
       expect(more.pixels).toBeLessThanOrEqual(less.pixels);
     }

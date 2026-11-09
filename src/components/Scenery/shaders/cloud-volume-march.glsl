@@ -12,6 +12,8 @@
 // within clouds' columns, in steps of their own size: as fine far off as near, however long
 // the view runs through the layer. A grid's clouds smaller than uCloudPixels give way to their
 // mean (cloudCumulusMean). Through the strato, a fixed count of samples spread over the run.
+// Through the soft clouds (CLOUD_SOFT_CLOUDS, a spike), a fixed count of stretches growing with
+// the distance, each taking in what it holds and never finer (cloudMarchSoft).
 
 #include <common>
 #include ./sky-gradient.glsl
@@ -141,242 +143,251 @@ void cloudAdd(float t, float len, float sigma, vec3 light) {
   gTransmit *= through;
 }
 
-#if defined(CLOUD_REFERENCE)
+#if defined(CLOUD_SOFT_CLOUDS)
 
-// The reference (debug): the atmosphere's clouds (sdk/weather/atmosphere.ts) as baked into a
-// density volume over a square about the local weather's middle (scenery-cloud-atmosphere.ts),
-// marched by brute force: their fog and light alone, with no traversal, level of detail or
-// budget in the way. Two bakes of them, the clock between their times, blended by how far it is
-// from the one (uCloudAtmosphere) to the next (uCloudAtmosphereNext), each carried on by the wind
-// from its own time; with CLOUD_REF_STEPPED, the one alone. The volumes: r the condensate over
-// its unit.
-uniform sampler3D uCloudAtmosphere;
-uniform sampler3D uCloudAtmosphereNext;
-uniform float uCloudBlend;
-// Half the square's side (m), the top of the mixed layer (m: where the shear starts), the
-// extinction a unit of r stands for (1/m), and the metres a texel spans across.
-uniform vec4 uCloudDomain;
-// The heights the volume spans (m, over the sea): where the atmosphere's clouds can lie.
-uniform vec2 uCloudExtent;
-// How far the wind has carried each bake's clouds since its time, per m/s of it (east, north:
-// metres per m/s), the mixed layer's wind (m/s), and the shear over it (m/s per m).
-uniform vec4 uCloudDrift;
-uniform vec4 uCloudDriftNext;
-// The light volumes of the two (scenery-cloud-atmosphere.ts): from each texel, the cloud toward
-// the light (r) and straight up (g), in units of r over metres; and the metres their texels span
-// across and up. Not read where CLOUD_REF_MARCHED_LIGHT marches the light in full (the reference).
-uniform sampler3D uCloudLight;
-uniform sampler3D uCloudLightNext;
-uniform vec2 uCloudLightBake;
-// Samples of the density toward the light near a point, and over how many of the light volume's
-// texels (cloudRefLight).
-#define CLOUD_REF_NEAR 4
-#define CLOUD_REF_NEAR_TEXELS 1.5
-// The shortest step (metres), the step's growth with distance, the samples toward the light and
-// straight up; and the most steps along a view.
-uniform vec4 uCloudRefMarch;
-uniform int uCloudRefSteps;
-// How fast the sky's light from above gives way to the light from below with the optical depth
-// over a point.
-#define CLOUD_REF_SKY 0.3
+// Soft clouds (a spike, 2026-11-09): rounded masses of many sizes in one layer, from a map of
+// the cover fixed to the Earth (scenery-cloud-cover.ts: a tile of noise, drifting with the
+// wind) and a profile up the layer: the higher, the more cover a column needs to reach it, so
+// the clouds are domed over flat bases. Every sample takes in what the stretch of the view it
+// stands for holds, never finer: the cover map read anisotropically along the stretch (its mean
+// and its spread, which widens the clouds' edge), and the shape volume's lumps only where the
+// stretch resolves them (their spread where it does not). So it hardly matters where a sample
+// lands: the clouds neither shimmer nor morph as the camera moves, however fast, and cover the
+// same share of the sky near and far.
 
-// Where `p` (on the field's frame) lies in a bake's volume (0 to 1 each way: outside, none),
-// carried back by the wind at its height by `drift` (uCloudDrift's).
-vec3 cloudRefPlaceBy(vec3 p, vec4 drift) {
+// The cover map: (cover, cover squared), with mipmaps, filtered anisotropically; its period (m),
+// how far the wind has carried it (east, north; m, wrapped to its period), and its texel (m).
+uniform sampler2D uSoftCover;
+uniform vec4 uSoftMap;
+// The cover a column needs at the layer's base (the layer's share under cloud: softCoverLevel)
+// and at its top (the tallest clouds'), the edge's width (cover), and how the cover needed rises
+// up the layer (a power: higher, rounder domes over flatter bases).
+uniform vec4 uSoftLevel;
+// The lumps: the shape volume's tile (m) and how far its Perlin-Worley moves the cover (cover);
+// and a cloud's size (m: how a stretch of cloud and sky mixed hides what lies behind).
+uniform vec4 uSoftLumps;
+// Stretches toward the light: a uniform count keeps the loop a loop in Direct3D.
+uniform int uSoftLightSamples;
+// Short steps through a part of a step holding cloud, at most (softFine): a uniform count, as
+// uSoftLightSamples.
+uniform int uSoftFineSteps;
+
+// Over this share of the layer's depth its base fades in.
+#define SOFT_BASE 0.05
+// A step along a view spans no less than this many pixels' footprints: as fine as that, a view
+// straight down through the layer from high up spent its steps where nothing changes.
+#define SOFT_STEP_FOOTPRINTS 2.0
+// A step holding cloud is split in this many parts, each read for what it holds.
+#define SOFT_SPLIT 4
+// A part holding cloud is walked in short steps this many of the clouds' mean free paths
+// (1 / extinction) long (softFine). At 4, faint bands came back at a shallow angle.
+#define SOFT_FINE 2.0
+// The first stretch toward the light: a cloud's skin (m, at scale 1), how its lit side and its
+// shaded side differ.
+#define SOFT_LIGHT_SKIN 200.0
+// The logistic standing for a normal distribution's CDF: its slope.
+#define SOFT_LOGISTIC 1.702
+// The shape volume's broadest features: this share of its tile.
+#define SOFT_FEATURE 0.25
+
+// The cover map's mean and spread (its variance) over a stretch at `field`: `along` the
+// stretch's extent on the field (m), `across` the width it takes in across it (m). Filtered
+// anisotropically, long along the stretch and narrow across it.
+vec2 softCoverOver(vec2 field, vec2 along, float across) {
+  vec2 uv = fract((field - uSoftMap.yz) / uSoftMap.x);
+  float a = length(along);
+  vec2 axis = a > 1e-3 ? along / a : vec2(1.0, 0.0);
+  vec2 gx = axis * (max(a, across) / uSoftMap.x);
+  vec2 gy = vec2(-axis.y, axis.x) * (across / uSoftMap.x);
+  vec2 c = textureGrad(uSoftCover, uv, gx, gy).rg;
+  return vec2(c.x, max(c.y - c.x * c.x, 0.0));
+}
+
+// The cover map's mean and spread about `field`, over `extent` (m) every way: coarser and
+// cheaper, for the light.
+vec2 softCoverAround(vec2 field, float extent) {
+  vec2 uv = fract((field - uSoftMap.yz) / uSoftMap.x);
+  vec2 c = textureLod(uSoftCover, uv, max(log2(extent / uSoftMap.w), 0.0)).rg;
+  return vec2(c.x, max(c.y - c.x * c.x, 0.0));
+}
+
+// The share in cloud of a stretch of a view about `p` (x), and how much of the spread its edge
+// was widened by is the stretch's own unresolved detail rather than the clouds' soft edge (y):
+// `along` the stretch's extent on the field (m), `across` the width it takes in across it (m),
+// `rise` how far it climbs (m). Not `fine` (toward the light), the map read every way over the
+// stretch's extent, and the lumps' spread alone.
+vec2 softShare(vec3 p, vec2 along, float across, float rise, bool fine) {
   float altitude = cloudAltitudeOf(p);
-  vec2 field = cloudFieldOf(p) - drift.xy * (drift.z + drift.w * max(altitude - uCloudDomain.y, 0.0));
-  return vec3(field / (2.0 * uCloudDomain.x) + 0.5, (altitude - uCloudExtent.x) / (uCloudExtent.y - uCloudExtent.x));
-}
-
-vec3 cloudRefPlace(vec3 p) {
-  return cloudRefPlaceBy(p, uCloudDrift);
-}
-
-vec3 cloudRefPlaceNext(vec3 p) {
-  return cloudRefPlaceBy(p, uCloudDriftNext);
-}
-
-// A volume's r at `at` (0 to 1 each way: outside, none) and level `lod`.
-float cloudRefTexel(sampler3D volume, vec3 at, float lod) {
-  if(any(lessThan(at, vec3(0.0))) || any(greaterThan(at, vec3(1.0))))
-    return 0.0;
-  return textureLod(volume, at, lod).r;
-}
-
-// The extinction (1/m) at `p`, taken in over a footprint `footprint` across: the two bakes'
-// blended.
-float cloudRefDensity(vec3 p, float footprint) {
-  float lod = max(log2(footprint / uCloudDomain.w), 0.0);
-  float r = cloudRefTexel(uCloudAtmosphere, cloudRefPlace(p), lod);
-#if !defined(CLOUD_REF_STEPPED)
-  r = mix(r, cloudRefTexel(uCloudAtmosphereNext, cloudRefPlaceNext(p), lod), uCloudBlend);
-#endif
-  return r * uCloudDomain.z;
-}
-
-// The light volumes at `p`: the optical depth toward the light (x) and straight up (y) from it,
-// the two bakes' blended.
-vec2 cloudRefLightAt(vec3 p) {
-  vec2 depth = textureLod(uCloudLight, cloudRefPlace(p), 0.0).rg;
-#if !defined(CLOUD_REF_STEPPED)
-  depth = mix(depth, textureLod(uCloudLightNext, cloudRefPlaceNext(p), 0.0).rg, uCloudBlend);
-#endif
-  return depth * uCloudDomain.z;
-}
-
-// The optical depth from `p` along `way` (on the field's frame) over `span` metres, in `n`
-// samples, nearer first, each taking in as much as it stands for.
-float cloudRefDepth(vec3 p, vec3 way, float span, int n, float footprint) {
-  float depth = 0.0;
-  float fn = float(n);
-  for(int j = 0; j < n; j++) {
-    float a = pow(float(j) / fn, 2.0);
-    float b = pow(float(j + 1) / fn, 2.0);
-    float part = (b - a) * span;
-    depth += cloudRefDensity(p + way * (0.5 * (a + b) * span), max(footprint, 0.25 * part)) * part;
+  float depth = uCloudLayer.y - uCloudLayer.x;
+  float u = (altitude - uCloudLayer.x) / depth;
+  // The base fades in, over the stretch's climb too.
+  float base = smoothstep(-0.5 * rise, SOFT_BASE * depth + 0.5 * rise, altitude - uCloudLayer.x);
+  if(base <= 0.0 || u >= 1.0)
+    return vec2(0.0);
+  vec2 field = cloudFieldOf(p);
+  vec2 c = fine ? softCoverOver(field, along, across) : softCoverAround(field, max(length(along), across));
+  // The cover the column needs here, and its spread over the stretch's climb.
+  float h = clamp(u, 0.0, 1.0);
+  float span = uSoftLevel.y - uSoftLevel.x;
+  float level = uSoftLevel.x + span * pow(h, uSoftLevel.w);
+  float slope = span * uSoftLevel.w * pow(max(h, 0.05), uSoftLevel.w - 1.0) / depth;
+  float spread = c.y + slope * slope * rise * rise / 12.0;
+  // The lumps where the stretch resolves them, as the pixel's footprint sees them across it and
+  // half its extent along it; their spread where it does not.
+  float tile = uSoftLumps.x;
+  float res = max(across, 0.5 * max(length(along), rise));
+  float keep = fine ? 1.0 - smoothstep(0.15, 0.5, res / (SOFT_FEATURE * tile)) : 0.0;
+  float mean = c.x;
+  if(keep > 0.0) {
+    vec3 q = vec3(field - uSoftMap.yz, altitude) / tile;
+    float lod = max(log2(max(res, 1.0) * CLOUD_SHAPE_TEXELS / tile), 0.0);
+    float n = (textureLod(uCloudShape, q, lod).r - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y;
+    mean += uSoftLumps.y * keep * n;
   }
-  return depth;
+  spread += uSoftLumps.y * uSoftLumps.y * (1.0 - keep * keep);
+  float soft = uSoftLevel.z * uSoftLevel.z;
+  float x = (mean - level) * inversesqrt(soft + spread);
+  float share = base * cloudLocalEdge(field) / (1.0 + exp(-SOFT_LOGISTIC * x));
+  return vec2(share, spread / (soft + spread));
 }
 
-// The light a point `p` of cloud, `altitude` over the sea, scatters toward the camera: the
-// light's (the sun's, or the moon's) through every cloud toward it, and the sky's from above as
-// far as the cloud over the point lets it through, else the light from below. With the light
-// volume, the cloud toward the light is taken finely from the density volume over the first
-// CLOUD_REF_NEAR_TEXELS of the light volume's texels, where a cloud's lit face turns to shade,
-// and from the light volume beyond; the cloud above from the light volume. With
-// CLOUD_REF_MARCHED_LIGHT, both marched through the density volume (the reference).
-vec3 cloudRefLight(vec3 p, float altitude, float footprint) {
-  vec3 light = gLighting.way;
-  vec3 way = vec3(dot(light, uCloudFrameE), dot(light, uCloudFrameN), dot(light, uCloudFrameM));
-  float top = uCloudExtent.y;
-  float rising = max(way.z, 0.03);
-  float toTop = max(top - altitude, 0.0);
-#if defined(CLOUD_REF_MARCHED_LIGHT)
-  float toLight = cloudRefDepth(p, way, min(toTop / rising, 12000.0), int(uCloudRefMarch.z), footprint);
-  float above = cloudRefDepth(p, vec3(0.0, 0.0, 1.0), toTop, int(uCloudRefMarch.w), footprint);
-#else
-  float crossing = 1.0 / max(max(abs(way.x), abs(way.y)) / uCloudLightBake.x, abs(way.z) / uCloudLightBake.y);
-  float near = min(CLOUD_REF_NEAR_TEXELS * crossing, toTop / rising);
-  float toLight = cloudRefDepth(p, way, near, CLOUD_REF_NEAR, footprint);
-  toLight += cloudRefLightAt(p + way * near).x;
-  float above = cloudRefLightAt(p).y;
-#endif
-  vec3 falls = exp(-toLight * vec3(1.0, CLOUD_OCTAVES.y, CLOUD_OCTAVES.y * CLOUD_OCTAVES.y));
-  float sky = exp(-CLOUD_REF_SKY * above);
-  vec3 ambient = mix(gLighting.base * CLOUD_SKY_BASE, gLighting.top, sky) + gLighting.glow * (1.0 - sky);
-  return gLighting.direct * dot(gLighting.phases, falls) + ambient;
+// The optical depth of a stretch `len` long with `share` of it in cloud. Where the share is the
+// stretch's own unresolved detail (`unresolved`), cloud and sky mixed in chunks of a cloud's
+// size, each hiding what its cloud does; where it is the clouds' soft edge, a thin fog.
+float softDepth(float share, float unresolved, float len) {
+  float sigma = uCloudLook.x;
+  float chunk = min(uSoftLumps.z, len);
+  float mixed = -log(max(1.0 - share * (1.0 - exp(-sigma * chunk)), 1e-6)) * (len / chunk);
+  return mix(sigma * share * len, mixed, unresolved);
 }
 
-// The optical depth a step within cloud takes in, the shortest such step (m), the halvings that
-// find where a view enters cloud, and the level of the volume that tells where none lies.
-#define CLOUD_REF_OPTICAL 0.25
-#define CLOUD_REF_LEAST 0.5
-#define CLOUD_REF_SURFACE 8
-#define CLOUD_REF_EMPTY 3
-
-float cloudRefDensityAt(float t) {
-  return cloudRefDensity(cloudFieldPoint(gD, t), max(uCloudMarch.w * t, 0.5));
+// The light a point `p` of cloud scatters toward the camera, `way` the light's way (on the
+// field's frame): the light's through the layer toward it, in uSoftLightSamples stretches each
+// taken in whole (no narrower than `across`), the first a cloud's skin (SOFT_LIGHT_SKIN), the
+// rest growing geometrically; and the sky's and the ground's by its height in the layer. The
+// cloud toward the light hides it as a stretch of cloud and sky mixed does (softDepth), as the
+// view's own stretches do: chosen by eye over its density as it is (2026-11-09), which shaded
+// the clouds' undersides far darker. It lets more of the sun through deep in a cloud, so clouds
+// facing the sun, or seen from above in a high sun, are brighter.
+vec3 softLight(vec3 p, vec3 way, float across) {
+  float altitude = cloudAltitudeOf(p);
+  float depth = uCloudLayer.y - uCloudLayer.x;
+  float rising = way.z;
+  float toTop = max(uCloudLayer.y - altitude, 0.0) / max(rising, 0.05);
+  float reach = min(toTop, 6.0 * uSoftLumps.z);
+  float skin = min(SOFT_LIGHT_SKIN * uCloudLook.z, reach);
+  float grow = uSoftLightSamples > 1 ? pow(max(reach / max(skin, 1.0), 1.0), 1.0 / float(uSoftLightSamples - 1)) : 1.0;
+  float tau = 0.0;
+  float before = 0.0;
+  float d = skin;
+  for(int j = 0; j < uSoftLightSamples; j++) {
+    float len = d - before;
+    if(len > 1.0) {
+      vec3 q = p + way * (before + 0.5 * len);
+      vec2 s = softShare(q, way.xy * len, max(across, 0.25 * len), abs(way.z) * len, false);
+      tau += softDepth(s.x, s.y, len);
+    }
+    before = d;
+    d *= grow;
+  }
+  float h = clamp((altitude - uCloudLayer.x) / depth, 0.0, 1.0);
+  return cloudLit(gLighting, h, tau, 0.0, rising);
 }
 
-// How far along the view (m) from `at` (in the volume) the cell between the centres of
-// CLOUD_REF_EMPTY's texels about it reaches, `rate` the texels of level 0 the view crosses a metre
-// each way. Where that level holds nothing at `at`, none of the 8 texels about it does, nor do
-// finer levels anywhere within the cell.
-float cloudRefEmptyRun(vec3 at, vec3 rate) {
-  vec3 size = vec3(textureSize(uCloudAtmosphere, CLOUD_REF_EMPTY));
-  vec3 r = rate * size / vec3(textureSize(uCloudAtmosphere, 0));
-  vec3 u = at * size - 0.5;
-  vec3 face = floor(u) + step(0.0, r);
-  vec3 run = abs(face - u) / max(abs(r), vec3(1e-12));
-  return min(run.x, min(run.y, run.z));
+// A part of a view from `from`, `len` long, holding cloud, the field's point and the altitude at
+// its start `field`, `altitude`: walked in short steps SOFT_FINE of the clouds' mean free paths
+// long (fewer and longer past uSoftFineSteps), each read for its own share and lit where its
+// light comes from on average, 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ: near
+// its front where it is dense, its middle where it is thin. The light a view sees comes from
+// within a free path or two of where it enters a cloud, and changes as fast: lit once per long
+// step, the clouds banded where the steps fell, as the camera tilted. Not shortened only as far
+// as a pixel's footprint: that bounds the detail across the view, not along it, and from high
+// up, one step through the layer was lit 100 m into the clouds' shade, their tops dark.
+void softFine(float from, float len, vec2 field, float altitude, vec3 way) {
+  int count = int(clamp(ceil(len * uCloudLook.x / SOFT_FINE), 1.0, float(uSoftFineSteps)));
+  float stride = len / float(count);
+  for(int g = 0; g < uSoftFineSteps; g++) {
+    if(g >= count || gTransmit < 0.01)
+      break;
+    gCost += 0.25;
+    float end = from + stride * float(g + 1);
+    vec3 q = cloudFieldPoint(gD, end);
+    vec2 fieldQ = cloudFieldOf(q);
+    float altitudeQ = cloudAltitudeOf(q);
+    float middle = end - 0.5 * stride;
+    float across = max(uCloudMarch.w * middle, 0.5);
+    vec2 s = softShare(cloudFieldPoint(gD, middle), fieldQ - field, across, abs(altitudeQ - altitude), true);
+    if(s.x > 1e-3) {
+      float tau = softDepth(s.x, s.y, stride);
+      float into = tau < 1e-3 ? 0.5 : 1.0 / tau - 1.0 / (exp(min(tau, 80.0)) - 1.0);
+      vec3 light = softLight(cloudFieldPoint(gD, end - stride + into * stride), way, max(across, 0.5 * stride));
+      cloudAdd(end - stride, stride, tau / stride, light);
+    }
+    field = fieldQ;
+    altitude = altitudeQ;
+  }
 }
 
-// Where to read CLOUD_REF_EMPTY's level for the cell about `at` (cloudRefEmptyRun's): its middle,
-// where each of the 8 texels about it weighs an eighth. Read at `at`, a texel the view barely
-// reaches weighs less than the filter's 1/256 and counts for nothing: views skimming the planes
-// through those texels' centres skipped the cloud past them, and drew lines over cloud tops.
-vec3 cloudRefEmptyCentre(vec3 at) {
-  vec3 size = vec3(textureSize(uCloudAtmosphere, CLOUD_REF_EMPTY));
-  return (floor(at * size - 0.5) + 1.0) / size;
-}
-
-// The clouds along a run, within the square. Where the volume's coarse level holds nothing, a
-// cell of it at a time; through clear air, in steps of uCloudRefMarch.x growing with the
-// distance, at most half a texel. Where a step finds cloud, the place it began is found by
-// halving back to the last clear point, and from there the steps take in CLOUD_REF_OPTICAL each,
-// each lit by the light toward it and over it: so what is seen of a cloud's face is taken from
-// its face, not from wherever the camera's steps happened to land, and does not shimmer as the
-// camera moves.
-void cloudMarchReference(vec2 run) {
-  vec2 square = cloudFieldColumn(gD, vec2(0.0), 1.4143 * uCloudDomain.x);
-  vec2 span = vec2(max(square.x, run.x), min(square.y, run.y));
-  vec3 size = vec3(textureSize(uCloudAtmosphere, 0));
-  float t = span.x;
-  // The farthest point known to be clear, and whether the view is within cloud.
-  float clear = t;
-  bool within = false;
-  for(int i = 0; i < uCloudRefSteps; i++) {
-    if(t >= span.y || gTransmit < 0.003)
+// The soft clouds along a run, in stretches growing geometrically from its near end: as a
+// geometric series of its length over its distance in uCloudMarch.z steps, but none finer than
+// SOFT_STEP_FOOTPRINTS pixels' footprints; the grid offset by `offset` of a step (0 to 1: the
+// first stretch that share of one). Each stretch read in its middle for what it holds; one
+// holding cloud split in SOFT_SPLIT parts, each read for its own share: a stretch's share is
+// read along all of it, and a long one, at a shallow angle to the layer, smeared the clouds'
+// fronts over the rows of pixels it spans. Split only where the whole holds some cloud, so the
+// parts' and the whole's estimates differ only where both are nothing. A part holding cloud is
+// walked in short steps (softFine).
+void cloudMarchSoft(vec2 run, float offset) {
+  int n = int(uCloudMarch.z);
+  float span = run.y - run.x;
+  float near = max(run.x, 50.0);
+  // In the log of the distance: the run's extent, and a step.
+  float k = max(log(1.0 + span / near), 1e-4);
+  float dk = max(k / float(n), log(1.0 + SOFT_STEP_FOOTPRINTS * uCloudMarch.w));
+  vec3 way = vec3(dot(gLighting.way, uCloudFrameE), dot(gLighting.way, uCloudFrameN), dot(gLighting.way, uCloudFrameM));
+  float from = run.x;
+  float u = 0.0;
+  float next = max(offset, 1e-3) * dk;
+  vec3 a = cloudFieldPoint(gD, from);
+  vec2 fieldA = cloudFieldOf(a);
+  float altitudeA = cloudAltitudeOf(a);
+  for(int i = 0; i <= n; i++) {
+    if(gTransmit < 0.01 || u >= k)
       break;
     gCost += 1.0;
-    vec3 p = cloudFieldPoint(gD, t);
-    vec3 at = cloudRefPlace(p);
-    // The texels a metre along the view crosses each way (the Earth's curve taken in), and the
-    // metres it takes to cross one.
-    vec3 rate = (cloudRefPlace(p + gD * 8.0) - at) * (size / 8.0);
-    float texel = 1.0 / max(max(abs(rate.x), abs(rate.y)), max(abs(rate.z), 1e-9));
-    // Empty where both bakes are: to the nearer end of their empty cells.
-    float coarse = textureLod(uCloudAtmosphere, cloudRefEmptyCentre(at), float(CLOUD_REF_EMPTY)).r;
-    float run = cloudRefEmptyRun(at, rate);
-#if !defined(CLOUD_REF_STEPPED)
-    vec3 atNext = cloudRefPlaceNext(p);
-    coarse += textureLod(uCloudAtmosphereNext, cloudRefEmptyCentre(atNext), float(CLOUD_REF_EMPTY)).r;
-    run = min(run, cloudRefEmptyRun(atNext, rate));
-#endif
-    if(coarse <= 0.0) {
-      clear = t + run;
-      t = clear + max(0.02 * texel, 1e-5 * t);
-      within = false;
-      continue;
-    }
-    float sigma = cloudRefDensityAt(t);
-    if(sigma <= 0.0) {
-      clear = t;
-      t += min(max(uCloudRefMarch.x, uCloudRefMarch.y * t), 0.5 * texel);
-      within = false;
-      continue;
-    }
-    if(!within && clear < t) {
-      float a = clear;
-      float b = t;
-      for(int k = 0; k < CLOUD_REF_SURFACE; k++) {
-        float m = 0.5 * (a + b);
-        if(cloudRefDensityAt(m) > 0.0)
-          b = m;
-        else
-          a = m;
+    u = min(next, k);
+    next += dk;
+    float to = run.x + near * (exp(u) - 1.0);
+    float len = to - from;
+    vec3 b = cloudFieldPoint(gD, to);
+    vec2 fieldB = cloudFieldOf(b);
+    float altitudeB = cloudAltitudeOf(b);
+    float t = from + 0.5 * len;
+    vec2 s = softShare(cloudFieldPoint(gD, t), fieldB - fieldA, max(uCloudMarch.w * t, 0.5), abs(altitudeB - altitudeA), true);
+    if(s.x > 1e-3) {
+      float part = len / float(SOFT_SPLIT);
+      vec2 fieldP = fieldA;
+      float altitudeP = altitudeA;
+      for(int j = 0; j < SOFT_SPLIT; j++) {
+        if(gTransmit < 0.01)
+          break;
+        float end = from + part * float(j + 1);
+        vec3 q = cloudFieldPoint(gD, end);
+        vec2 fieldQ = cloudFieldOf(q);
+        float altitudeQ = cloudAltitudeOf(q);
+        float middle = end - 0.5 * part;
+        vec2 sp = softShare(cloudFieldPoint(gD, middle), fieldQ - fieldP, max(uCloudMarch.w * middle, 0.5), abs(altitudeQ - altitudeP), true);
+        if(sp.x > 1e-3)
+          softFine(end - part, part, fieldP, altitudeP, way);
+        fieldP = fieldQ;
+        altitudeP = altitudeQ;
       }
-      t = b;
-      sigma = cloudRefDensityAt(t);
     }
-    within = true;
-    // A step taking in CLOUD_REF_OPTICAL by the density where it begins, shortened where the
-    // density in its middle says it takes in much more.
-    float len = min(clamp(CLOUD_REF_OPTICAL / sigma, CLOUD_REF_LEAST, 0.5 * texel), span.y - t);
-    float mid = t + 0.5 * len;
-    float s = cloudRefDensityAt(mid);
-    if(s * len > 2.0 * CLOUD_REF_OPTICAL) {
-      len = max(CLOUD_REF_OPTICAL / s, CLOUD_REF_LEAST);
-      mid = t + 0.5 * len;
-      s = cloudRefDensityAt(mid);
-    }
-    vec3 q = cloudFieldPoint(gD, mid);
-    if(s > 0.0)
-      cloudAdd(t, len, s, cloudRefLight(q, cloudAltitudeOf(q), max(uCloudMarch.w * mid, 0.5)));
-    t += len;
+    from = to;
+    fieldA = fieldB;
+    altitudeA = altitudeB;
   }
 }
-
 #elif defined(CLOUD_STRATO)
 
 // The strato along a run: uCloudMarch.z samples, spread from the run's near end as a geometric
@@ -732,20 +743,15 @@ void main() {
   // first meets it.
   vec2 local = cloudLocalSpan(gD);
   vec2 runs[2];
-#if defined(CLOUD_REFERENCE)
-  // The heights the atmosphere's volume spans.
-  cloudRuns(gO, dir, height, uCloudExtent, ground, runs[0], runs[1]);
-#else
   cloudRuns(gO, dir, height, uCloudLayer.xy, ground, runs[0], runs[1]);
-#endif
   float first = max(runs[0].x < runs[0].y ? runs[0].x : runs[1].x, local.x);
   gLighting = cloudLightingAt(dir, cloudUpAt(max(first, 0.0)));
   for(int s = 0; s < 2; s++) {
     vec2 run = vec2(max(runs[s].x, local.x), min(runs[s].y, local.y));
     if(run.x >= run.y || gTransmit < 0.01)
       continue;
-#if defined(CLOUD_REFERENCE)
-    cloudMarchReference(run);
+#if defined(CLOUD_SOFT_CLOUDS)
+    cloudMarchSoft(run, 1.0);
 #elif defined(CLOUD_STRATO)
     cloudMarchStrato(run);
 #else
@@ -755,7 +761,11 @@ void main() {
 
   if(uCloudDebug == 1) {
     // The march's cost: blue none, through green and yellow, to red at its most.
+#if defined(CLOUD_SOFT_CLOUDS)
+    float cost = clamp(gCost / uCloudMarch.z, 0.0, 1.0);
+#else
     float cost = clamp(gCost / uCloudMarch.x, 0.0, 1.0);
+#endif
     vec3 heat = clamp(vec3(4.0 * cost - 2.0, 2.0 - abs(4.0 * cost - 2.0), 2.0 - 4.0 * cost), 0.0, 1.0);
     gl_FragColor = vec4(heat, 1.0);
     gl_FragDepth = 0.999999;
