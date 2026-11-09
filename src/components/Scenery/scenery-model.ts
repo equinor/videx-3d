@@ -21,6 +21,7 @@ import {
 import type {
   CloudLayer,
   CloudLayersPreset,
+  CloudLevel,
   CloudType,
 } from '../../sdk/weather/weather';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
@@ -129,11 +130,12 @@ export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
 /**
  * What a {@link SceneryCloudVolumeProps}'s clouds show instead of themselves, to see how they
  * are made: `view` `'cost'` the march's iterations along each view (blue none, through green and
- * yellow, to red at the quality's most), `'unlit'` white, as opaque as they are; `air` false
- * leaves out the air's haze between them and the camera.
+ * yellow, to red at the quality's most), `'unlit'` white, as opaque as they are, `'map'` a global
+ * weather's map: each level's cover where the view meets the sea (low red, middle green, high
+ * blue); `air` false leaves out the air's haze between them and the camera.
  */
 export type SceneryCloudVolumeDebug = {
-  view?: 'cost' | 'unlit';
+  view?: 'cost' | 'unlit' | 'map';
   air?: boolean;
 };
 
@@ -162,14 +164,13 @@ export type SceneryCloudLook = {
 
 /**
  * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): a local weather's layers, one at
- * each level (low, middle, high), each its type's rounded masses marched through on the globe
- * every frame, lit by the sun, or the moon, where they lie, the levels over a cloud shading it,
- * and drawn over the scene at the depth of their front. Fixed to the Earth, each level drifting
- * with its wind.
+ * each level (low, middle, high), or a global weather's weather systems over the whole Earth,
+ * each level its type's rounded masses marched through on the globe every frame, lit by the
+ * sun, or the moon, where they lie, the levels over a cloud shading it, and drawn over the scene
+ * at the depth of their front. Fixed to the Earth, each level drifting with its wind.
  *
  * Being rebuilt (2026-11-09): the scenery's bakes, the sea's reflection, the scene's light and
- * the shadows take none of them, nor do the ground or a global weather shape them, until each is
- * added back.
+ * the shadows take none of them, nor does the ground shape them, until each is added back.
  */
 export type SceneryCloudVolumeProps = {
   /** false hides them, still compiled, so showing them again is instant. Default true */
@@ -191,6 +192,12 @@ export type SceneryCloudVolumeProps = {
   dominance?: number;
   /** how each type is drawn, by type, over `CLOUD_VOLUME_LOOKS`. Default those */
   looks?: Partial<Record<CloudType, SceneryCloudLook>>;
+  /**
+   * a global weather's levels drawn: false leaves one out, a quality control as much as a look
+   * (each costs its share of the march). A local weather draws the levels its layers lie at.
+   * Default all
+   */
+  levels?: Partial<Record<CloudLevel, boolean>>;
   /** size of the clouds and the gaps between them, relative: 2 makes them twice as large. Default 1 */
   scale?: number;
   /** how dense they are inside, relative: lower lets more light through their edges. Default 1 */

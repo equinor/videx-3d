@@ -4,6 +4,7 @@ import {
   softCoverLevel,
   softCoverShare,
   softCoverStatistics,
+  softCoverTexel,
 } from '../src/sdk/weather/soft-clouds';
 
 // Evenly spread values over [0, 1), shuffled, every fourth one of an RGBA buffer.
@@ -66,5 +67,28 @@ describe('softCoverLevel', () => {
         Math.abs(softCoverShare(s, softCoverLevel(s, share)) - share),
       );
     expect(worst).toBeLessThan(1e-3);
+  });
+});
+
+describe('softCoverTexel', () => {
+  it('reads softCoverLevel from a row of the quantiles, filtered linearly', () => {
+    const skewed = even(4096).map(v => v * v);
+    const s = softCoverStatistics(skewed, 4);
+    const row = s.quantiles;
+    // A texture's linear filter across `row`, at coordinate `u`.
+    const filtered = (u: number) => {
+      const x = Math.min(Math.max(u * row.length - 0.5, 0), row.length - 1);
+      const i = Math.min(Math.floor(x), row.length - 2);
+      return row[i] + (row[i + 1] - row[i]) * (x - i);
+    };
+    let worst = 0;
+    let where = 0;
+    for (let share = 0.01; share <= 1; share += 0.01) {
+      const error = Math.abs(
+        filtered(softCoverTexel(share)) - softCoverLevel(s, share),
+      );
+      if (error > worst) [worst, where] = [error, share];
+    }
+    expect(worst, `at share ${where}`).toBeLessThan(1e-6);
   });
 });

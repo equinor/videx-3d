@@ -79,6 +79,19 @@ export function softCoverLevel(
 }
 
 /**
+ * Where to read {@link softCoverLevel} for `share` (0 to 1) from a row of a texture holding the
+ * {@link SoftCoverStatistics}' quantiles, one a texel, filtered linearly: the texture coordinate
+ * across the row. Read there, the row gives `softCoverLevel` for any share over 0 (a shader
+ * reading the level for a cover that changes from place to place).
+ *
+ * @group Weather
+ */
+export function softCoverTexel(share: number): number {
+  const s = Math.min(Math.max(share, 0), 1);
+  return ((1 - s) * SOFT_COVER_QUANTILES + 0.5) / (SOFT_COVER_QUANTILES + 1);
+}
+
+/**
  * The share of a cover map's values over `level`, as its quantiles tell: the inverse of
  * {@link softCoverLevel}.
  *

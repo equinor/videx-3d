@@ -43,3 +43,25 @@ float cloudAltitudeOf(vec3 p) {
   float a = p.z * (2.0 * R + p.z) + dot(p.xy, p.xy);
   return a / (R + sqrt(R * R + a));
 }
+
+// Stefan Gustavson's permutation polynomial modulo 289 (webgl-noise, MIT).
+vec4 cloudPermute(vec4 x) {
+  return mod(((x * 34.0) + 10.0) * x, 289.0);
+}
+
+// Value noise in [0, 1) at `p` in cells, smooth, repeating every 289 cells: the twin of
+// cloudValueNoise in cloud-noise.ts.
+float cloudValueNoise(vec3 p) {
+  vec3 f = floor(p);
+  vec3 i = mod(f, 289.0);
+  vec3 j = mod(i + 1.0, 289.0);
+  vec3 u = p - f;
+  u = u * u * (3.0 - 2.0 * u);
+  vec4 x = vec4(i.x, j.x, i.x, j.x);
+  vec4 y = vec4(i.y, i.y, j.y, j.y);
+  vec4 near = cloudPermute(cloudPermute(cloudPermute(vec4(i.z)) + y) + x) / 289.0;
+  vec4 far = cloudPermute(cloudPermute(cloudPermute(vec4(j.z)) + y) + x) / 289.0;
+  vec4 h = mix(near, far, u.z);
+  vec2 rows = mix(h.xz, h.yw, u.x);
+  return mix(rows.x, rows.y, u.y);
+}

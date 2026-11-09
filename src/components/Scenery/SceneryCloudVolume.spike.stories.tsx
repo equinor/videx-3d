@@ -89,6 +89,14 @@ type LevelArgs = {
 type CloudVolumeArgs = {
   panel: boolean;
   volume: boolean;
+  /** a local weather (its layers about its middle) or a global one (the weather systems) */
+  weatherMode: 'local' | 'global';
+  /** a global weather's systems (`WeatherSystems.seed`) */
+  systemsSeed: number;
+  /** a global weather's levels drawn (`levels`) */
+  globalLow: boolean;
+  globalMid: boolean;
+  globalHigh: boolean;
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -108,7 +116,7 @@ type CloudVolumeArgs = {
   ownResolution: boolean;
   resolution?: number;
   volumeSeed: number;
-  debugView: 'none' | 'cost' | 'unlit';
+  debugView: 'none' | 'cost' | 'unlit' | 'map';
   /** the air's haze between the clouds and the camera */
   debugAir: boolean;
   /** how far on to jump the weather's clock (minutes): the clouds drift with the wind */
@@ -196,8 +204,14 @@ function layerOf(args: CloudVolumeArgs, level: CloudLevel): CloudLayer | null {
   };
 }
 
-// The local weather from the story's controls: its wind, its layers about its middle.
+// The weather from the story's controls: its wind, and its layers about its middle, or its
+// weather systems.
 function weatherFromArgs(args: CloudVolumeArgs): WeatherState {
+  if (args.weatherMode === 'global')
+    return {
+      wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
+      systems: { seed: args.systemsSeed },
+    };
   return {
     wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
     clouds: CLOUD_LEVELS.map(level => layerOf(args, level)).filter(
@@ -321,7 +335,12 @@ const RESOLUTIONS = [0.35, 0.5, 0.75, 1];
 // The weather clock's rates (weather seconds a second): real time to ten minutes a second; 0
 // held.
 const RATES = [0, 1, 10, 60, 600];
-const DEBUG_VIEWS: CloudVolumeArgs['debugView'][] = ['none', 'cost', 'unlit'];
+const DEBUG_VIEWS: CloudVolumeArgs['debugView'][] = [
+  'none',
+  'cost',
+  'unlit',
+  'map',
+];
 
 // The args holding a number.
 type NumberArg = {
@@ -492,6 +511,31 @@ const CloudPanel = ({
       </div>
       {open && (
         <>
+          <Choices
+            label="weather"
+            options={['local', 'global'] as const}
+            chosen={mode => args.weatherMode === mode}
+            pick={weatherMode => update({ weatherMode })}
+          />
+          {args.weatherMode === 'global' && (
+            <>
+              <Choices
+                label="levels"
+                options={['globalLow', 'globalMid', 'globalHigh'] as const}
+                name={key => key.slice(6).toLowerCase()}
+                chosen={key => args[key]}
+                pick={key => update({ [key]: !args[key] })}
+              />
+              <PanelSlider
+                label="systems seed"
+                value={args.systemsSeed}
+                min={0}
+                max={20}
+                step={1}
+                set={systemsSeed => update({ systemsSeed })}
+              />
+            </>
+          )}
           <Choices
             label="sky"
             options={PRESETS}
@@ -677,6 +721,11 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
             <SceneryCloudVolume
               dominance={args.dominance}
               looks={looks}
+              levels={{
+                low: args.globalLow,
+                mid: args.globalMid,
+                high: args.globalHigh,
+              }}
               scale={args.volumeScale}
               density={args.density}
               quality={args.quality}
@@ -782,6 +831,35 @@ const meta = {
       description: 'The 3D clouds (`SceneryCloudVolume`).',
       table: { category: 'Cloud volume' },
     },
+    weatherMode: {
+      control: { type: 'inline-radio' },
+      options: ['local', 'global'],
+      description:
+        'LOCAL: the levels’ layers about the local weather’s middle, none beyond. GLOBAL: the weather systems over the whole Earth (`WeatherSystems`), each level’s cover and types from their map; the layers unused.',
+      table: { category: 'Weather' },
+    },
+    systemsSeed: range(
+      0,
+      20,
+      1,
+      'A global weather’s weather systems (`WeatherSystems.seed`).',
+      'Weather',
+    ),
+    globalLow: {
+      control: { type: 'boolean' },
+      description: 'A global weather’s low level (`levels`).',
+      table: { category: 'Weather' },
+    },
+    globalMid: {
+      control: { type: 'boolean' },
+      description: 'A global weather’s middle level (`levels`).',
+      table: { category: 'Weather' },
+    },
+    globalHigh: {
+      control: { type: 'boolean' },
+      description: 'A global weather’s high level (`levels`).',
+      table: { category: 'Weather' },
+    },
     preset: {
       control: { type: 'select' },
       options: ['custom', ...PRESETS],
@@ -861,9 +939,9 @@ const meta = {
     volumeSeed: range(0, 20, 1, 'Picks another pattern.'),
     debugView: {
       control: { type: 'inline-radio' },
-      options: ['none', 'cost', 'unlit'],
+      options: ['none', 'cost', 'unlit', 'map'],
       description:
-        'COST: the march’s steps along each view, blue none to red at the quality’s most. UNLIT: white, as opaque as the clouds are.',
+        'COST: the march’s steps along each view, blue none to red at the quality’s most. UNLIT: white, as opaque as the clouds are. MAP: a global weather’s cover where the view meets the sea, low red, middle green, high blue.',
       table: { category: 'Debug' },
     },
     debugAir: {
@@ -905,6 +983,11 @@ const meta = {
     stats: true,
     panel: true,
     volume: true,
+    weatherMode: 'local',
+    systemsSeed: 0,
+    globalLow: true,
+    globalMid: true,
+    globalHigh: true,
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',
@@ -970,16 +1053,18 @@ export const Levels: Story = {
   args: { preset: 'unsettled', ...presetArgs('unsettled'), light: 'mid' },
 };
 
-/** The local weather from 200 km up. */
+/** A global weather from 200 km up. */
 export const High: Story = {
+  args: { weatherMode: 'global' },
   parameters: {
     cameraPosition: [0, 200000, 120000],
     cameraTarget: [0, 0, 0],
   },
 };
 
-/** The whole Earth from 20 000 km: the local weather a patch on it. Fly down to the field. */
+/** The whole Earth from 20 000 km, a global weather: the weather systems. Fly down to the field. */
 export const Earth: Story = {
+  args: { weatherMode: 'global' },
   parameters: {
     cameraPosition: [0, 14000000, 14000000],
     cameraTarget: [0, 0, 0],

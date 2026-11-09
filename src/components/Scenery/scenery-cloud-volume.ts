@@ -1,8 +1,12 @@
 import {
   AlwaysDepth,
   Camera,
+  ClampToEdgeWrapping,
   Color,
+  CubeTexture,
   CustomBlending,
+  DataTexture,
+  DataUtils,
   DepthTexture,
   FloatType,
   HalfFloatType,
@@ -12,6 +16,7 @@ import {
   Matrix3,
   Mesh,
   NoBlending,
+  RedFormat,
   OneFactor,
   OneMinusSrcAlphaFactor,
   RGBAFormat,
@@ -35,7 +40,11 @@ import {
 } from '../../sdk/weather/soft-clouds';
 import {
   cloudLayerWind,
+  cloudLevelOf,
+  CLOUD_LEVELS,
+  CLOUD_TYPE_HEIGHTS,
   type CloudLayer,
+  type CloudLevel,
   type CloudType,
   type WeatherWind,
 } from '../../sdk/weather/weather';
@@ -46,6 +55,8 @@ import {
   releaseCloudNoiseVolumes,
 } from './scenery-cloud-noise';
 import { CLOUD_COVER_SIZE, CloudCoverMap } from './scenery-cloud-cover';
+import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
+import { CloudWeather } from './scenery-cloud-weather';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import type {
   SceneryCloudLook,
@@ -194,6 +205,48 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
  */
 export const CLOUD_VOLUME_LEVELS = 3;
 
+/**
+ * Each `CloudLevel`'s types in a global weather, from heaped to sheet: where its cloud lies along
+ * them is the weather systems' (the cloud map's types, `scenery-cloud-map.ts`), and it is drawn
+ * as the looks between which it lies.
+ *
+ * @group Components
+ */
+export const CLOUD_VOLUME_CHAINS: Readonly<
+  Record<CloudLevel, readonly CloudType[]>
+> = {
+  low: ['cumulus', 'stratocumulus', 'stratus'],
+  mid: ['altocumulus', 'altostratus'],
+  high: ['cirrus', 'cirrostratus'],
+};
+
+// The types' rows in the march's tables (uCloudType*, uCloudCoverTable): each chain's types
+// next to each other, in its order, so a level's place along its chain reads between two
+// neighbouring rows.
+const TYPE_ROWS: readonly CloudType[] = [
+  'cumulus',
+  'stratocumulus',
+  'stratus',
+  'nimbostratus',
+  'altocumulus',
+  'altostratus',
+  'cirrus',
+  'cirrostratus',
+];
+
+/**
+ * Where a global weather's level's shell lies (`CLOUD_VOLUME_CHAINS`): from the lowest base of
+ * its types to the highest top (`CLOUD_TYPE_HEIGHTS`).
+ *
+ * @group Components
+ */
+export function cloudVolumeChainLayer(level: CloudLevel): CloudLayer {
+  const chain = CLOUD_VOLUME_CHAINS[level];
+  const base = Math.min(...chain.map(type => CLOUD_TYPE_HEIGHTS[type].base));
+  const top = Math.max(...chain.map(type => CLOUD_TYPE_HEIGHTS[type].top[1]));
+  return { type: chain[0], cover: 1, base, top };
+}
+
 // A local weather's clouds give way, breaking up, over this outer share of its radius, and a
 // broad noise pushes its edge in and out by this share of it, so it is no circle
 // (cloud-volume-march.glsl, cloudLocalEdge): over the outer fifth of a circle it showed from
@@ -231,10 +284,30 @@ export type CloudVolumeLevel = {
   look: CloudVolumeLook;
 };
 
+/**
+ * A global weather a {@link CloudVolumeRenderer} draws: the weather systems' (their `seed`), each
+ * level's cover from their map, kept in proportion as `dominance` says; `types` whether a level's
+ * look follows its place along its chain, and `thickness` whether the low cloud's thickness sets
+ * how deep and dense the cloud is.
+ */
+export type CloudVolumeGlobal = {
+  seed: number;
+  dominance: number;
+  types: boolean;
+  thickness: boolean;
+};
+
 /** What a {@link CloudVolumeRenderer} draws, resolved. */
 export type CloudVolumeSettings = {
-  /** the levels drawn, from the ground up (at most {@link CLOUD_VOLUME_LEVELS}); none for none */
+  /**
+   * the levels drawn, from the ground up (at most {@link CLOUD_VOLUME_LEVELS}); none for none. In
+   * a global weather, a level's layer is its chain's (`cloudVolumeChainLayer`), its cover unused
+   */
   levels: CloudVolumeLevel[];
+  /** each type's look, for a global weather's levels to blend between */
+  looks: Record<CloudType, CloudVolumeLook>;
+  /** a global weather; null for a local one */
+  global: CloudVolumeGlobal | null;
   /**
    * the local weather they lie in: about its middle (where the World's anchor lies as it is
    * first drawn, unless it says), within its radius (world units)
@@ -307,11 +380,32 @@ const localOffset: [number, number] = [0, 0];
 
 const levelVectors = () =>
   Array.from({ length: CLOUD_VOLUME_LEVELS }, () => new Vector4());
+const typeVectors = () => Array.from(TYPE_ROWS, () => new Vector4());
+
+// Each type's cover map's quantiles, a row each (cloud-volume-march.glsl, cloudPlace): half
+// floats, which WebGL 2 filters linearly everywhere, as it does not 32-bit ones.
+const createCoverTable = () => {
+  const width = SOFT_COVER_QUANTILES + 1;
+  const table = new DataTexture(
+    new Uint16Array(width * TYPE_ROWS.length),
+    width,
+    TYPE_ROWS.length,
+    RedFormat,
+    HalfFloatType,
+  );
+  table.minFilter = LinearFilter;
+  table.magFilter = LinearFilter;
+  table.wrapS = ClampToEdgeWrapping;
+  table.wrapT = ClampToEdgeWrapping;
+  table.generateMipmaps = false;
+  table.needsUpdate = true;
+  return table;
+};
 
 /**
  * The 3D clouds of a `SceneryCloudVolume` (see `documents/clouds.md`): up to three levels of a
- * local weather, each rounded masses from a map of the cover fixed to the Earth drawn as its
- * type's look says, marched along each pixel's view at a share of the screen's resolution every
+ * local weather, or of a global one's weather systems, each rounded masses from a map of the
+ * cover fixed to the Earth drawn as its type's look says, marched along each pixel's view at a share of the screen's resolution every
  * frame, and laid over the scene at the depth of their front. Drawn from its {@link composite}'s
  * `onBeforeRender`, with the camera drawing it.
  */
@@ -334,6 +428,11 @@ export class CloudVolumeRenderer {
   private readonly target = createImage();
   // The cover map the levels read, drawn once they are.
   private readonly cover = new CloudCoverMap();
+  // A global weather's maps of the weather systems, and each type's quantiles of the cover map
+  // (and what they were filled for).
+  private readonly weather: CloudWeather;
+  private readonly coverTable = createCoverTable();
+  private coverTableKey = '';
   private settings: CloudVolumeSettings | null = null;
   // The noise volumes of the renderer drawing it (one at a time).
   private volumes: {
@@ -366,6 +465,8 @@ export class CloudVolumeRenderer {
         CLOUD_LEVELS_MOST: CLOUD_VOLUME_LEVELS,
         CLOUD_COVER_SIZE: CLOUD_COVER_SIZE.toFixed(1),
         CLOUD_LUMP_TILES: LUMP_TILES.toFixed(1),
+        CLOUD_TYPES: TYPE_ROWS.length,
+        CLOUD_QUANTILES: SOFT_COVER_QUANTILES,
       },
       uniforms: {
         // The sky's own uniform objects: the sun, the air, the globe.
@@ -386,6 +487,20 @@ export class CloudVolumeRenderer {
         uCloudLooks: new Uniform(levelVectors()),
         uCloudMaps: new Uniform(levelVectors()),
         uCloudShifts: new Uniform(levelVectors()),
+        uCloudKinds: new Uniform(levelVectors()),
+        uCloudMap: new Uniform<CubeTexture | null>(null),
+        uCloudMapNext: new Uniform<CubeTexture | null>(null),
+        uCloudTypes: new Uniform<CubeTexture | null>(null),
+        uCloudTypesNext: new Uniform<CubeTexture | null>(null),
+        uCloudMapTimes: new Uniform(new Vector3()),
+        uCloudFieldEarth: new Uniform(new Matrix3()),
+        uCloudEarthRadius: new Uniform(1),
+        uCloudMapTexels: new Uniform(0),
+        uCloudCoverTable: new Uniform<Texture>(this.coverTable),
+        uCloudTypeLooks: new Uniform(typeVectors()),
+        uCloudTypeHeights: new Uniform(typeVectors()),
+        uCloudTypeMore: new Uniform(typeVectors()),
+        uCloudGlobal: new Uniform(new Vector4(0, 1, 1, 0)),
         uCloudMarch: new Uniform(new Vector4(32, 0, 0, 1e-3)),
         uCloudLightSamples: new Uniform(2),
         uCloudFineSteps: new Uniform(FINE_STEPS),
@@ -400,6 +515,14 @@ export class CloudVolumeRenderer {
       depthFunc: AlwaysDepth,
       depthWrite: true,
       blending: NoBlending,
+    });
+    const u = this.marchMaterial.uniforms;
+    this.weather = new CloudWeather({
+      uCloudMap: u.uCloudMap,
+      uCloudMapNext: u.uCloudMapNext,
+      uCloudTypes: u.uCloudTypes,
+      uCloudTypesNext: u.uCloudTypesNext,
+      uCloudMapTimes: u.uCloudMapTimes,
     });
     this.march = new Mesh(geometry, this.marchMaterial);
     this.march.frustumCulled = false;
@@ -436,6 +559,21 @@ export class CloudVolumeRenderer {
       this.localAnchor = null;
     this.globeVersion = -1;
 
+    const global = settings.global;
+    if ('CLOUD_GLOBAL' in this.marchMaterial.defines !== !!global) {
+      if (global) this.marchMaterial.defines.CLOUD_GLOBAL = '';
+      else delete this.marchMaterial.defines.CLOUD_GLOBAL;
+      this.marchMaterial.needsUpdate = true;
+    }
+    if (!global) this.weather.dispose();
+    (u.uCloudGlobal.value as Vector4).set(
+      global?.dominance ?? 0,
+      global?.types === false ? 0 : 1,
+      global?.thickness === false ? 0 : 1,
+      0,
+    );
+    this.coverTableKey = '';
+
     const scale = settings.scale;
     const quality = settings.quality;
     const levels = settings.levels.slice(0, CLOUD_VOLUME_LEVELS);
@@ -449,7 +587,20 @@ export class CloudVolumeRenderer {
       const base = Math.max(Math.min(layer.base, layer.top), under);
       const top = Math.max(layer.top, base + 1);
       under = top;
-      const extinction = look.extinction * settings.density;
+      // Its kind: its chain's first row and last place, its channel of the cloud map, its index.
+      const level = cloudLevelOf(layer.type);
+      const chain = global ? CLOUD_VOLUME_CHAINS[level] : [layer.type];
+      (u.uCloudKinds.value[k] as Vector4).set(
+        TYPE_ROWS.indexOf(chain[0]),
+        chain.length - 1,
+        CLOUD_LEVELS.indexOf(level),
+        k,
+      );
+      // As thin as its densest type.
+      const densest = global
+        ? Math.max(...chain.map(type => settings.looks[type].extinction))
+        : look.extinction;
+      const extinction = densest * settings.density;
       const deep = MathUtils.clamp((extinction * (top - base)) / DEEP, 0.25, 1);
       (u.uCloudShells.value[k] as Vector4).set(
         base,
@@ -477,7 +628,9 @@ export class CloudVolumeRenderer {
         ? 1
         : settings.debug.view === 'unlit'
           ? 2
-          : 0;
+          : settings.debug.view === 'map'
+            ? 3
+            : 0;
     u.uCloudAir.value = settings.debug.air === false ? 0 : 1;
     (u.uCloudColor.value as Color).copy(settings.color);
   }
@@ -618,6 +771,26 @@ export class CloudVolumeRenderer {
         );
       });
 
+    // A global weather's: the field's frame to the Earth's, and the cloud map's texels a metre.
+    if (settings.global) {
+      toWorld
+        .set(
+          this.frameE.x,
+          this.frameN.x,
+          this.frameM.x,
+          this.frameE.y,
+          this.frameN.y,
+          this.frameM.y,
+          this.frameE.z,
+          this.frameN.z,
+          this.frameM.z,
+        )
+        .premultiply(this.earth);
+      (u.uCloudFieldEarth.value as Matrix3).copy(toWorld);
+      u.uCloudEarthRadius.value = radius;
+      u.uCloudMapTexels.value = CLOUD_MAP_SIZE / (2 * radius);
+    }
+
     // The angle a pixel of the clouds' image spans, at the middle of the view. Its magnitude:
     // a CubeCamera's faces are drawn with a field of view of −90°.
     const focal = Math.abs(camera.projectionMatrix.elements[5]);
@@ -638,16 +811,66 @@ export class CloudVolumeRenderer {
     return this.volumes.noise;
   }
 
+  /** What draws a global weather's maps with `renderer`: compile them before it shows. */
+  weatherGenerators(renderer: WebGLRenderer): readonly Mesh[] {
+    return this.weather.generators(renderer);
+  }
+
   /** Draw the noise volumes `renderer` draws it with, unless done already. */
   generate(renderer: WebGLRenderer) {
     generateCloudNoiseVolumes(renderer, this.noise(renderer));
   }
 
+  // A global weather's: each type's quantiles of the cover map (its masses weighed against the
+  // patches), its look as the march takes it, its heights and its extinction, and the most its
+  // cover reaches; once for each set of looks.
+  private updateTypes() {
+    const settings = this.settings!;
+    const key = JSON.stringify([settings.looks, settings.density]);
+    if (key === this.coverTableKey) return;
+    this.coverTableKey = key;
+    const u = this.marchMaterial.uniforms;
+    const width = SOFT_COVER_QUANTILES + 1;
+    const data = this.coverTable.image.data as Uint16Array;
+    TYPE_ROWS.forEach((type, row) => {
+      const look = settings.looks[type];
+      const stats = this.cover.statistics(look.masses)!;
+      stats.quantiles.forEach((q, i) => {
+        data[row * width + i] = DataUtils.toHalfFloat(q);
+      });
+      (u.uCloudTypeLooks.value[row] as Vector4).set(
+        Math.max(look.softness * stats.deviation, 1e-4),
+        look.lumps * stats.deviation,
+        look.towering,
+        look.masses,
+      );
+      const { base, top } = CLOUD_TYPE_HEIGHTS[type];
+      (u.uCloudTypeHeights.value[row] as Vector4).set(
+        base,
+        top[0],
+        top[1],
+        look.extinction * settings.density,
+      );
+      (u.uCloudTypeMore.value[row] as Vector4).set(
+        stats.quantiles[SOFT_COVER_QUANTILES],
+        0,
+        0,
+        0,
+      );
+    });
+    this.coverTable.needsUpdate = true;
+  }
+
   // The cover map drawn, and the cover each level's columns need, from its distribution (with
-  // the level's masses weighed against the patches): false until that is read back.
+  // the level's masses weighed against the patches; in a global weather, place by place from
+  // each type's: updateTypes): false until that is read back.
   private updateLevels(renderer: WebGLRenderer): boolean {
     const settings = this.settings!;
     if (!this.cover.update(renderer, settings.seed)) return false;
+    if (settings.global) {
+      this.updateTypes();
+      return true;
+    }
     const u = this.marchMaterial.uniforms;
     settings.levels
       .slice(0, CLOUD_VOLUME_LEVELS)
@@ -698,6 +921,12 @@ export class CloudVolumeRenderer {
       this.target.setSize(width, height);
     this.updateCamera(camera, height);
     if (!this.updateLevels(renderer)) return;
+    // A global weather's maps, a few strips a frame: nothing drawn until the first is.
+    if (
+      settings.global &&
+      !this.weather.update(renderer, settings.global.seed, this.time)
+    )
+      return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
     const autoClear = renderer.autoClear;
@@ -724,6 +953,8 @@ export class CloudVolumeRenderer {
     this.target.dispose();
     this.march.geometry.dispose();
     this.cover.dispose();
+    this.weather.dispose();
+    this.coverTable.dispose();
     if (this.volumes) releaseCloudNoiseVolumes(this.volumes.renderer);
     this.volumes = null;
   }

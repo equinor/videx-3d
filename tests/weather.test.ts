@@ -170,6 +170,26 @@ describe('cloud levels', () => {
       null,
     ]);
   });
+
+  it('cuts two levels covering about as much about as much, smoothly', () => {
+    const low = { ...cloudLayerPreset('broken', 'stratocumulus')!, cover: 0.5 };
+    const mid = { ...cloudLayerPreset('broken', 'altostratus')!, cover: 0.5 };
+    const [a, b] = cloudLayersInProportion([low, mid, null], 1);
+    expect(a!.cover).toBeCloseTo(b!.cover, 9);
+    expect(a!.cover).toBeCloseTo(0.5 * (1 - 0.5 * 0.5), 9);
+    // No jump as the middle level's cover passes the low's.
+    let worst = 0;
+    let before = cloudLayersInProportion(
+      [low, { ...mid, cover: 0.3 }, null],
+      1,
+    );
+    for (let cover = 0.301; cover <= 0.7; cover += 0.001) {
+      const now = cloudLayersInProportion([low, { ...mid, cover }, null], 1);
+      worst = Math.max(worst, Math.abs(now[0]!.cover - before[0]!.cover));
+      before = now;
+    }
+    expect(worst).toBeLessThan(0.02);
+  });
 });
 
 describe('weather systems', () => {

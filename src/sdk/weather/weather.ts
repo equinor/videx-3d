@@ -114,12 +114,22 @@ export function cloudLayersByLevel(
 }
 
 /**
+ * How much cover either side of a tie between two levels' covers a level's cut by the other is
+ * eased in over ({@link cloudLayersInProportion}).
+ *
+ * @group Weather
+ */
+export const CLOUD_LAYERS_TIE = 0.1;
+
+/**
  * `layers` (one at each {@link CloudLevel}, as {@link cloudLayersByLevel} gives them) kept in
- * proportion, so one level dominates the sky: the layer covering most keeps its cover, and
- * every other's is cut by `dominance` times that cover. With `dominance` 1, an overcast leaves
- * no other level any cloud, as from under it none shows; 0 leaves them all as they are. Several
- * levels with a lot of cloud are a deep frontal system, which draws as one deep layer
- * (nimbostratus).
+ * proportion, so one level dominates the sky: each is cut by `dominance` times the cover of the
+ * one covering most over it. With `dominance` 1, an overcast leaves no other level any cloud, as
+ * from under it none shows; 0 leaves them all as they are. A cut is eased in over
+ * {@link CLOUD_LAYERS_TIE} of cover either side of a tie, so two levels covering about as much
+ * cut each other about as much, and a cover changing from place to place (a global weather's)
+ * changes the cuts smoothly. Several levels with a lot of cloud are a deep frontal system, which
+ * draws as one deep layer (nimbostratus).
  *
  * @group Weather
  */
@@ -127,15 +137,23 @@ export function cloudLayersInProportion(
   layers: readonly (CloudLayer | null)[],
   dominance: number,
 ): (CloudLayer | null)[] {
-  let most = -1;
-  layers.forEach((layer, k) => {
-    if (layer && (most < 0 || layer.cover > layers[most]!.cover)) most = k;
+  const d = Math.min(Math.max(dominance, 0), 1);
+  const ease = (x: number) => {
+    const t = Math.min(
+      Math.max((x + CLOUD_LAYERS_TIE) / (2 * CLOUD_LAYERS_TIE), 0),
+      1,
+    );
+    return t * t * (3 - 2 * t);
+  };
+  return layers.map((layer, k) => {
+    if (!layer) return layer;
+    let over = 0;
+    layers.forEach((other, j) => {
+      if (other && j !== k)
+        over = Math.max(over, other.cover * ease(other.cover - layer.cover));
+    });
+    return over > 0 ? { ...layer, cover: layer.cover * (1 - d * over) } : layer;
   });
-  if (most < 0) return layers.slice();
-  const cut = 1 - Math.min(Math.max(dominance, 0), 1) * layers[most]!.cover;
-  return layers.map((layer, k) =>
-    !layer || k === most ? layer : { ...layer, cover: layer.cover * cut },
-  );
 }
 
 /**

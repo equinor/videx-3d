@@ -13,20 +13,26 @@ import {
   releaseMaterial,
 } from '../../rendering/precompile';
 import {
+  CLOUD_LEVELS,
   cloudLayersByLevel,
   cloudLayersInProportion,
   cloudLayersOf,
   WEATHER_LOCAL_RADIUS,
   weatherPreset,
+  weatherSystemsOf,
   type CloudLayer,
+  type CloudType,
 } from '../../sdk/weather/weather';
 import { WeatherClock } from '../../sdk/weather/weather-clock';
 import { useWeather, useWeatherClock } from '../Weather/weather-context';
 import {
   CLOUD_VOLUME_LOOKS,
+  cloudVolumeChainLayer,
   CloudVolumeRenderer,
   cloudVolumeQuality,
+  type CloudVolumeGlobal,
   type CloudVolumeLevel,
+  type CloudVolumeLook,
 } from './scenery-cloud-volume';
 import { sceneryDefaults, SceneryCloudVolumeProps } from './scenery-model';
 import { SceneryRegistryContext } from './scenery-registry';
@@ -38,6 +44,7 @@ const AFTER_SURFACE = 2;
 const NO_DEBUG = {};
 // A level covering less than this is left out.
 const LEAST_COVER = 0.005;
+const ALL_LEVELS = {};
 
 const scratch = new Color();
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
@@ -45,14 +52,16 @@ const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 /**
  * 3D clouds over a {@link Scenery}'s sky (see {@link SceneryCloudVolumeProps} and
  * `documents/clouds.md`): a local weather's layers, one at each level, each drawn as its type
- * looks, marched through on the globe every frame at a share of the screen's resolution and
- * drawn over the scene, so what lies in front of them hides them and they hide what lies
- * behind. Fixed to the Earth, each level drifting with its wind on the enclosing `Weather`'s
- * clock. Anywhere under the `Scenery`; it compiles its own programs and draws its noise, and
- * shows once they are ready.
+ * looks; or a global weather's weather systems over the whole Earth, each level's cover and
+ * types from their map. Marched through on the globe every frame at a share of the screen's
+ * resolution and drawn over the scene, so what lies in front of them hides them and they hide
+ * what lies behind. Fixed to the Earth, each level drifting with its wind on the enclosing
+ * `Weather`'s clock. Anywhere under the `Scenery`; it compiles its own programs and draws its
+ * noise and, for a global weather, its map of the weather systems, and shows once they are
+ * ready.
  *
- * Being rebuilt (2026-11-09): a global weather draws nothing yet, and the scenery's bakes, its
- * sea, its light and its shadows take none of them.
+ * Being rebuilt (2026-11-09): the scenery's bakes, its sea, its light and its shadows take none
+ * of them yet.
  *
  * @example
  * <Weather weather={weatherPresetOf('scattered')}>
@@ -72,6 +81,7 @@ export const SceneryCloudVolume = ({
   layers,
   dominance = sceneryDefaults.cloudVolume.dominance,
   looks,
+  levels: levelsOn = ALL_LEVELS,
   scale = sceneryDefaults.cloudVolume.scale,
   density = sceneryDefaults.cloudVolume.density,
   color = sceneryDefaults.cloudVolume.color,
@@ -115,10 +125,13 @@ export const SceneryCloudVolume = ({
   const colorHex = toHex(color);
   const named = typeof layers === 'string' ? cloudLayersOf(layers) : layers;
   const own = named ?? weather?.clouds ?? DEFAULT_LAYERS;
-  // Local with layers of its own, without a weather, or as the weather is; else global, which
-  // draws nothing for now.
+  // Local with layers of its own, without a weather, or as the weather is; else global.
   const local =
     named || !weather ? (weather?.local ?? {}) : (weather.local ?? null);
+  // A global weather's systems: the weather's seed, else the clouds' own.
+  const systemsSeed = weatherSystemsOf(weather, {
+    seed: weather?.systems?.seed ?? seed,
+  }).seed;
   const localKey = local
     ? JSON.stringify({
         latitude: local.latitude,
@@ -126,24 +139,31 @@ export const SceneryCloudVolume = ({
         radius: local.radius ?? WEATHER_LOCAL_RADIUS,
       })
     : '';
-  // One layer a level, in proportion, each drawn as its type looks.
+  // Each type's look, over the defaults.
+  const allLooks = Object.fromEntries(
+    (Object.keys(CLOUD_VOLUME_LOOKS) as CloudType[]).map(type => [
+      type,
+      { ...CLOUD_VOLUME_LOOKS[type], ...looks?.[type] },
+    ]),
+  ) as Record<CloudType, CloudVolumeLook>;
+  // Local: one layer a level, in proportion, each drawn as its type looks. Global: each level
+  // on, over its chain's heights, its cover the weather systems'.
   const levels: CloudVolumeLevel[] = local
     ? cloudLayersInProportion(cloudLayersByLevel(own), dominance)
         .filter(
           (layer): layer is CloudLayer => !!layer && layer.cover >= LEAST_COVER,
         )
-        .map(layer => ({
-          layer,
-          look: { ...CLOUD_VOLUME_LOOKS[layer.type], ...looks?.[layer.type] },
-        }))
-    : [];
+        .map(layer => ({ layer, look: allLooks[layer.type] }))
+    : CLOUD_LEVELS.filter(level => levelsOn[level] !== false).map(level => {
+        const layer = cloudVolumeChainLayer(level);
+        return { layer, look: allLooks[layer.type] };
+      });
   const levelsKey = JSON.stringify(levels);
-  useEffect(() => {
-    if (import.meta.env.DEV && !localKey)
-      console.warn(
-        'SceneryCloudVolume draws no global weather while it is rebuilt: give the Weather `local`',
-      );
-  }, [localKey]);
+  const looksKey = JSON.stringify(allLooks);
+  const global: CloudVolumeGlobal | null = local
+    ? null
+    : { seed: systemsSeed, dominance, types: true, thickness: true };
+  const globalKey = global ? JSON.stringify(global) : '';
   const windSpeed = weather?.wind?.speed;
   const windFrom = weather?.wind?.from;
   const debugView = debug.view;
@@ -160,6 +180,8 @@ export const SceneryCloudVolume = ({
       : { radius: WEATHER_LOCAL_RADIUS };
     volume.set({
       levels: JSON.parse(levelsKey) as CloudVolumeLevel[],
+      looks: JSON.parse(looksKey) as Record<CloudType, CloudVolumeLook>,
+      global: globalKey ? (JSON.parse(globalKey) as CloudVolumeGlobal) : null,
       local: place,
       wind:
         windSpeed === undefined || windFrom === undefined
@@ -175,6 +197,8 @@ export const SceneryCloudVolume = ({
   }, [
     volume,
     levelsKey,
+    looksKey,
+    globalKey,
     localKey,
     windSpeed,
     windFrom,
@@ -199,6 +223,11 @@ export const SceneryCloudVolume = ({
       precompile(gl, noise.generator, camera, scene, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
+      ...volume.weatherGenerators(gl).map(generator =>
+        precompile(gl, generator, camera, scene, 'offscreen', {
+          priority: PRECOMPILE_PRIORITY.background,
+        }),
+      ),
       precompile(gl, volume.march, camera, scene, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
