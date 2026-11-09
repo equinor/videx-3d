@@ -7,10 +7,11 @@
 //
 // Each level is rounded masses of many sizes, from a map of the cover fixed to the Earth
 // (scenery-cloud-cover.ts: a tile of noise, each level reading it at its own scale, turn and
-// stretch, drifting with its own wind) and a profile up its shell: the higher, the more cover a
-// column needs to reach it, so the clouds are domed over flat bases and round off below the
-// shell's top. Its look (its type's: how soft, lumpy, towering, massed, stretched and dense)
-// comes in uniforms, so a type is data, not code.
+// stretch, drifting with its own wind, read on through it as its clouds form and fade) and a
+// profile up its shell: the higher, the more cover a column needs to reach it, so the clouds
+// are domed over flat bases and round off below the shell's top. Its look (its type's: how
+// soft, lumpy, towering, massed, stretched and dense) comes in uniforms, so a type is data, not
+// code.
 //
 // Stable as the camera moves, however fast and far (documents/clouds.md): every sample takes in
 // what the stretch of the view it stands for holds, never finer — the cover map read
@@ -48,7 +49,8 @@ uniform sampler3D uCloudCover;
 // volume's texel in m); its pattern on the Earth: from metres fixed on the Earth to its cover
 // volume's tiles (turned as its wind has carried it about the Earth's centre, stretched along
 // it), and where the camera lies in it, from 64-bit floats (in the cover, its broad read, and
-// the lumps' two tilings: four a level).
+// the lumps' two tilings: four a level), each read on through its noise as the clouds form and
+// fade (scenery-cloud-volume.ts, updateCamera).
 uniform int uCloudLevelCount;
 uniform vec4 uCloudShells[CLOUD_LEVELS_MOST];
 uniform vec4 uCloudNeeds[CLOUD_LEVELS_MOST];

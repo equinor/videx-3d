@@ -125,7 +125,8 @@ export type CloudVolumeLook = Required<SceneryCloudLook>;
  * How a `SceneryCloudVolume` draws each {@link CloudType} unless told (`looks`): heaped
  * cumulus, lumpy stratocumulus decks, flat stratus sheets, deep soft nimbostratus, small
  * altocumulus puffs in patches, thin altostratus veils, and ice — cirrus streaks drawn out
- * along the wind, cirrostratus milky veils.
+ * along the wind, cirrostratus milky veils. Cumulus form and fade in twenty minutes, their lumps
+ * boiling up; sheets last hours.
  *
  * @group Components
  */
@@ -139,6 +140,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.4,
       masses: 0.6,
       extinction: 0.03,
+      lifetime: 1200,
+      rise: 0.6,
     },
     stratocumulus: {
       scale: 1.2,
@@ -148,6 +151,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.2,
       masses: 0.4,
       extinction: 0.03,
+      lifetime: 3600,
+      rise: 0.1,
     },
     stratus: {
       scale: 2,
@@ -157,6 +162,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.05,
       masses: 0.1,
       extinction: 0.02,
+      lifetime: 7200,
+      rise: 0,
     },
     nimbostratus: {
       scale: 3,
@@ -166,6 +173,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.3,
       masses: 0.2,
       extinction: 0.03,
+      lifetime: 5400,
+      rise: 0,
     },
     altocumulus: {
       scale: 0.4,
@@ -175,6 +184,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.2,
       masses: 0.8,
       extinction: 0.02,
+      lifetime: 2400,
+      rise: 0.2,
     },
     altostratus: {
       scale: 2,
@@ -184,6 +195,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.05,
       masses: 0.1,
       extinction: 0.004,
+      lifetime: 7200,
+      rise: 0,
     },
     cirrus: {
       scale: 1,
@@ -193,6 +206,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.1,
       masses: 0.3,
       extinction: 0.002,
+      lifetime: 3600,
+      rise: 0,
     },
     cirrostratus: {
       scale: 3,
@@ -202,6 +217,8 @@ export const CLOUD_VOLUME_LOOKS: Readonly<Record<CloudType, CloudVolumeLook>> =
       towering: 0.02,
       masses: 0,
       extinction: 0.0015,
+      lifetime: 7200,
+      rise: 0,
     },
   };
 
@@ -269,6 +286,11 @@ const CHUNK = 1500;
 // cells across it) some 8.5 km across. The lumps (the shape volume) tile it this many times.
 const VOLUME_TILE = 204800 / 6;
 const VOLUME_LUMP_TILES = 100 / 6;
+// The clouds that last one lifetime as they form and fade (a look's `lifetime`): this many
+// metres across (at scale 1 and a look's scale 1). The cover is read on through its noise by
+// this much in a lifetime, so a cloud this size comes and goes in it, a broader one lasts as
+// much longer as it is broader.
+const LIFE_SIZE = 1500;
 // The lumps' second tiling (cloud-volume-march.glsl): broader (and turned, LUMPS_TURN).
 const LUMP_BROADER = 1.618;
 // Turns fixed on the Earth (column-major, a GLSL mat3's): the cover volume's lattice, so no
@@ -408,6 +430,9 @@ const axis = new Vector3();
 const moved = new Vector3();
 const here = new Vector3();
 const broad = new Vector3();
+const upTurned = new Vector3();
+const readAt = new Vector3();
+const lumpAt = new Vector3();
 const drift = new Matrix4();
 const carried = new Matrix3();
 const stretched = new Matrix3();
@@ -884,24 +909,39 @@ export class CloudVolumeRenderer {
             fract(v.y + 0.719 * k + 0.293 * j),
             fract(v.z + 0.137 * k + 0.611 * j),
           );
-        wrap(places[4 * k], at, 0);
+        // How its clouds form and fade (its look's lifetime): the cover read on through its
+        // noise at `pace` (m/s), so a cloud LIFE_SIZE across comes and goes in a lifetime, a
+        // broader one lasting as much longer, and the lumps read on down through theirs at their
+        // `rise`, so they rise through the cloud. Along the up at the weather's middle (turned:
+        // the up where the field reads the pattern), added here in 64 bits, so exact however long
+        // the clock runs; far round the Earth, where that up lies along the ground, a drift of
+        // `pace`. Read on along each column's own up instead, the pattern grew as the sphere it
+        // is read on shrank; faded between two reads so read, it cost a third more.
+        const pace =
+          (LIFE_SIZE * settings.scale * look.scale) /
+          Math.max(look.lifetime, 1);
+        upTurned.copy(middleUp).applyMatrix3(turn);
+        const read = readAt.copy(at).addScaledVector(upTurned, -pace * time);
+        const p = 4 * k;
+        wrap(places[p], read, 0);
         wrap(
-          places[4 * k + 1],
+          places[p + 1],
           broad
-            .copy(at)
+            .copy(read)
             .applyMatrix3(patchesTurn)
             .divideScalar(CLOUD_COVER_PATCHES.broader),
           1,
         );
+        lumpAt.copy(at).addScaledVector(upTurned, -look.rise * time);
         wrap(
-          places[4 * k + 2],
-          broad.copy(at).multiplyScalar(VOLUME_LUMP_TILES),
+          places[p + 2],
+          broad.copy(lumpAt).multiplyScalar(VOLUME_LUMP_TILES),
           2,
         );
         wrap(
-          places[4 * k + 3],
+          places[p + 3],
           broad
-            .copy(at)
+            .copy(lumpAt)
             .applyMatrix3(lumpsTurn)
             .multiplyScalar(VOLUME_LUMP_TILES / LUMP_BROADER),
           3,

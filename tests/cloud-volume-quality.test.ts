@@ -52,6 +52,8 @@ describe('CLOUD_VOLUME_LOOKS', () => {
       expect(look.masses).toBeGreaterThanOrEqual(0);
       expect(look.masses).toBeLessThanOrEqual(1.5);
       expect(look.extinction).toBeGreaterThan(0);
+      expect(look.lifetime).toBeGreaterThan(0);
+      expect(look.rise).toBeGreaterThanOrEqual(0);
     }
   });
 });

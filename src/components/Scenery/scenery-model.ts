@@ -166,6 +166,13 @@ export type SceneryCloudLook = {
   masses?: number;
   /** how much light a metre of its cloud takes (1 / metre, by the `density`): thin veils far less */
   extinction?: number;
+  /**
+   * how long one of its clouds lasts as it forms and fades (seconds of the weather's clock), one
+   * some 1.5 km across at its `scale`; the larger ones last longer, the smaller less
+   */
+  lifetime?: number;
+  /** how fast its lumps rise through it (m/s of the weather's clock): cumulus' boil */
+  rise?: number;
 };
 
 /**

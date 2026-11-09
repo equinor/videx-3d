@@ -343,6 +343,8 @@ const LOOK_SLIDERS: [keyof CloudVolumeLook, number, number, number][] = [
   ['towering', 0, 1, 0.01],
   ['masses', 0, 1.5, 0.01],
   ['extinction', 0.0005, 0.06, 0.0005],
+  ['lifetime', 60, 14400, 60],
+  ['rise', 0, 5, 0.1],
 ];
 
 const ROW: CSSProperties = {
@@ -834,7 +836,7 @@ const meta = {
     looks: {
       control: { type: 'object' },
       description:
-        'Each type’s look over `CLOUD_VOLUME_LOOKS` (`looks`), by type: scale, stretch, softness, lumps, towering, masses, extinction.',
+        'Each type’s look over `CLOUD_VOLUME_LOOKS` (`looks`), by type: scale, stretch, softness, lumps, towering, masses, extinction, lifetime, rise.',
       table: { category: 'Cloud volume' },
     },
     ...levelArgTypes,
