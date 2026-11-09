@@ -1563,11 +1563,11 @@ export const Scenery = ({
     const below = zone === 'subsurface' ? 1 : 0;
     let share = subsurfaceShare.current ?? below;
     if (subsurfaceTransition > 0) {
-      const step = delta / subsurfaceTransition;
+      const ease = delta / subsurfaceTransition;
       share =
         share < below
-          ? Math.min(share + step, below)
-          : Math.max(share - step, below);
+          ? Math.min(share + ease, below)
+          : Math.max(share - ease, below);
     } else {
       share = below;
     }

@@ -352,7 +352,8 @@ const FLY_CLEAR = [500, 1000];
 /**
  * Buttons over the canvas, top right, for a sky story: the camera's height, moves to set
  * altitudes, places and views, and a timelapse. A move keeps the view's angle to the horizon.
- * With `fly`, a double-click on the ground or the sea takes the camera there.
+ * With `fly`, a double-click on the ground or the sea takes the camera there. H hides and shows
+ * it (not while typing in a field).
  */
 export const SceneryDebugPanel = ({
   args,
@@ -371,6 +372,7 @@ export const SceneryDebugPanel = ({
   // The World's relief, for a double-click to land on its ground.
   const relief = useWorldRelief();
   const root = useRef<Root | null>(null);
+  const host = useRef<HTMLDivElement | null>(null);
   const readout = useRef<HTMLDivElement>(null);
   const since = useRef(0);
   const [showReadout, setShowReadout] = useState(true);
@@ -675,22 +677,49 @@ export const SceneryDebugPanel = ({
     });
 
   useEffect(() => {
-    const host = document.createElement('div');
-    Object.assign(host.style, {
+    const element = document.createElement('div');
+    Object.assign(element.style, {
       position: 'absolute',
       top: '10px',
       right: '10px',
       zIndex: '10',
     });
-    (gl.domElement.parentElement ?? document.body).appendChild(host);
-    const created = createRoot(host);
+    (gl.domElement.parentElement ?? document.body).appendChild(element);
+    host.current = element;
+    const created = createRoot(element);
     root.current = created;
     return () => {
       root.current = null;
+      host.current = null;
       created.unmount();
-      host.remove();
+      element.remove();
     };
   }, [gl]);
+
+  // H hides and shows the panel, kept mounted, so it comes back as it was.
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() !== 'h' ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.repeat
+      )
+        return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+      )
+        return;
+      const element = host.current;
+      if (element)
+        element.style.display = element.style.display === 'none' ? '' : 'none';
+    };
+    addEventListener('keydown', listener);
+    return () => removeEventListener('keydown', listener);
+  }, []);
 
   // Every render: the buttons close over this render's camera and sun.
   useEffect(() => {
