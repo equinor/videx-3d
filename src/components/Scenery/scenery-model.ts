@@ -137,6 +137,16 @@ export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
 export type SceneryCloudVolumeDebug = {
   view?: 'cost' | 'unlit' | 'map';
   air?: boolean;
+  /**
+   * Being compared (2026-11-09), then removed: the clouds' pattern read on the Earth's curved
+   * surface (`'sphere'`, a cover volume) or on the plane touching it at the weather's middle
+   * (`'plane'`, the cover map, which squashes them far round the Earth). Default `'sphere'`
+   */
+  cover?: 'sphere' | 'plane';
+  /** Being chosen (2026-11-09), then removed: a global weather's level looks as its place along its chain of types (true) or as the chain's first type. Default true */
+  types?: boolean;
+  /** Being chosen, then removed: the low cloud's thickness sets how deep and dense a global weather's cloud is (true), or its type alone. Default true */
+  thickness?: boolean;
 };
 
 /**

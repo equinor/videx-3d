@@ -97,6 +97,12 @@ type CloudVolumeArgs = {
   globalLow: boolean;
   globalMid: boolean;
   globalHigh: boolean;
+  /** being chosen: a global weather's look by its place along its chain (`debug.types`) */
+  globalTypes: boolean;
+  /** being chosen: the low cloud's thickness sets a global weather's depth (`debug.thickness`) */
+  globalThickness: boolean;
+  /** being compared: the clouds' pattern on the Earth's curved surface or on a plane (`debug.cover`) */
+  cover: 'sphere' | 'plane';
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -341,6 +347,8 @@ const DEBUG_VIEWS: CloudVolumeArgs['debugView'][] = [
   'unlit',
   'map',
 ];
+// The seabed under the sea (as the other Scenery stories lay it).
+const DEPTH = 100;
 
 // The args holding a number.
 type NumberArg = {
@@ -517,6 +525,12 @@ const CloudPanel = ({
             chosen={mode => args.weatherMode === mode}
             pick={weatherMode => update({ weatherMode })}
           />
+          <Choices
+            label="cover"
+            options={['sphere', 'plane'] as const}
+            chosen={cover => args.cover === cover}
+            pick={cover => update({ cover })}
+          />
           {args.weatherMode === 'global' && (
             <>
               <Choices
@@ -525,6 +539,22 @@ const CloudPanel = ({
                 name={key => key.slice(6).toLowerCase()}
                 chosen={key => args[key]}
                 pick={key => update({ [key]: !args[key] })}
+              />
+              <Choices
+                label="types"
+                options={['blend', 'first'] as const}
+                chosen={look => args.globalTypes === (look === 'blend')}
+                pick={look => update({ globalTypes: look === 'blend' })}
+              />
+              <Choices
+                label="depth"
+                options={['thickness', 'type'] as const}
+                chosen={depth =>
+                  args.globalThickness === (depth === 'thickness')
+                }
+                pick={depth =>
+                  update({ globalThickness: depth === 'thickness' })
+                }
               />
               <PanelSlider
                 label="systems seed"
@@ -685,6 +715,7 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
   const timelapse = timed.timelapse;
   const args = lightArgs(timed.args);
   const frame = sceneryReliefFrame(args);
+  const sea = args.skyWater || args.skySeabed;
   const weatherKey = JSON.stringify(weatherFromArgs(args));
   const weather = useMemo(
     () => JSON.parse(weatherKey) as WeatherState,
@@ -716,7 +747,12 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
         paused={args.weatherPaused}
       >
         <Scenery {...sceneryPropsFromArgs(args)}>
-          <SceneryArgsFeatures args={args} ocean={false} abyss={false} />
+          {/* The sea and the void as in the other Scenery stories: the Sea controls set them. */}
+          <SceneryArgsFeatures
+            args={args}
+            ocean={sea && { level: 0, depth: DEPTH }}
+            abyss={{}}
+          />
           {args.volume && (
             <SceneryCloudVolume
               dominance={args.dominance}
@@ -734,6 +770,9 @@ const CloudVolumeStory = (storyArgs: CloudVolumeArgs) => {
               debug={{
                 view: args.debugView === 'none' ? undefined : args.debugView,
                 air: args.debugAir,
+                cover: args.cover,
+                types: args.globalTypes,
+                thickness: args.globalThickness,
               }}
             />
           )}
@@ -860,6 +899,25 @@ const meta = {
       description: 'A global weather’s high level (`levels`).',
       table: { category: 'Weather' },
     },
+    globalTypes: {
+      control: { type: 'boolean' },
+      description:
+        'Being chosen: a global weather’s level looks as its place along its chain of types; off, as the chain’s first type (`debug.types`).',
+      table: { category: 'Weather' },
+    },
+    globalThickness: {
+      control: { type: 'boolean' },
+      description:
+        'Being chosen: the low cloud’s thickness sets how deep and dense a global weather’s cloud is; off, its type alone (`debug.thickness`).',
+      table: { category: 'Weather' },
+    },
+    cover: {
+      control: { type: 'inline-radio' },
+      options: ['sphere', 'plane'],
+      description:
+        'Being compared: the clouds’ pattern read on the Earth’s curved surface (SPHERE, a cover volume), or on the plane touching it at the weather’s middle (PLANE, the cover map, which squashes them far round the Earth) (`debug.cover`).',
+      table: { category: 'Debug' },
+    },
     preset: {
       control: { type: 'select' },
       options: ['custom', ...PRESETS],
@@ -976,9 +1034,9 @@ const meta = {
     ...sceneryProgressArgs,
     // The band along the horizon off: the volume reaches it on its own.
     clouds: false,
-    // No bakes of the sky: the clouds take no part in them while they are rebuilt.
-    environment: false,
-    lightProbe: false,
+    // The sea dry, its seabed the ground under the clouds (as Baseline's Stage with no water).
+    skyWater: false,
+    skySeabed: true,
     // Frame rate and frame times, bottom left.
     stats: true,
     panel: true,
@@ -988,6 +1046,9 @@ const meta = {
     globalLow: true,
     globalMid: true,
     globalHigh: true,
+    globalTypes: true,
+    globalThickness: true,
+    cover: 'sphere',
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',

@@ -14,6 +14,7 @@ import {
   LinearFilter,
   MathUtils,
   Matrix3,
+  Matrix4,
   Mesh,
   NoBlending,
   RedFormat,
@@ -54,7 +55,13 @@ import {
   generateCloudNoiseVolumes,
   releaseCloudNoiseVolumes,
 } from './scenery-cloud-noise';
-import { CLOUD_COVER_SIZE, CloudCoverMap } from './scenery-cloud-cover';
+import {
+  CLOUD_COVER_PATCHES,
+  CLOUD_COVER_SIZE,
+  CLOUD_COVER_VOLUME_SIZE,
+  CloudCoverMap,
+  CloudCoverVolume,
+} from './scenery-cloud-cover';
 import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
 import { CloudWeather } from './scenery-cloud-weather';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
@@ -264,6 +271,28 @@ const LUMP_TILES = 100;
 // The lumps' second tiling (cloud-volume-march.glsl): turned (cosine, sine) and broader.
 const LUMP_TURN = [0.8, 0.6] as const;
 const LUMP_BROADER = 1.618;
+// The cover volume's tile (metres, at scale 1 and a look's scale 1): its broadest masses (four
+// cells across it) as broad as the cover map's (24 across its tile). The lumps' tile is the
+// cover map's, so as many of them to the volume's tile.
+const VOLUME_TILE = (CLOUD_COVER_SIZE * COVER_TEXEL * 4) / 24;
+const VOLUME_LUMP_TILES =
+  (VOLUME_TILE * LUMP_TILES) / (CLOUD_COVER_SIZE * COVER_TEXEL);
+// Turns fixed on the Earth (column-major, a GLSL mat3's): the cover volume's lattice, so no
+// place on the Earth has a tile's axis for its up; the cover's broad read; and the lumps' second
+// tiling. Odd axes and angles, so none lines up with another.
+const VOLUME_TURN = [
+  0.775201, 0.545966, -0.31778, -0.45794, 0.832192, 0.312647, 0.435149,
+  -0.09684, 0.895135,
+];
+const PATCHES_TURN = [
+  0.8748, 0.281142, 0.394568, -0.478752, 0.626535, 0.61502, -0.074303, -0.72692,
+  0.682691,
+];
+const LUMPS_TURN = [
+  0.83523, 0.277143, -0.474955, -0.39732, 0.901263, -0.172806, 0.380168,
+  0.333042, 0.862876,
+];
+const glslMat3 = (m: number[]) => `mat3(${m.join(', ')})`;
 // By a level's top, the cover a column needs is past the most any reaches by this many of the
 // lumps' and the edge's widths: no cloud reaches the top (cloud-volume-march.glsl, cloudShare).
 const ROUND_REACH = 3;
@@ -377,6 +406,19 @@ const east = new Vector3();
 const fromCentre = new Vector3();
 const toWorld = new Matrix3();
 const localOffset: [number, number] = [0, 0];
+const cameraEarth = new Vector3();
+const middleUp = new Vector3();
+const wayEarth = new Vector3();
+const axis = new Vector3();
+const moved = new Vector3();
+const here = new Vector3();
+const broad = new Vector3();
+const drift = new Matrix4();
+const carried = new Matrix3();
+const stretched = new Matrix3();
+const volumeTurn = new Matrix3().fromArray(VOLUME_TURN);
+const patchesTurn = new Matrix3().fromArray(PATCHES_TURN);
+const lumpsTurn = new Matrix3().fromArray(LUMPS_TURN);
 
 const levelVectors = () =>
   Array.from({ length: CLOUD_VOLUME_LEVELS }, () => new Vector4());
@@ -426,8 +468,10 @@ export class CloudVolumeRenderer {
   private readonly sky: SceneryMaterial;
   private readonly marchScene = new Scene();
   private readonly target = createImage();
-  // The cover map the levels read, drawn once they are.
+  // The cover the levels read, drawn once they are: the volume on the Earth's curved surface, or
+  // (being compared, then removed) the map on the plane touching it at the weather's middle.
   private readonly cover = new CloudCoverMap();
+  private readonly coverVolume = new CloudCoverVolume();
   // A global weather's maps of the weather systems, and each type's quantiles of the cover map
   // (and what they were filled for).
   private readonly weather: CloudWeather;
@@ -463,8 +507,13 @@ export class CloudVolumeRenderer {
       defines: {
         CLOUD_DEPTH_RANGE: DEPTH_RANGE,
         CLOUD_LEVELS_MOST: CLOUD_VOLUME_LEVELS,
-        CLOUD_COVER_SIZE: CLOUD_COVER_SIZE.toFixed(1),
-        CLOUD_LUMP_TILES: LUMP_TILES.toFixed(1),
+        // The cover volume's (set), or with CLOUD_PLANE the cover map's.
+        CLOUD_COVER_SIZE: CLOUD_COVER_VOLUME_SIZE.toFixed(1),
+        CLOUD_LUMP_TILES: VOLUME_LUMP_TILES.toFixed(4),
+        CLOUD_PATCHES_TURN: glslMat3(PATCHES_TURN),
+        CLOUD_PATCHES_BROADER: CLOUD_COVER_PATCHES.broader.toFixed(1),
+        CLOUD_PATCHES_FINE: CLOUD_COVER_PATCHES.fine.toFixed(3),
+        CLOUD_LUMPS_TURN: glslMat3(LUMPS_TURN),
         CLOUD_TYPES: TYPE_ROWS.length,
         CLOUD_QUANTILES: SOFT_COVER_QUANTILES,
       },
@@ -472,7 +521,7 @@ export class CloudVolumeRenderer {
         // The sky's own uniform objects: the sun, the air, the globe.
         ...sky.uniforms,
         uCloudShape: new Uniform<Texture | null>(null),
-        uCloudCover: new Uniform<Texture>(this.cover.target.texture),
+        uCloudCover: new Uniform<Texture>(this.coverVolume.target.texture),
         uCloudFrameE: new Uniform(this.frameE),
         uCloudFrameN: new Uniform(this.frameN),
         uCloudFrameM: new Uniform(this.frameM),
@@ -487,6 +536,12 @@ export class CloudVolumeRenderer {
         uCloudLooks: new Uniform(levelVectors()),
         uCloudMaps: new Uniform(levelVectors()),
         uCloudShifts: new Uniform(levelVectors()),
+        uCloudTurns: new Uniform(
+          Array.from({ length: CLOUD_VOLUME_LEVELS }, () => new Matrix3()),
+        ),
+        uCloudPlaces: new Uniform(
+          Array.from({ length: 4 * CLOUD_VOLUME_LEVELS }, () => new Vector3()),
+        ),
         uCloudKinds: new Uniform(levelVectors()),
         uCloudMap: new Uniform<CubeTexture | null>(null),
         uCloudMapNext: new Uniform<CubeTexture | null>(null),
@@ -573,6 +628,25 @@ export class CloudVolumeRenderer {
       0,
     );
     this.coverTableKey = '';
+    // The cover on the Earth's curved surface (the volume), or (being compared) on the plane
+    // touching it at the weather's middle (the map).
+    const plane = settings.debug.cover === 'plane';
+    const defines = this.marchMaterial.defines;
+    if ('CLOUD_PLANE' in defines !== plane) {
+      if (plane) defines.CLOUD_PLANE = '';
+      else delete defines.CLOUD_PLANE;
+      defines.CLOUD_COVER_SIZE = (
+        plane ? CLOUD_COVER_SIZE : CLOUD_COVER_VOLUME_SIZE
+      ).toFixed(1);
+      defines.CLOUD_LUMP_TILES = (
+        plane ? LUMP_TILES : VOLUME_LUMP_TILES
+      ).toFixed(4);
+      this.marchMaterial.needsUpdate = true;
+    }
+    u.uCloudCover.value = plane
+      ? this.cover.target.texture
+      : this.coverVolume.target.texture;
+    const texel = plane ? COVER_TEXEL : VOLUME_TILE / CLOUD_COVER_VOLUME_SIZE;
 
     const scale = settings.scale;
     const quality = settings.quality;
@@ -613,7 +687,7 @@ export class CloudVolumeRenderer {
         look.masses,
         0,
         CHUNK * reach,
-        COVER_TEXEL * reach,
+        texel * reach,
       );
     });
     (u.uCloudMarch.value as Vector4).set(
@@ -742,6 +816,30 @@ export class CloudVolumeRenderer {
     // tiles, wrapped: 64-bit here, so it keeps its precision however long the clock runs).
     const latitude = globe.location?.latitude ?? 45;
     const time = this.time;
+    // The field's frame to the Earth's (columns: east, north and up at the weather's middle,
+    // fixed on the Earth), and the camera fixed on the Earth (64-bit): from the Earth's centre,
+    // or with the globe off from the disc's.
+    toWorld
+      .set(
+        this.frameE.x,
+        this.frameN.x,
+        this.frameM.x,
+        this.frameE.y,
+        this.frameN.y,
+        this.frameM.y,
+        this.frameE.z,
+        this.frameN.z,
+        this.frameM.z,
+      )
+      .premultiply(this.earth);
+    (u.uCloudFieldEarth.value as Matrix3).copy(toWorld);
+    u.uCloudEarthRadius.value = radius;
+    const onField = u.uCloudCamera.value as Vector3;
+    cameraEarth
+      .set(onField.x, onField.y, onField.z + (globe.enabled ? radius : 0))
+      .applyMatrix3(toWorld);
+    middleUp.set(0, 0, 1).applyMatrix3(toWorld);
+    const places = u.uCloudPlaces.value as Vector3[];
     settings.levels
       .slice(0, CLOUD_VOLUME_LEVELS)
       .forEach(({ layer, look }, k) => {
@@ -769,27 +867,80 @@ export class CloudVolumeRenderer {
           fract((LUMP_TURN[0] * x - LUMP_TURN[1] * y) * s + 0.37),
           fract((LUMP_TURN[1] * x + LUMP_TURN[0] * y) * s + 0.71),
         );
+
+        // Its pattern on the Earth (the cover volume's): from metres fixed on the Earth to the
+        // volume's tiles, turned as its wind has carried it about the Earth's centre (so it
+        // drifts along the surface, neither rising nor sinking through it; with the globe off,
+        // moved along the plane), stretched along the wind, the volume's lattice turned; and
+        // where the camera lies in it, in the cover, its broad read and the lumps' two tilings.
+        const tile = VOLUME_TILE * settings.scale * look.scale;
+        wayEarth.set(ae, an, 0).applyMatrix3(toWorld);
+        moved.set(0, 0, 0);
+        if (globe.enabled) {
+          drift.makeRotationAxis(
+            axis.crossVectors(middleUp, wayEarth).normalize(),
+            -(speed * time) / radius,
+          );
+          carried.setFromMatrix4(drift);
+        } else {
+          carried.identity();
+          moved.copy(wayEarth).multiplyScalar(speed * time);
+        }
+        const stretch = 1 / Math.max(look.stretch, 1e-3) - 1;
+        const w = wayEarth;
+        stretched
+          .set(
+            1 + stretch * w.x * w.x,
+            stretch * w.x * w.y,
+            stretch * w.x * w.z,
+            stretch * w.y * w.x,
+            1 + stretch * w.y * w.y,
+            stretch * w.y * w.z,
+            stretch * w.z * w.x,
+            stretch * w.z * w.y,
+            1 + stretch * w.z * w.z,
+          )
+          .premultiply(volumeTurn);
+        const turn = (u.uCloudTurns.value as Matrix3[])[k]
+          .multiplyMatrices(stretched, carried)
+          .multiplyScalar(1 / tile);
+        const at = here
+          .copy(cameraEarth)
+          .applyMatrix3(turn)
+          .sub(moved.applyMatrix3(stretched).divideScalar(tile));
+        const wrap = (target: Vector3, v: Vector3, j: number) =>
+          target.set(
+            fract(v.x + 0.371 * k + 0.137 * j),
+            fract(v.y + 0.719 * k + 0.293 * j),
+            fract(v.z + 0.137 * k + 0.611 * j),
+          );
+        wrap(places[4 * k], at, 0);
+        wrap(
+          places[4 * k + 1],
+          broad
+            .copy(at)
+            .applyMatrix3(patchesTurn)
+            .divideScalar(CLOUD_COVER_PATCHES.broader),
+          1,
+        );
+        wrap(
+          places[4 * k + 2],
+          broad.copy(at).multiplyScalar(VOLUME_LUMP_TILES),
+          2,
+        );
+        wrap(
+          places[4 * k + 3],
+          broad
+            .copy(at)
+            .applyMatrix3(lumpsTurn)
+            .multiplyScalar(VOLUME_LUMP_TILES / LUMP_BROADER),
+          3,
+        );
       });
 
-    // A global weather's: the field's frame to the Earth's, and the cloud map's texels a metre.
-    if (settings.global) {
-      toWorld
-        .set(
-          this.frameE.x,
-          this.frameN.x,
-          this.frameM.x,
-          this.frameE.y,
-          this.frameN.y,
-          this.frameM.y,
-          this.frameE.z,
-          this.frameN.z,
-          this.frameM.z,
-        )
-        .premultiply(this.earth);
-      (u.uCloudFieldEarth.value as Matrix3).copy(toWorld);
-      u.uCloudEarthRadius.value = radius;
+    // A global weather's: the cloud map's texels a metre.
+    if (settings.global)
       u.uCloudMapTexels.value = CLOUD_MAP_SIZE / (2 * radius);
-    }
 
     // The angle a pixel of the clouds' image spans, at the middle of the view. Its magnitude:
     // a CubeCamera's faces are drawn with a field of view of −90°.
@@ -821,12 +972,24 @@ export class CloudVolumeRenderer {
     generateCloudNoiseVolumes(renderer, this.noise(renderer));
   }
 
-  // A global weather's: each type's quantiles of the cover map (its masses weighed against the
+  // The cover the levels read: the volume, or (being compared) the map.
+  private get activeCover(): CloudCoverMap | CloudCoverVolume {
+    return this.settings?.debug.cover === 'plane'
+      ? this.cover
+      : this.coverVolume;
+  }
+
+  // A global weather's: each type's quantiles of the cover (its masses weighed against the
   // patches), its look as the march takes it, its heights and its extinction, and the most its
   // cover reaches; once for each set of looks.
   private updateTypes() {
     const settings = this.settings!;
-    const key = JSON.stringify([settings.looks, settings.density]);
+    const cover = this.activeCover;
+    const key = JSON.stringify([
+      settings.looks,
+      settings.density,
+      cover === this.cover,
+    ]);
     if (key === this.coverTableKey) return;
     this.coverTableKey = key;
     const u = this.marchMaterial.uniforms;
@@ -834,7 +997,7 @@ export class CloudVolumeRenderer {
     const data = this.coverTable.image.data as Uint16Array;
     TYPE_ROWS.forEach((type, row) => {
       const look = settings.looks[type];
-      const stats = this.cover.statistics(look.masses)!;
+      const stats = cover.statistics(look.masses)!;
       stats.quantiles.forEach((q, i) => {
         data[row * width + i] = DataUtils.toHalfFloat(q);
       });
@@ -861,12 +1024,13 @@ export class CloudVolumeRenderer {
     this.coverTable.needsUpdate = true;
   }
 
-  // The cover map drawn, and the cover each level's columns need, from its distribution (with
+  // The cover drawn, and the cover each level's columns need, from its distribution (with
   // the level's masses weighed against the patches; in a global weather, place by place from
   // each type's: updateTypes): false until that is read back.
   private updateLevels(renderer: WebGLRenderer): boolean {
     const settings = this.settings!;
-    if (!this.cover.update(renderer, settings.seed)) return false;
+    const source = this.activeCover;
+    if (!source.update(renderer, settings.seed)) return false;
     if (settings.global) {
       this.updateTypes();
       return true;
@@ -875,7 +1039,7 @@ export class CloudVolumeRenderer {
     settings.levels
       .slice(0, CLOUD_VOLUME_LEVELS)
       .forEach(({ layer, look }, k) => {
-        const stats = this.cover.statistics(look.masses)!;
+        const stats = source.statistics(look.masses)!;
         const cover = MathUtils.clamp(layer.cover, 0, 1);
         // At its base the level's share under cloud passes; at its top, the strongest columns of
         // it: more of them the more it towers.
@@ -953,6 +1117,7 @@ export class CloudVolumeRenderer {
     this.target.dispose();
     this.march.geometry.dispose();
     this.cover.dispose();
+    this.coverVolume.dispose();
     this.weather.dispose();
     this.coverTable.dispose();
     if (this.volumes) releaseCloudNoiseVolumes(this.volumes.renderer);

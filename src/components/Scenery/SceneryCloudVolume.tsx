@@ -162,12 +162,18 @@ export const SceneryCloudVolume = ({
   const looksKey = JSON.stringify(allLooks);
   const global: CloudVolumeGlobal | null = local
     ? null
-    : { seed: systemsSeed, dominance, types: true, thickness: true };
+    : {
+        seed: systemsSeed,
+        dominance,
+        types: debug.types ?? true,
+        thickness: debug.thickness ?? true,
+      };
   const globalKey = global ? JSON.stringify(global) : '';
   const windSpeed = weather?.wind?.speed;
   const windFrom = weather?.wind?.from;
   const debugView = debug.view;
   const debugAir = debug.air;
+  const debugCover = debug.cover;
 
   useLayoutEffect(() => {
     if (!volume) return;
@@ -192,7 +198,7 @@ export const SceneryCloudVolume = ({
       color: new Color(colorHex),
       seed,
       quality: cloudVolumeQuality(quality, { resolution }),
-      debug: { view: debugView, air: debugAir },
+      debug: { view: debugView, air: debugAir, cover: debugCover },
     });
   }, [
     volume,
@@ -210,6 +216,7 @@ export const SceneryCloudVolume = ({
     resolution,
     debugView,
     debugAir,
+    debugCover,
   ]);
 
   // Hidden until its programs are compiled: drawn before, the browser waits for them.
