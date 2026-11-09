@@ -467,9 +467,11 @@ const createCoverTable = () => {
 /**
  * The 3D clouds of a `SceneryCloudVolume` (see `documents/clouds.md`): up to three levels of a
  * local weather, or of a global one's weather systems, each rounded masses from a map of the
- * cover fixed to the Earth drawn as its type's look says, marched along each pixel's view at a share of the screen's resolution every
- * frame, and laid over the scene at the depth of their front. Drawn from its {@link composite}'s
- * `onBeforeRender`, with the camera drawing it.
+ * cover fixed to the Earth drawn as its type's look says, marched along each pixel's view at a
+ * share of the screen's resolution, and laid over the scene at the depth of their front every
+ * frame. Marched again only as what they are marched from changes: the camera, the clock, the
+ * light, the weather. Drawn from its {@link composite}'s `onBeforeRender`, with the camera
+ * drawing it.
  */
 export class CloudVolumeRenderer {
   /** drawn in the scene, last (`LAYERS.OVERLAY` in an `OITRenderPass`) */
@@ -515,6 +517,14 @@ export class CloudVolumeRenderer {
   private readonly frameE = new Vector3(1, 0, 0);
   private readonly frameN = new Vector3(0, 0, -1);
   private readonly frameM = new Vector3(0, 1, 0);
+
+  // What the march was last drawn from (marchUnchanged), whether it was drawn since anything
+  // else could have changed (settings, a frame it was not drawn in), and the uniforms its
+  // program reads, by the program they were found for.
+  private readonly marchInputs = new MarchInputs();
+  private marchDrawn = false;
+  private marchProgram: object | null = null;
+  private marchNames: string[] = [];
 
   constructor(sky: SceneryMaterial, renderOrder: number) {
     this.sky = sky;
@@ -627,6 +637,7 @@ export class CloudVolumeRenderer {
   /** Draw `settings` from the next frame on. */
   set(settings: CloudVolumeSettings) {
     this.settings = settings;
+    this.marchDrawn = false;
     const u = this.marchMaterial.uniforms;
     // A local weather's middle as the anchor lies now, until it says.
     if (
@@ -1063,11 +1074,15 @@ export class CloudVolumeRenderer {
 
   /**
    * March the clouds as `camera` sees them into their image, for the composite to lay over the
-   * scene. From the composite's `onBeforeRender`: within the scene's own render.
+   * scene, unless nothing they are marched from changed since. From the composite's
+   * `onBeforeRender`: within the scene's own render.
    */
   render(renderer: WebGLRenderer, camera: Camera) {
     const settings = this.settings;
-    if (!settings || settings.levels.length === 0) return;
+    if (!settings || settings.levels.length === 0) {
+      this.marchDrawn = false;
+      return;
+    }
     this.generate(renderer);
     const outer = renderer.getRenderTarget();
     const cubeFace = renderer.getActiveCubeFace();
@@ -1082,7 +1097,10 @@ export class CloudVolumeRenderer {
     if (this.target.width !== width || this.target.height !== height)
       this.target.setSize(width, height);
     this.updateCamera(camera, height);
-    if (!this.updateLevels(renderer)) return;
+    if (!this.updateLevels(renderer)) {
+      this.marchDrawn = false;
+      return;
+    }
     // A global weather's maps, a few strips a frame, over the ground once its Earth is drawn
     // (none begun while it comes in: one without it would be drawn again at once); nothing drawn
     // until the first is.
@@ -1099,8 +1117,14 @@ export class CloudVolumeRenderer {
               steer: settings.debug.steer !== false,
             },
           );
-      if (!drawn) return;
+      if (!drawn) {
+        this.marchDrawn = false;
+        return;
+      }
     }
+    // Nothing it is marched from changed since it was last: its image laid over the scene again
+    // as it is. A still view with the clock held costs the composite alone.
+    if (this.marchUnchanged(renderer, camera)) return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
     const autoClear = renderer.autoClear;
@@ -1115,11 +1139,47 @@ export class CloudVolumeRenderer {
     renderer.autoClear = autoClear;
     renderer.info.autoReset = autoReset;
     renderer.shadowMap.autoUpdate = shadows;
+    this.marchDrawn = true;
 
     (this.compositeMaterial.uniforms.uCloudImageSize.value as Vector2).set(
       width,
       height,
     );
+  }
+
+  // Whether the march would draw what it drew last, and notes what it is drawn from now: the
+  // camera (its projection's sub-pixel jitter aside, as a temporal pass sets it on a still
+  // view), the image's size, the clock, what is drawn into its maps (the ground's, the weather
+  // systems'), and the values of the uniforms its program reads. Only those: it shares the sky's
+  // uniforms, some of which change every frame (the hollow's embers). Until its program is
+  // linked, all of them.
+  private marchUnchanged(renderer: WebGLRenderer, camera: Camera): boolean {
+    const material = this.marchMaterial;
+    const program =
+      (renderer.properties.get(material) as MarchProperties).currentProgram ??
+      null;
+    if (program !== this.marchProgram) {
+      this.marchProgram = program;
+      const read = program?.getUniforms().map;
+      this.marchNames = Object.keys(material.uniforms).filter(
+        name => !read || name in read,
+      );
+    }
+    const inputs = this.marchInputs;
+    inputs.begin(this.marchDrawn && program !== null);
+    for (const value of camera.matrixWorld.elements) inputs.add(value);
+    const projection = camera.projectionMatrix.elements;
+    for (let i = 0; i < 16; i++)
+      if (i !== 8 && i !== 9) inputs.add(projection[i]);
+    inputs.add(this.target.width);
+    inputs.add(this.target.height);
+    inputs.add(this.time);
+    inputs.add(this.terrain.version);
+    inputs.add(this.weather.version);
+    inputs.add(material.version);
+    for (const name of this.marchNames)
+      inputs.addValue(material.uniforms[name].value);
+    return inputs.end();
   }
 
   /**
@@ -1148,3 +1208,65 @@ export class CloudVolumeRenderer {
 }
 
 const fract = (x: number) => x - Math.floor(x);
+
+// The renderer's properties of a material: the program it was linked into (three's own).
+type MarchProperties = {
+  currentProgram?: { getUniforms(): { map: Record<string, unknown> } };
+};
+
+// What a march is drawn from, as numbers, noted frame by frame: whether any differs from the
+// last frame's (CloudVolumeRenderer.marchUnchanged).
+class MarchInputs {
+  private readonly values: number[] = [];
+  private count = 0;
+  private differs = false;
+
+  /** Note them anew; `valid` false: as if every one differs. */
+  begin(valid: boolean) {
+    this.count = 0;
+    this.differs = !valid;
+  }
+
+  add(value: number) {
+    const i = this.count++;
+    if (!this.differs && !Object.is(this.values[i], value)) this.differs = true;
+    this.values[i] = value;
+  }
+
+  /** A uniform's value: numbers, vectors, colours, matrices, textures and arrays of them. */
+  addValue(value: unknown) {
+    if (typeof value === 'number') this.add(value);
+    else if (typeof value === 'boolean') this.add(value ? 1 : 0);
+    else if (value === null || value === undefined) this.add(-1);
+    else if (Array.isArray(value) || ArrayBuffer.isView(value)) {
+      const items = value as ArrayLike<unknown>;
+      for (let i = 0; i < items.length; i++) this.addValue(items[i]);
+    } else if ((value as Texture).isTexture) {
+      // Drawn into, a target's texture keeps its version: its owner's counts that (above).
+      this.add((value as Texture).id);
+      this.add((value as Texture).version);
+    } else if ((value as Color).isColor) {
+      const color = value as Color;
+      this.add(color.r);
+      this.add(color.g);
+      this.add(color.b);
+    } else if ('elements' in (value as object))
+      for (const element of (value as Matrix3).elements) this.add(element);
+    else if ('x' in (value as object)) {
+      const vector = value as Vector4;
+      this.add(vector.x);
+      this.add(vector.y);
+      if ('z' in vector) this.add(vector.z);
+      if ('w' in vector) this.add(vector.w);
+    } else this.add(NaN);
+  }
+
+  /** Whether none differed from the last time they were noted. */
+  end(): boolean {
+    if (this.count !== this.values.length) {
+      this.values.length = this.count;
+      this.differs = true;
+    }
+    return !this.differs;
+  }
+}

@@ -178,6 +178,8 @@ varying vec3 vCloudDirection;
 // short steps.
 #define CLOUD_LEAST 1e-3
 #define CLOUD_THIN 0.02
+// The most the lumps' noise reaches, in its deviations (cloudShare): both reads at 1.
+#define CLOUD_LUMPS_MOST ((1.0 - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y * 1.41421356)
 // The ground (as the 3D clouds' first march had it, abaecc83): the share of its broad height the
 // low level rises by, as cloud bases rise over high ground (the middle level by half as much, the
 // high one, of ice near the tropopause, not at all: cloudRiseOf), read at the level of its map
@@ -635,8 +637,22 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
   float tile = L.look.w * CLOUD_COVER_SIZE / CLOUD_LUMP_TILES;
   float res = max(across, 0.5 * max(length(along), rise));
   float keep = fine ? 1.0 - smoothstep(0.15, 0.5, res / (CLOUD_FEATURE * tile)) : 0.0;
+  spread += L.look.y * L.look.y * (1.0 - keep * keep);
+  float soft = L.need.z * L.need.z;
+  float scale = inversesqrt(soft + spread);
+  // Toward the local weather's edge, fewer and smaller clouds: the need raised, by its edge past
+  // the most any column reaches. Faded instead, they turned see-through, a haze from far off.
+  float inside = cloudLocalEdge(field);
+  float apart = (1.0 - inside) * (span + L.need.w + 4.0 * sqrt(soft + spread));
+  float fade = within * base * smoothstep(0.0, 0.15, inside);
   float mean = c.x;
   if(keep > 0.0) {
+    // In clear air, not read: with the most the lumps add, the share would be no more than
+    // CLOUD_LEAST, which every caller reading them (`fine`) takes as none. So the same, and
+    // the most of a march through clear air spared two reads of the shape volume a step.
+    float most = mean + L.look.y * keep * CLOUD_LUMPS_MOST - need - apart;
+    if(fade / (1.0 + exp(-CLOUD_LOGISTIC * most * scale)) <= CLOUD_LEAST)
+      return vec2(0.0);
     // Read twice, the second turned and CLOUD_LUMP_BROADER times broader, at equal weight: one
     // tiling's period showed as a grid over a whole deck (as the coverage's once did).
     float broader = tile * CLOUD_LUMP_BROADER;
@@ -651,14 +667,7 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
     n = (0.5 * n - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y * 1.41421356;
     mean += L.look.y * keep * n;
   }
-  spread += L.look.y * L.look.y * (1.0 - keep * keep);
-  float soft = L.need.z * L.need.z;
-  // Toward the local weather's edge, fewer and smaller clouds: the need raised, by its edge past
-  // the most any column reaches. Faded instead, they turned see-through, a haze from far off.
-  float inside = cloudLocalEdge(field);
-  float apart = (1.0 - inside) * (span + L.need.w + 4.0 * sqrt(soft + spread));
-  float x = (mean - need - apart) * inversesqrt(soft + spread);
-  float share = within * base * smoothstep(0.0, 0.15, inside) / (1.0 + exp(-CLOUD_LOGISTIC * x));
+  float share = fade / (1.0 + exp(-CLOUD_LOGISTIC * (mean - need - apart) * scale));
   return vec2(share, spread / (soft + spread));
 }
 
