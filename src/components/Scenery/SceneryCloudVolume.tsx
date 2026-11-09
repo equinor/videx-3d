@@ -25,6 +25,7 @@ import {
 } from '../../sdk/weather/weather';
 import { WeatherClock } from '../../sdk/weather/weather-clock';
 import { useWeather, useWeatherClock } from '../Weather/weather-context';
+import { useWorldRelief } from '../World/world-relief';
 import {
   CLOUD_VOLUME_LOOKS,
   cloudVolumeChainLayer,
@@ -89,12 +90,15 @@ export const SceneryCloudVolume = ({
   quality = sceneryDefaults.cloudVolume.quality,
   resolution,
   debug = NO_DEBUG,
+  terrain = sceneryDefaults.cloudVolume.terrain,
 }: SceneryCloudVolumeProps) => {
   const registry = useContext(SceneryRegistryContext);
   const gl = useThree(state => state.gl);
   const scene = useThree(state => state.scene);
   const camera = useThree(state => state.camera);
   const weather = useWeather();
+  // The World's relief: the ground the clouds lie over.
+  const loader = useWorldRelief()?.loader ?? null;
 
   useEffect(() => {
     if (!registry && import.meta.env.DEV)
@@ -117,10 +121,16 @@ export const SceneryCloudVolume = ({
       // Let go once their programs have linked (`releaseMaterial`).
       releaseMaterial(gl, volume.marchMaterial);
       releaseMaterial(gl, volume.compositeMaterial);
-      volume.dispose();
+      volume.dispose(material => releaseMaterial(gl, material));
     },
     [gl, volume],
   );
+
+  // The ground: the relief's, while `terrain`.
+  const terrainSource = terrain ? loader : null;
+  useEffect(() => {
+    volume?.terrain.setSource(terrainSource);
+  }, [volume, terrainSource]);
 
   const colorHex = toHex(color);
   const named = typeof layers === 'string' ? cloudLayersOf(layers) : layers;
@@ -173,6 +183,7 @@ export const SceneryCloudVolume = ({
   const windFrom = weather?.wind?.from;
   const debugView = debug.view;
   const debugAir = debug.air;
+  const debugSteer = debug.steer;
 
   useLayoutEffect(() => {
     if (!volume) return;
@@ -197,7 +208,7 @@ export const SceneryCloudVolume = ({
       color: new Color(colorHex),
       seed,
       quality: cloudVolumeQuality(quality, { resolution }),
-      debug: { view: debugView, air: debugAir },
+      debug: { view: debugView, air: debugAir, steer: debugSteer },
     });
   }, [
     volume,
@@ -215,6 +226,7 @@ export const SceneryCloudVolume = ({
     resolution,
     debugView,
     debugAir,
+    debugSteer,
   ]);
 
   // Hidden until its programs are compiled: drawn before, the browser waits for them.
@@ -226,6 +238,9 @@ export const SceneryCloudVolume = ({
     const noise = volume.noise(gl);
     const waits = [
       precompile(gl, noise.generator, camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
+      precompile(gl, volume.terrain.generator, camera, scene, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       ...volume.weatherGenerators(gl).map(generator =>
@@ -257,14 +272,16 @@ export const SceneryCloudVolume = ({
   // drift and change on the Weather's clock, without one on their own.
   const weatherClock = useWeatherClock();
   const [ownClock] = useState(() => new WeatherClock());
-  useFrame(() => {
+  useFrame(state => {
     if (!volume || !registry) return;
     const clock = weatherClock ?? ownClock;
     volume.time = clock.time;
     volume.rate = clock.paused ? 0 : clock.timeScale;
     volume.composite.renderOrder = registry.view.renderOrder + AFTER_SURFACE;
-    volume.composite.visible =
-      ready && enabled && volume.cloudy && registry.view.clouds;
+    const drawn = ready && enabled && volume.cloudy;
+    volume.composite.visible = drawn && registry.view.clouds;
+    // Its ground drawn as it comes in, and asked for about the camera as it moves.
+    if (drawn) volume.updateTerrain(gl, state.camera);
   });
 
   return volume ? <primitive object={volume.composite} dispose={null} /> : null;

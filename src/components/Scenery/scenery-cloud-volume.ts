@@ -12,6 +12,7 @@ import {
   HalfFloatType,
   IUniform,
   LinearFilter,
+  Material,
   MathUtils,
   Matrix3,
   Matrix4,
@@ -61,6 +62,7 @@ import {
   CloudCoverVolume,
 } from './scenery-cloud-cover';
 import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
+import { CloudTerrain } from './scenery-cloud-terrain';
 import { CloudWeather } from './scenery-cloud-weather';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import type {
@@ -399,6 +401,7 @@ const fromCentre = new Vector3();
 const toWorld = new Matrix3();
 const localOffset: [number, number] = [0, 0];
 const cameraEarth = new Vector3();
+const cameraAt = new Vector3();
 const middleUp = new Vector3();
 const wayEarth = new Vector3();
 const axis = new Vector3();
@@ -465,6 +468,8 @@ export class CloudVolumeRenderer {
   // A global weather's maps of the weather systems, and each type's quantiles of the cover map
   // (and what they were filled for).
   private readonly weather: CloudWeather;
+  /** the ground under the clouds, from a relief (see {@link CloudTerrain}): none until given one */
+  readonly terrain = new CloudTerrain();
   private readonly coverTable = createCoverTable();
   private coverTableKey = '';
   private settings: CloudVolumeSettings | null = null;
@@ -530,6 +535,11 @@ export class CloudVolumeRenderer {
           Array.from({ length: 4 * CLOUD_VOLUME_LEVELS }, () => new Vector3()),
         ),
         uCloudKinds: new Uniform(levelVectors()),
+        uCloudWinds: new Uniform(levelVectors()),
+        uCloudCovers: new Uniform(
+          new Array<number>(CLOUD_VOLUME_LEVELS).fill(0),
+        ),
+        ...this.terrain.uniforms,
         uCloudMap: new Uniform<CubeTexture | null>(null),
         uCloudMapNext: new Uniform<CubeTexture | null>(null),
         uCloudTypes: new Uniform<CubeTexture | null>(null),
@@ -639,6 +649,10 @@ export class CloudVolumeRenderer {
         CLOUD_LEVELS.indexOf(level),
         k,
       );
+      // A local weather's cover, for the ground to gain on or lose (cloudSet).
+      (u.uCloudCovers.value as number[])[k] = global
+        ? 0
+        : MathUtils.clamp(layer.cover, 0, 1);
       // As thin as its densest type.
       const densest = global
         ? Math.max(...chain.map(type => settings.looks[type].extinction))
@@ -825,6 +839,12 @@ export class CloudVolumeRenderer {
         // where the camera lies in it, in the cover, its broad read and the lumps' two tilings.
         const tile = VOLUME_TILE * settings.scale * look.scale;
         wayEarth.set(ae, an, 0).applyMatrix3(toWorld);
+        (u.uCloudWinds.value[k] as Vector4).set(
+          wayEarth.x,
+          wayEarth.y,
+          wayEarth.z,
+          speed,
+        );
         moved.set(0, 0, 0);
         if (globe.enabled) {
           drift.makeRotationAxis(
@@ -970,10 +990,9 @@ export class CloudVolumeRenderer {
     const settings = this.settings!;
     const source = this.coverVolume;
     if (!source.update(renderer, settings.seed)) return false;
-    if (settings.global) {
-      this.updateTypes();
-      return true;
-    }
+    // Each type's row: a global weather's levels' place by place, a local one's over the ground.
+    this.updateTypes();
+    if (settings.global) return true;
     const u = this.marchMaterial.uniforms;
     settings.levels
       .slice(0, CLOUD_VOLUME_LEVELS)
@@ -1024,12 +1043,24 @@ export class CloudVolumeRenderer {
       this.target.setSize(width, height);
     this.updateCamera(camera, height);
     if (!this.updateLevels(renderer)) return;
-    // A global weather's maps, a few strips a frame: nothing drawn until the first is.
-    if (
-      settings.global &&
-      !this.weather.update(renderer, settings.global.seed, this.time)
-    )
-      return;
+    // A global weather's maps, a few strips a frame, over the ground once its Earth is drawn
+    // (none begun while it comes in: one without it would be drawn again at once); nothing drawn
+    // until the first is.
+    if (settings.global) {
+      const terrain = this.terrain.mapTerrain;
+      const drawn = this.terrain.waiting
+        ? this.weather.ready
+        : this.weather.update(
+            renderer,
+            settings.global.seed,
+            this.time,
+            terrain && {
+              ...terrain,
+              steer: settings.debug.steer !== false,
+            },
+          );
+      if (!drawn) return;
+    }
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
     const autoClear = renderer.autoClear;
@@ -1051,10 +1082,23 @@ export class CloudVolumeRenderer {
     );
   }
 
-  /** Dispose of its image and its share of the noise; its materials are the owner's to release. */
-  dispose() {
+  /**
+   * Draw what has come in of its ground, and ask for the ground about `camera` as it moves. In
+   * the frame loop, while it is drawn.
+   */
+  updateTerrain(renderer: WebGLRenderer, camera: Camera) {
+    cameraAt.setFromMatrixPosition(camera.matrixWorld);
+    this.terrain.update(renderer, this.sky.globe, cameraAt);
+  }
+
+  /**
+   * Dispose of its image and its share of the noise; its materials are the owner's to release,
+   * its ground's through `release` (default `dispose`).
+   */
+  dispose(release?: (material: Material) => void) {
     this.target.dispose();
     this.march.geometry.dispose();
+    this.terrain.dispose(release);
     this.coverVolume.dispose();
     this.weather.dispose();
     this.coverTable.dispose();

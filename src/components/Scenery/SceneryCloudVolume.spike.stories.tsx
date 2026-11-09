@@ -115,6 +115,10 @@ type CloudVolumeArgs = {
   globalTypes: boolean;
   /** being chosen: the low cloud's thickness sets a global weather's depth (`debug.thickness`) */
   globalThickness: boolean;
+  /** the relief as the ground the clouds lie over (`terrain`) */
+  cloudTerrain: boolean;
+  /** being chosen: the ground steers a global weather's systems' wind (`debug.steer`) */
+  steer: boolean;
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -529,6 +533,29 @@ function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
         },
       ],
     },
+    {
+      // Being chosen: the clouds over the relief, and a global weather's systems steered by it.
+      label: 'ground',
+      buttons: (
+        [
+          ['off', 'The sea’s level everywhere', false, false],
+          ['on', 'Over the relief, the systems’ wind as it is', true, false],
+          [
+            'steered',
+            'Over the relief, the systems’ wind steered by it',
+            true,
+            true,
+          ],
+        ] as const
+      ).map(([label, title, cloudTerrain, steer]) => ({
+        label,
+        title,
+        on:
+          args.cloudTerrain === cloudTerrain &&
+          (!cloudTerrain || args.steer === steer),
+        click: () => update({ cloudTerrain, steer }),
+      })),
+    },
   ];
 }
 
@@ -628,11 +655,13 @@ const CloudVolumeStory = (args: CloudVolumeArgs) => {
               quality={args.quality}
               resolution={args.ownResolution ? args.resolution : undefined}
               seed={args.volumeSeed}
+              terrain={args.cloudTerrain}
               debug={{
                 view: args.debugView === 'none' ? undefined : args.debugView,
                 air: args.debugAir,
                 types: args.globalTypes,
                 thickness: args.globalThickness,
+                steer: args.steer,
               }}
             />
           )}
@@ -761,6 +790,18 @@ const meta = {
       control: { type: 'boolean' },
       description:
         'Being chosen: a global weather’s level looks as its place along its chain of types; off, as the chain’s first type (`debug.types`).',
+      table: { category: 'Weather' },
+    },
+    cloudTerrain: {
+      control: { type: 'boolean' },
+      description:
+        'The relief as the ground the clouds lie over (`terrain`): their levels rise over high ground, a view ends where it meets it, a local weather gains cover where its wind blows up the ground, and a global weather’s systems are lifted and dried in the lee. Off, the sea’s level everywhere.',
+      table: { category: 'Cloud volume' },
+    },
+    steer: {
+      control: { type: 'boolean' },
+      description:
+        'Being chosen: the relief steers a global weather’s systems’ wind: slower over land, turned along the ridges it would blow up (`debug.steer`).',
       table: { category: 'Weather' },
     },
     globalThickness: {
@@ -897,6 +938,8 @@ const meta = {
     globalHigh: true,
     globalTypes: true,
     globalThickness: true,
+    cloudTerrain: true,
+    steer: true,
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',

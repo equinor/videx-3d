@@ -68,6 +68,11 @@ export class CloudWeather {
 
   constructor(private readonly uniforms: CloudWeatherUniforms) {}
 
+  /** Whether there is a map to draw with. */
+  get ready(): boolean {
+    return this.newer !== null;
+  }
+
   /** What draws `renderer`'s cloud maps, the same for every seed: compile them before {@link update}. */
   generators(renderer: WebGLRenderer): readonly Mesh[] {
     this.ensure(renderer);
