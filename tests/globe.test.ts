@@ -1,6 +1,7 @@
 import { Matrix4, PerspectiveCamera, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { SceneryMaterial } from '../src/components/Scenery/scenery-material';
+import { getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import { EARTH_RADIUS, Globe } from '../src/sdk/projection/globe';
 
 const R = EARTH_RADIUS;
@@ -226,6 +227,51 @@ describe('Globe, uniforms', () => {
     expect(uGlobe.value.w).toBe(0);
     g.setUp(new Vector3(0, 2, 0));
     expect(uGlobeUp.value.toArray()).toEqual([0, 1, 0]);
+  });
+});
+
+describe('Globe, version', () => {
+  // What is keyed on the version is rebuilt when it moves (the stage's hollow, ~250 ms): a
+  // caller setting the globe again on every render, as the Scenery's sky does, must not move it.
+  it('holds while the globe is set to what it already is', () => {
+    const g = globe();
+    const frame = {
+      projection: getProjectionDefFromUtmZone('31N'),
+      origin: [434500, 6478000] as [number, number],
+    };
+    g.setFrame(frame);
+    const version = g.version;
+    g.level = LEVEL;
+    g.enabled = true;
+    g.setUp(new Vector3(0, 3, 0));
+    g.setDisc([...BOUNDS]);
+    g.setFrame(frame);
+    expect(g.version).toBe(version);
+  });
+
+  it('moves with each change', () => {
+    const g = globe();
+    const changes: [string, () => void][] = [
+      ['level', () => (g.level = LEVEL + 1)],
+      ['switch', () => (g.enabled = false)],
+      ['up', () => g.setUp(new Vector3(0.1, 1, 0))],
+      ['disc', () => g.setDisc([-3000, -5000, 5000, 2000])],
+      ['no disc', () => g.setDisc(null)],
+      [
+        'frame',
+        () =>
+          g.setFrame({
+            projection: getProjectionDefFromUtmZone('31N'),
+            origin: [434500, 6478000],
+          }),
+      ],
+      ['no frame', () => g.setFrame(null)],
+    ];
+    for (const [name, change] of changes) {
+      const version = g.version;
+      change();
+      expect(g.version, name).toBeGreaterThan(version);
+    }
   });
 });
 

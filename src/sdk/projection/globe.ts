@@ -91,6 +91,7 @@ const alongZ = new Vector3();
 const normal = new Vector3();
 const planeX = new Vector3();
 const planeZ = new Vector3();
+const upGiven = new Vector3();
 const basis = new Matrix4();
 // Half the span over which Globe.tangent measures the placement, in metres.
 const TANGENT_STEP = 10;
@@ -209,6 +210,7 @@ export class Globe {
     return this.on;
   }
   set enabled(value: boolean) {
+    if (value === this.on) return;
     this.on = value;
     this.update();
   }
@@ -218,13 +220,15 @@ export class Globe {
     return this.seaLevel;
   }
   set level(value: number) {
+    if (value === this.seaLevel) return;
     this.seaLevel = value;
     this.update();
   }
 
   /**
    * How many times the globe has changed (its frame, disc, level, up, radius or switch):
-   * what is derived from where it places things can be kept while this holds.
+   * what is derived from where it places things can be kept while this holds. Setting what
+   * it already is changes nothing, so a caller may set it again on every render.
    */
   get version(): number {
     return this.changes;
@@ -256,7 +260,9 @@ export class Globe {
 
   /** Set the scene's up (normalised here). */
   setUp(up: Vector3) {
-    this.sceneUp.copy(up).normalize();
+    upGiven.copy(up).normalize();
+    if (upGiven.equals(this.sceneUp)) return;
+    this.sceneUp.copy(upGiven);
     this.update();
   }
 
@@ -266,16 +272,14 @@ export class Globe {
    * disc of no size at the origin, the sphere touching the level plane there.
    */
   setDisc(boundary: Boundary | null) {
-    if (boundary) {
-      const { centre, radius } = boundaryDisc(boundary);
-      this.discX = centre[0];
-      this.discZ = centre[1];
-      this.discR = radius;
-    } else {
-      this.discX = 0;
-      this.discZ = 0;
-      this.discR = 0;
-    }
+    const disc = boundary ? boundaryDisc(boundary) : null;
+    const x = disc ? disc.centre[0] : 0;
+    const z = disc ? disc.centre[1] : 0;
+    const r = disc ? disc.radius : 0;
+    if (x === this.discX && z === this.discZ && r === this.discR) return;
+    this.discX = x;
+    this.discZ = z;
+    this.discR = r;
     this.update();
   }
 
@@ -312,6 +316,7 @@ export class Globe {
    * ({@link geodetic}) at any distance. The frame must be projected, in metres.
    */
   setFrame(frame: GeoFrame | null) {
+    if (frame === this.mapFrame) return;
     this.mapFrame = frame;
     this.toMap = frame ? proj4(wgs84Def, frame.projection) : null;
     this.update();
