@@ -372,9 +372,11 @@ const glslMat3 = (m: number[]) => `mat3(${m.join(', ')})`;
 // lumps' and the edge's widths: no cloud reaches the top (cloud-volume-march.glsl, cloudShare).
 const ROUND_REACH = 3;
 // The most short steps through each part of a step holding cloud (cloud-volume-march.glsl,
-// cloudFine): a part up to 16 mean free paths long is walked in steps of 1, a longer one in
+// cloudMarchRuns): a part up to 16 mean free paths long is walked in steps of 1, a longer one in
 // longer steps.
 const FINE_STEPS = 16;
+// The parts a step holding cloud is split in (cloud-volume-march.glsl, CLOUD_SPLIT).
+const MARCH_SPLIT = 4;
 // A level as optically deep straight through as this, or deeper, takes the quality's steps; a
 // thinner one, fewer (down to a quarter).
 const DEEP = 8;
@@ -791,7 +793,7 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
         uCloudMarch: new Uniform(new Vector4(32, 0, 0, 1e-3)),
         uCloudLightSamples: new Uniform(2),
         uCloudFineSteps: new Uniform(FINE_STEPS),
-        uCloudRunsMost: new Uniform(0),
+        uCloudMarchMost: new Uniform(0),
         uCloudDebug: new Uniform(0),
         uCloudAir: new Uniform(1),
         uCloudJitter: new Uniform(new Vector2()),
@@ -932,7 +934,6 @@ void main() {
     const quality = settings.quality;
     const levels = settings.levels.slice(0, CLOUD_VOLUME_LEVELS);
     u.uCloudLevelCount.value = levels.length;
-    u.uCloudRunsMost.value = 2 * levels.length;
     u.uCloudLocalRadius.value = settings.local.radius;
     u.uCloudScale.value = scale;
     // Each level's shell, above the one under it, and its look: a thin level takes fewer steps.
@@ -981,6 +982,15 @@ void main() {
       (u.uCloudMarch.value as Vector4).w,
     );
     u.uCloudLightSamples.value = Math.max(Math.round(quality.lightSamples), 1);
+    // The march's turns at most: every run's steps, each split in its parts, each walked in its
+    // short steps (cloud-volume-march.glsl, cloudMarchRuns), so none is cut short.
+    u.uCloudMarchMost.value = (u.uCloudShells.value as Vector4[])
+      .slice(0, levels.length)
+      .reduce(
+        (most, shell) =>
+          most + 2 * (shell.w + 1) * (1 + MARCH_SPLIT * (1 + FINE_STEPS)),
+        0,
+      );
     u.uCloudDebug.value =
       settings.debug.view === 'cost'
         ? 1
