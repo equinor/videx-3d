@@ -164,8 +164,6 @@ varying vec3 vCloudDirection;
 // The first stretch toward the light: a cloud's skin (m, at scale 1), how its lit side and its
 // shaded side differ.
 #define CLOUD_LIGHT_SKIN 200.0
-// The logistic standing for a normal distribution's CDF: its slope.
-#define CLOUD_LOGISTIC 1.702
 // The shape volume's broadest features: this share of its tile.
 #define CLOUD_FEATURE 0.25
 // The lumps' second tiling: this many times broader (turned, CLOUD_LUMPS_TURN).
@@ -196,9 +194,9 @@ varying vec3 vCloudDirection;
 #define CLOUD_MAP_SHALLOW 0.35
 // A stretch whose share in cloud is less than CLOUD_LEAST is left out, unlit: the clouds' soft
 // edge never quite reaches nothing, and gated on a far smaller optical depth, every stretch of the
-// clear air between them was lit, each light read with the levels over it. One holding cloud but
-// hiding less than CLOUD_THIN (optical depth) is taken whole, lit once, not split nor walked in
-// short steps.
+// clear air between them was lit, each light read with the levels over it. A part of a step
+// (cloudMarchRuns) holding cloud but hiding less than CLOUD_THIN (optical depth) is taken whole,
+// lit once, not walked in short steps.
 #define CLOUD_LEAST 1e-3
 #define CLOUD_THIN 0.02
 // The most the lumps' noise reaches, in its deviations (cloudShare): both reads at 1.
@@ -609,6 +607,19 @@ vec2 cloudCoverAt(CloudLevel L, vec3 foot, float extent) {
   return vec2(b.x + f * c.x + w * c.y, spread);
 }
 
+// The normal distribution's CDF at `z` (Abramowitz and Stegun 7.1.26, its tail taken directly so
+// it keeps its precision far out): the share of a stretch's columns whose cover, spread normally
+// about its mean, passes what they need. A normal blurred is a wider normal, so a stretch read
+// whole holds what its parts do on average. The logistic it replaced did not: in the faint tail,
+// read over a long step, the clouds came out 2 to 20 times what its parts held, a glow about and
+// between them (2026-11-10).
+float cloudNormalCdf(float z) {
+  float x = abs(z) * 0.70710678;
+  float t = 1.0 / (1.0 + 0.3275911 * x);
+  float tail = 0.5 * t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * exp(-x * x);
+  return z < 0.0 ? tail : 1.0 - tail;
+}
+
 // The share in cloud of a stretch of a view about `p` in level `L` (x), and how much of it is
 // cloud and sky mixed across the pixel's footprint rather than the clouds' soft edge (y; see
 // cloudDepth): `along` the stretch's extent on the field (m), `across` the width it takes in
@@ -674,7 +685,7 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
     // CLOUD_LEAST, which every caller reading them (`fine`) takes as none. So the same, and
     // the most of a march through clear air spared two reads of the shape volume a step.
     float most = mean + L.look.y * keep * CLOUD_LUMPS_MOST - need - apart;
-    if(fade / (1.0 + exp(-CLOUD_LOGISTIC * most * scale)) <= CLOUD_LEAST)
+    if(fade * cloudNormalCdf(most * scale) <= CLOUD_LEAST)
       return vec2(0.0);
     // Read twice, the second turned and CLOUD_LUMP_BROADER times broader, at equal weight: one
     // tiling's period showed as a grid over a whole deck (as the coverage's once did).
@@ -690,7 +701,7 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
     n = (0.5 * n - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y * 1.41421356;
     mean += L.look.y * keep * n;
   }
-  float share = fade / (1.0 + exp(-CLOUD_LOGISTIC * (mean - need - apart) * scale));
+  float share = fade * cloudNormalCdf((mean - need - apart) * scale);
   // What of the spread lies across the pixel's footprint alone: the cover's, from the extent it
   // was read over down to the footprint (within a footprint smaller than the clouds, as its size
   // squared), and the lumps the footprint does not resolve. What lies along the view (the rest of
@@ -850,14 +861,18 @@ int gLevels[2 * CLOUD_LEVELS_MOST];
 //   CLOUD_STEP_FOOTPRINTS pixels' footprints. Over the ground each step raises the level over the
 //   broad ground under it (cloudSet), and the view ends where it meets the ground (gEnded): its
 //   last step shortened to it, so the clouds before it are all there. In a global weather, the
-//   step placed as the weather systems have it over all of it, so it misses no cloud in it. What
-//   holds less than CLOUD_THIN is taken whole, lit once; what holds more is split:
+//   step placed as the weather systems have it over all of it, so it misses no cloud in it. A
+//   step is only looked into, never taken: any holding cloud is split. Taken whole where it hid
+//   less than CLOUD_THIN, its cover read over a square of the field (a 3D texture's mip) though
+//   it stands for a line, the clouds it held came out more than its parts found, and as the
+//   camera moved and steps crossed the gate, pixels jumped by up to 0.2 (2026-11-10):
 // - 1, a part of a step holding cloud, one of CLOUD_SPLIT: a stretch's share is read along all of
 //   it, and a long one, at a shallow angle to the level, smeared the clouds' fronts over the rows
 //   of pixels it spans. In a global weather each part placed again at its middle, as fine as a
 //   pixel's footprint, and its short steps and their light lent that: read in each of them, at
 //   the extent of each, the cloud changed as a tilt of the view changed the steps, and its light,
-//   read apart, lit another cloud than the one it lit. A part holding cloud is walked in:
+//   read apart, lit another cloud than the one it lit. A part hiding less than CLOUD_THIN is
+//   taken whole, lit once; one hiding more is walked in:
 // - 2, short steps CLOUD_FINE of its mean free paths long (fewer and longer past
 //   uCloudFineSteps), each read for its own share and lit where its light comes from on
 //   average, 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ: near its front where it is
@@ -1022,8 +1037,9 @@ void cloudMarchRuns(int count) {
     float tau = s.x > CLOUD_LEAST ? cloudDepth(P, s.x, s.y, segLen) : 0.0;
     if(mode == 0)
       above = tau > 0.0 ? cloudAbove(l, o, max(across, 0.5 * segLen)) : 0.0;
-    // Taken whole, lit once (a short step at where its light comes from); or split.
-    bool add = mode == 2 ? tau > 0.0 : tau > 0.0 && tau < CLOUD_THIN;
+    // A part taken whole, lit once, or a short step lit where its light comes from; a step is
+    // only looked into.
+    bool add = tau > 0.0 && (mode == 2 || (mode == 1 && tau < CLOUD_THIN));
     vec3 lightAt = o;
     if(mode == 2 && add) {
       float into = tau < 1e-3 ? 0.5 : 1.0 / tau - 1.0 / (exp(min(tau, 80.0)) - 1.0);
@@ -1034,7 +1050,7 @@ void cloudMarchRuns(int count) {
     // On: into a step's parts, into a part's short steps, or on to the next stretch.
     bool stepDone = false;
     if(mode == 0) {
-      if(tau >= CLOUD_THIN) {
+      if(tau > 0.0) {
         mode = 1;
         j = 0;
         part = segLen / float(CLOUD_SPLIT);

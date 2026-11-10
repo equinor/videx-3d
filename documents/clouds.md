@@ -572,6 +572,23 @@ drew away and its steps grew, and resolved near clouds were taken as mixed and t
 see-through when walked coarser. The light toward the sun reads the same model, so the clouds'
 shaded sides deepened: a deck far off shows its domes' shading rather than a flat white band.
 
+**A step only looked into, and a normal edge (`cloudMarchRuns`, `cloudNormalCdf`; 2026-11-10).**
+A long step of the march hiding less than `CLOUD_THIN` was taken whole, one hiding more split in
+parts; but read whole it held more than its parts found. Its cover is read from a 3D texture's
+mip over a square of the field though it stands for a line along it, its spread too wide; and the
+clouds' edge was a logistic standing for the normal distribution's CDF, which blurred is no
+longer a logistic: in the faint tail, where the gate fell, a step read whole came out 2 to 20
+times what its parts held. With the gate at the steps raised to 0.1 the opening's clouds were
+24 % more opaque, at the parts 1.4 %; as the camera moved and steps crossed the gate, pixels
+jumped by up to 0.2. Now a step is only looked into (any holding cloud is split; the parts keep
+the gate), and the edge is the normal CDF (Abramowitz and Stegun 7.1.26), so a stretch read
+whole holds what its parts do on average. The opening's opacity is within 0.1 % of walking every
+step in short steps (2.9 % over before); under a 0.3 % dolly the mean change of a pixel's opacity
+fell from 10.9, 5.8 and 1.5 thousandths (opening, over, below) to 10.6, 5.4 and 1.2, what walking
+every step gives. The normal's thinner tails took the faint glow about and between the clouds, 4
+to 11 % of their opacity. The work at the opening fell (turns 32.5 → 30.2, parts 6.9 → 5.6, short
+steps 3.3 → 2.4, lights 4.6 → 3.2 a pixel); its time is within the noise (17–23 ms, Iris Xe).
+
 **The light.** Lit where each point lies: the sun's colour and daylight for its elevation there
 (so the night side is dark and the terminator warm), the moon by night, one or two samples
 toward the light (`uCloudLightSamples`, a uniform so Direct3D keeps the loop a loop), the first
