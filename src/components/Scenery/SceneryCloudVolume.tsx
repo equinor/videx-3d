@@ -289,10 +289,22 @@ export const SceneryCloudVolume = ({
       precompile(gl, volume.march, camera, scene, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
+      precompile(gl, volume.first, camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
+      precompile(gl, volume.coverGenerator(), camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
+      precompile(gl, volume.placeGenerator(), camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
       precompile(gl, volume.composite, camera, scene, 'scene', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       precompile(gl, volume.still, camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
+      precompile(gl, volume.filmMesh, camera, scene, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       precompile(gl, volume.shadowMesh, camera, scene, 'offscreen', {

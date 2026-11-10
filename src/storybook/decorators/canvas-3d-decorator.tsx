@@ -44,6 +44,11 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
   const scale = parameters.scale || 100;
   // `parameters.ownLighting(args)`: the story lights itself (a `<Scenery>`), so add none here.
   const defaultLighting = !parameters.ownLighting?.(args);
+  // `parameters.pixelRatio`: a number, or `(args) => number` for a story that sets it.
+  const pixelRatio =
+    typeof parameters.pixelRatio === 'function'
+      ? parameters.pixelRatio(args)
+      : parameters.pixelRatio;
   // Lazy initialiser, NOT `useRef(new CameraManager())` — that argument is
   // evaluated on every render and only the first result is ever kept.
   const [cameraManager] = useState(() => new CameraManager());
@@ -77,7 +82,7 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
         ],
         fov: 60,
       }}
-      dpr={Math.min(2, parameters.pixelRatio || devicePixelRatio)}
+      dpr={Math.min(2, pixelRatio || devicePixelRatio)}
       // No tone mapping, set once: as a `gl` prop it would undo a story's own on every re-render.
       flat
       gl={{

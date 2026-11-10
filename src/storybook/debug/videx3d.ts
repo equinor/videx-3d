@@ -1,6 +1,7 @@
 import { Box3, Object3D, Scene, Vector3 } from 'three';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import { Vec3 } from '../../sdk';
+import type { CloudBench } from './cloud-bench';
 import type { Videx3dGlobe } from './globe';
 import type { ProfileOptions, ProfileResult } from './profile';
 
@@ -30,6 +31,8 @@ export type Videx3dHandle = {
   profile: (options?: ProfileOptions) => Promise<ProfileResult>;
   /** the sky's globe: where the sea is far from the field, and poses over it (null answers without a `Scenery`) */
   globe: Videx3dGlobe;
+  /** the 3D clouds' GPU timings, in a story rendering `CloudBenchBridge` (see `cloud-bench.ts`) */
+  cloudBench: CloudBench;
 };
 
 declare global {

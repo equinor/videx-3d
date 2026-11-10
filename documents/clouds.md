@@ -409,8 +409,8 @@ Under the sea, the sea's level.
 - **The cloud map waits** for the Earth's map, so it is not drawn twice; a new drawing of it (the
   `World`'s frame changed) draws the cloud map again.
 
-**The march.** In the clouds' own image (its share of the screen's resolution and its steps
-from `quality`, below) along each pixel's ray, over each layer's
+**The march.** In the clouds' own image (its share of the screen's resolution in CSS pixels,
+whatever the pixel ratio, and its steps from `quality`, below) along each pixel's ray, over each layer's
 runs between its shells, up to the Earth. Steps grow with distance as fast as the runs need to
 fit the quality's steps, no faster than 12 % of the distance (`CLOUD_GROWTH_MOST`), and no
 slower either: at least three to a run. Grown by at least 4 % of the distance, and three times
@@ -433,6 +433,40 @@ A step that landed in cloud from clear air used to step back and go in again wit
 ones: a choice per pixel, which drew flat, hard-edged disks on the clouds' tops that moved
 with the camera. The samples toward the light take in at least 0.3 of the span each
 stands for, so they cross the billows rather than flicker with each one's crevices.
+
+**What the march skips, and what it reads baked (2026-11-10).** Measured on the bench
+(below), most of a view's time went before it met any cloud, and at each step on reads that
+change only with the clock:
+
+- **The first cloud** (`cloudFirstCloud`, `CLOUD_FIRST`, `CloudVolumeRenderer.first`): a lean
+  program of the march's own walks each view's steps, laid out and looked into as the march's
+  are, to the first that holds cloud, into an RG image the march's size (its run, the steps of it
+  before; −1 none). The march goes on from there (`uCloudFirst`), and a view meeting none is not
+  marched: the same steps, so the same image. Always in a local weather; in a global one from
+  under 30 km (`FIRST_HIGHEST`): higher, most views meet cloud within a few steps and finding
+  where costs more than it spares. With it off the march takes 1.16–1.42 times as long in a local
+  weather, 1.8–4.0 in a global one near the field.
+- **A local weather's cover** (`CloudCoverMap`, `scenery-cloud-cover-map.ts`, `CLOUD_COVER_MAP`):
+  each level's cover over its disc, as its two reads of the 3D cover volume and their spreads
+  give it, baked into a layer of a 2D map (768², the cover's texel; its mean and mean square, so
+  its mipmaps hold the spread over their texels), drawn anew by the march's own code whenever
+  the clock moves (0.7 ms) and never for the camera. The march, its light, the first cloud and
+  the shadows read it (`cloudCoverOf`) instead of the volume: 1.13–1.42 times as long without it,
+  the image the same to 0.003 a channel.
+- **A global weather's placing** (`CloudPlaceMap`, `scenery-cloud-place-map.ts`,
+  `CLOUD_PLACE_MAP`): the cloud map and its types as `cloudPlace` reads them (both drawings,
+  drifted, the newer dissolved in), baked on a gnomonic map about the camera's foot, as far as
+  clouds 15 km up show over its horizon, at half the cloud map's texel (192²–1024²): drawn anew
+  as the clock moves (0.12 ms), the drawings change or the camera's foot moves a tenth of its
+  reach. One read of it where the drawings take four cube reads, a value noise and the drift's
+  turns; and the walk to the first cloud passes a step it says holds none of the level without
+  placing the level at all (`cloudPlaceClear`). Together 1.1–1.25 times as long without them,
+  the image the same to 0.004. In the march's own steps past the first cloud the same skip cost
+  more than it spared (1.04–1.43 times as long), so it is not taken there.
+
+**The image's size** follows the CSS pixels, whatever the screen's pixel ratio
+(`CloudVolumeRenderer.render`): at a pixel ratio of 2, `medium` marched each CSS pixel, 4 times
+the work for little to see (1280 × 720 CSS at 2: 33.8 ms against 11.3).
 
 **Temporal accumulation** (`temporal`, on by default; `cloud-volume-resolve.glsl`). Each frame
 moves every ray by a sub-pixel jitter (Halton 2, 3, eight places) and each run's first step by
@@ -667,11 +701,17 @@ the zone, `background`, `debug.hide`).
 
 - **In the bakes:** before each bake of the air (the environment map and the light probe), the
   clouds are filmed as seen from where the air is filmed (100 m over the sea at the disc's
-  centre): a cube map 128² a face, each face marched once at half that, a still, coarser than
-  the view's (`FILM_*`: 4 short steps through cloud, one sample toward the light, half each
-  level's steps; a 64² face costs as long as its slowest ray, so the view's march took 49 ms for
-  the six on an Iris Xe, this 20), and drawn over the sky in the bake (`CloudVolumeRenderer.film`).
-  Filmed again only once their version changes, the place moves or the sun has turned half a
+  centre): a cube map 128² a face, each face drawn once at half that, a still, and drawn over
+  the sky in the bake (`CloudVolumeRenderer.film`). Each run through a level is taken whole
+  (`filmWhole`, `CLOUD_FILM`, `cloudFilmRuns`): one stretch read over all of it (the cover's mean
+  and spread along it, no lumps) and lit once at its middle, toward the light as the march
+  lights. Blurred as the bakes and the sea read it, it needs no more: marched as the view is,
+  its rays along the layers to the horizon took 3–4 ms a face, 3.8–6.7 ms the six; taken whole,
+  0.6–1.1 ms (Iris Xe, 1280 × 720, 2026-11-10). The light probe's six faces are read back
+  behind one fence (`readFloatTargetAsync`, `cubeFacesToSphericalHarmonics`): three's
+  `LightProbeGenerator` asked for each face's readable format first, a synchronous round trip
+  that stood the page 59 ms at each bake. Filmed again only once their version changes, the
+  place moves or the sun has turned half a
   degree (`FILM_TURN`): the bakes film twice, the environment's and the probe's, and again at
   each step of a sun on the weather's clock. Under
   overcast the environment and the probe turn grey, and what reflects them dims. A change to
@@ -701,12 +741,13 @@ the zone, `background`, `debug.hide`).
 - **Shadows** on the sea and the relief: a map of the share of the light that reaches the
   ground (512², 8 bits) over a square about the camera's foot, from 20 km to 200 km from its
   middle to its sides (8 times the camera's height), marched toward the light from the ground
-  (the terrain's, under the relief) across each layer in 8 samples, with the march's own
+  (the terrain's, under the relief) across each layer in 2 samples (`SHADOW_SAMPLES`; 8 cost
+  1.3–3.0 ms a drawing, 2 cost 0.3–1.0, alike enough for shadows), with the march's own
   coverage, weather and terrain (`cloud-volume-march.glsl` under `CLOUD_SHADOW`: one source,
   so the shadows are the clouds'). Drawn again only once the camera's foot is a tenth of the
   reach from its middle, the light has turned 1°, or the clouds, the terrain or the globe
-  changed, or the clouds have drifted a tenth of it or lived a fiftieth of their lifetime: 5.6 ms
-  of GPU each time for two levels (Iris Xe, 2026-11-10), none at rest. Between, the map is
+  changed, or the clouds have drifted a tenth of it or lived a fiftieth of their lifetime; none
+  at rest. Between, the map is
   carried with the lowest level's wind. The sea
   and the relief scale the dimmed light (`cloud-shadow.glsl`) by the map's share over the share
   it was dimmed to, so a sunlit patch is lit by the whole sun and a shaded one by what gets
@@ -717,6 +758,36 @@ the zone, `background`, `debug.hide`).
   subsurface's light); not on what the host draws (it takes the dimmed light).
 
 ## Measured
+
+**Measuring (the bench, 2026-11-10).** Time the clouds on `debug/Scenery/Cloud Bench`
+(`src/components/Scenery/debug/CloudBench.stories.tsx`): the clouds alone (the sky's own layers
+hidden; the sea, the stage, the hollow, the bakes and the relief off unless asked for), in a
+canvas of a fixed size at a fixed pixel ratio (1280 × 720 at 1 by default), from named poses. Its
+panel and `window.videx3d.cloudBench` (`src/storybook/debug/cloud-bench.ts`) time each pass alone
+(`pass`), frames as they run with each step of the clouds' frame apart (`frames`), the march's
+loop per pixel (`count`), and variants of the march's program or uniforms against it (`ab`).
+Every result carries the conditions it was taken under; compare only those that match.
+
+- ⚠️ On the Iris Xe the GPU's clock jumps between plateaus: the same march took 11.3 to 52 ms
+  from one round to the next. Medians of runs taken apart said what they liked (a variant read
+  2.5 times slower, then 0.8). `ab` times the march and a variant seconds apart, in rounds, and
+  takes the median of each round's own ratio; run a control (a define that changes nothing) with
+  every set: it reads 1.00 ± 0.1.
+- ⚠️ A program just compiled runs about twice as slow for some seconds (the same new variant read
+  1.20 timed at once, 0.64 after 3 s drawn untimed). `ab` draws each variant 3 s first
+  (`settle`). Earlier findings here that a change "saved nothing" or cost more may have been
+  either of these.
+- `ab`'s `diff` (the mean difference of a variant's image, per channel) tells a change that only
+  moved the time from one that changed what is drawn, whose time then moved with what it drew.
+- A browser hook that wrapped `drawArrays` with a `getError` before and after each draw (from a
+  debugging session, not the repository) took 88 % of the page's main thread; the bench warns when
+  WebGL's methods are not the browser's own.
+
+The march at 1280 × 720 CSS, `medium` (640 × 360), scattered cumulus, settled, its first pass
+and baked maps in: local 10–14 ms from 3 km and inside the layer, 3.8 from 200 km, 2.7 from the
+Earth view; global 6–12 near the field. In cloud, the lumps' two reads of the shape volume are
+some 30 % of it, the light toward the sun 20–25 %, the short steps through cloud up to 40 % inside
+a layer; a view with no cloud at all costs 1.85 ms.
 
 **The step plan (2026-11-07).** Scattered cumulus in a local weather, `medium`, march alone
 timed back to back (readPixels to sync, Iris Xe, 375 × 233 sparse); the timings here swung

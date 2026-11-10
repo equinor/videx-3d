@@ -146,6 +146,10 @@ count it as non-interactive. Its buttons are buttons of their own.
 surfaces are fetched one at a time on purpose: each is a full grid, and a cancelled build
 stops before the next one is fetched.
 
+**`eslint/no-await-in-loop`** in `src/storybook/debug/cloud-bench.ts` (the whole file) — a
+measurement waits for each timing before the next: one GPU timer query is open at a time, and
+draws timed together would time each other.
+
 ---
 
 ## Formerly open findings (resolved 2026-10-14)

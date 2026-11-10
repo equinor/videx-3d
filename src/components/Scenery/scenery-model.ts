@@ -227,8 +227,8 @@ export type SceneryCloudVolumeProps = {
    */
   quality?: SceneryCloudVolumeQuality;
   /**
-   * the share of the screen's resolution their image is drawn at, from 0.25 to 1, instead of the
-   * quality's. Default the quality's
+   * the share of the screen's resolution in CSS pixels their image is drawn at (whatever the
+   * screen's pixel ratio), from 0.25 to 1, instead of the quality's. Default the quality's
    */
   resolution?: number;
   /** what they show instead of themselves, to see how they are made. Default none */

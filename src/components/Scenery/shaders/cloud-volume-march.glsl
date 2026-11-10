@@ -116,6 +116,16 @@ uniform vec4 uCloudLightArea;
 uniform float uCloudLightFade;
 uniform vec2 uCloudLightDrift[2 * CLOUD_LEVELS_MOST];
 uniform int uCloudLightMode;
+// A local weather's cover maps (CloudCoverMap, scenery-cloud-cover-map.ts): a layer a level, on
+// the field over the weather's disc (uCloudCoverArea: the map's middle on the field, its
+// half-width (m), its texels a side), each texel the level's cover over it as cloudCoverAt reads
+// it from the cover volume (two reads of it, and their spreads), drawn anew as the clock runs: its
+// mean, and its mean square (its spread with the mean squared, so a mip's average holds the
+// spread over all of the mip's texel). Read instead of the volume within it (cloudCoverOf), while
+// uCloudCoverOn.
+uniform highp sampler2DArray uCloudCoverMap;
+uniform vec4 uCloudCoverArea;
+uniform bool uCloudCoverOn;
 
 #if defined(CLOUD_GLOBAL)
 // A global weather (scenery-cloud-weather.ts): the weather systems' cloud over the whole Earth
@@ -135,6 +145,15 @@ uniform float uCloudMapTexels;
 // level's look follows its place along its chain (1) or is its chain's first (0), and whether
 // the low cloud's thickness sets how deep and dense the cloud is (1) or its type alone (0).
 uniform vec4 uCloudGlobal;
+// The weather about the camera, baked (CloudPlaceMap, scenery-cloud-place-map.ts): the cloud map
+// and its types as cloudPlace reads them (both drawings, drifted, the newer dissolved in), on a
+// gnomonic map of the Earth about the camera's foot (uCloudPlaceAxes: its east, north and up
+// there, fixed on the Earth), layer 0 the cloud map, 1 the types. uCloudPlaceArea: the map's
+// half-width (as a tangent), its texels a side, a texel at its middle (m), and whether it is on.
+// Read once where the drawings take two cube reads each, a value noise and the drift's turns.
+uniform highp sampler2DArray uCloudPlaceMap;
+uniform mat3 uCloudPlaceAxes;
+uniform vec4 uCloudPlaceArea;
 #endif
 
 varying vec3 vCloudDirection;
@@ -394,8 +413,27 @@ vec4 cloudMapBlend(samplerCube older, samplerCube newer, vec3 way, float lod, fl
 bool cloudPlace(inout CloudLevel L, vec3 p, float extent) {
   vec3 way = normalize(uCloudFieldEarth * vec3(p.xy, p.z + uCloudEarthRadius));
   float lod = log2(max(2.0 * extent * uCloudMapTexels, 1.0));
-  float blend = cloudMapShare(way);
-  vec4 m = cloudMapBlend(uCloudMap, uCloudMapNext, way, lod, blend);
+  // From the map baked about the camera where it reaches (CloudPlaceMap), at the same footprint.
+  vec3 baked = vec3(-1.0);
+  float bakedLod = 0.0;
+#if !defined(CLOUD_PLACE_MAP)
+  float facing = dot(way, uCloudPlaceAxes[2]);
+  if(uCloudPlaceArea.w > 0.5 && facing > 0.0) {
+    vec2 at = vec2(dot(way, uCloudPlaceAxes[0]), dot(way, uCloudPlaceAxes[1])) / (facing * uCloudPlaceArea.x) * 0.5 + 0.5;
+    if(all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0)))) {
+      baked = vec3(at, 0.0);
+      bakedLod = log2(max(2.0 * extent / uCloudPlaceArea.z, 1.0));
+    }
+  }
+#endif
+  float blend = 0.0;
+  vec4 m = vec4(0.0);
+  if(baked.x >= 0.0)
+    m = textureLod(uCloudPlaceMap, baked, bakedLod);
+  else {
+    blend = cloudMapShare(way);
+    m = cloudMapBlend(uCloudMap, uCloudMapNext, way, lod, blend);
+  }
   int channel = int(L.kind.z);
   vec3 covers = vec3(m.r, m.b, m.a);
   vec3 mine = vec3(equal(ivec3(0, 1, 2), ivec3(channel)));
@@ -411,7 +449,11 @@ bool cloudPlace(inout CloudLevel L, vec3 p, float extent) {
     return false;
   float place = 0.0;
   if(uCloudGlobal.y > 0.5 && L.kind.y > 0.0) {
-    vec4 t = cloudMapBlend(uCloudTypes, uCloudTypesNext, way, max(lod - 1.0, 0.0), blend);
+    vec4 t = vec4(0.0);
+    if(baked.x >= 0.0)
+      t = textureLod(uCloudPlaceMap, vec3(baked.xy, 1.0), bakedLod);
+    else
+      t = cloudMapBlend(uCloudTypes, uCloudTypesNext, way, max(lod - 1.0, 0.0), blend);
     place = (channel == 0 ? t.r : (channel == 1 ? t.g : t.b)) * L.kind.y;
   }
   float i = min(floor(place), max(L.kind.y - 1.0, 0.0));
@@ -438,10 +480,37 @@ bool cloudPlace(inout CloudLevel L, vec3 p, float extent) {
   L.shell.z = extinction;
   return true;
 }
+
+// Whether the map baked about the camera (CloudPlaceMap) says level `l` holds no cloud at `p`
+// (on the field's frame), read over `extent` (m): its cover there under what cloudPlace takes as
+// none, so cloudPlace would find none either (the levels covering more only cut it). False out
+// of the map: not known. One read, where a step's level and its placing cost a score: the walk
+// to the first cloud passes most steps so (2026-11-10, global near the field: 7–14 % of the march).
+bool cloudPlaceClear(int l, vec3 p, float extent) {
+#if defined(CLOUD_PLACE_MAP)
+  return false;
+#else
+  vec3 way = normalize(uCloudFieldEarth * vec3(p.xy, p.z + uCloudEarthRadius));
+  float facing = dot(way, uCloudPlaceAxes[2]);
+  if(uCloudPlaceArea.w < 0.5 || facing <= 0.0)
+    return false;
+  vec2 at = vec2(dot(way, uCloudPlaceAxes[0]), dot(way, uCloudPlaceAxes[1])) / (facing * uCloudPlaceArea.x) * 0.5 + 0.5;
+  if(any(lessThan(at, vec2(0.0))) || any(greaterThan(at, vec2(1.0))))
+    return false;
+  vec4 m = textureLod(uCloudPlaceMap, vec3(at, 0.0), log2(max(2.0 * extent / uCloudPlaceArea.z, 1.0)));
+  int channel = int(uCloudKinds[l].z);
+  float cover = channel == 0 ? m.r : (channel == 1 ? m.b : m.a);
+  return cover < 0.003;
+#endif
+}
 #else
 // A local weather's levels are as their uniforms have them everywhere.
 bool cloudPlace(inout CloudLevel L, vec3 p, float extent) {
   return true;
+}
+
+bool cloudPlaceClear(int l, vec3 p, float extent) {
+  return false;
 }
 #endif
 
@@ -607,6 +676,23 @@ vec2 cloudCoverAt(CloudLevel L, vec3 foot, float extent) {
   return vec2(b.x + f * c.x + w * c.y, spread);
 }
 
+// As cloudCoverAt, the column at `field` (on the field): from a local weather's cover map where
+// it reaches (uCloudCoverOn), one read of a 2D map for its two of the 3D volume; else from the
+// volume.
+vec2 cloudCoverOf(CloudLevel L, vec3 foot, vec2 field, float extent) {
+#if !defined(CLOUD_GLOBAL) && !defined(CLOUD_COVER_MAP)
+  // Returned from within: written as one return after a branch, the volume was read anyway.
+  float side = 2.0 * uCloudCoverArea.z;
+  vec2 at = (field - uCloudCoverArea.xy) / side + 0.5;
+  if(uCloudCoverOn && all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0)))) {
+    float lod = log2(max(extent * uCloudCoverArea.w / side, 1.0));
+    vec2 m = textureLod(uCloudCoverMap, vec3(at, L.kind.w), lod).xy;
+    return vec2(m.x, max(m.y - m.x * m.x, 0.0));
+  }
+#endif
+  return cloudCoverAt(L, foot, extent);
+}
+
 // The normal distribution's CDF at `z` (Abramowitz and Stegun 7.1.26, its tail taken directly so
 // it keeps its precision far out): the share of a stretch's columns whose cover, spread normally
 // about its mean, passes what they need. A normal blurred is a wider normal, so a stretch read
@@ -652,7 +738,7 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
     return vec2(0.0);
   vec2 field = cloudFieldOf(p);
   vec3 up = cloudUpOf(p);
-  vec2 c = cloudCoverAt(L, cloudFootOf(o, up, own), max(length(along), across));
+  vec2 c = cloudCoverOf(L, cloudFootOf(o, up, own), field, max(length(along), across));
   // The cover the column needs here, and its spread over the stretch's climb.
   float h = clamp(u, 0.0, 1.0);
   float span = L.need.y - L.need.x;
@@ -889,10 +975,28 @@ int gLevels[2 * CLOUD_LEVELS_MOST];
 // and the pixels the GPU runs together waited on one another's walks through cloud one after
 // another (2026-11-10). The depth toward the light through the levels over a step (cloudAbove)
 // is read once a step, lent to its parts and short steps.
+//
+// With uCloudFirstOn, the march begins where the view first meets cloud (cloudFirstCloud, drawn
+// before it into uCloudFirst: its run and the steps of it before), a view meeting none not
+// marched at all: the same steps from there, so the same image, without walking the clear air
+// before it in this program (2026-11-10: local 8–18 % faster, global near the field 14–33 %).
+uniform sampler2D uCloudFirst;
+uniform bool uCloudFirstOn;
+
 void cloudMarchRuns(int count) {
+  // Where the view first meets cloud: its run, and the steps of it before.
+  int firstRun = 0;
+  int firstStep = 0;
+  if(uCloudFirstOn) {
+    vec2 first = texelFetch(uCloudFirst, ivec2(gl_FragCoord.xy), 0).xy;
+    if(first.x < 0.0)
+      return;
+    firstRun = int(first.x + 0.5);
+    firstStep = int(first.y + 0.5);
+  }
   // The run: its index, level, steps (n) and steps taken (i); its near end and how far it reaches
   // in the log of the distance (k), a step of it (dk), where the step ends (u) and the next (next).
-  int r = -1;
+  int r = firstRun - 1;
   int l = 0;
   int n = 0;
   int i = 0;
@@ -951,6 +1055,13 @@ void cloudMarchRuns(int count) {
       u = 0.0;
       next = dk;
       from = run.x;
+      // The first run met in cloud: on from the step that meets it, as laid out from its start.
+      if(r == firstRun && firstStep > 0) {
+        u = float(firstStep) * dk;
+        next = u + dk;
+        i = firstStep;
+        from = start + near * (exp(u) - 1.0);
+      }
       vec3 a = cloudFieldPoint(gD, from);
       fieldA = cloudFieldOf(a);
       altitudeA = cloudAltitudeOf(a);
@@ -1100,6 +1211,139 @@ void cloudMarchRuns(int count) {
   }
 }
 
+#if defined(CLOUD_FIRST)
+// Where the view first meets cloud (CLOUD_FIRST, for uCloudFirst): its runs' steps alone, laid out
+// and looked into as cloudMarchRuns' steps are (mode 0), up to the first holding cloud: (its run,
+// the steps of it before); (−1, 0) where none does. ⚠️ Keep it in step with cloudMarchRuns' steps:
+// the march goes on from where this says, so any difference between the two is cloud missed.
+vec2 cloudFirstCloud(int count) {
+  int r = -1;
+  int l = 0;
+  int n = 0;
+  int i = 0;
+  float start = 0.0;
+  float near = 50.0;
+  float k = 0.0;
+  float dk = 1.0;
+  float u = 0.0;
+  float next = 0.0;
+  float from = 0.0;
+  vec2 fieldA = vec2(0.0);
+  float altitudeA = 0.0;
+  float overA = 0.0;
+  for(int turn = 0; turn < uCloudMarchMost; turn++) {
+    if(gEnded)
+      break;
+    if(r < 0 || u >= k || i > n) {
+      r++;
+      if(r >= count)
+        break;
+      l = gLevels[r];
+      vec2 run = gRuns[r];
+      n = int(uCloudShells[l].w);
+      i = 0;
+      start = run.x;
+      near = max(run.x, 50.0);
+      k = max(log(1.0 + (run.y - run.x) / near), 1e-4);
+      dk = max(k / float(n), log(1.0 + CLOUD_STEP_FOOTPRINTS * uCloudMarch.w));
+      u = 0.0;
+      next = dk;
+      from = run.x;
+      vec3 a = cloudFieldPoint(gD, from);
+      fieldA = cloudFieldOf(a);
+      altitudeA = cloudAltitudeOf(a);
+      overA = cloudOverGround(a, from);
+    }
+    i++;
+    u = min(next, k);
+    next += dk;
+    float to = start + near * (exp(u) - 1.0);
+    vec3 b = cloudFieldPoint(gD, to);
+    float overB = cloudOverGround(b, to);
+    if(overB < 0.0) {
+      gEnded = true;
+      to = from + (to - from) * max(overA, 0.0) / (max(overA, 0.0) - overB);
+      if(to - from <= 1.0)
+        break;
+      b = cloudFieldPoint(gD, to);
+    }
+    vec2 fieldB = cloudFieldOf(b);
+    float altitudeB = cloudAltitudeOf(b);
+    float mid = from + 0.5 * (to - from);
+#if !defined(CLOUD_GLOBAL)
+    gEdgeNoise = cloudEdgeNoise(0.5 * (fieldA + fieldB));
+#endif
+    if(gTerrain)
+      gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + gD * mid));
+    float across = max(uCloudMarch.w * mid, 0.5);
+    vec3 o = gD * mid;
+    float rise = abs(altitudeB - altitudeA);
+    float extent = max(across, max(length(fieldB - fieldA), rise));
+    // Clear there as the baked weather has it: on, without placing the level.
+    if(cloudPlaceClear(l, uCloudCamera + o, extent)) {
+      from = to;
+      fieldA = fieldB;
+      altitudeA = altitudeB;
+      overA = overB;
+      continue;
+    }
+    CloudLevel P = cloudLevel(l);
+    bool placed = cloudSet(P, uCloudCamera + o, extent);
+    vec2 s = placed ? cloudShare(P, o, fieldB - fieldA, across, rise, true) : vec2(0.0);
+    if(s.x > CLOUD_LEAST)
+      return vec2(float(r), float(i - 1));
+    from = to;
+    fieldA = fieldB;
+    altitudeA = altitudeB;
+    overA = overB;
+  }
+  return vec2(-1.0, 0.0);
+}
+#endif
+
+#if defined(CLOUD_FILM)
+// The film's view (CloudVolumeRenderer.film: the scene's bakes of the air and the sea's
+// reflection, blurred in both): each run through a level taken whole, one stretch read over all of
+// it and lit once at its middle, toward the light in the march's own way. As opaque as the
+// march's stretches make it (cloudDepth), its detail averaged over the run (the cover's mean and
+// spread along it); no lumps. Marching the film as the view is marched, its rays along the layers
+// to the horizon took 3–4 ms a face (Iris Xe, 2026-11-10).
+void cloudFilmRuns(int count) {
+  for(int r = 0; r < 2 * CLOUD_LEVELS_MOST; r++) {
+    if(r >= count || gTransmit < 0.01)
+      break;
+    int l = gLevels[r];
+    vec2 run = gRuns[r];
+    float from = max(run.x, 0.0);
+    float len = run.y - from;
+    if(len <= 1.0)
+      continue;
+    float mid = from + 0.5 * len;
+    vec3 a = cloudFieldPoint(gD, from);
+    vec3 b = cloudFieldPoint(gD, run.y);
+    vec2 fieldA = cloudFieldOf(a);
+    vec2 fieldB = cloudFieldOf(b);
+    float rise = abs(cloudAltitudeOf(b) - cloudAltitudeOf(a));
+    vec3 o = gD * mid;
+    float across = max(uCloudMarch.w * mid, 0.5);
+#if !defined(CLOUD_GLOBAL)
+    gEdgeNoise = cloudEdgeNoise(0.5 * (fieldA + fieldB));
+#endif
+    if(gTerrain)
+      gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + o));
+    CloudLevel P = cloudLevel(l);
+    if(!cloudSet(P, uCloudCamera + o, max(across, max(length(fieldB - fieldA), rise))))
+      continue;
+    vec2 s = cloudShare(P, o, fieldB - fieldA, across, rise, false);
+    if(s.x <= CLOUD_LEAST)
+      continue;
+    float tau = cloudDepth(P, s.x, s.y, len);
+    float wide = max(across, 0.5 * len);
+    cloudAdd(from, len, tau / len, cloudLight(P, o, wide, cloudAbove(l, o, wide)));
+  }
+}
+#endif
+
 // Where the column at `field` stands `altitude` over the sea, on the field's frame (on the plane
 // with the globe off): its up part written as the difference it is, to keep its precision.
 vec3 cloudFieldColumn(vec2 field, float altitude) {
@@ -1152,6 +1396,39 @@ void main() {
   }
   gl_FragColor = vec4(dot(quarters, vec4(1.0)), quarters.y + quarters.z + quarters.w, quarters.z + quarters.w, quarters.w);
 }
+#elif defined(CLOUD_COVER_MAP)
+// A texel of level uCloudCoverLevel's cover map (CloudCoverMap): the cover of the column at its
+// middle, read from the cover volume over a texel as the march reads it (cloudCoverAt), with the
+// clock's drift and lives in the level's uniforms; out, its mean and its mean square.
+uniform int uCloudCoverLevel;
+
+void main() {
+  float side = 2.0 * uCloudCoverArea.z;
+  float texel = side / uCloudCoverArea.w;
+  vec2 field = uCloudCoverArea.xy + (gl_FragCoord.xy / uCloudCoverArea.w - 0.5) * side;
+  CloudLevel L = cloudLevel(uCloudCoverLevel);
+  vec3 o = cloudFieldColumn(field, 0.0) - uCloudCamera;
+  vec2 c = cloudCoverAt(L, cloudFootOf(o, vec3(0.0, 0.0, 1.0), 0.0), texel);
+  gl_FragColor = vec4(c.x, c.y + c.x * c.x, 0.0, 1.0);
+}
+#elif defined(CLOUD_PLACE_MAP) && defined(CLOUD_GLOBAL)
+// A texel of the weather baked about the camera (CloudPlaceMap): layer uCloudPlaceLayer of what
+// cloudPlace reads at its middle, over a texel: the cloud map (0) or its types (1), both
+// drawings, drifted, the newer dissolved in.
+uniform int uCloudPlaceLayer;
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy / uCloudPlaceArea.y * 2.0 - 1.0) * uCloudPlaceArea.x;
+  vec3 way = normalize(uCloudPlaceAxes[2] + uv.x * uCloudPlaceAxes[0] + uv.y * uCloudPlaceAxes[1]);
+  float lod = log2(max(uCloudPlaceArea.z * uCloudMapTexels, 1.0));
+  float blend = cloudMapShare(way);
+  vec4 value = vec4(0.0);
+  if(uCloudPlaceLayer == 0)
+    value = cloudMapBlend(uCloudMap, uCloudMapNext, way, lod, blend);
+  else
+    value = cloudMapBlend(uCloudTypes, uCloudTypesNext, way, max(lod - 1.0, 0.0), blend);
+  gl_FragColor = value;
+}
 #elif defined(CLOUD_SHADOW)
 // The clouds' shadows (CloudVolumeRenderer.updateShadow): over a square about the camera's foot
 // (its middle from the camera and how far it reaches to its sides, world; its east and north),
@@ -1161,12 +1438,12 @@ uniform vec3 uCloudShadowEast;
 uniform vec3 uCloudShadowNorth;
 uniform float uCloudShadowSize;
 
-// Samples across each level toward the light.
-#define CLOUD_SHADOW_SAMPLES 8
+// Samples across each level toward the light (CloudVolumeRenderer.updateShadow's own count).
+uniform int uCloudShadowSamples;
 
 // The share of the light (the sun's, or the moon's) that reaches the ground under a texel of the
 // square through the levels: across each, as it rises over the broad ground there, toward the
-// light in CLOUD_SHADOW_SAMPLES stretches, each placed (cloudSet) and read as the march's own
+// light in uCloudShadowSamples stretches, each placed (cloudSet) and read as the march's own
 // toward the light are (cloudLight), no narrower than a texel. The march's own code, so the
 // shadows are the clouds'. None where the light is under the horizon.
 void main() {
@@ -1200,9 +1477,9 @@ void main() {
     float to = max(L.shell.y + rise - ground, 0.0) / r;
     if(to <= from)
       continue;
-    float len = (to - from) / float(CLOUD_SHADOW_SAMPLES);
+    float len = (to - from) / float(uCloudShadowSamples);
     float extent = max(texel, 0.25 * len);
-    for(int k = 0; k < CLOUD_SHADOW_SAMPLES; k++) {
+    for(int k = 0; k < uCloudShadowSamples; k++) {
       vec3 q = g + gWay * (from + (float(k) + 0.5) * len);
       CloudLevel S = L;
       if(!cloudSet(S, q, extent))
@@ -1315,14 +1592,24 @@ void main() {
     }
   }
 
-  // Lit as where the view first meets cloud.
-  gLighting = cloudLightingAt(dir, cloudUpAt(count > 0 ? max(runs[0].x, 0.0) : 0.0));
-  gWay = vec3(dot(gLighting.way, uCloudFrameE), dot(gLighting.way, uCloudFrameN), dot(gLighting.way, uCloudFrameM));
   for(int r = 0; r < 2 * CLOUD_LEVELS_MOST; r++) {
     gRuns[r] = runs[r];
     gLevels[r] = levels[r];
   }
+#if defined(CLOUD_FIRST)
+  // Where it first meets cloud, for the march (uCloudFirst).
+  gl_FragColor = vec4(cloudFirstCloud(count), 0.0, 1.0);
+  return;
+#endif
+
+  // Lit as where the view first meets cloud.
+  gLighting = cloudLightingAt(dir, cloudUpAt(count > 0 ? max(runs[0].x, 0.0) : 0.0));
+  gWay = vec3(dot(gLighting.way, uCloudFrameE), dot(gLighting.way, uCloudFrameN), dot(gLighting.way, uCloudFrameM));
+#if defined(CLOUD_FILM)
+  cloudFilmRuns(count);
+#else
   cloudMarchRuns(count);
+#endif
 
   if(uCloudDebug == 1) {
     // The march's cost: blue none, through green and yellow, to red at its most.

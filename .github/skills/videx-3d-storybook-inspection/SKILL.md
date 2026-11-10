@@ -100,7 +100,13 @@ coordinates yourself.
   booleans as `!true` / `!false`, `#` in colours as `%23`. Prefer `setArgs` over
   URL args once the page is up.
 - Story ids used here: `spikes-chunks-fieldcolumn--default`,
-  `spikes-scenery-stagedebug--default`, `spikes-scenery-relieftiles--default`.
+  `spikes-scenery-stagedebug--default`, `spikes-scenery-relieftiles--default`,
+  `debug-scenery-cloud-bench--default` (the 3D clouds alone, fixed 1280 × 720 at 1; time them
+  with `window.videx3d.cloudBench`: `pass`, `frames`, `count`, `ab` — documents/clouds.md,
+  "Measuring").
+- ⚠️ GPU A/B on the Iris Xe: the clock jumps between plateaus (one march 11→52 ms) and a program
+  just compiled runs ~2× slow for seconds. Judge only interleaved per-round ratios with a no-op
+  control, new programs drawn untimed ~3 s first (`cloudBench.ab` does both).
 - ⚠️ `camera.settled()` never resolves with the camera in the water (StageDebug at −30 m): a
   script awaiting it hangs. After `transition: false` the pose has landed; wait two
   animation frames instead.

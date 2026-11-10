@@ -27,12 +27,13 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
-import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
 import {
   precompile,
   PRECOMPILE_PRIORITY,
   PrecompileOptions,
 } from '../../rendering/precompile';
+import { readFloatTargetAsync } from '../../sdk/utils/read-target-async';
+import { cubeFacesToSphericalHarmonics } from '../../sdk/utils/spherical-harmonics';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import subsurfaceFragmentShader from './shaders/subsurface-fragment.glsl';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
@@ -52,6 +53,8 @@ import { sceneryOceanDefines } from './scenery-stage';
 import type { ScenerySkyOverlay } from './scenery-registry';
 
 const PROBE_RESOLUTION = 32;
+// A cube target's faces, read for the probe in this order (cubeFacesToSphericalHarmonics').
+const CUBE_FACES = [0, 1, 2, 3, 4, 5];
 // How far above the sea surface (or the abyss level) the air is filmed from, in world units.
 const AIR_BAKE_HEIGHT = 100;
 // After every layer of the sky, the sea's surface the last (at 1).
@@ -449,7 +452,8 @@ export class SceneryBaker {
   }
 
   /**
-   * Film a zone and project it to spherical harmonics; the readback is asynchronous,
+   * Film a zone and project it to spherical harmonics; the readback is asynchronous (all six
+   * faces behind one fence, without three's synchronous format queries: `readFloatTargetAsync`),
    * and resolves `null` if the baker is disposed meanwhile, or the bake is not finite: a
    * probe lights the next bake's seabed, so one bad bake would poison every one after it.
    * One at a time: they share a target.
@@ -460,20 +464,19 @@ export class SceneryBaker {
   ): Promise<SphericalHarmonics3 | null> {
     this.film(renderer, zone, this.probeCamera);
     const generation = this.generation;
-    return LightProbeGenerator.fromCubeRenderTarget(
-      renderer,
-      this.probeTarget,
-    ).then(
-      probe =>
-        generation === this.generation &&
-        probe.sh.coefficients.every(
+    return readFloatTargetAsync(renderer, this.probeTarget, CUBE_FACES).then(
+      pixels => {
+        if (generation !== this.generation) return null;
+        const sh = cubeFacesToSphericalHarmonics(pixels, PROBE_RESOLUTION);
+        return sh.coefficients.every(
           c =>
             Number.isFinite(c.x) &&
             Number.isFinite(c.y) &&
             Number.isFinite(c.z),
         )
-          ? probe.sh
-          : null,
+          ? sh
+          : null;
+      },
       error => {
         if (generation === this.generation) throw error;
         return null;

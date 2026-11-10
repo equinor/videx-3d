@@ -30,6 +30,7 @@ import {
 } from '../../storybook/components/scenery-debug-panel';
 import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
 import { SceneryStoryRendering } from '../../storybook/components/scenery-story-rendering';
+import { CloudBenchBridge } from '../../storybook/debug/cloud-bench';
 import { setStoryArgs } from '../../storybook/debug/videx3d';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -692,6 +693,7 @@ const CloudVolumeStory = (args: CloudVolumeArgs) => {
         </ClockedScenery>
       </Weather>
       {relief && <GeoRelief {...relief} />}
+      <CloudBenchBridge />
     </World>
   );
 };
@@ -912,7 +914,7 @@ const meta = {
         0.25,
         1,
         0.05,
-        'The share of the screen’s resolution their image is drawn at.',
+        'The share of the screen’s resolution in CSS pixels their image is drawn at, whatever its pixel ratio.',
       ),
       if: { arg: 'ownResolution' },
     },
