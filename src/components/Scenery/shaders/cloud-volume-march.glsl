@@ -149,6 +149,12 @@ varying vec3 vCloudDirection;
 // A step along a view spans no less than this many pixels' footprints: as fine as that, a view
 // straight down through a level from high up spent its steps where nothing changes.
 #define CLOUD_STEP_FOOTPRINTS 2.0
+// A part holding cloud is walked in short steps no shorter than this many of the pixel's
+// footprints across the view: far off, where a free path is a fraction of a pixel, finer steps
+// read what the pixel cannot show. With the clouds as opaque however finely walked
+// (cloudDepth), 2 changed the image by no more than 0.02 in 99.5 % of its pixels at five views;
+// at 4 the light through the clouds' sides shifted up to 5 %.
+#define CLOUD_FINE_FOOTPRINTS 2.0
 // A part holding cloud is walked in short steps this many of its level's mean free paths
 // (1 / extinction) long (cloudMarchRuns). At 4, faint bands came back at a shallow angle; at 2, each
 // step was near opaque, so the clouds were lit as at one point a step, and where a part's whole
@@ -857,9 +863,11 @@ int gLevels[2 * CLOUD_LEVELS_MOST];
 //   average, 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ: near its front where it is
 //   dense, its middle where it is thin. The light a view sees comes from within a free path or
 //   two of where it enters a cloud, and changes as fast: lit once per long step, the clouds
-//   banded where the steps fell, as the camera tilted. Not shortened only as far as a pixel's
-//   footprint: that bounds the detail across the view, not along it, and from high up, one step
-//   through a level was lit 100 m into the clouds' shade, their tops dark.
+//   banded where the steps fell, as the camera tilted. None shorter than CLOUD_FINE_FOOTPRINTS
+//   pixels' footprints across the view, though: far off, finer steps read what the pixel cannot
+//   show. The footprint alone bounds the detail across the view, not along it: walked only that
+//   fine, from high up one step through a level was lit 100 m into the clouds' shade, their tops
+//   dark.
 //
 // One loop, its turns alike: written as loops in loops (runs, steps, parts, short steps), the
 // march's reads and its light were copied into the program a score of times, its link took 16 s,
@@ -1040,7 +1048,7 @@ void cloudMarchRuns(int count) {
       if(tau >= CLOUD_THIN) {
         mode = 2;
         g = 0;
-        steps = int(clamp(ceil(part * P.shell.z / CLOUD_FINE), 1.0, float(uCloudFineSteps)));
+        steps = int(clamp(ceil(part / max(CLOUD_FINE / max(P.shell.z, 1e-6), CLOUD_FINE_FOOTPRINTS * across)), 1.0, float(uCloudFineSteps)));
         stride = part / float(steps);
         fine = segFrom;
         fieldF = fieldP;
