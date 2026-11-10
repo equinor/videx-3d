@@ -628,12 +628,18 @@ camera drawing it. It shows where the `Scenery` would show its own clouds (`Scen
 the zone, `background`, `debug.hide`).
 
 **The scene's light.** The clouds hand their `Scenery` what it needs to be lit under them
-(`ScenerySkyOverlay`, through its registry):
+(`ScenerySkyOverlay`, through its registry; the renderer itself, restored on the rebuilt march
+2026-11-10):
 
 - **In the bakes:** before each bake of the air (the environment map and the light probe), the
   clouds are filmed as seen from where the air is filmed (100 m over the sea at the disc's
-  centre): a cube map 128² a face, each face marched once at half that, without the frames'
-  accumulation (`CloudVolumeRenderer.film`), and drawn over the sky in the bake. Under
+  centre): a cube map 128² a face, each face marched once at half that, a still, coarser than
+  the view's (`FILM_*`: 4 short steps through cloud, one sample toward the light, half each
+  level's steps; a 64² face costs as long as its slowest ray, so the view's march took 49 ms for
+  the six on an Iris Xe, this 20), and drawn over the sky in the bake (`CloudVolumeRenderer.film`).
+  Filmed again only once their version changes, the place moves or the sun has turned half a
+  degree (`FILM_TURN`): the bakes film twice, the environment's and the probe's, and again at
+  each step of a sun on the weather's clock. Under
   overcast the environment and the probe turn grey, and what reflects them dims. A change to
   the clouds (their settings, the map drawn, their showing at all, the light's share moving)
   makes the bakes due again; a bake still waits `capture.interval`. ⚠️ A CubeCamera draws
@@ -665,8 +671,9 @@ the zone, `background`, `debug.hide`).
   coverage, weather and terrain (`cloud-volume-march.glsl` under `CLOUD_SHADOW`: one source,
   so the shadows are the clouds'). Drawn again only once the camera's foot is a tenth of the
   reach from its middle, the light has turned 1°, or the clouds, the terrain or the globe
-  changed: some 2 ms of GPU each time (Iris Xe, drawn every frame against at rest), none at
-  rest. The sea
+  changed, or the clouds have drifted a tenth of it or lived a fiftieth of their lifetime: 5.6 ms
+  of GPU each time for two levels (Iris Xe, 2026-11-10), none at rest. Between, the map is
+  carried with the lowest level's wind. The sea
   and the relief scale the dimmed light (`cloud-shadow.glsl`) by the map's share over the share
   it was dimmed to, so a sunlit patch is lit by the whole sun and a shaded one by what gets
   through; toward the square's sides, and past it, the dimmed light stands. In shadow the

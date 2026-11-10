@@ -178,12 +178,13 @@ export type SceneryCloudLook = {
 /**
  * 3D clouds over a {@link Scenery} (see `documents/clouds.md`): a local weather's layers, one at
  * each level (low, middle, high), or a global weather's weather systems over the whole Earth,
- * each level its type's rounded masses marched through on the globe every frame, lit by the
- * sun, or the moon, where they lie, the levels over a cloud shading it, and drawn over the scene
- * at the depth of their front. Fixed to the Earth, each level drifting with its wind.
- *
- * Being rebuilt (2026-11-09): the scenery's bakes, the sea's reflection, the scene's light and
- * the shadows take none of them, nor does the ground shape them, until each is added back.
+ * each level its type's rounded masses marched through on the globe, lit by the sun, or the
+ * moon, where they lie, the levels over a cloud shading it, and drawn over the scene at the
+ * depth of their front: marched again only as the view, the clock or the light change. Fixed to
+ * the Earth, each level drifting with its wind, its clouds forming and fading on the weather's
+ * clock. The scenery's bakes of the air and its sea's reflection take them in, the scene's light
+ * is dimmed by the share of it they let through, and their shadows fall on the sea and the
+ * relief.
  */
 export type SceneryCloudVolumeProps = {
   /** false hides them, still compiled, so showing them again is instant. Default true */

@@ -955,12 +955,6 @@ void cloudMarch(CloudLevel L, int l, vec2 run) {
   }
 }
 
-#if defined(CLOUD_LIGHT_MAP)
-// The level drawn (its layer), and how far its wind has carried its clouds since the drawing's
-// time (m on the field): its rows drawn over several frames are all of that time.
-uniform int uCloudLightLevel;
-uniform vec2 uCloudLightShift;
-
 // Where the column at `field` stands `altitude` over the sea, on the field's frame (on the plane
 // with the globe off): its up part written as the difference it is, to keep its precision.
 vec3 cloudFieldColumn(vec2 field, float altitude) {
@@ -971,6 +965,12 @@ vec3 cloudFieldColumn(vec2 field, float altitude) {
   float l = sqrt(f2 + R * R);
   return vec3(field * ((R + altitude) / l), R * (altitude - f2 / (l + R)) / l);
 }
+
+#if defined(CLOUD_LIGHT_MAP)
+// The level drawn (its layer), and how far its wind has carried its clouds since the drawing's
+// time (m on the field): its rows drawn over several frames are all of that time.
+uniform int uCloudLightLevel;
+uniform vec2 uCloudLightShift;
 
 // A texel of level uCloudLightLevel's light map (CloudLightMap): the ray toward the light from
 // where it leaves the level's base, through its shell, in CLOUD_LIGHT_STEPS stretches each taken
@@ -1006,6 +1006,68 @@ void main() {
       quarters += cloudDepth(S, s.x, s.y, len) * vec4(equal(ivec4(k * 4 / CLOUD_LIGHT_STEPS), ivec4(0, 1, 2, 3)));
   }
   gl_FragColor = vec4(dot(quarters, vec4(1.0)), quarters.y + quarters.z + quarters.w, quarters.z + quarters.w, quarters.w);
+}
+#elif defined(CLOUD_SHADOW)
+// The clouds' shadows (CloudVolumeRenderer.updateShadow): over a square about the camera's foot
+// (its middle from the camera and how far it reaches to its sides, world; its east and north),
+// texels a side.
+uniform vec4 uCloudShadowPlace;
+uniform vec3 uCloudShadowEast;
+uniform vec3 uCloudShadowNorth;
+uniform float uCloudShadowSize;
+
+// Samples across each level toward the light.
+#define CLOUD_SHADOW_SAMPLES 8
+
+// The share of the light (the sun's, or the moon's) that reaches the ground under a texel of the
+// square through the levels: across each, as it rises over the broad ground there, toward the
+// light in CLOUD_SHADOW_SAMPLES stretches, each placed (cloudSet) and read as the march's own
+// toward the light are (cloudLight), no narrower than a texel. The march's own code, so the
+// shadows are the clouds'. None where the light is under the horizon.
+void main() {
+  gTerrain = uCloudTerrain.x > 0.5 && globeOn();
+  vec2 st = gl_FragCoord.xy / uCloudShadowSize * 2.0 - 1.0;
+  vec3 delta = uCloudShadowPlace.xyz + (uCloudShadowEast * st.x + uCloudShadowNorth * st.y) * uCloudShadowPlace.w;
+  vec3 p = uCloudCamera + vec3(dot(delta, uCloudFrameE), dot(delta, uCloudFrameN), dot(delta, uCloudFrameM));
+  vec2 field = cloudFieldOf(p);
+  float ground = gTerrain ? max(cloudGround(cloudUpEarthOf(p)), 0.0) : 0.0;
+  vec3 g = cloudFieldColumn(field, ground);
+  vec3 up = cloudUpOf(g);
+  vec3 way = cloudLightWay(uCloudFrameE * up.x + uCloudFrameN * up.y + uCloudFrameM * up.z);
+  gWay = vec3(dot(way, uCloudFrameE), dot(way, uCloudFrameN), dot(way, uCloudFrameM));
+  float rising = dot(gWay, up);
+  if(rising <= 0.0) {
+    gl_FragColor = vec4(1.0);
+    return;
+  }
+  float r = max(rising, 0.05);
+  float texel = 2.0 * uCloudShadowPlace.w / uCloudShadowSize;
+  if(gTerrain)
+    gBroad = cloudTerrainBroad(cloudUpEarthOf(g));
+  gEdgeNoise = cloudEdgeNoise(field);
+  float tau = 0.0;
+  for(int l = 0; l < CLOUD_LEVELS_MOST; l++) {
+    if(l >= uCloudLevelCount)
+      break;
+    CloudLevel L = cloudLevel(l);
+    float rise = gTerrain ? cloudRiseOf(L.kind) * gBroad.x : 0.0;
+    float from = max(L.shell.x + rise - ground, 0.0) / r;
+    float to = max(L.shell.y + rise - ground, 0.0) / r;
+    if(to <= from)
+      continue;
+    float len = (to - from) / float(CLOUD_SHADOW_SAMPLES);
+    float extent = max(texel, 0.25 * len);
+    for(int k = 0; k < CLOUD_SHADOW_SAMPLES; k++) {
+      vec3 q = g + gWay * (from + (float(k) + 0.5) * len);
+      CloudLevel S = L;
+      if(!cloudSet(S, q, extent))
+        continue;
+      vec2 s = cloudShare(S, q - uCloudCamera, gWay.xy * len, extent, r * len, false);
+      if(s.x > 0.0)
+        tau += cloudDepth(S, s.x, s.y, len);
+    }
+  }
+  gl_FragColor = vec4(exp(-tau), 0.0, 0.0, 1.0);
 }
 #else
 void main() {

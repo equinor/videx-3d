@@ -3,6 +3,7 @@ import {
   Camera,
   ClampToEdgeWrapping,
   Color,
+  CubeCamera,
   CubeTexture,
   CustomBlending,
   DataTexture,
@@ -12,6 +13,7 @@ import {
   HalfFloatType,
   IUniform,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Material,
   MathUtils,
   Matrix3,
@@ -27,9 +29,11 @@ import {
   SrcAlphaFactor,
   Texture,
   Uniform,
+  UnsignedByteType,
   Vector2,
   Vector3,
   Vector4,
+  WebGLCubeRenderTarget,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
@@ -66,6 +70,11 @@ import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
 import { CloudTerrain } from './scenery-cloud-terrain';
 import { CloudWeather } from './scenery-cloud-weather';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
+import type {
+  ScenerySkyOverlay,
+  ScenerySkyReflection,
+  ScenerySkyShadow,
+} from './scenery-registry';
 import type {
   SceneryCloudLook,
   SceneryCloudVolumeDebug,
@@ -295,6 +304,52 @@ const LIFE_SIZE = 1500;
 // The light maps reach this much past a local weather's radius at most (m): a ray toward a low
 // light leaves a level's base that far out from the cloud it lights at its top.
 const LIGHT_MARGIN = 25000;
+// The film for the bakes of the air and the sea's reflection (ScenerySkyOverlay.texture): texels
+// a face, each face marched once at this share of them, a still (no frames before it), coarser
+// than the view's: its short steps through cloud, its samples toward the light, and its share of
+// each level's steps. Blurred in the bakes and the sea, a face of 64² costs as long as its
+// slowest ray: the view's march took 49 ms for the six (Iris Xe), this 19.
+const FILM_SIZE = 128;
+const FILM_MARCH = 0.5;
+const FILM_FINE_STEPS = 4;
+const FILM_LIGHT_SAMPLES = 1;
+const FILM_STEPS = 0.5;
+// The film is drawn again once the sun has turned this far since (1 − its cosine: half a degree).
+const FILM_TURN = 4e-5;
+// As the clock runs, the film is due again (version) once the lowest level's clouds have drifted
+// or formed and faded this share of a cloud since, at most this often (wall ms).
+const FILM_SHARE = 0.25;
+const FILM_LONGEST = 3000;
+// The scene's light eases toward the share the clouds let through over this long (s); the bakes
+// are due again once it has moved this much.
+const LIGHT_EASE = 0.4;
+const LIGHT_TOLD = 0.02;
+// The share of a level's thickness the light crosses on its slant through its clouds
+// (cloudVolumeLight): most of a heaped cumulus's, more of a sheet's.
+const LIGHT_SLANT: Readonly<Record<CloudType, number>> = {
+  cumulus: 0.6,
+  stratocumulus: 0.7,
+  stratus: 0.8,
+  nimbostratus: 0.9,
+  altocumulus: 0.7,
+  altostratus: 0.8,
+  cirrus: 0.5,
+  cirrostratus: 0.8,
+};
+// The shadows: texels a side; the square's reach to its sides, from the least to the most, the
+// camera's height over the sea times the last; drawn again once the camera's foot or the clouds
+// have moved this share of it, the light has turned (1 − its cosine), or the lowest level's
+// clouds have lived this share of their lifetime; none from higher up than this (m).
+const SHADOW_SIZE = 512;
+const SHADOW_REACH = [20000, 200000, 8] as const;
+const SHADOW_MOVE = 0.1;
+const SHADOW_TURN = 1.5e-4;
+const SHADOW_LIVED = 0.02;
+const SHADOW_HIGHEST = 400000;
+// The sea reflects the scene's own clouds out to this far from its middle, and a global weather's
+// map's from the second on (ScenerySkyReflection).
+const REFLECTION_NEAR = 100000;
+const REFLECTION_FAR = 400000;
 // The lumps' second tiling (cloud-volume-march.glsl): broader (and turned, LUMPS_TURN).
 const LUMP_BROADER = 1.618;
 // Turns fixed on the Earth (column-major, a GLSL mat3's): the cover volume's lattice, so no
@@ -375,6 +430,38 @@ export type CloudVolumeSettings = {
   debug: SceneryCloudVolumeDebug;
 };
 
+/**
+ * The share of the light (the sun's, or the moon's) the scene's one light keeps through cloud
+ * `levels` at `density`, the light's elevation having sine `sine`: each level's clouds letting
+ * e^(−optical depth) of it through along the light's slant through them (most of a heaped
+ * cumulus's thickness, more of a sheet's), weighed by its cover squared. Not the mean over the
+ * ground, which is the cover itself: the one light stands for the sunlit ground as much as the
+ * shaded where the clouds' shadows are not drawn, and dimmed by the mean a scattered sky read as
+ * dull; squared, scattered cloud keeps most of the sun and overcast takes it.
+ *
+ * @group Components
+ */
+export function cloudVolumeLight(
+  levels: readonly CloudVolumeLevel[],
+  density: number,
+  sine: number,
+): number {
+  let through = 1;
+  for (const { layer, look } of levels) {
+    const cover = MathUtils.clamp(layer.cover, 0, 1);
+    if (cover <= 0) continue;
+    const thickness = Math.max(Math.abs(layer.top - layer.base), 1);
+    const depth =
+      (look.extinction *
+        Math.max(density, 0) *
+        thickness *
+        LIGHT_SLANT[layer.type]) /
+      Math.max(sine, 0.05);
+    through *= 1 - cover * cover * (1 - Math.exp(-depth));
+  }
+  return through;
+}
+
 // The clouds' image: premultiplied colour and alpha, and the distance to their front as depth
 // (log2, over DEPTH_RANGE).
 const createImage = () =>
@@ -437,6 +524,15 @@ const moved = new Vector3();
 const here = new Vector3();
 const broad = new Vector3();
 const upTurned = new Vector3();
+const clearColor = new Color();
+// What draws a global weather's cover over the scene into its texel (readSceneCover).
+const coverCamera = new Camera();
+const shadowFoot = new Vector3();
+const shadowCentre = new Vector3();
+const shadowUp = new Vector3();
+const shadowNorth = new Vector3();
+const shadowEast = new Vector3();
+const shadowDrift = new Vector3();
 const readAt = new Vector3();
 const lumpAt = new Vector3();
 const drift = new Matrix4();
@@ -479,7 +575,7 @@ const createCoverTable = () => {
  * light, the weather. Drawn from its {@link composite}'s `onBeforeRender`, with the camera
  * drawing it.
  */
-export class CloudVolumeRenderer {
+export class CloudVolumeRenderer implements ScenerySkyOverlay {
   /** drawn in the scene, last (`LAYERS.OVERLAY` in an `OITRenderPass`) */
   readonly composite: Mesh;
   /** the march, drawn into the clouds' own image as the composite is drawn */
@@ -504,7 +600,7 @@ export class CloudVolumeRenderer {
   /** the ground under the clouds, from a relief (see {@link CloudTerrain}): none until given one */
   readonly terrain = new CloudTerrain();
   /** a local weather's light maps (see {@link CloudLightMap}) */
-  readonly light = new CloudLightMap(CLOUD_VOLUME_LEVELS);
+  readonly lightMaps = new CloudLightMap(CLOUD_VOLUME_LEVELS);
   // Counts the settings set: the light maps are drawn anew for each.
   private settingsSerial = 0;
   // Each level's wind on the field: the way it blows toward (east, north) times its speed (m/s).
@@ -540,6 +636,94 @@ export class CloudVolumeRenderer {
   private marchDrawn = false;
   private marchProgram: object | null = null;
   private marchNames: string[] = [];
+
+  // For the scene's light (ScenerySkyOverlay): what they look like from the scene, how much of
+  // its light they let through, their shadows and what the sea reflects of them.
+  /** counts changes to what they look like, but for the sky's own: the bakes are drawn again */
+  version = 0;
+  /** how much of the light (the sun's, or the moon's) the scene's light keeps past them */
+  light = 1;
+  /** their shadows about the camera (updateShadow); null for none */
+  shadow: ScenerySkyShadow | null = null;
+  /** what the sea reflects of them away from where they were filmed (updateReflection) */
+  readonly reflection: ScenerySkyReflection = {
+    base: 0,
+    map: null,
+    earth: new Matrix3(),
+    texels: 0,
+    strength: 0,
+    near: REFLECTION_NEAR,
+    far: REFLECTION_FAR,
+  };
+  /** the film's composite, each face's march laid into it (`film`): compile it before it films */
+  readonly still: Mesh;
+  /** the shadows' pass (`updateShadow`): compile it before it draws */
+  readonly shadowMesh: Mesh;
+  private readonly filmTarget = new WebGLCubeRenderTarget(FILM_SIZE, {
+    type: HalfFloatType,
+    generateMipmaps: true,
+    minFilter: LinearMipmapLinearFilter,
+  });
+  private readonly filmCamera = new CubeCamera(1, 1e7, this.filmTarget);
+  private readonly filmScene = new Scene();
+  private readonly stillImage = createImage();
+  private readonly stillMaterial: ShaderMaterial;
+  // What the film was last drawn for: where, at which version (the clouds' drift and lives
+  // counted in it: updateFilm) and with the sun where (within FILM_TURN). The bakes film twice,
+  // the environment's and the probe's, from the same place, and again as the sun moves on the
+  // weather's clock: in a few minutes, what lights the clouds hardly changes.
+  private readonly filmedAt = new Vector3(NaN, NaN, NaN);
+  private filmedVersion = -1;
+  private readonly filmedSun = new Vector3();
+  // Whether they show (filmable); when the film was last due as the clock ran (weather seconds,
+  // and wall ms); the light last told the bakes; the weather's and the ground's versions counted;
+  // whether the cover is drawn (render).
+  private shown = false;
+  private filmTime = 0;
+  private filmWall = 0;
+  private lightTold = 1;
+  private weatherSeen = -1;
+  private terrainSeen = -1;
+  private levelsReady = false;
+  private readonly shadowTarget = new WebGLRenderTarget(
+    SHADOW_SIZE,
+    SHADOW_SIZE,
+    {
+      type: UnsignedByteType,
+      format: RedFormat,
+      minFilter: LinearFilter,
+      magFilter: LinearFilter,
+      depthBuffer: false,
+      generateMipmaps: false,
+    },
+  );
+  private readonly shadowMaterial: ShaderMaterial;
+  private readonly shadowScene = new Scene();
+  // What the shadows were drawn for.
+  private readonly shadowDrawn = {
+    valid: false,
+    version: -1,
+    terrain: -1,
+    globe: -1,
+    light: new Vector3(),
+    centre: new Vector3(),
+    reach: 0,
+    time: 0,
+  };
+  // A global weather's cover over the scene (readSceneCover): low, thickness, middle, high, -1
+  // until read; what it was read for.
+  private readonly sceneCover = new Vector4(-1, 0, 0, 0);
+  private readonly sceneCoverFor: { map: Texture | null; globe: number } = {
+    map: null,
+    globe: -1,
+  };
+  private sceneCoverReading = false;
+  private readonly sceneCoverTarget = new WebGLRenderTarget(1, 1, {
+    depthBuffer: false,
+  });
+  private readonly sceneCoverMaterial: ShaderMaterial;
+  private readonly sceneCoverScene = new Scene();
+  private readonly sceneCoverPixel = new Uint8Array(4);
 
   constructor(sky: SceneryMaterial, renderOrder: number) {
     this.sky = sky;
@@ -590,7 +774,7 @@ export class CloudVolumeRenderer {
           new Array<number>(CLOUD_VOLUME_LEVELS).fill(0),
         ),
         ...this.terrain.uniforms,
-        ...this.light.uniforms,
+        ...this.lightMaps.uniforms,
         uCloudMap: new Uniform<CubeTexture | null>(null),
         uCloudMapNext: new Uniform<CubeTexture | null>(null),
         uCloudTypes: new Uniform<CubeTexture | null>(null),
@@ -648,6 +832,66 @@ export class CloudVolumeRenderer {
     this.composite.userData.cloudVolume = this;
     this.composite.onBeforeRender = (renderer, _scene, camera) =>
       this.render(renderer, camera);
+
+    // The film: each face's march laid into it, as a still, without the sky's intensity.
+    this.stillMaterial = createCompositeMaterial(
+      'scenery-cloud-volume-still',
+      this.stillImage,
+      new Uniform(1),
+    );
+    this.still = new Mesh(geometry, this.stillMaterial);
+    this.still.frustumCulled = false;
+    this.still.onBeforeRender = (renderer, _scene, camera) =>
+      this.renderStill(renderer, camera);
+    this.filmScene.add(this.still);
+
+    // The shadows: the march's own code, its main the pass's (CLOUD_SHADOW).
+    this.shadowMaterial = new ShaderMaterial({
+      name: 'scenery-cloud-volume-shadow',
+      vertexShader,
+      fragmentShader: marchShader,
+      defines: { ...this.marchMaterial.defines, CLOUD_SHADOW: '' },
+      uniforms: {
+        ...this.marchMaterial.uniforms,
+        uCloudShadowPlace: new Uniform(new Vector4()),
+        uCloudShadowEast: new Uniform(new Vector3(1, 0, 0)),
+        uCloudShadowNorth: new Uniform(new Vector3(0, 0, -1)),
+        uCloudShadowSize: new Uniform(SHADOW_SIZE),
+      },
+      depthTest: false,
+      depthWrite: false,
+      blending: NoBlending,
+    });
+    this.shadowMesh = new Mesh(geometry, this.shadowMaterial);
+    this.shadowMesh.frustumCulled = false;
+    this.shadowMesh.layers.enableAll();
+    this.shadowScene.add(this.shadowMesh);
+
+    // A global weather's cover over the scene: its newer map read at the scene's up, over some
+    // 40 km (its third level), into one texel read back (readSceneCover).
+    this.sceneCoverMaterial = new ShaderMaterial({
+      name: 'scenery-cloud-volume-scene-cover',
+      vertexShader: /* glsl */ `
+void main() {
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}`,
+      fragmentShader: /* glsl */ `
+uniform samplerCube uCloudMap;
+uniform vec3 uCloudSceneUp;
+void main() {
+  gl_FragColor = textureLod(uCloudMap, uCloudSceneUp, 2.0);
+}`,
+      uniforms: {
+        uCloudMap: new Uniform<CubeTexture | null>(null),
+        uCloudSceneUp: new Uniform(new Vector3(0, 0, 1)),
+      },
+      depthTest: false,
+      depthWrite: false,
+      blending: NoBlending,
+    });
+    const coverMesh = new Mesh(geometry, this.sceneCoverMaterial);
+    coverMesh.frustumCulled = false;
+    this.sceneCoverScene.add(coverMesh);
   }
 
   /** Draw `settings` from the next frame on. */
@@ -664,12 +908,16 @@ export class CloudVolumeRenderer {
       this.localAnchor = null;
     this.globeVersion = -1;
 
+    // What they look like changed: the bakes are drawn again.
+    this.version++;
+
     const global = settings.global;
-    if ('CLOUD_GLOBAL' in this.marchMaterial.defines !== !!global) {
-      if (global) this.marchMaterial.defines.CLOUD_GLOBAL = '';
-      else delete this.marchMaterial.defines.CLOUD_GLOBAL;
-      this.marchMaterial.needsUpdate = true;
-    }
+    for (const material of [this.marchMaterial, this.shadowMaterial])
+      if ('CLOUD_GLOBAL' in material.defines !== !!global) {
+        if (global) material.defines.CLOUD_GLOBAL = '';
+        else delete material.defines.CLOUD_GLOBAL;
+        material.needsUpdate = true;
+      }
     if (!global) this.weather.dispose();
     (u.uCloudGlobal.value as Vector4).set(
       global?.dominance ?? 0,
@@ -1115,7 +1363,8 @@ export class CloudVolumeRenderer {
     if (this.target.width !== width || this.target.height !== height)
       this.target.setSize(width, height);
     this.updateCamera(camera, height);
-    if (!this.updateLevels(renderer)) {
+    this.levelsReady = this.updateLevels(renderer);
+    if (!this.levelsReady) {
       this.marchDrawn = false;
       return;
     }
@@ -1142,7 +1391,7 @@ export class CloudVolumeRenderer {
     }
     // Nothing it is marched from changed since it was last: its image laid over the scene again
     // as it is. A still view with the clock held costs the composite alone.
-    this.updateLight(renderer);
+    this.updateLightMaps(renderer);
     if (this.marchUnchanged(renderer, camera)) return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
@@ -1195,7 +1444,7 @@ export class CloudVolumeRenderer {
     inputs.add(this.time);
     inputs.add(this.terrain.version);
     inputs.add(this.weather.version);
-    inputs.add(this.light.version);
+    inputs.add(this.lightMaps.version);
     inputs.add(material.version);
     for (const name of this.marchNames)
       inputs.addValue(material.uniforms[name].value);
@@ -1207,10 +1456,10 @@ export class CloudVolumeRenderer {
   // base, the texel the finest level's cover's, drawn anew as the settings, the light's way or
   // the ground change, or as the clock runs on by a twentieth of the shortest lifetime (its
   // clouds formed and faded so far). A global weather's clouds are lit as marched.
-  private updateLight(renderer: WebGLRenderer) {
+  private updateLightMaps(renderer: WebGLRenderer) {
     const settings = this.settings!;
     if (settings.global || !settings.lightMap) {
-      this.light.update(renderer, null);
+      this.lightMaps.update(renderer, null);
       return;
     }
     const u = this.marchMaterial.uniforms;
@@ -1232,7 +1481,7 @@ export class CloudVolumeRenderer {
       finest = Math.min(finest, texel * settings.scale * look.scale);
       shortest = Math.min(shortest, look.lifetime);
     });
-    this.light.update(renderer, {
+    this.lightMaps.update(renderer, {
       levels: levels.length,
       half: settings.local.radius + Math.min(deepest / rising, LIGHT_MARGIN),
       texel: finest,
@@ -1251,7 +1500,373 @@ export class CloudVolumeRenderer {
 
   /** What draws a local weather's light maps: compile it before it shows. */
   lightGenerator(): Mesh {
-    return this.light.generator(this.marchMaterial);
+    return this.lightMaps.generator(this.marchMaterial);
+  }
+
+  /** as seen from the scene all round (`film`): premultiplied colour and alpha, with mipmaps */
+  get texture(): CubeTexture {
+    return this.filmTarget.texture;
+  }
+
+  /**
+   * Whether they show (enabled, cloudy, compiled): what {@link film} films, and what takes the
+   * light ({@link updateLight}). A change is a change to what they look like.
+   */
+  get filmable(): boolean {
+    return this.shown;
+  }
+  set filmable(value: boolean) {
+    if (value === this.shown) return;
+    this.shown = value;
+    this.version++;
+  }
+
+  /**
+   * Film the clouds as seen from `position` (world) into {@link texture}, all round: each face
+   * marched once, a still, at FILM_MARCH of its texels. Clear while they do not show. For a
+   * `Scenery`'s bakes of the air (`ScenerySkyOverlay`), and the sea's reflection.
+   */
+  film(renderer: WebGLRenderer, position: Vector3) {
+    // Filmed already as it is, from there.
+    const sun = this.sky.sunDirection;
+    if (
+      this.filmedAt.distanceToSquared(position) < 1 &&
+      this.filmedVersion === this.version &&
+      this.filmedSun.dot(sun) > 1 - FILM_TURN
+    )
+      return;
+    this.filmedAt.copy(position);
+    this.filmedVersion = this.version;
+    this.filmedSun.copy(sun);
+    const autoClear = renderer.autoClear;
+    const clearAlpha = renderer.getClearAlpha();
+    renderer.getClearColor(clearColor);
+    renderer.autoClear = true;
+    renderer.setClearColor(0x000000, 0);
+    this.still.visible = this.shown && this.settings !== null;
+    this.filmCamera.position.copy(position);
+    this.filmCamera.updateMatrixWorld();
+    this.filmCamera.update(renderer, this.filmScene);
+    renderer.setClearColor(clearColor, clearAlpha);
+    renderer.autoClear = autoClear;
+  }
+
+  // The march for one of the film's faces, `camera` its, as the still composite is drawn into it:
+  // FILM_MARCH of its texels, into an image of its own, so the frame's own (and what it was
+  // marched from) is left as it is.
+  private renderStill(renderer: WebGLRenderer, camera: Camera) {
+    const settings = this.settings;
+    if (!settings || settings.levels.length === 0 || !this.levelsReady) return;
+    if (settings.global && !this.weather.ready) return;
+    this.generate(renderer);
+    const outer = renderer.getRenderTarget();
+    const cubeFace = renderer.getActiveCubeFace();
+    const mipLevel = renderer.getActiveMipmapLevel();
+    const side = Math.max(Math.round(FILM_SIZE * FILM_MARCH), 8);
+    if (this.stillImage.width !== side) this.stillImage.setSize(side, side);
+    this.sky.syncCamera(camera);
+    this.updateCamera(camera, side);
+    // Coarser than the view's, set back after.
+    const u = this.marchMaterial.uniforms;
+    const fine = u.uCloudFineSteps.value as number;
+    const samples = u.uCloudLightSamples.value as number;
+    const shells = u.uCloudShells.value as Vector4[];
+    const steps = shells.map(shell => shell.w);
+    u.uCloudFineSteps.value = Math.min(fine, FILM_FINE_STEPS);
+    u.uCloudLightSamples.value = Math.min(samples, FILM_LIGHT_SAMPLES);
+    shells.forEach(shell => {
+      shell.w = Math.max(Math.round(shell.w * FILM_STEPS), 4);
+    });
+    const autoClear = renderer.autoClear;
+    const autoReset = renderer.info.autoReset;
+    const shadows = renderer.shadowMap.autoUpdate;
+    renderer.autoClear = false;
+    renderer.info.autoReset = false;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.setRenderTarget(this.stillImage);
+    renderer.render(this.marchScene, camera);
+    renderer.setRenderTarget(outer, cubeFace, mipLevel);
+    renderer.autoClear = autoClear;
+    renderer.info.autoReset = autoReset;
+    renderer.shadowMap.autoUpdate = shadows;
+    u.uCloudFineSteps.value = fine;
+    u.uCloudLightSamples.value = samples;
+    shells.forEach((shell, k) => {
+      shell.w = steps[k];
+    });
+    (this.stillMaterial.uniforms.uCloudImageSize.value as Vector2).set(
+      side,
+      side,
+    );
+  }
+
+  /**
+   * As the clock runs and the weather or the ground come in: mark what was filmed of them stale
+   * ({@link version}: the bakes of the air and the sea's reflection are drawn again) once the
+   * lowest level's clouds have drifted or formed and faded a share of a cloud since
+   * (FILM_SHARE), at most every few seconds; and at once as the weather's maps or the ground are
+   * drawn anew. In the frame loop.
+   */
+  updateFilm() {
+    if (this.weather.version !== this.weatherSeen) {
+      this.weatherSeen = this.weather.version;
+      this.version++;
+    }
+    if (this.terrain.version !== this.terrainSeen) {
+      this.terrainSeen = this.terrain.version;
+      this.version++;
+    }
+    const elapsed = Math.abs(this.time - this.filmTime);
+    const lowest = this.settings?.levels[0];
+    if (elapsed === 0 || !this.shown || !lowest) {
+      this.filmTime = this.time;
+      return;
+    }
+    const now = performance.now();
+    if (now - this.filmWall < FILM_LONGEST) return;
+    const breadth = LIFE_SIZE * this.settings!.scale * lowest.look.scale;
+    const drifted = this.levelWinds[0].length() * elapsed;
+    if (
+      drifted > FILM_SHARE * breadth ||
+      elapsed > FILM_SHARE * Math.max(lowest.look.lifetime, 1)
+    ) {
+      this.filmTime = this.time;
+      this.filmWall = now;
+      this.version++;
+    }
+  }
+
+  /**
+   * Ease {@link light} toward the share of the light the levels let through about the scene
+   * (`cloudVolumeLight`), by the light's elevation there, over LIGHT_EASE; all of it while they
+   * do not show. A global weather's levels take the cover its map gives over the scene
+   * (readSceneCover), none until it is read. In the frame loop, `delta` seconds after the last.
+   */
+  updateLight(renderer: WebGLRenderer, delta: number) {
+    const settings = this.settings;
+    const up = this.sky.up;
+    let sine = up.dot(this.sky.sunDirection);
+    // By night, the moon's (as cloudLightWay takes it).
+    if (sine < -0.105)
+      sine = up.dot(
+        this.marchMaterial.uniforms.uSkyMoonDirection.value as Vector3,
+      );
+    let levels: readonly CloudVolumeLevel[] = settings?.levels ?? [];
+    if (settings?.global) {
+      this.readSceneCover(renderer);
+      const cover = this.sceneCover;
+      const covers = [cover.x, cover.z, cover.w];
+      levels =
+        cover.x < 0
+          ? []
+          : levels.map(level => ({
+              ...level,
+              layer: {
+                ...level.layer,
+                cover:
+                  covers[CLOUD_LEVELS.indexOf(cloudLevelOf(level.layer.type))],
+              },
+            }));
+    }
+    const target =
+      settings && this.shown
+        ? cloudVolumeLight(levels, settings.density, sine)
+        : 1;
+    this.light +=
+      (target - this.light) * (1 - Math.exp(-Math.max(delta, 0) / LIGHT_EASE));
+    if (Math.abs(target - this.light) < 1e-3) this.light = target;
+    // The bakes are lit as the scene is: told again once it has moved enough.
+    if (Math.abs(this.light - this.lightTold) > LIGHT_TOLD) {
+      this.lightTold = this.light;
+      this.version++;
+    }
+  }
+
+  // A global weather's cover over the scene (sceneCover, for the scene's light): the newer map
+  // read at the scene's up into one texel, read back without waiting for it; once a drawing of
+  // the map, and again as the globe moves.
+  private readSceneCover(renderer: WebGLRenderer) {
+    const map = this.marchMaterial.uniforms.uCloudMapNext
+      .value as CubeTexture | null;
+    const globe = this.sky.globe;
+    const read = this.sceneCoverFor;
+    if (
+      !map ||
+      this.sceneCoverReading ||
+      (read.map === map && read.globe === globe.version)
+    )
+      return;
+    this.updateEarth(globe);
+    read.map = map;
+    read.globe = globe.version;
+    const u = this.sceneCoverMaterial.uniforms;
+    u.uCloudMap.value = map;
+    (u.uCloudSceneUp.value as Vector3)
+      .copy(globe.up)
+      .applyMatrix3(this.earth)
+      .normalize();
+    const outer = renderer.getRenderTarget();
+    const cubeFace = renderer.getActiveCubeFace();
+    const mipLevel = renderer.getActiveMipmapLevel();
+    renderer.setRenderTarget(this.sceneCoverTarget);
+    renderer.render(this.sceneCoverScene, coverCamera);
+    renderer.setRenderTarget(outer, cubeFace, mipLevel);
+    this.sceneCoverReading = true;
+    const pixel = this.sceneCoverPixel;
+    renderer
+      .readRenderTargetPixelsAsync(this.sceneCoverTarget, 0, 0, 1, 1, pixel)
+      .then(() =>
+        this.sceneCover.set(
+          pixel[0] / 255,
+          pixel[1] / 255,
+          pixel[2] / 255,
+          pixel[3] / 255,
+        ),
+      )
+      .catch(() => {
+        read.map = null;
+      })
+      .finally(() => {
+        this.sceneCoverReading = false;
+      });
+  }
+
+  /**
+   * Draw the clouds' shadows ({@link shadow}) about the foot of `camera` when it has moved far
+   * enough from where they were drawn, the light has turned, the clouds or the ground changed,
+   * or the clouds have drifted or formed and faded enough since: SHADOW_SIZE² texels over a
+   * square reaching further the higher the camera is. Between, carried with the lowest level's
+   * wind, which casts most of them. None from high up, where the scene's light stands as dimmed
+   * ({@link light}). In the frame loop.
+   */
+  updateShadow(renderer: WebGLRenderer, camera: Camera) {
+    const settings = this.settings;
+    const globe = this.sky.globe;
+    cameraAt.setFromMatrixPosition(camera.matrixWorld);
+    const altitude = globe.altitude(cameraAt);
+    const drawn = this.shadowDrawn;
+    if (
+      !settings ||
+      !this.shown ||
+      !this.levelsReady ||
+      (settings.global && !this.weather.ready) ||
+      altitude > SHADOW_HIGHEST
+    ) {
+      this.shadow = null;
+      drawn.valid = false;
+      return;
+    }
+    const reach = MathUtils.clamp(
+      SHADOW_REACH[0] + SHADOW_REACH[2] * altitude,
+      SHADOW_REACH[0],
+      SHADOW_REACH[1],
+    );
+    // Its middle on the sea under the camera, east and north there.
+    globe.foot(cameraAt, shadowFoot);
+    const centre = globe.place(shadowFoot.x, shadowFoot.z, 0, shadowCentre);
+    const up = globe.upAt(centre, shadowUp);
+    const north = shadowNorth
+      .copy(globe.north)
+      .addScaledVector(up, -globe.north.dot(up))
+      .normalize();
+    const eastward = shadowEast.crossVectors(north, up).normalize();
+    // The light, as cloudLightWay takes it at the middle.
+    const sun = this.sky.sunDirection;
+    const light =
+      up.dot(sun) > -0.105
+        ? sun
+        : (this.marchMaterial.uniforms.uSkyMoonDirection.value as Vector3);
+    // The lowest level's drift (world, m/s), and how much of a cloud has formed and faded since.
+    const wind = this.levelWinds[0];
+    shadowDrift
+      .copy(this.frameE)
+      .multiplyScalar(wind.x)
+      .addScaledVector(this.frameN, wind.y);
+    const elapsed = Math.abs(this.time - drawn.time);
+    const lowest = settings.levels[0];
+    const lived = lowest ? elapsed / Math.max(lowest.look.lifetime, 1) : 0;
+    const stale =
+      !drawn.valid ||
+      drawn.version !== this.version ||
+      drawn.terrain !== this.terrain.version ||
+      drawn.globe !== globe.version ||
+      drawn.light.dot(light) < 1 - SHADOW_TURN ||
+      drawn.centre.distanceTo(centre) > SHADOW_MOVE * drawn.reach ||
+      shadowDrift.length() * elapsed > SHADOW_MOVE * drawn.reach ||
+      lived > SHADOW_LIVED ||
+      Math.abs(Math.log(reach / Math.max(drawn.reach, 1))) > Math.log(1.2);
+    if (stale) {
+      this.sky.syncCamera(camera);
+      this.updateCamera(camera, SHADOW_SIZE);
+      const u = this.shadowMaterial.uniforms;
+      (u.uCloudShadowPlace.value as Vector4).set(
+        centre.x - cameraAt.x,
+        centre.y - cameraAt.y,
+        centre.z - cameraAt.z,
+        reach,
+      );
+      (u.uCloudShadowEast.value as Vector3).copy(eastward);
+      (u.uCloudShadowNorth.value as Vector3).copy(north);
+      const outer = renderer.getRenderTarget();
+      const cubeFace = renderer.getActiveCubeFace();
+      const mipLevel = renderer.getActiveMipmapLevel();
+      const autoClear = renderer.autoClear;
+      const autoReset = renderer.info.autoReset;
+      const shadows = renderer.shadowMap.autoUpdate;
+      renderer.autoClear = false;
+      renderer.info.autoReset = false;
+      renderer.shadowMap.autoUpdate = false;
+      renderer.setRenderTarget(this.shadowTarget);
+      renderer.render(this.shadowScene, camera);
+      renderer.setRenderTarget(outer, cubeFace, mipLevel);
+      renderer.autoClear = autoClear;
+      renderer.info.autoReset = autoReset;
+      renderer.shadowMap.autoUpdate = shadows;
+      drawn.valid = true;
+      drawn.version = this.version;
+      drawn.terrain = this.terrain.version;
+      drawn.globe = globe.version;
+      drawn.light.copy(light);
+      drawn.centre.copy(centre);
+      drawn.reach = reach;
+      drawn.time = this.time;
+      const shadow = (this.shadow ??= {
+        texture: this.shadowTarget.texture,
+        centre: new Vector3(),
+        east: new Vector3(),
+        north: new Vector3(),
+        reach: 0,
+      });
+      shadow.east.copy(eastward);
+      shadow.north.copy(north);
+      shadow.reach = reach;
+    }
+    this.shadow?.centre
+      .copy(drawn.centre)
+      .addScaledVector(shadowDrift, this.time - drawn.time);
+  }
+
+  /**
+   * Bring {@link reflection} up to date: the lowest clouds' base, and while they show, a global
+   * weather's cover far off as its newer map has it. In the frame loop.
+   */
+  updateReflection() {
+    const settings = this.settings;
+    const globe = this.sky.globe;
+    this.updateEarth(globe);
+    const reflection = this.reflection;
+    const lowest = settings?.levels[0];
+    reflection.base = lowest
+      ? Math.min(lowest.layer.base, lowest.layer.top)
+      : 0;
+    reflection.map =
+      settings?.global && this.shown
+        ? (this.marchMaterial.uniforms.uCloudMapNext
+            .value as CubeTexture | null)
+        : null;
+    reflection.earth.copy(this.earth);
+    reflection.texels = CLOUD_MAP_SIZE / (2 * globe.radius);
+    reflection.strength = settings?.global ? 1 : 0;
   }
 
   /**
@@ -1271,7 +1886,18 @@ export class CloudVolumeRenderer {
     this.target.dispose();
     this.march.geometry.dispose();
     this.terrain.dispose(release);
-    this.light.dispose(release);
+    this.lightMaps.dispose(release);
+    this.filmTarget.dispose();
+    this.stillImage.dispose();
+    this.shadowTarget.dispose();
+    this.sceneCoverTarget.dispose();
+    for (const material of [
+      this.stillMaterial,
+      this.shadowMaterial,
+      this.sceneCoverMaterial,
+    ])
+      if (release) release(material);
+      else material.dispose();
     this.coverVolume.dispose();
     this.weather.dispose();
     this.coverTable.dispose();

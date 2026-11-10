@@ -115,6 +115,17 @@ export const SceneryCloudVolume = ({
         : null,
     [registry],
   );
+  // For the scene's light: in the scenery's bakes of the air and its sea's reflection, as seen
+  // from the scene, the share of its light they let through, and their shadows
+  // (ScenerySkyOverlay).
+  useEffect(() => {
+    if (!registry || !volume) return;
+    const overlay = registry.overlay;
+    overlay.current = volume;
+    return () => {
+      if (overlay.current === volume) overlay.current = null;
+    };
+  }, [registry, volume]);
   useEffect(
     () => () => {
       if (!volume) return;
@@ -281,6 +292,12 @@ export const SceneryCloudVolume = ({
       precompile(gl, volume.composite, camera, scene, 'scene', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
+      precompile(gl, volume.still, camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
+      precompile(gl, volume.shadowMesh, camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
     ].filter(wait => wait !== null);
     // Its noise drawn once its generator is compiled, before it shows.
     const show = () => {
@@ -299,7 +316,7 @@ export const SceneryCloudVolume = ({
   // drift and change on the Weather's clock, without one on their own.
   const weatherClock = useWeatherClock();
   const [ownClock] = useState(() => new WeatherClock());
-  useFrame(state => {
+  useFrame((state, delta) => {
     if (!volume || !registry) return;
     const clock = weatherClock ?? ownClock;
     volume.time = clock.time;
@@ -309,6 +326,13 @@ export const SceneryCloudVolume = ({
     volume.composite.visible = drawn && registry.view.clouds;
     // Its ground drawn as it comes in, and asked for about the camera as it moves.
     if (drawn) volume.updateTerrain(gl, state.camera);
+    // The scene's light: what is filmed of them, the share of the light they let through, their
+    // shadows and what the sea reflects of them.
+    volume.filmable = drawn;
+    volume.updateLight(gl, delta);
+    volume.updateFilm();
+    volume.updateShadow(gl, state.camera);
+    volume.updateReflection();
   });
 
   return volume ? <primitive object={volume.composite} dispose={null} /> : null;
