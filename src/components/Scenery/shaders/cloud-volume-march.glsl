@@ -603,9 +603,9 @@ vec2 cloudCoverAt(CloudLevel L, vec3 foot, float extent) {
   return vec2(b.x + f * c.x + w * c.y, spread);
 }
 
-// The share in cloud of a stretch of a view about `p` in level `L` (x), and how much of the
-// spread its edge was widened by is the stretch's own unresolved detail rather than the clouds'
-// soft edge (y): `along` the stretch's extent on the field (m), `across` the width it takes in
+// The share in cloud of a stretch of a view about `p` in level `L` (x), and how much of it is
+// cloud and sky mixed across the pixel's footprint rather than the clouds' soft edge (y; see
+// cloudDepth): `along` the stretch's extent on the field (m), `across` the width it takes in
 // across it (m), `rise` how far it climbs (m). Not `fine` (toward the light), the lumps' spread
 // alone. In a global weather, `L`
 // as the weather systems have it there (cloudPlace, read by the caller). Only the part of the
@@ -685,15 +685,33 @@ vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool
     mean += L.look.y * keep * n;
   }
   float share = fade / (1.0 + exp(-CLOUD_LOGISTIC * (mean - need - apart) * scale));
-  return vec2(share, spread / (soft + spread));
+  // What of the spread lies across the pixel's footprint alone: the cover's, from the extent it
+  // was read over down to the footprint (within a footprint smaller than the clouds, as its size
+  // squared), and the lumps the footprint does not resolve. What lies along the view (the rest of
+  // the extent, the climb) is averaged along each ray, as its light is: not cloud and sky mixed.
+  // Read over less than a texel of the cover, its spread is its texels' interpolation's, a
+  // texel's: scaled from the stretch's extent instead, walked finer near by the clouds were
+  // counted as mixed and thinned.
+  float extent = max(max(length(along), across), L.look.w);
+  float a = across / extent;
+  float keepAcross = 1.0 - smoothstep(0.15, 0.5, across / (CLOUD_FEATURE * tile));
+  float spreadAcross = c.y * a * a + L.look.y * L.look.y * (1.0 - keepAcross * keepAcross);
+  return vec2(share, spreadAcross / (soft + spreadAcross));
 }
 
-// The optical depth of a stretch of level `L` `len` long with `share` of it in cloud. Where the
-// share is the stretch's own unresolved detail (`unresolved`), cloud and sky mixed in chunks of
-// a cloud's size, each hiding what its cloud does; where it is the clouds' soft edge, a thin fog.
+// The optical depth of a stretch of level `L` `len` long with `share` of it in cloud, `unresolved`
+// of that cloud and sky mixed across the pixel's footprint (cloudShare). Resolved, a density:
+// along a ray the light is lost as the cloud's mean (exact however the stretch is cut). Mixed
+// across the footprint, its rays pass through clouds or between them: in chunks of a cloud's
+// size (L.look.z, fixed), each hiding what a cloud does. Both in proportion to the length, so the
+// clouds are as opaque however finely the march walks them. With the chunk the stretch's length
+// (2026-11-10), mixed cloud was as many chances to be hit as steps along it: walked 4 times finer
+// they were 2 % more opaque, at the pixel's footprint far off 19 % less, and as steps grew with
+// the distance the same cloud thinned as the camera drew away. And the resolved cloud near by was
+// counted as mixed, so walked coarser near clouds turned see-through.
 float cloudDepth(CloudLevel L, float share, float unresolved, float len) {
   float sigma = L.shell.z;
-  float chunk = min(L.look.z, len);
+  float chunk = L.look.z;
   float mixed = -log(max(1.0 - share * (1.0 - exp(-sigma * chunk)), 1e-6)) * (len / chunk);
   return mix(sigma * share * len, mixed, unresolved);
 }

@@ -555,6 +555,23 @@ CPU, by where the march reads its patterns: the march's own work is the same.
   more than 12 h, another seed or other ground draws one anew. Up to three maps at once (some
   100 MB); the blend costs +0.3–0.9 ms of the march (medium).
 
+**How opaque, however finely walked (`cloudShare`, `cloudDepth`; 2026-11-10).** A stretch of a
+view is read for the share of it in cloud, its spread widening the clouds' edge. Of that spread,
+what lies along the view (the stretch's extent, its climb) is averaged along each ray, as its
+light is: a density, σ × share × length, exact however the stretch is cut. Only what lies across
+the pixel's footprint — the cover's spread from the extent it was read over (at least a cover
+texel: finer, its spread is the texels' interpolation) down to the footprint, as its size
+squared, and the lumps the footprint does not resolve — is cloud and sky mixed: the pixel's rays
+pass through clouds or between them, in chunks of a cloud's size (`look.z`, fixed), each hiding
+what a cloud does. Both in proportion to the length, so the clouds are as opaque however finely
+the march walks them: short steps 4 times finer, or bounded by 4 to 8 pixels' footprints, moved
+the total opacity by under 2 % at three views (opening, over, 10 km). Before, mixed cloud was
+taken in chunks of the step's length, and counted all spread as mixed: walked finer the clouds
+grew 2–7 % more opaque, at the footprint far off 19 % less, the same cloud thinned as the camera
+drew away and its steps grew, and resolved near clouds were taken as mixed and turned
+see-through when walked coarser. The light toward the sun reads the same model, so the clouds'
+shaded sides deepened: a deck far off shows its domes' shading rather than a flat white band.
+
 **The light.** Lit where each point lies: the sun's colour and daylight for its elevation there
 (so the night side is dark and the terminator warm), the moon by night, one or two samples
 toward the light (`uCloudLightSamples`, a uniform so Direct3D keeps the loop a loop), the first
