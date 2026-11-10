@@ -99,6 +99,21 @@ uniform vec3 uCloudTerrainNearEast;
 uniform vec3 uCloudTerrainNearNorth;
 uniform float uCloudTerrainNearReach;
 uniform vec4 uCloudTerrain;
+// A local weather's light maps (CloudLightMap, scenery-cloud-light.ts): a layer a level, a texel
+// a ray toward the light through its shell from where it leaves its base, on the field over the
+// weather's disc (uCloudLightArea: the map's middle on the field, its half-width (m), its texels
+// a side); in each the optical depth from its base, and from a quarter, half and three quarters
+// of the way up, to the shell's top (cloudLightMapMain). The newer drawing faded in over the
+// older (uCloudLightFade: the newer's share), each read where the level's wind has carried its
+// clouds since it was drawn (uCloudLightDrift, m on the field: a level's newer, then its older).
+// How the light is had (uCloudLightMode): 0 marched (cloudLight), 1 from the map
+// (SceneryCloudVolume's `lightMap`).
+uniform highp sampler2DArray uCloudLightNewer;
+uniform highp sampler2DArray uCloudLightOlder;
+uniform vec4 uCloudLightArea;
+uniform float uCloudLightFade;
+uniform vec2 uCloudLightDrift[2 * CLOUD_LEVELS_MOST];
+uniform int uCloudLightMode;
 
 #if defined(CLOUD_GLOBAL)
 // A global weather (scenery-cloud-weather.ts): the weather systems' cloud over the whole Earth
@@ -723,6 +738,37 @@ float cloudAbove(int l, vec3 o, float across) {
   return tau;
 }
 
+// A light map's optical depth from `h` up its level's shell (0 its base, 1 its top) to the top,
+// from a texel's four (cloudLightMapMain): linear between them, none at the top.
+float cloudLightProfile(vec4 depths, float h) {
+  float x = clamp(h, 0.0, 1.0) * 4.0;
+  float i = min(floor(x), 3.0);
+  vec4 pick = vec4(equal(vec4(i), vec4(0.0, 1.0, 2.0, 3.0)));
+  return mix(dot(depths, pick), dot(vec4(depths.yzw, 0.0), pick), x - i);
+}
+
+// Level `L`'s optical depth toward the light from the point `p` (on the field's frame) `h` up its
+// shell (0 its base, 1 its top) to `h1` up it, along the ray toward the light: from its light
+// maps, read over `across` (m), the newer faded in over the older. Along a ray, height up the
+// shell and distance go together as the map was drawn (`r`: the light's rise at the weather's
+// middle).
+float cloudLightFromMap(CloudLevel L, vec3 p, float h, float h1, float across) {
+  float depth = L.shell.y - L.shell.x;
+  float r = max(gWay.z, 0.05);
+  vec2 field = cloudFieldOf(p - gWay * (h * depth / r));
+  float side = 2.0 * uCloudLightArea.z;
+  float lod = log2(max(across * uCloudLightArea.w / side, 1.0));
+  int layer = int(L.kind.w);
+  vec2 at = (field - uCloudLightArea.xy) / side + 0.5;
+  vec4 newer = textureLod(uCloudLightNewer, vec3(at - uCloudLightDrift[2 * layer] / side, float(layer)), lod);
+  float tau = cloudLightProfile(newer, h) - cloudLightProfile(newer, h1);
+  if(uCloudLightFade < 1.0) {
+    vec4 older = textureLod(uCloudLightOlder, vec3(at - uCloudLightDrift[2 * layer + 1] / side, float(layer)), lod);
+    tau = mix(cloudLightProfile(older, h) - cloudLightProfile(older, h1), tau, uCloudLightFade);
+  }
+  return max(tau, 0.0);
+}
+
 // The light a point `o` from the camera of level `L` scatters toward it: the light's through its shell
 // toward it (gWay), in uCloudLightSamples stretches each taken in whole (no narrower than
 // `across`), the first a cloud's skin (CLOUD_LIGHT_SKIN), the rest growing geometrically; then
@@ -740,20 +786,28 @@ vec3 cloudLight(CloudLevel L, vec3 o, float across, float above) {
   float reach = min(toTop, 6.0 * L.look.z);
   float skin = min(CLOUD_LIGHT_SKIN * uCloudScale, reach);
   float grow = uCloudLightSamples > 1 ? pow(max(reach / max(skin, 1.0), 1.0), 1.0 / float(uCloudLightSamples - 1)) : 1.0;
-  float tau = above;
-  float before = 0.0;
-  float d = skin;
-  for(int j = 0; j < uCloudLightSamples; j++) {
-    float len = d - before;
-    if(len > 1.0) {
-      vec3 q = o + gWay * (before + 0.5 * len);
-      vec2 s = cloudShare(L, q, gWay.xy * len, max(across, 0.25 * len), abs(rising) * len, false);
-      tau += cloudDepth(L, s.x, s.y, len);
-    }
-    before = d;
-    d *= grow;
-  }
   float h = clamp((altitude - L.shell.x) / depth, 0.0, 1.0);
+  float tau = above;
+#if !defined(CLOUD_GLOBAL)
+  // A local weather's from its light maps (`lightMap`), as far as the same reach.
+  if(uCloudLightMode > 0)
+    tau += cloudLightFromMap(L, p, h, min(h + reach * max(gWay.z, 0.05) / depth, 1.0), across);
+  else
+#endif
+  {
+    float before = 0.0;
+    float d = skin;
+    for(int j = 0; j < uCloudLightSamples; j++) {
+      float len = d - before;
+      if(len > 1.0) {
+        vec3 q = o + gWay * (before + 0.5 * len);
+        vec2 s = cloudShare(L, q, gWay.xy * len, max(across, 0.25 * len), abs(rising) * len, false);
+        tau += cloudDepth(L, s.x, s.y, len);
+      }
+      before = d;
+      d *= grow;
+    }
+  }
   return cloudLit(gLighting, h, tau, 0.0, rising);
 }
 
@@ -901,6 +955,59 @@ void cloudMarch(CloudLevel L, int l, vec2 run) {
   }
 }
 
+#if defined(CLOUD_LIGHT_MAP)
+// The level drawn (its layer), and how far its wind has carried its clouds since the drawing's
+// time (m on the field): its rows drawn over several frames are all of that time.
+uniform int uCloudLightLevel;
+uniform vec2 uCloudLightShift;
+
+// Where the column at `field` stands `altitude` over the sea, on the field's frame (on the plane
+// with the globe off): its up part written as the difference it is, to keep its precision.
+vec3 cloudFieldColumn(vec2 field, float altitude) {
+  if(uCloudInvRadius <= 0.0)
+    return vec3(field, altitude);
+  float R = 1.0 / uCloudInvRadius;
+  float f2 = dot(field, field);
+  float l = sqrt(f2 + R * R);
+  return vec3(field * ((R + altitude) / l), R * (altitude - f2 / (l + R)) / l);
+}
+
+// A texel of level uCloudLightLevel's light map (CloudLightMap): the ray toward the light from
+// where it leaves the level's base, through its shell, in CLOUD_LIGHT_STEPS stretches each taken
+// whole over no less than a texel, as the march's light's are (cloudLight); out, the optical
+// depth from its base, and from a quarter, half and three quarters of the way up, to its top.
+// Height and distance go together along it by the light's rise at the weather's middle (no less
+// than 0.05, as the march's light takes it), as they are read (cloudLightFromMap).
+void main() {
+  gTerrain = uCloudTerrain.x > 0.5 && globeOn();
+  vec3 way = cloudLightWay(uCloudFrameM);
+  gWay = vec3(dot(way, uCloudFrameE), dot(way, uCloudFrameN), dot(way, uCloudFrameM));
+  float r = max(gWay.z, 0.05);
+  float side = 2.0 * uCloudLightArea.z;
+  float texel = side / uCloudLightArea.w;
+  vec2 field = uCloudLightArea.xy + (gl_FragCoord.xy / uCloudLightArea.w - 0.5) * side + uCloudLightShift;
+  CloudLevel S = cloudLevel(uCloudLightLevel);
+  vec3 b = cloudFieldColumn(field, S.shell.x);
+  if(gTerrain)
+    gBroad = cloudTerrainBroad(cloudUpEarthOf(b));
+  gEdgeNoise = cloudEdgeNoise(field);
+  if(!cloudSet(S, b, texel)) {
+    gl_FragColor = vec4(0.0);
+    return;
+  }
+  float depth = S.shell.y - S.shell.x;
+  b = cloudFieldColumn(field, S.shell.x);
+  float len = depth / (r * float(CLOUD_LIGHT_STEPS));
+  vec4 quarters = vec4(0.0);
+  for(int k = 0; k < CLOUD_LIGHT_STEPS; k++) {
+    vec3 q = b + gWay * (len * (float(k) + 0.5));
+    vec2 s = cloudShare(S, q - uCloudCamera, gWay.xy * len, max(texel, 0.25 * len), r * len, false);
+    if(s.x > 0.0)
+      quarters += cloudDepth(S, s.x, s.y, len) * vec4(equal(ivec4(k * 4 / CLOUD_LIGHT_STEPS), ivec4(0, 1, 2, 3)));
+  }
+  gl_FragColor = vec4(dot(quarters, vec4(1.0)), quarters.y + quarters.z + quarters.w, quarters.z + quarters.w, quarters.w);
+}
+#else
 void main() {
   vec3 dir = normalize(vCloudDirection);
   // Derivatives first, before anything branches.
@@ -1039,3 +1146,4 @@ void main() {
   float depth = gFront >= 0.0 ? gFront : mean;
   gl_FragDepth = clamp(log2(max(depth, 1.0)) / CLOUD_DEPTH_RANGE, 0.0, 0.999999);
 }
+#endif

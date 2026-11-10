@@ -119,6 +119,8 @@ type CloudVolumeArgs = {
   cloudTerrain: boolean;
   /** being chosen: the ground steers a global weather's systems' wind (`debug.steer`) */
   steer: boolean;
+  /** a local weather's clouds lit from light maps (`lightMap`) */
+  lightMap: boolean;
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -558,6 +560,25 @@ function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
         click: () => update({ cloudTerrain, steer }),
       })),
     },
+    {
+      // How a local weather's clouds are lit (LIGHT MAP).
+      label: 'light',
+      buttons: (
+        [
+          ['marched', 'Marched toward the light at every point lit', false],
+          [
+            'map',
+            'Read from light maps, drawn anew as the clouds form and fade',
+            true,
+          ],
+        ] as const
+      ).map(([label, title, lightMap]) => ({
+        label,
+        title,
+        on: args.lightMap === lightMap,
+        click: () => update({ lightMap }),
+      })),
+    },
   ];
 }
 
@@ -658,6 +679,7 @@ const CloudVolumeStory = (args: CloudVolumeArgs) => {
               resolution={args.ownResolution ? args.resolution : undefined}
               seed={args.volumeSeed}
               terrain={args.cloudTerrain}
+              lightMap={args.lightMap}
               debug={{
                 view: args.debugView === 'none' ? undefined : args.debugView,
                 air: args.debugAir,
@@ -806,6 +828,12 @@ const meta = {
         'Being chosen: the relief steers a global weather’s systems’ wind: slower over land, turned along the ridges it would blow up (`debug.steer`).',
       table: { category: 'Weather' },
     },
+    lightMap: {
+      control: { type: 'boolean' },
+      description:
+        'A local weather’s clouds lit from light maps (`lightMap`): some 12–15 % cheaper while the view or the clock moves, drawn anew as the clouds form and fade and the sun moves, so lagging under a fast clock. Off: marched toward the light at every point lit.',
+      table: { category: 'Cloud volume' },
+    },
     globalThickness: {
       control: { type: 'boolean' },
       description:
@@ -942,6 +970,7 @@ const meta = {
     globalThickness: true,
     cloudTerrain: true,
     steer: true,
+    lightMap: false,
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',

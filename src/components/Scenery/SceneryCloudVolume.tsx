@@ -90,6 +90,7 @@ export const SceneryCloudVolume = ({
   resolution,
   debug = NO_DEBUG,
   terrain = sceneryDefaults.cloudVolume.terrain,
+  lightMap = sceneryDefaults.cloudVolume.lightMap,
 }: SceneryCloudVolumeProps) => {
   const registry = useContext(SceneryRegistryContext);
   const gl = useThree(state => state.gl);
@@ -184,6 +185,31 @@ export const SceneryCloudVolume = ({
   const debugAir = debug.air;
   const debugSteer = debug.steer;
 
+  // The light maps' program, compiled once they are asked for (`lightMap`): lit as marched until
+  // then, so the default compiles nothing more.
+  const [lightReady, setLightReady] = useState(false);
+  useLayoutEffect(() => {
+    if (!volume || !lightMap) return;
+    let current = true;
+    const wait = precompile(
+      gl,
+      volume.lightGenerator(),
+      camera,
+      scene,
+      'offscreen',
+      { priority: PRECOMPILE_PRIORITY.background },
+    );
+    if (!wait) setLightReady(true);
+    else
+      wait.then(() => {
+        if (current) setLightReady(true);
+      });
+    return () => {
+      current = false;
+    };
+  }, [gl, scene, camera, volume, lightMap]);
+  const lit = lightMap && lightReady;
+
   useLayoutEffect(() => {
     if (!volume) return;
     const place = localKey
@@ -207,6 +233,7 @@ export const SceneryCloudVolume = ({
       color: new Color(colorHex),
       seed,
       quality: cloudVolumeQuality(quality, { resolution }),
+      lightMap: lit,
       debug: { view: debugView, air: debugAir, steer: debugSteer },
     });
   }, [
@@ -226,6 +253,7 @@ export const SceneryCloudVolume = ({
     debugView,
     debugAir,
     debugSteer,
+    lit,
   ]);
 
   // Hidden until its programs are compiled: drawn before, the browser waits for them.

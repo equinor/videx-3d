@@ -579,6 +579,31 @@ tops some 0.5–1.2, shade 0.2–0.5, only the silver linings over 1. Then the a
 distance their light comes from on average, as the relief is hazed, and from space the air
 over them.
 
+**Light maps (an option: `lightMap`, off by default; `scenery-cloud-light.ts`, 2026-11-10).** A
+local weather's clouds can be lit from maps instead of marching toward the light from every point
+lit. For each level, a layer of a 2D array target covers the weather's disc on the field, as far
+again as a ray toward a low light runs out under the deepest level's base (`LIGHT_MARGIN`, at
+most 25 km). Each texel is one ray toward the light, from where it leaves the level's base,
+taken through the shell in 16 stretches (`CLOUD_LIGHT_STEPS`) by the march's own program
+(`CLOUD_LIGHT_MAP`), so it holds the cloud the march draws. Each texel stores the optical depth
+from the base, and from a quarter, half and three quarters of the way up, to the top. A point is
+lit from the texel its ray leaves the base at, between the heights it lies at and the march's
+reach toward the light (`cloudLightFromMap`). The maps are fixed to the Earth, never to the
+camera, with mipmaps, so a far point reads them as coarsely as it reads the cover. Texel: the
+finest level's cover texel, at most 1024 a side.
+
+A map is drawn anew when the settings, the light's way (to 0.06°) or the ground change, or when
+the clock has run on by a twentieth of the shortest lifetime. It is drawn 64k texels a frame
+(1.1 ms on an Iris Xe), and its rows drawn over several frames all show the drawing's time: each
+is drawn where the wind has carried those clouds since. Done, it fades in over the one before
+in half a second, and each map is read where the wind has carried its clouds since its time, so
+wind drift never redraws. Measured with scattered cumulus and cirrus (march alone, alternated):
+12–15 % less than marched, for some 25 MB (two drawings, two levels). The shading in the clouds
+is finer than marched: 16 stretches at the cover's texel against a skin and one long stretch.
+Under a fast clock (a timelapse) the maps are drawn on and on and the light lags behind the
+clouds, so it stays an option. A global weather is lit as marched. The program is compiled only
+once the option is on.
+
 **Drawn over the scene.** The march writes premultiplied colour and, as depth, log2 of the
 distance to the clouds' front, where they hide a tenth of what lies behind (`CLOUD_FRONT`; the
 mean distance their light comes from where they never do). Not the mean: it lies inside whatever

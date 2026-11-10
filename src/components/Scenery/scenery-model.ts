@@ -239,6 +239,15 @@ export type SceneryCloudVolumeProps = {
    * lee and steered by it. false: the sea's level everywhere. Default true
    */
   terrain?: boolean;
+  /**
+   * a local weather's clouds lit from light maps — for each level, how much of its cloud lies
+   * toward the light from anywhere in it, drawn a few rows a frame and faded in — rather than
+   * marched toward the light from every point lit. A moving view or clock costs some 12–15 %
+   * less, for some 25 MB and about 1 ms a frame while a map is drawn anew: as the clouds form
+   * and fade and the sun moves, so under a fast clock (a timelapse) the light lags and the maps
+   * are drawn on and on. A global weather's are marched. Default false
+   */
+  lightMap?: boolean;
 };
 
 /**
@@ -688,6 +697,7 @@ export const sceneryDefaults = {
     quality: 'medium' as SceneryCloudVolumeQuality,
     dominance: 0.8,
     terrain: true,
+    lightMap: false,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

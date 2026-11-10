@@ -61,6 +61,7 @@ import {
   CLOUD_COVER_VOLUME_SIZE,
   CloudCoverVolume,
 } from './scenery-cloud-cover';
+import { CloudLightMap } from './scenery-cloud-light';
 import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
 import { CloudTerrain } from './scenery-cloud-terrain';
 import { CloudWeather } from './scenery-cloud-weather';
@@ -291,6 +292,9 @@ const VOLUME_LUMP_TILES = 100 / 6;
 // this much in a lifetime, so a cloud this size comes and goes in it, a broader one lasts as
 // much longer as it is broader.
 const LIFE_SIZE = 1500;
+// The light maps reach this much past a local weather's radius at most (m): a ray toward a low
+// light leaves a level's base that far out from the cloud it lights at its top.
+const LIGHT_MARGIN = 25000;
 // The lumps' second tiling (cloud-volume-march.glsl): broader (and turned, LUMPS_TURN).
 const LUMP_BROADER = 1.618;
 // Turns fixed on the Earth (column-major, a GLSL mat3's): the cover volume's lattice, so no
@@ -366,6 +370,8 @@ export type CloudVolumeSettings = {
   seed: number;
   /** how much they spend for how they look (cloudVolumeQuality) */
   quality: CloudVolumeQualityLevel;
+  /** a local weather's clouds lit from light maps (see {@link CloudLightMap}) */
+  lightMap: boolean;
   debug: SceneryCloudVolumeDebug;
 };
 
@@ -497,6 +503,15 @@ export class CloudVolumeRenderer {
   private readonly weather: CloudWeather;
   /** the ground under the clouds, from a relief (see {@link CloudTerrain}): none until given one */
   readonly terrain = new CloudTerrain();
+  /** a local weather's light maps (see {@link CloudLightMap}) */
+  readonly light = new CloudLightMap(CLOUD_VOLUME_LEVELS);
+  // Counts the settings set: the light maps are drawn anew for each.
+  private settingsSerial = 0;
+  // Each level's wind on the field: the way it blows toward (east, north) times its speed (m/s).
+  private readonly levelWinds = Array.from(
+    { length: CLOUD_VOLUME_LEVELS },
+    () => new Vector2(),
+  );
   private readonly coverTable = createCoverTable();
   private coverTableKey = '';
   private settings: CloudVolumeSettings | null = null;
@@ -575,6 +590,7 @@ export class CloudVolumeRenderer {
           new Array<number>(CLOUD_VOLUME_LEVELS).fill(0),
         ),
         ...this.terrain.uniforms,
+        ...this.light.uniforms,
         uCloudMap: new Uniform<CubeTexture | null>(null),
         uCloudMapNext: new Uniform<CubeTexture | null>(null),
         uCloudTypes: new Uniform<CubeTexture | null>(null),
@@ -638,6 +654,7 @@ export class CloudVolumeRenderer {
   set(settings: CloudVolumeSettings) {
     this.settings = settings;
     this.marchDrawn = false;
+    this.settingsSerial++;
     const u = this.marchMaterial.uniforms;
     // A local weather's middle as the anchor lies now, until it says.
     if (
@@ -867,6 +884,7 @@ export class CloudVolumeRenderer {
         const speed = wind?.speed ?? 0;
         const ae = Math.sin(toward);
         const an = Math.cos(toward);
+        this.levelWinds[k].set(ae * speed, an * speed);
 
         // Its pattern on the Earth (the cover volume's): from metres fixed on the Earth to the
         // volume's tiles, turned as its wind has carried it about the Earth's centre (so it
@@ -1124,6 +1142,7 @@ export class CloudVolumeRenderer {
     }
     // Nothing it is marched from changed since it was last: its image laid over the scene again
     // as it is. A still view with the clock held costs the composite alone.
+    this.updateLight(renderer);
     if (this.marchUnchanged(renderer, camera)) return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
@@ -1176,10 +1195,63 @@ export class CloudVolumeRenderer {
     inputs.add(this.time);
     inputs.add(this.terrain.version);
     inputs.add(this.weather.version);
+    inputs.add(this.light.version);
     inputs.add(material.version);
     for (const name of this.marchNames)
       inputs.addValue(material.uniforms[name].value);
     return inputs.end();
+  }
+
+  // A local weather's light maps, with `lightMap`, drawn on a few rows a frame (CloudLightMap):
+  // over its disc and as far again as a ray toward the light runs out under its deepest level's
+  // base, the texel the finest level's cover's, drawn anew as the settings, the light's way or
+  // the ground change, or as the clock runs on by a twentieth of the shortest lifetime (its
+  // clouds formed and faded so far). A global weather's clouds are lit as marched.
+  private updateLight(renderer: WebGLRenderer) {
+    const settings = this.settings!;
+    if (settings.global || !settings.lightMap) {
+      this.light.update(renderer, null);
+      return;
+    }
+    const u = this.marchMaterial.uniforms;
+    const levels = settings.levels.slice(0, CLOUD_VOLUME_LEVELS);
+    // The light's way at the weather's middle (cloud-light.glsl, cloudLightWay).
+    const sun = u.uSkySunDirection.value as Vector3;
+    const way =
+      sun.dot(this.frameM) > -0.105
+        ? sun
+        : (u.uSkyMoonDirection.value as Vector3);
+    const rising = Math.max(way.dot(this.frameM), 0.05);
+    const shells = u.uCloudShells.value as Vector4[];
+    const texel = VOLUME_TILE / CLOUD_COVER_VOLUME_SIZE;
+    let deepest = 0;
+    let finest = Infinity;
+    let shortest = Infinity;
+    levels.forEach(({ look }, k) => {
+      deepest = Math.max(deepest, shells[k].y - shells[k].x);
+      finest = Math.min(finest, texel * settings.scale * look.scale);
+      shortest = Math.min(shortest, look.lifetime);
+    });
+    this.light.update(renderer, {
+      levels: levels.length,
+      half: settings.local.radius + Math.min(deepest / rising, LIGHT_MARGIN),
+      texel: finest,
+      key: [
+        this.settingsSerial,
+        way.x.toFixed(3),
+        way.y.toFixed(3),
+        way.z.toFixed(3),
+        this.terrain.version,
+      ].join(','),
+      time: this.time,
+      refresh: MathUtils.clamp(shortest / 20, 30, 600),
+      winds: this.levelWinds,
+    });
+  }
+
+  /** What draws a local weather's light maps: compile it before it shows. */
+  lightGenerator(): Mesh {
+    return this.light.generator(this.marchMaterial);
   }
 
   /**
@@ -1199,6 +1271,7 @@ export class CloudVolumeRenderer {
     this.target.dispose();
     this.march.geometry.dispose();
     this.terrain.dispose(release);
+    this.light.dispose(release);
     this.coverVolume.dispose();
     this.weather.dispose();
     this.coverTable.dispose();
