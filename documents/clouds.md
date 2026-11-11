@@ -463,6 +463,12 @@ change only with the clock:
   placing the level at all (`cloudPlaceClear`). Together 1.1–1.25 times as long without them,
   the image the same to 0.004. In the march's own steps past the first cloud the same skip cost
   more than it spared (1.04–1.43 times as long), so it is not taken there.
+- **Stopped at 5 %** (`uCloudDetail.z`): a view stops once 5 % of what lies behind it comes
+  through, not 1 %, and is drawn as opaque as that from there on, so nothing shows through where
+  it stopped. Its deepest cloud's light is left out, unseen: 0.77–0.89 of the time through an
+  overcast. Short steps by each part's own optical depth rather than its level's extinction
+  (fewer through thin cloud: 0.6–0.9 of the time through broken cumulus) were tried and
+  rejected: they shaded the clouds' sides in bands, close by too.
 
 **The image's size** follows the CSS pixels, whatever the screen's pixel ratio
 (`CloudVolumeRenderer.render`): at a pixel ratio of 2, `medium` marched each CSS pixel, 4 times

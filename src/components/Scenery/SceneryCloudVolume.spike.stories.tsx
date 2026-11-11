@@ -26,6 +26,7 @@ import {
 import {
   SCENERY_DEBUG_HIGH_ALTITUDES,
   SceneryDebugPanel,
+  type SceneryDebugButton,
   type SceneryDebugRow,
 } from '../../storybook/components/scenery-debug-panel';
 import { SceneryArgsFeatures } from '../../storybook/components/scenery-features';
@@ -69,6 +70,7 @@ import {
   sceneryDefaults,
   type SceneryCloudLook,
   type SceneryCloudVolumeQuality,
+  type SceneryCloudVolumeTemporal,
 } from './scenery-model';
 import type { SceneryStageBounds } from './scenery-stage';
 
@@ -122,6 +124,8 @@ type CloudVolumeArgs = {
   steer: boolean;
   /** a local weather's clouds lit from light maps (`lightMap`) */
   lightMap: boolean;
+  /** how the march reuses the last frames' (`temporal`) */
+  temporal: SceneryCloudVolumeTemporal;
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -144,6 +148,14 @@ type CloudVolumeArgs = {
   debugView: 'none' | 'cost' | 'unlit' | 'map';
   /** the air's haze between the clouds and the camera */
   debugAir: boolean;
+  /** being chosen: how the sun lights them (`debug.light`) */
+  lightModel: 'single' | 'diffuse' | 'shaded';
+  /** being chosen: rays for a pixel grazing the levels (`debug.limb`) */
+  limbRays: number;
+  /** being chosen: runs taken whole where a pixel spans the level's depth (`debug.whole`) */
+  wholeFar: boolean;
+  /** being chosen: the cover read over the pixel's footprint on the level (`debug.onLayer`) */
+  onLayer: boolean;
   /** how far on to jump the weather's clock (minutes): the clouds drift with the wind */
   cloudMinutes: number;
   /** the weather clock's rate (weather seconds a second) */
@@ -495,20 +507,39 @@ const LookControls = ({ args }: { args: CloudVolumeArgs }) => {
   );
 };
 
-// The panel's rows of the story's own: views by the level edited, and the weather's clock (pause,
-// its rates) and whether the sun runs on it.
+// The views by the level edited, for the panel's view row; their names apart from its own.
+function cloudViews(args: CloudVolumeArgs): SceneryDebugButton[] {
+  const names: Record<string, string> = {
+    level: 'in level',
+    horizon: 'over top',
+  };
+  return Object.entries(viewsOf(args)).map(([key, [position, target]]) => ({
+    label: names[key] ?? key,
+    title: `A view by the ${args.edit} level (EDIT)`,
+    click: () =>
+      dispatchEvent(
+        new CameraLookAtEvent({ position, target, transition: false }),
+      ),
+  }));
+}
+
+// The panel's rows of the story's own: the weather (local or global), its clock (pause, its
+// rates) and whether the sun runs on it, how the march reuses the last frames, how the sun lights
+// the clouds, the ground under them, and the frame's statistics.
 function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
-  const views = viewsOf(args);
   return [
     {
-      label: 'clouds',
-      buttons: Object.entries(views).map(([label, [position, target]]) => ({
-        label,
-        title: `A view by the ${args.edit} level (EDIT)`,
-        click: () =>
-          dispatchEvent(
-            new CameraLookAtEvent({ position, target, transition: false }),
-          ),
+      label: 'weather',
+      buttons: (
+        [
+          ['local', 'The levels’ layers about the local weather’s middle'],
+          ['global', 'The weather systems over the whole Earth'],
+        ] as const
+      ).map(([weatherMode, title]) => ({
+        label: weatherMode,
+        title,
+        on: args.weatherMode === weatherMode,
+        click: () => update({ weatherMode }),
       })),
     },
     {
@@ -539,6 +570,99 @@ function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
       ],
     },
     {
+      // Being chosen: how the march reuses the last frames (TEMPORAL).
+      label: 'temporal',
+      buttons: (
+        [
+          ['off', 'Every pixel marched every frame'],
+          [
+            'still',
+            'A quarter of the pixels a frame while the camera holds still; all as it moves',
+          ],
+          [
+            'moving',
+            'A quarter a frame however the camera moves, the rest moved to where their clouds lie now',
+          ],
+        ] as const
+      ).map(([temporal, title]) => ({
+        label: temporal,
+        title,
+        on: args.temporal === temporal,
+        click: () => update({ temporal }),
+      })),
+    },
+    {
+      // Being chosen: how the sun lights the clouds (LIGHT MODEL).
+      label: 'light',
+      buttons: (
+        [
+          ['single', 'Its light scattered once, by the phase'],
+          [
+            'diffuse',
+            'With the light scattered many times over, much the same from every side',
+          ],
+          [
+            'shaded',
+            'Diffuse, the billows facing away from the sun shaded by their own lumps',
+          ],
+        ] as const
+      ).map(([lightModel, title]) => ({
+        label: lightModel,
+        title,
+        on: args.lightModel === lightModel,
+        click: () => update({ lightModel }),
+      })),
+    },
+    {
+      // Being chosen: the cover read over the pixel's footprint on the level (ON LAYER).
+      label: 'filter',
+      buttons: (
+        [
+          ['across', 'The cover read over the pixel’s width', false],
+          [
+            'on layer',
+            'The cover read over the pixel’s footprint on the level: far, low decks blurred as a pixel holds them',
+            true,
+          ],
+        ] as const
+      ).map(([label, title, onLayer]) => ({
+        label,
+        title,
+        on: args.onLayer === onLayer,
+        click: () => update({ onLayer }),
+      })),
+    },
+    {
+      // Being chosen: runs taken whole far off (WHOLE FAR).
+      label: 'far',
+      buttons: (
+        [
+          ['stepped', 'Every run walked in steps and parts', false],
+          [
+            'whole',
+            'A run taken whole where a pixel spans more than half the level’s depth',
+            true,
+          ],
+        ] as const
+      ).map(([label, title, wholeFar]) => ({
+        label,
+        title,
+        on: args.wholeFar === wholeFar,
+        click: () => update({ wholeFar }),
+      })),
+    },
+    {
+      // Being chosen: rays for a pixel grazing the levels (LIMB RAYS).
+      label: 'limb',
+      buttons: [1, 2, 4].map(limbRays => ({
+        label: limbRays === 1 ? '1 ray' : `${limbRays} rays`,
+        title:
+          'Rays marched for a pixel whose view grazes the levels, averaged',
+        on: args.limbRays === limbRays,
+        click: () => update({ limbRays }),
+      })),
+    },
+    {
       // Being chosen: the clouds over the relief, and a global weather's systems steered by it.
       label: 'ground',
       buttons: (
@@ -562,23 +686,15 @@ function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
       })),
     },
     {
-      // How a local weather's clouds are lit (LIGHT MAP).
-      label: 'light',
-      buttons: (
-        [
-          ['marched', 'Marched toward the light at every point lit', false],
-          [
-            'map',
-            'Read from light maps, drawn anew as the clouds form and fade',
-            true,
-          ],
-        ] as const
-      ).map(([label, title, lightMap]) => ({
-        label,
-        title,
-        on: args.lightMap === lightMap,
-        click: () => update({ lightMap }),
-      })),
+      label: 'stats',
+      buttons: [
+        {
+          label: args.stats ? 'on' : 'off',
+          title: 'The frame rate and frame times, bottom left (STATS)',
+          on: args.stats,
+          click: () => update({ stats: !args.stats }),
+        },
+      ],
     },
   ];
 }
@@ -623,6 +739,7 @@ const ClockedScenery = ({
         args={sky}
         altitudes={SCENERY_DEBUG_HIGH_ALTITUDES}
         fly={flyFromArgs(args)}
+        views={cloudViews(args)}
         rows={cloudRows(args)}
       >
         <LookControls args={args} />
@@ -681,12 +798,17 @@ const CloudVolumeStory = (args: CloudVolumeArgs) => {
               seed={args.volumeSeed}
               terrain={args.cloudTerrain}
               lightMap={args.lightMap}
+              temporal={args.temporal}
               debug={{
                 view: args.debugView === 'none' ? undefined : args.debugView,
                 air: args.debugAir,
                 types: args.globalTypes,
                 thickness: args.globalThickness,
                 steer: args.steer,
+                light: args.lightModel,
+                limb: args.limbRays,
+                whole: args.wholeFar,
+                onLayer: args.onLayer,
               }}
             />
           )}
@@ -833,7 +955,14 @@ const meta = {
     lightMap: {
       control: { type: 'boolean' },
       description:
-        'A local weather’s clouds lit from light maps (`lightMap`): some 12–15 % cheaper while the view or the clock moves, drawn anew as the clouds form and fade and the sun moves, so lagging under a fast clock. Off: marched toward the light at every point lit.',
+        'A local weather’s clouds lit from light maps (`lightMap`), drawn anew as the clouds form and fade and the sun moves, so lagging under a fast clock; their saving was measured before the march’s cover map and its stop at 5 %, and not since. Without the lumps’ own shade (LIGHT MODEL shaded). Off: marched toward the light at every point lit.',
+      table: { category: 'Cloud volume' },
+    },
+    temporal: {
+      control: { type: 'inline-radio' },
+      options: ['off', 'still', 'moving'],
+      description:
+        'Being chosen: how the march reuses the last frames’ (`temporal`). OFF: every pixel every frame. STILL: a quarter of the pixels a frame while the camera holds still, the rest as marched up to three frames before; all as it moves. MOVING: a quarter a frame however it moves, the rest moved to where their clouds lie now.',
       table: { category: 'Cloud volume' },
     },
     globalThickness: {
@@ -931,6 +1060,26 @@ const meta = {
       description: 'The air’s haze between the clouds and the camera.',
       table: { category: 'Debug' },
     },
+    lightModel: {
+      control: { type: 'inline-radio' },
+      options: ['single', 'diffuse', 'shaded'],
+      description:
+        'Being chosen: how the sun lights the clouds (`debug.light`). SINGLE: its light scattered once, by the phase. DIFFUSE: with the light scattered many times over, leaving much as it came whichever way they are seen from. SHADED: that, the billows facing away from the sun shaded by their own lumps (marched light only, not light maps).',
+      table: { category: 'Cloud volume' },
+    },
+    limbRays: {
+      control: { type: 'inline-radio' },
+      options: [1, 2, 4],
+      description:
+        'Being chosen: rays marched for a pixel whose view grazes the levels (`debug.limb`), toward the Earth’s limb where a pixel spans kilometres of height, spread over its height and averaged.',
+      table: { category: 'Cloud volume' },
+    },
+    wholeFar: {
+      control: { type: 'boolean' },
+      description:
+        'Being chosen: a run through a level taken whole where a pixel spans more than half the level’s depth (`debug.whole`): one step lit once, its share blurred by the pixel’s footprint up and down, rather than walked in steps and parts.',
+      table: { category: 'Cloud volume' },
+    },
     syncClocks: {
       control: { type: 'boolean' },
       description:
@@ -973,6 +1122,7 @@ const meta = {
     cloudTerrain: true,
     steer: true,
     lightMap: false,
+    temporal: 'off',
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',
@@ -987,6 +1137,10 @@ const meta = {
     volumeSeed: sceneryDefaults.cloudVolume.seed,
     debugView: 'none',
     debugAir: true,
+    lightModel: 'single',
+    limbRays: 1,
+    wholeFar: false,
+    onLayer: false,
     cloudMinutes: 0,
     cloudRate: 1,
     // The sun on the weather's clock, from the Sun's hour, date and place.

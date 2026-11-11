@@ -264,6 +264,8 @@ export type SceneryDebugPanelProps = {
   fly?: SceneryDebugFly;
   /** the story's own rows of buttons, after the views */
   rows?: SceneryDebugRow[];
+  /** the story's own views, at the end of the view row */
+  views?: SceneryDebugButton[];
   /** the story's own controls, at the panel's end (rendered in the panel's own React root) */
   children?: ReactNode;
 };
@@ -363,6 +365,7 @@ export const SceneryDebugPanel = ({
   altitudes = ALTITUDES,
   fly,
   rows: own,
+  views: ownViews,
   children,
 }: SceneryDebugPanelProps) => {
   const gl = useThree(state => state.gl);
@@ -651,6 +654,7 @@ export const SceneryDebugPanel = ({
             },
           ]
         : []),
+      ...(ownViews ?? []),
     ],
   });
   if (own) rows.push(...own);

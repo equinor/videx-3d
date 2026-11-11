@@ -91,6 +91,7 @@ export const SceneryCloudVolume = ({
   debug = NO_DEBUG,
   terrain = sceneryDefaults.cloudVolume.terrain,
   lightMap = sceneryDefaults.cloudVolume.lightMap,
+  temporal = sceneryDefaults.cloudVolume.temporal,
 }: SceneryCloudVolumeProps) => {
   const registry = useContext(SceneryRegistryContext);
   const gl = useThree(state => state.gl);
@@ -142,6 +143,9 @@ export const SceneryCloudVolume = ({
   useEffect(() => {
     volume?.terrain.setSource(terrainSource);
   }, [volume, terrainSource]);
+  useEffect(() => {
+    if (volume) volume.temporal = temporal;
+  }, [volume, temporal]);
 
   const colorHex = toHex(color);
   const named = typeof layers === 'string' ? cloudLayersOf(layers) : layers;
@@ -195,6 +199,10 @@ export const SceneryCloudVolume = ({
   const debugView = debug.view;
   const debugAir = debug.air;
   const debugSteer = debug.steer;
+  const debugLight = debug.light;
+  const debugLimb = debug.limb;
+  const debugWhole = debug.whole;
+  const debugOnLayer = debug.onLayer;
 
   // The light maps' program, compiled once they are asked for (`lightMap`): lit as marched until
   // then, so the default compiles nothing more.
@@ -245,7 +253,15 @@ export const SceneryCloudVolume = ({
       seed,
       quality: cloudVolumeQuality(quality, { resolution }),
       lightMap: lit,
-      debug: { view: debugView, air: debugAir, steer: debugSteer },
+      debug: {
+        view: debugView,
+        air: debugAir,
+        steer: debugSteer,
+        light: debugLight,
+        limb: debugLimb,
+        whole: debugWhole,
+        onLayer: debugOnLayer,
+      },
     });
   }, [
     volume,
@@ -264,6 +280,10 @@ export const SceneryCloudVolume = ({
     debugView,
     debugAir,
     debugSteer,
+    debugLight,
+    debugLimb,
+    debugWhole,
+    debugOnLayer,
     lit,
   ]);
 
@@ -305,6 +325,9 @@ export const SceneryCloudVolume = ({
         priority: PRECOMPILE_PRIORITY.background,
       }),
       precompile(gl, volume.filmMesh, camera, scene, 'offscreen', {
+        priority: PRECOMPILE_PRIORITY.background,
+      }),
+      precompile(gl, volume.rebuild, camera, scene, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       precompile(gl, volume.shadowMesh, camera, scene, 'offscreen', {

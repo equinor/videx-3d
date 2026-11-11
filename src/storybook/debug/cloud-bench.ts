@@ -21,6 +21,7 @@ import {
 } from 'three';
 import { CloudVolumeRenderer } from '../../components/Scenery/scenery-cloud-volume';
 import type { CameraManager } from '../../sdk/managers/CameraManager';
+import { showAb, type AbImage, type AbStats } from './ab-viewer';
 import { registerVidex3d } from './videx3d';
 
 /**
@@ -46,8 +47,26 @@ export type CloudBench = {
     options?: AbOptions,
   ) => Promise<AbResult>;
   count: () => Promise<CountResult>;
+  /**
+   * Capture the view as it is drawn with `a` applied, then with `b`, each after `frames` frames
+   * (the weather held: nothing else moves), and show the two in the A/B viewer (`ab-viewer.ts`).
+   */
+  compare: (
+    a: CompareSide,
+    b: CompareSide,
+    options?: { title?: string; frames?: number },
+  ) => Promise<{ conditions: BenchConditions; stats: AbStats }>;
   /** hold the render loop `seconds` (a laptop's GPU cools, its clock settles) */
   hold: (seconds: number) => Promise<void>;
+};
+
+/** One side of a {@link CloudBench.compare}: what it does to the march's uniforms (or the story), undone after. */
+export type CompareSide = {
+  label: string;
+  apply: (context: {
+    uniforms: Record<string, IUniform>;
+    volume: CloudVolumeRenderer;
+  }) => (() => void) | Promise<() => void>;
 };
 
 /** What a timing depends on besides the code: compare results only where these match. */
@@ -979,7 +998,59 @@ export function createCloudBench(
   const hold = (seconds: number) =>
     exclusive(true, () => sleep(seconds * 1000));
 
-  return { conditions, pass, frames, ab, count, hold };
+  // The canvas as drawn, `frames` frames on: read from the drawing buffer once the frame's render
+  // is done (an after effect), rows top first.
+  const capture = (frames: number) =>
+    new Promise<AbImage>(resolve => {
+      let frame = 0;
+      const stop = addAfterEffect(() => {
+        if (++frame < frames) return;
+        stop();
+        const gl = renderer();
+        const ctx = context();
+        const width = ctx.drawingBufferWidth;
+        const height = ctx.drawingBufferHeight;
+        const raw = new Uint8Array(width * height * 4);
+        gl.setRenderTarget(null);
+        ctx.readPixels(0, 0, width, height, ctx.RGBA, ctx.UNSIGNED_BYTE, raw);
+        const pixels = new Uint8ClampedArray(raw.length);
+        const row = width * 4;
+        for (let y = 0; y < height; y++)
+          pixels.set(
+            raw.subarray((height - 1 - y) * row, (height - y) * row),
+            y * row,
+          );
+        resolve({ width, height, pixels });
+      });
+    });
+
+  const compare = (
+    a: CompareSide,
+    b: CompareSide,
+    options: { title?: string; frames?: number } = {},
+  ) =>
+    exclusive(false, async () => {
+      const frames = options.frames ?? 12;
+      const real = volume();
+      const context_ = {
+        uniforms: inside(real).marchMaterial.uniforms,
+        volume: real,
+      };
+      const undoA = await a.apply(context_);
+      const imageA = await capture(frames);
+      undoA();
+      const undoB = await b.apply(context_);
+      const imageB = await capture(frames);
+      undoB();
+      const stats = showAb(imageA, imageB, {
+        a: a.label,
+        b: b.label,
+        title: options.title ?? '',
+      });
+      return { conditions: conditions(), stats };
+    });
+
+  return { conditions, pass, frames, ab, count, compare, hold };
 }
 
 /**

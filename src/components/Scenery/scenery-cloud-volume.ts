@@ -83,9 +83,11 @@ import type {
   SceneryCloudLook,
   SceneryCloudVolumeDebug,
   SceneryCloudVolumeQuality,
+  SceneryCloudVolumeTemporal,
 } from './scenery-model';
 import compositeShader from './shaders/cloud-volume-composite.glsl';
 import marchShader from './shaders/cloud-volume-march.glsl';
+import rebuildShader from './shaders/cloud-volume-rebuild.glsl';
 import vertexShader from './shaders/cloud-volume-vertex.glsl';
 
 /**
@@ -392,6 +394,23 @@ const ROUND_REACH = 3;
 // cloudMarchRuns): a part up to 16 mean free paths long is walked in steps of 1, a longer one in
 // longer steps.
 const FINE_STEPS = 16;
+// The march's detail (cloud-volume-march.glsl, uCloudDetail): short steps through cloud no
+// shorter than this many footprints; the lumps read where the footprint resolves features this
+// share of the shape volume's tile across; and the march stops once this little of the light
+// comes through (5 %: unseen, 0.77–0.89 of the time through an overcast).
+const DETAIL = [2, 0.25, 0.05] as const;
+// The phase's two lobes (cloud-light.glsl, uCloudPhase): the forward lobe's g, the backward's,
+// the forward's share, and the most it reaches (4π times: 1 all round).
+const PHASE = [0.6, -0.3, 0.7, 4] as const;
+// How the sun lights them (cloud-light.glsl, uCloudLightModel), by `debug.light` (being chosen):
+// the lumps in the first sample toward the light (1) or not; the diffuse light's weight (0: the
+// octaves instead), how fast it falls off with the optical depth toward the light, and the weight
+// of the light scattered once.
+const LIGHT_MODELS = {
+  single: [0, 0, 0.25, 0.5],
+  diffuse: [0, 0.8, 0.25, 0.5],
+  shaded: [1, 0.8, 0.25, 0.5],
+} as const;
 // The parts a step holding cloud is split in (cloud-volume-march.glsl, CLOUD_SPLIT).
 const MARCH_SPLIT = 4;
 // A level as optically deep straight through as this, or deeper, takes the quality's steps; a
@@ -515,7 +534,7 @@ const createCompositeMaterial = (
       uCloudImageSize: new Uniform(new Vector2(1, 1)),
       // A tent of four taps as the image is scaled up: there is no accumulation of frames.
       uCloudSoften: new Uniform(1),
-      uCloudJitter: new Uniform(new Vector2()),
+      uCloudRays: new Uniform(new Vector4(1, 1, 0, 0)),
       uSkyIntensity: intensity,
     },
     transparent: true,
@@ -560,6 +579,19 @@ const stretched = new Matrix3();
 const volumeTurn = new Matrix3().fromArray(VOLUME_TURN);
 const patchesTurn = new Matrix3().fromArray(PATCHES_TURN);
 const lumpsTurn = new Matrix3().fromArray(LUMPS_TURN);
+
+// The interleaved march's parts (`temporal`): one pixel of each 2 × 2 block (x + 2 y), drawn in
+// this order, diagonals first, so any two frames running cover the block evenly.
+const PARTS = 4;
+const PART_ORDER = [0, 3, 1, 2];
+const viewNow = new Matrix4();
+// `camera`'s projection times its view's turn alone, into `target`: a point from the camera
+// (world) to clip space.
+const partView = (camera: Camera, target: Matrix4) =>
+  target
+    .copy(camera.matrixWorldInverse)
+    .setPosition(0, 0, 0)
+    .premultiply(camera.projectionMatrix);
 
 const levelVectors = () =>
   Array.from({ length: CLOUD_VOLUME_LEVELS }, () => new Vector4());
@@ -672,6 +704,38 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
   private marchDrawn = false;
   private marchProgram: object | null = null;
   private marchNames: string[] = [];
+
+  /**
+   * How the march reuses what it drew over the last frames (`SceneryCloudVolumeTemporal`):
+   * `'off'` every pixel every frame; else one pixel of each 2 × 2 block a frame (a part, each in
+   * turn), each part into an image of its own, the full image rebuilt from the four
+   * (cloud-volume-rebuild.glsl).
+   */
+  temporal: SceneryCloudVolumeTemporal = 'off';
+  /** the interleaved march's rebuild (`temporal`): compile it before it draws */
+  readonly rebuild: Mesh;
+  private readonly rebuildMaterial: ShaderMaterial;
+  private readonly rebuildScene = new Scene();
+  // The interleaved march's parts, each with the camera it was drawn from (its projection times
+  // its view's turn, where it was, and the pose it was drawn at: poseSerial) and whether it holds
+  // a march; the part drawn next; how many were drawn from what the march is drawn from now
+  // (marchUnchanged); the mode last drawn; the camera last drawn for (cameraMoved) and its pose,
+  // counted up as it moves.
+  private readonly parts = Array.from({ length: 4 }, createImage);
+  private readonly partViews = Array.from({ length: 4 }, () => new Matrix4());
+  private readonly partAt = Array.from({ length: 4 }, () => new Vector3());
+  private readonly partPose = [-1, -1, -1, -1];
+  private readonly partHeld = [false, false, false, false];
+  private phase = 0;
+  private partsFresh = 0;
+  private temporalDrawn: SceneryCloudVolumeTemporal = 'off';
+  private readonly cameraSeen: number[] = [];
+  private poseSerial = 0;
+  // The pose the full march last drew at (`'still'` as the camera moved), and what splits its
+  // image into the parts as it stops.
+  private fullPose = -1;
+  private readonly splitMaterial: ShaderMaterial;
+  private readonly splitScene = new Scene();
 
   // For the scene's light (ScenerySkyOverlay): what they look like from the scene, how much of
   // its light they let through, their shadows and what the sea reflects of them.
@@ -851,12 +915,25 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
         uCloudMarch: new Uniform(new Vector4(32, 0, 0, 1e-3)),
         uCloudLightSamples: new Uniform(2),
         uCloudFineSteps: new Uniform(FINE_STEPS),
+        uCloudDetail: new Uniform(new Vector3(...DETAIL)),
+        uCloudPhase: new Uniform(new Vector4(...PHASE)),
+        uCloudLightModel: new Uniform(new Vector4(...LIGHT_MODELS.single)),
+        // Being chosen: unresolved cloud's chunk at most the ray's path through its level.
+        uCloudChunkThrough: new Uniform(0),
+        // Being chosen (debug.limb): views marched for a pixel grazing the levels.
+        uCloudLimbRays: new Uniform(1),
+        // Being chosen (debug.whole): runs taken whole where a pixel spans the level's depth.
+        uCloudWhole: new Uniform(0),
+        // Being chosen (debug.onLayer): the cover read over the pixel's footprint on the level.
+        uCloudOnLayer: new Uniform(0),
         uCloudFirst: new Uniform<Texture>(this.firstTarget.texture),
         uCloudFirstOn: new Uniform(false),
         uCloudMarchMost: new Uniform(0),
         uCloudDebug: new Uniform(0),
         uCloudAir: new Uniform(1),
-        uCloudJitter: new Uniform(new Vector2()),
+        // The interleaved march's (`temporal`): set for its draws alone, then put back.
+        uCloudRays: new Uniform(new Vector4(1, 1, 0, 0)),
+        uCloudDerivative: new Uniform(1),
         uCloudColor: new Uniform(new Color(1, 1, 1)),
       },
       // Every pixel writes its depth: the distance to the clouds' front.
@@ -929,6 +1006,76 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
     this.composite.userData.cloudVolume = this;
     this.composite.onBeforeRender = (renderer, _scene, camera) =>
       this.render(renderer, camera);
+
+    // The interleaved march's image, rebuilt from its parts (`temporal`).
+    const partUniforms: Record<string, IUniform> = {};
+    this.parts.forEach((part, k) => {
+      partUniforms[`uCloudPart${k}`] = new Uniform<Texture>(part.texture);
+      partUniforms[`uCloudPartDepth${k}`] = new Uniform<Texture | null>(
+        part.depthTexture,
+      );
+    });
+    this.rebuildMaterial = new ShaderMaterial({
+      name: 'scenery-cloud-volume-rebuild',
+      vertexShader,
+      fragmentShader: rebuildShader,
+      defines: { CLOUD_DEPTH_RANGE: DEPTH_RANGE },
+      uniforms: {
+        ...partUniforms,
+        uCloudRays: new Uniform(new Vector4(1, 1, 0, 0)),
+        uCloudPartView: new Uniform(this.partViews),
+        uCloudPartUnview: new Uniform(
+          Array.from({ length: 4 }, () => new Matrix4()),
+        ),
+        uCloudPartAt: new Uniform(
+          Array.from({ length: 4 }, () => new Vector3()),
+        ),
+        uCloudPartState: new Uniform(
+          Array.from({ length: 4 }, () => new Vector2()),
+        ),
+        uCloudPhase: new Uniform(0),
+        uCloudImageSize: new Uniform(new Vector2(1, 1)),
+        uCloudPartSize: new Uniform(new Vector2(1, 1)),
+      },
+      depthTest: true,
+      depthFunc: AlwaysDepth,
+      depthWrite: true,
+      blending: NoBlending,
+    });
+    this.rebuild = new Mesh(geometry, this.rebuildMaterial);
+    this.rebuild.frustumCulled = false;
+    this.rebuild.layers.enableAll();
+    this.rebuildScene.add(this.rebuild);
+    // The full image split into the parts: each part's pixel of each 2 × 2 block.
+    this.splitMaterial = new ShaderMaterial({
+      name: 'scenery-cloud-volume-split',
+      vertexShader: /* glsl */ `
+void main() {
+  gl_Position = vec4(position.xy, 0.0, 1.0);
+}`,
+      fragmentShader: /* glsl */ `
+uniform sampler2D uCloudImage;
+uniform sampler2D uCloudDepth;
+uniform vec2 uCloudOffset;
+void main() {
+  ivec2 at = min(ivec2(gl_FragCoord.xy) * 2 + ivec2(uCloudOffset), textureSize(uCloudImage, 0) - 1);
+  gl_FragColor = texelFetch(uCloudImage, at, 0);
+  gl_FragDepth = texelFetch(uCloudDepth, at, 0).r;
+}`,
+      uniforms: {
+        uCloudImage: new Uniform<Texture>(this.target.texture),
+        uCloudDepth: new Uniform<Texture | null>(this.target.depthTexture),
+        uCloudOffset: new Uniform(new Vector2()),
+      },
+      depthTest: true,
+      depthFunc: AlwaysDepth,
+      depthWrite: true,
+      blending: NoBlending,
+    });
+    const splitMesh = new Mesh(geometry, this.splitMaterial);
+    splitMesh.frustumCulled = false;
+    splitMesh.layers.enableAll();
+    this.splitScene.add(splitMesh);
 
     // The film: each face's march laid into it, as a still, without the sky's intensity.
     this.stillMaterial = createCompositeMaterial(
@@ -1101,6 +1248,16 @@ void main() {
             ? 3
             : 0;
     u.uCloudAir.value = settings.debug.air === false ? 0 : 1;
+    (u.uCloudLightModel.value as Vector4).fromArray(
+      LIGHT_MODELS[settings.debug.light ?? 'single'],
+    );
+    u.uCloudLimbRays.value = MathUtils.clamp(
+      Math.round(settings.debug.limb ?? 1),
+      1,
+      4,
+    );
+    u.uCloudWhole.value = settings.debug.whole ? 1 : 0;
+    u.uCloudOnLayer.value = settings.debug.onLayer ? 1 : 0;
     (u.uCloudColor.value as Color).copy(settings.color);
   }
 
@@ -1475,10 +1632,8 @@ void main() {
     const share = MathUtils.clamp(settings.quality.resolution, 0.25, 1);
     const width = Math.max(Math.round(size.x * share), 1);
     const height = Math.max(Math.round(size.y * share), 1);
-    if (this.target.width !== width || this.target.height !== height) {
+    if (this.target.width !== width || this.target.height !== height)
       this.target.setSize(width, height);
-      this.firstTarget.setSize(width, height);
-    }
     this.updateCamera(camera, height);
     this.levelsReady = this.updateLevels(renderer);
     if (!this.levelsReady) {
@@ -1517,6 +1672,23 @@ void main() {
         cameraAt.setFromMatrixPosition(camera.matrixWorld),
       ) < FIRST_HIGHEST;
     this.marchMaterial.uniforms.uCloudFirstOn.value = first;
+    // Interleaved (`temporal`), but for `'still'` while the camera moves: every pixel then.
+    const shifted = this.temporal !== 'off' && this.cameraMoved(camera);
+    if (shifted) this.poseSerial++;
+    if (this.temporal === 'moving' || (this.temporal === 'still' && !shifted)) {
+      this.renderParts(renderer, camera, first, width, height);
+      return;
+    }
+    if (this.temporalDrawn !== this.temporal) {
+      this.temporalDrawn = this.temporal;
+      this.marchDrawn = false;
+    }
+    // The parts no longer as the camera saw them, but this image, at its pose, to split into
+    // them as it stops (renderParts).
+    this.partHeld.fill(false);
+    this.fullPose = this.poseSerial;
+    if (this.firstTarget.width !== width || this.firstTarget.height !== height)
+      this.firstTarget.setSize(width, height);
     if (this.marchUnchanged(renderer, camera)) return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
@@ -1542,6 +1714,156 @@ void main() {
       width,
       height,
     );
+  }
+
+  // The interleaved march (`temporal`): this frame's part of each 2 × 2 block marched into its own
+  // image (all four with none to build from), then the full image rebuilt from the four. Each
+  // part's rays pass through exactly the full image's pixels it stands for, with their footprint,
+  // so a part holds what the full march would there. Nothing marched once all four were drawn
+  // from what the march is drawn from now.
+  private renderParts(
+    renderer: WebGLRenderer,
+    camera: Camera,
+    first: boolean,
+    width: number,
+    height: number,
+  ) {
+    const partWidth = Math.ceil(width / 2);
+    const partHeight = Math.ceil(height / 2);
+    let reset = this.temporalDrawn !== this.temporal || !this.marchDrawn;
+    this.temporalDrawn = this.temporal;
+    if (
+      this.parts[0].width !== partWidth ||
+      this.parts[0].height !== partHeight
+    ) {
+      for (const part of this.parts) part.setSize(partWidth, partHeight);
+      reset = true;
+    }
+    if (
+      this.firstTarget.width !== partWidth ||
+      this.firstTarget.height !== partHeight
+    )
+      this.firstTarget.setSize(partWidth, partHeight);
+    const unchanged = this.marchUnchanged(renderer, camera);
+    if (!unchanged) this.partsFresh = 0;
+    if (reset) {
+      this.partHeld.fill(false);
+      this.partsFresh = 0;
+    }
+    // Stopped after marching every pixel as it moved (`'still'`): that image, at this pose, split
+    // into the parts, rather than all four marched at once (1.6 times the full march's cost:
+    // each part's rays two pixels apart read the volumes less coherently).
+    const split =
+      !reset &&
+      this.temporal === 'still' &&
+      !this.partHeld.some(Boolean) &&
+      this.fullPose === this.poseSerial;
+    if (split) this.partsFresh = unchanged ? PARTS : 0;
+    else if (this.partsFresh >= PARTS) return;
+    // This frame's part; all four with none held to build from.
+    const count =
+      this.partsFresh >= PARTS
+        ? 0
+        : split || this.partHeld.some(Boolean)
+          ? 1
+          : PARTS;
+
+    const outer = renderer.getRenderTarget();
+    const cubeFace = renderer.getActiveCubeFace();
+    const mipLevel = renderer.getActiveMipmapLevel();
+    const autoClear = renderer.autoClear;
+    const autoReset = renderer.info.autoReset;
+    const shadows = renderer.shadowMap.autoUpdate;
+    renderer.autoClear = false;
+    renderer.info.autoReset = false;
+    renderer.shadowMap.autoUpdate = false;
+
+    cameraAt.setFromMatrixPosition(camera.matrixWorld);
+    partView(camera, viewNow);
+    if (split) {
+      const s = this.splitMaterial.uniforms;
+      for (let k = 0; k < PARTS; k++) {
+        (s.uCloudOffset.value as Vector2).set(k & 1, k >> 1);
+        renderer.setRenderTarget(this.parts[k]);
+        renderer.render(this.splitScene, camera);
+        this.partViews[k].copy(viewNow);
+        this.partAt[k].copy(cameraAt);
+        this.partPose[k] = this.poseSerial;
+        this.partHeld[k] = true;
+      }
+    }
+
+    const u = this.marchMaterial.uniforms;
+    const rays = u.uCloudRays.value as Vector4;
+    const scaleX = (2 * partWidth) / width;
+    const scaleY = (2 * partHeight) / height;
+    let drawn = PART_ORDER[this.phase];
+    for (let n = 0; n < count; n++) {
+      const k = PART_ORDER[this.phase];
+      this.phase = (this.phase + 1) % PARTS;
+      drawn = k;
+      rays.set(
+        scaleX,
+        scaleY,
+        scaleX - 1 + (2 * (k & 1) - 1) / width,
+        scaleY - 1 + (2 * (k >> 1) - 1) / height,
+      );
+      u.uCloudDerivative.value = 0.5;
+      if (first) {
+        renderer.setRenderTarget(this.firstTarget);
+        renderer.render(this.firstScene, camera);
+      }
+      renderer.setRenderTarget(this.parts[k]);
+      renderer.render(this.marchScene, camera);
+      this.partViews[k].copy(viewNow);
+      this.partAt[k].copy(cameraAt);
+      this.partPose[k] = this.poseSerial;
+      this.partHeld[k] = true;
+    }
+    rays.set(1, 1, 0, 0);
+    u.uCloudDerivative.value = 1;
+    this.partsFresh = Math.min(this.partsFresh + count, PARTS);
+
+    const r = this.rebuildMaterial.uniforms;
+    r.uCloudPhase.value = drawn;
+    (r.uCloudImageSize.value as Vector2).set(width, height);
+    (r.uCloudPartSize.value as Vector2).set(partWidth, partHeight);
+    for (let k = 0; k < PARTS; k++) {
+      (r.uCloudPartUnview.value[k] as Matrix4).copy(this.partViews[k]).invert();
+      (r.uCloudPartAt.value[k] as Vector3).subVectors(this.partAt[k], cameraAt);
+      (r.uCloudPartState.value[k] as Vector2).set(
+        this.partHeld[k] ? 1 : 0,
+        this.partPose[k] === this.poseSerial ? 0 : 1,
+      );
+    }
+    renderer.setRenderTarget(this.target);
+    renderer.render(this.rebuildScene, camera);
+
+    renderer.setRenderTarget(outer, cubeFace, mipLevel);
+    renderer.autoClear = autoClear;
+    renderer.info.autoReset = autoReset;
+    renderer.shadowMap.autoUpdate = shadows;
+    this.marchDrawn = true;
+    (this.compositeMaterial.uniforms.uCloudImageSize.value as Vector2).set(
+      width,
+      height,
+    );
+  }
+
+  // Whether the camera moved since the last frame (its projection's sub-pixel jitter aside), and
+  // notes it.
+  private cameraMoved(camera: Camera): boolean {
+    const seen = this.cameraSeen;
+    let differs = seen.length === 0;
+    let i = 0;
+    const note = (value: number) => {
+      if (seen[i] !== value) differs = true;
+      seen[i++] = value;
+    };
+    for (const value of camera.matrixWorld.elements) note(value);
+    const projection = camera.projectionMatrix.elements;
+    for (let j = 0; j < 16; j++) if (j !== 8 && j !== 9) note(projection[j]);
+    return differs;
   }
 
   // Whether the march would draw what it drew last, and notes what it is drawn from now: the
@@ -2095,12 +2417,15 @@ void main() {
     this.shadowTarget.dispose();
     this.sceneCoverTarget.dispose();
     this.firstTarget.dispose();
+    for (const part of this.parts) part.dispose();
     for (const material of [
       this.stillMaterial,
       this.shadowMaterial,
       this.sceneCoverMaterial,
       this.firstMaterial,
       this.filmMaterial,
+      this.rebuildMaterial,
+      this.splitMaterial,
     ])
       if (release) release(material);
       else material.dispose();

@@ -128,6 +128,15 @@ export type SceneryCloudsProps = {
 export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
 
 /**
+ * How a {@link SceneryCloudVolumeProps}'s clouds reuse what they marched over the last frames.
+ * `'off'`: every pixel marched every frame. `'still'`: while the camera holds still (the
+ * weather's clock running), a quarter of the pixels a frame, each of the rest as it was marched
+ * at most three frames before; every pixel once the camera moves. `'moving'`: a quarter a frame
+ * however the camera moves, the rest moved to where their clouds lie in the view now.
+ */
+export type SceneryCloudVolumeTemporal = 'off' | 'still' | 'moving';
+
+/**
  * What a {@link SceneryCloudVolumeProps}'s clouds show instead of themselves, to see how they
  * are made: `view` `'cost'` the march's iterations along each view (blue none, through green and
  * yellow, to red at the quality's most), `'unlit'` white, as opaque as they are, `'map'` a global
@@ -143,6 +152,33 @@ export type SceneryCloudVolumeDebug = {
   types?: boolean;
   /** Being chosen, then removed: the low cloud's thickness sets how deep and dense a global weather's cloud is (true), or its type alone. Default true */
   thickness?: boolean;
+  /**
+   * Being chosen (2026-11-10), then removed: how the sun lights them. `'single'` its light
+   * scattered once, by the phase; `'diffuse'` with the light scattered many times over leaving
+   * much as it came, whichever way they are seen from; `'shaded'` that, the billows facing away
+   * from the light shaded by their own lumps. Default `'single'`
+   */
+  light?: 'single' | 'diffuse' | 'shaded';
+  /**
+   * Being chosen (2026-11-10), then removed: rays marched for a pixel whose view grazes the
+   * levels (toward the Earth's limb, where a pixel spans kilometres of height), spread over its
+   * height and averaged. Default 1
+   */
+  limb?: number;
+  /**
+   * Being chosen (2026-11-10), then removed: a run through a level taken whole where a pixel
+   * spans more than half the level's depth (far off, from orbit): one step lit once, its share
+   * blurred by the pixel's footprint up and down, rather than walked in steps and parts. Default
+   * false
+   */
+  whole?: boolean;
+  /**
+   * Being chosen (2026-11-10), then removed: the cover and the lumps read over each pixel's
+   * footprint on the level — its width over the sine of the view's slope through it — so far off
+   * and low, foreshortened, decks are as blurred as a pixel holds them rather than shimmering as
+   * the view tilts. Default false
+   */
+  onLayer?: boolean;
 };
 
 /**
@@ -249,6 +285,12 @@ export type SceneryCloudVolumeProps = {
    * are drawn on and on. A global weather's are marched. Default false
    */
   lightMap?: boolean;
+  /**
+   * how they reuse what they marched over the last frames (see
+   * {@link SceneryCloudVolumeTemporal}): the march costs a quarter as much while the clock runs
+   * (`'still'`) or the camera moves too (`'moving'`). Default `'off'`
+   */
+  temporal?: SceneryCloudVolumeTemporal;
 };
 
 /**
@@ -699,6 +741,7 @@ export const sceneryDefaults = {
     dominance: 0.8,
     terrain: true,
     lightMap: false,
+    temporal: 'off' as SceneryCloudVolumeTemporal,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

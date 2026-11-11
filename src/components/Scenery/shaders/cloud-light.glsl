@@ -39,6 +39,15 @@ float cloudPhase(float cosine, float g) {
   return (1.0 - g2) / pow(1.0 + g2 - 2.0 * g * cosine, 1.5);
 }
 
+// The phase's two lobes (cloudLightingAt): the forward lobe's g, the backward's, the forward's
+// share, and the most it reaches (4π times: 1 all round).
+uniform vec4 uCloudPhase;
+// How the sun lights them (cloudLit, cloudLight): x 1, the lumps in the first sample toward the
+// light (their own shade); y over 0, the light scattered many times over as diffuse, y of the
+// light straight through, falling off z as fast with the optical depth toward the light, and the
+// light scattered once w of it with the phase; y 0, the octaves (CLOUD_OCTAVES).
+uniform vec4 uCloudLightModel;
+
 // Where the light comes from for a point whose up is `up`: the sun while it is up there, the
 // moon once its light is gone (skyMoonlight's hand-over, so it shows nothing).
 vec3 cloudLightWay(vec3 up) {
@@ -76,7 +85,7 @@ CloudLighting cloudLightingAt(vec3 dir, vec3 up) {
   float cosine = dot(dir, l.way);
   vec3 octave = vec3(1.0);
   for(int o = 0; o < 3; o++) {
-    float phase = min(mix(cloudPhase(cosine, -0.3 * octave.z), cloudPhase(cosine, 0.6 * octave.z), 0.7), 4.0);
+    float phase = min(mix(cloudPhase(cosine, uCloudPhase.y * octave.z), cloudPhase(cosine, uCloudPhase.x * octave.z), uCloudPhase.z), uCloudPhase.w);
     l.phases[o] = octave.x * phase;
     octave *= CLOUD_OCTAVES;
   }
@@ -101,6 +110,10 @@ CloudLighting cloudLightingAt(vec3 dir, vec3 up) {
 vec3 cloudLit(CloudLighting l, float h, float depth, float deck, float rising) {
   vec3 falls = exp(-depth * vec3(1.0, CLOUD_OCTAVES.y, CLOUD_OCTAVES.y * CLOUD_OCTAVES.y));
   float through = dot(l.phases, falls);
+  // Diffuse: the light scattered many times over leaves a cloud much as it came, whichever way
+  // it is seen from; only the light scattered once keeps the phase.
+  if(uCloudLightModel.y > 0.0)
+    through = uCloudLightModel.w * l.phases.x * falls.x + uCloudLightModel.y * exp(-uCloudLightModel.z * depth);
   float upward = smoothstep(0.0, 1.0, h);
   vec3 ambient = (mix(l.base, l.top, upward) + l.glow * (1.0 - h)) * mix(CLOUD_SKY_BASE, 1.0, upward);
   if(deck > 0.0) {
