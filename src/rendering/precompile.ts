@@ -179,6 +179,11 @@ export function createPrecompileCount(onChange: () => void) {
  * material is disposed of before then is dropped.
  *
  * ⚠️ `root` must hold no lights: three counts the lights of both `root` and `scene`.
+ *
+ * ⚠️ `scene` must be the scene `root` is drawn in, or one with the same lights: three keys
+ * every program on the lights of the scene it is compiled for, a `ShaderMaterial`'s without
+ * lights too. A pass drawn in a scene of its own without lights, compiled for the host's
+ * scene (a sun, a light probe), is compiled again as it is first drawn, on the main thread.
  */
 export function precompile(
   renderer: WebGLRenderer,

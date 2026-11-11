@@ -113,6 +113,8 @@ type Shared = {
   generator: Mesh;
   typesGenerator: Mesh;
   maps: Map<string, CloudMap & { users: number }>;
+  // What holds the generators without a map (acquireCloudMapGenerators).
+  holders: number;
 };
 
 const shared = new WeakMap<WebGLRenderer, Shared>();
@@ -195,16 +197,8 @@ const createGenerator = (
   return mesh;
 };
 
-/**
- * `renderer`'s cloud map for `seed` over `terrain` at the weather's `time`, made (not drawn yet)
- * the first time: let go with {@link releaseCloudMap}.
- */
-export function acquireCloudMap(
-  renderer: WebGLRenderer,
-  seed: number,
-  terrain: CloudMapTerrain | null = null,
-  time = 0,
-): CloudMap {
+// `renderer`'s generators and maps, the generators made the first time.
+function sharedOf(renderer: WebGLRenderer): Shared {
   let own = shared.get(renderer);
   if (!own) {
     own = {
@@ -237,9 +231,45 @@ export function acquireCloudMap(
         { CLOUD_MAP_TYPES: 1 },
       ),
       maps: new Map(),
+      holders: 0,
     };
     shared.set(renderer, own);
   }
+  return own;
+}
+
+/**
+ * What draws `renderer`'s cloud maps (`CloudMap.generators`), made the first time and kept,
+ * compiled, while held, maps or none: a weather turning global again draws its maps without
+ * compiling them anew. Let go with {@link releaseCloudMapGenerators}.
+ */
+export function acquireCloudMapGenerators(
+  renderer: WebGLRenderer,
+): readonly Mesh[] {
+  const own = sharedOf(renderer);
+  own.holders++;
+  return [own.flowGenerator, own.generator, own.typesGenerator];
+}
+
+/** Let go of `renderer`'s cloud map generators: disposed of once no map nor anything else holds them. */
+export function releaseCloudMapGenerators(renderer: WebGLRenderer) {
+  const own = shared.get(renderer);
+  if (!own || own.holders === 0) return;
+  own.holders--;
+  disposeUnheld(renderer, own);
+}
+
+/**
+ * `renderer`'s cloud map for `seed` over `terrain` at the weather's `time`, made (not drawn yet)
+ * the first time: let go with {@link releaseCloudMap}.
+ */
+export function acquireCloudMap(
+  renderer: WebGLRenderer,
+  seed: number,
+  terrain: CloudMapTerrain | null = null,
+  time = 0,
+): CloudMap {
+  const own = sharedOf(renderer);
   const key = `${cloudMapKey(seed, terrain)}@${time}`;
   let map = own.maps.get(key);
   if (!map) {
@@ -250,7 +280,10 @@ export function acquireCloudMap(
   return map;
 }
 
-/** Let go of `map`: disposed of once nothing else holds it, and the generators with the last. */
+/**
+ * Let go of `map`: disposed of once nothing else holds it, and the generators with the last
+ * unless they are held ({@link acquireCloudMapGenerators}).
+ */
 export function releaseCloudMap(renderer: WebGLRenderer, map: CloudMap) {
   const own = shared.get(renderer);
   const held = own?.maps.get(map.key);
@@ -259,7 +292,12 @@ export function releaseCloudMap(renderer: WebGLRenderer, map: CloudMap) {
   held.target.dispose();
   held.typesTarget.dispose();
   held.flow.dispose();
-  if (own.maps.size > 0) return;
+  disposeUnheld(renderer, own);
+}
+
+// The generators disposed of once neither a map nor anything else holds them.
+function disposeUnheld(renderer: WebGLRenderer, own: Shared) {
+  if (own.maps.size > 0 || own.holders > 0) return;
   shared.delete(renderer);
   for (const generator of [
     own.flowGenerator,

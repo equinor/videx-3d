@@ -534,6 +534,22 @@ depth of 32 over them (`STEP_DEPTH`; see "The march").
   its map of the weather drawn; its programs stay compiled. On again, the map is drawn anew
   (a few strips a frame) once the weather has moved on from the one it had. Unmounted, it
   lets go of all of it.
+- **Local to global and back** (`programsOf`): each mode has programs of its own for the march,
+  its film and its shadows (`CLOUD_GLOBAL`), made as first needed and kept. A switch waits for
+  the other mode's, and for a global weather's map generators, to compile off the main thread
+  (`precompile`), the clouds drawn as they were meanwhile; switched once the first time, either
+  way is at once. Going local lets go of the weather systems' maps (some 70 MB) but keeps what
+  draws them (`CloudWeather.clear`), so they are drawn again without compiling. With the define
+  flipped on one set of programs instead, the first frame after the switch compiled the other
+  mode's, and three let go of those it left: each switch stood the page for 9–13 s on Iris Xe,
+  the longest frame 6–8 s (2026-11-11, every compile uncached). Now the first switch to global
+  waits some 19 s uncached (1.8 s with the browser's program cache warm), its frames at most
+  0.14 s (0.36 s warm); each switch after it takes 0.15–0.4 s, none of its frames over 0.08 s.
+- **Compiled for the scene they are drawn in** (`OWN_SCENE` in `SceneryClouds.tsx`): its own
+  passes draw in scenes of their own without lights, and three keys every program on the lights
+  of the scene it is compiled for. Compiled for the host's scene (its sun and light probe), each
+  of them was compiled twice, the second time on the main thread as it was first drawn: the
+  page stood for seconds as the clouds first showed, whatever had been compiled before.
 
 **Motion** (`time`, from the `Weather`'s clock; see "The weather"). Everything moves on the
 CPU, by where the march reads its patterns: the march's own work is the same.

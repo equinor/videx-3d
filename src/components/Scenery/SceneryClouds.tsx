@@ -6,7 +6,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { Color, ColorRepresentation } from 'three';
+import { Color, ColorRepresentation, Scene } from 'three';
 import {
   precompile,
   PRECOMPILE_PRIORITY,
@@ -45,6 +45,12 @@ const NO_DEBUG = {};
 // A level covering less than this is left out.
 const LEAST_COVER = 0.005;
 const ALL_LEVELS = {};
+
+// The scene its own passes are compiled for: like those they are drawn in (the march's, the
+// film's, its maps'), without lights. three keys a program on the lights of the scene it is
+// compiled for, ShaderMaterials too: compiled for the host's scene (a sun, a light probe), each
+// pass was compiled twice, the second time as it was first drawn, standing the page for seconds.
+const OWN_SCENE = new Scene();
 
 const scratch = new Color();
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
@@ -131,7 +137,6 @@ export const SceneryClouds = ({
     () => () => {
       if (!volume) return;
       // Let go once their programs have linked (`releaseMaterial`).
-      releaseMaterial(gl, volume.marchMaterial);
       releaseMaterial(gl, volume.compositeMaterial);
       volume.dispose(material => releaseMaterial(gl, material));
     },
@@ -210,7 +215,7 @@ export const SceneryClouds = ({
       gl,
       volume.lightGenerator(),
       camera,
-      scene,
+      OWN_SCENE,
       'offscreen',
       { priority: PRECOMPILE_PRIORITY.background },
     );
@@ -222,11 +227,37 @@ export const SceneryClouds = ({
     return () => {
       current = false;
     };
-  }, [gl, scene, camera, volume, lightMap]);
+  }, [gl, camera, volume, lightMap]);
   const lit = lightMap && lightReady;
 
+  // The mode drawn, local or global: switched once the other mode's programs (the march's, its
+  // film's and its shadows', and a global weather's maps') are compiled off the main thread, the
+  // clouds drawn as they were meanwhile. Compiled by the first frame drawn with them, they stood
+  // the page for 9–13 s on Iris Xe.
+  const mode = global ? 'global' : 'local';
+  const [drawnMode, setDrawnMode] = useState(mode);
   useLayoutEffect(() => {
-    if (!volume) return;
+    if (!volume || mode === drawnMode) return;
+    let current = true;
+    const meshes = [
+      ...volume.programsOf(mode === 'global'),
+      ...(mode === 'global' ? volume.weatherGenerators(gl) : []),
+    ];
+    const waits = meshes
+      .map(mesh => precompile(gl, mesh, camera, OWN_SCENE, 'offscreen'))
+      .filter(wait => wait !== null);
+    const done = () => {
+      if (current) setDrawnMode(mode);
+    };
+    if (waits.length === 0) done();
+    else Promise.all(waits).then(done);
+    return () => {
+      current = false;
+    };
+  }, [gl, camera, volume, mode, drawnMode]);
+
+  useLayoutEffect(() => {
+    if (!volume || mode !== drawnMode) return;
     const place = localKey
       ? (JSON.parse(localKey) as {
           latitude?: number;
@@ -273,6 +304,8 @@ export const SceneryClouds = ({
     debugAir,
     debugSteer,
     lit,
+    mode,
+    drawnMode,
   ]);
 
   // Hidden until its programs are compiled: drawn before, the browser waits for them.
@@ -283,39 +316,39 @@ export const SceneryClouds = ({
     setReady(false);
     const noise = volume.noise(gl);
     const waits = [
-      precompile(gl, noise.generator, camera, scene, 'offscreen', {
+      precompile(gl, noise.generator, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.terrain.generator, camera, scene, 'offscreen', {
+      precompile(gl, volume.terrain.generator, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       ...volume.weatherGenerators(gl).map(generator =>
-        precompile(gl, generator, camera, scene, 'offscreen', {
+        precompile(gl, generator, camera, OWN_SCENE, 'offscreen', {
           priority: PRECOMPILE_PRIORITY.background,
         }),
       ),
-      precompile(gl, volume.march, camera, scene, 'offscreen', {
+      precompile(gl, volume.march, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.coverGenerator(), camera, scene, 'offscreen', {
+      precompile(gl, volume.coverGenerator(), camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.placeGenerator(), camera, scene, 'offscreen', {
+      precompile(gl, volume.placeGenerator(), camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       precompile(gl, volume.composite, camera, scene, 'scene', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.still, camera, scene, 'offscreen', {
+      precompile(gl, volume.still, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.filmMesh, camera, scene, 'offscreen', {
+      precompile(gl, volume.filmMesh, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.rebuild, camera, scene, 'offscreen', {
+      precompile(gl, volume.rebuild, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.shadowMesh, camera, scene, 'offscreen', {
+      precompile(gl, volume.shadowMesh, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
     ].filter(wait => wait !== null);

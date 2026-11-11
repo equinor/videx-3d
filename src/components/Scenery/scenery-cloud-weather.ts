@@ -8,12 +8,14 @@ import {
 } from 'three';
 import {
   acquireCloudMap,
+  acquireCloudMapGenerators,
   bakeCloudMap,
   CLOUD_MAP_STRIPS,
   type CloudMap,
   cloudMapKey,
   type CloudMapTerrain,
   releaseCloudMap,
+  releaseCloudMapGenerators,
 } from './scenery-cloud-map';
 
 // The cloud map's strips drawn a frame: the first map, which the clouds wait for (some half a
@@ -50,6 +52,8 @@ export type CloudWeatherUniforms = {
  */
 export class CloudWeather {
   private renderer: WebGLRenderer | null = null;
+  // What draws the renderer's maps, held while it has one, maps or none (clear).
+  private generatorsHeld: readonly Mesh[] = [];
   private older: CloudMap | null = null;
   private newer: CloudMap | null = null;
   private next: CloudMap | null = null;
@@ -73,15 +77,13 @@ export class CloudWeather {
     return this.newer !== null;
   }
 
-  /** What draws `renderer`'s cloud maps, the same for every seed: compile them before {@link update}. */
+  /**
+   * What draws `renderer`'s cloud maps, the same for every seed, held until {@link dispose}:
+   * compile them before {@link update}.
+   */
   generators(renderer: WebGLRenderer): readonly Mesh[] {
     this.ensure(renderer);
-    const any = this.next ?? this.newer;
-    if (any) return any.generators;
-    // Made (not drawn) to compile with: the first one update draws.
-    this.next = acquireCloudMap(renderer, 0, null, 0);
-    this.fresh = true;
-    return this.next.generators;
+    return this.generatorsHeld;
   }
 
   /**
@@ -156,19 +158,30 @@ export class CloudWeather {
     return this.newer !== null;
   }
 
-  /** Let go of every map: drawn anew should the weather turn global again. */
-  dispose() {
+  /**
+   * Let go of every map, drawn anew should the weather turn global again; what draws them is
+   * kept, compiled, so that draws nothing anew (see {@link generators}).
+   */
+  clear() {
     for (const map of [this.older, this.newer, this.next]) this.release(map);
     this.older = this.newer = this.next = null;
-    this.renderer = null;
     this.fresh = true;
     this.updateUniforms(0);
+  }
+
+  /** Let go of every map and of what draws them. */
+  dispose() {
+    this.clear();
+    if (this.renderer) releaseCloudMapGenerators(this.renderer);
+    this.generatorsHeld = [];
+    this.renderer = null;
   }
 
   private ensure(renderer: WebGLRenderer) {
     if (this.renderer !== renderer) {
       this.dispose();
       this.renderer = renderer;
+      this.generatorsHeld = acquireCloudMapGenerators(renderer);
     }
   }
 

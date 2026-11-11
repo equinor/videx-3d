@@ -614,9 +614,6 @@ const createCoverTable = () => {
 export class CloudsRenderer implements ScenerySkyOverlay {
   /** drawn in the scene, last (`LAYERS.OVERLAY` in an `OITRenderPass`) */
   readonly composite: Mesh;
-  /** the march, drawn into the clouds' own image as the composite is drawn */
-  readonly march: Mesh;
-  readonly marchMaterial: ShaderMaterial;
   readonly compositeMaterial: ShaderMaterial;
   /**
    * The weather's time (seconds) the clouds are drawn at: they drift with each level's wind.
@@ -729,26 +726,52 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   };
   /** the film's composite, each face's march laid into it (`film`): compile it before it films */
   readonly still: Mesh;
-  /** the shadows' pass (`updateShadow`): compile it before it draws */
-  readonly shadowMesh: Mesh;
   /**
    * The film's march: each run through a level taken whole (CLOUD_FILM: 0.6–1.1 ms the six
    * faces), or (false) marched as the view is (3.8–6.7 ms; Iris Xe, 2026-11-10). Compile
    * {@link filmMesh} before it films.
    */
   filmWhole = true;
-  /** the film's own march (`filmWhole`): compile it before it films */
-  readonly filmMesh: Mesh;
-  private readonly filmMaterial: ShaderMaterial;
   private readonly filmMarchScene = new Scene();
+
+  // The march's own defines and uniforms, which its film and its shadows share: each mode's
+  // programs read the same uniform objects, set once for all of them.
+  private readonly geometry = createSceneryGeometry();
+  private readonly marchDefines: Record<string, unknown>;
+  private readonly marchUniforms: Record<string, IUniform>;
+  private readonly shadowUniforms: Record<string, IUniform>;
+  // The march's, its film's and its shadows' programs for a local weather and for a global one
+  // (CLOUD_GLOBAL), each made the first time it is asked for and kept, and those drawn. Flipping
+  // the define on one set instead, the next draw compiled the other mode's three, and three let
+  // go of the mode left: each switch stood the page for 9–13 s (Iris Xe, 2026-11-11).
+  private readonly modes: { local?: CloudsPrograms; global?: CloudsPrograms } =
+    {};
+  private programs: CloudsPrograms;
+
+  /** the march, drawn into the clouds' own image as the composite is drawn: its mode's ({@link programsOf}) */
+  get march(): Mesh {
+    return this.programs.march;
+  }
+  /** the march's program: its uniforms are every mode's, its film's and, with more, its shadows' */
+  get marchMaterial(): ShaderMaterial {
+    return this.programs.march.material as ShaderMaterial;
+  }
+  /** the film's own march (`filmWhole`), its mode's: compile it before it films */
+  get filmMesh(): Mesh {
+    return this.programs.film;
+  }
+  /** the shadows' pass (`updateShadow`), its mode's: compile it before it draws */
+  get shadowMesh(): Mesh {
+    return this.programs.shadow;
+  }
 
   /** Samples across each level toward the light, a texel of the shadows: drawn anew as it changes. */
   get shadowSamples(): number {
-    return this.shadowMaterial.uniforms.uCloudShadowSamples.value as number;
+    return this.shadowUniforms.uCloudShadowSamples.value as number;
   }
   set shadowSamples(value: number) {
     const samples = Math.max(Math.round(value), 1);
-    const u = this.shadowMaterial.uniforms.uCloudShadowSamples;
+    const u = this.shadowUniforms.uCloudShadowSamples;
     if (u.value === samples) return;
     u.value = samples;
     this.shadowDrawn.valid = false;
@@ -791,7 +814,6 @@ export class CloudsRenderer implements ScenerySkyOverlay {
       generateMipmaps: false,
     },
   );
-  private readonly shadowMaterial: ShaderMaterial;
   private readonly shadowScene = new Scene();
   // What the shadows were drawn for.
   private readonly shadowDrawn = {
@@ -821,93 +843,83 @@ export class CloudsRenderer implements ScenerySkyOverlay {
 
   constructor(sky: SceneryMaterial, renderOrder: number) {
     this.sky = sky;
-    const geometry = createSceneryGeometry();
+    const geometry = this.geometry;
 
-    this.marchMaterial = new ShaderMaterial({
-      name: 'scenery-clouds-march',
-      vertexShader,
-      fragmentShader: marchShader,
-      defines: {
-        CLOUD_DEPTH_RANGE: DEPTH_RANGE,
-        CLOUD_LEVELS_MOST: CLOUDS_LEVELS,
-        CLOUD_COVER_SIZE: CLOUD_COVER_VOLUME_SIZE.toFixed(1),
-        CLOUD_COVER_LODS,
-        CLOUD_LUMP_TILES: VOLUME_LUMP_TILES.toFixed(4),
-        CLOUD_PATCHES_TURN: glslMat3(PATCHES_TURN),
-        CLOUD_PATCHES_BROADER: CLOUD_COVER_PATCHES.broader.toFixed(1),
-        CLOUD_PATCHES_FINE: CLOUD_COVER_PATCHES.fine.toFixed(3),
-        CLOUD_LUMPS_TURN: glslMat3(LUMPS_TURN),
-        CLOUD_TYPES: TYPE_ROWS.length,
-        CLOUD_QUANTILES: SOFT_COVER_QUANTILES,
-      },
-      uniforms: {
-        // The sky's own uniform objects: the sun, the air, the globe.
-        ...sky.uniforms,
-        uCloudShape: new Uniform<Texture | null>(null),
-        uCloudCover: new Uniform<Texture>(this.coverVolume.target.texture),
-        // The spread each level of the cover volume's mipmaps averages away (CloudCoverVolume.spread).
-        uCloudCoverSpread: new Uniform(
-          Array.from({ length: CLOUD_COVER_LODS }, () => new Vector2()),
-        ),
-        uCloudFrameE: new Uniform(this.frameE),
-        uCloudFrameN: new Uniform(this.frameN),
-        uCloudFrameM: new Uniform(this.frameM),
-        uCloudCamera: new Uniform(new Vector3()),
-        uCloudInvRadius: new Uniform(0),
-        uCloudLocalRadius: new Uniform(1),
-        uCloudLocalShape: new Uniform(new Vector2(LOCAL_FADE, LOCAL_WOBBLE)),
-        uCloudScale: new Uniform(1),
-        uCloudLevelCount: new Uniform(0),
-        uCloudShells: new Uniform(levelVectors()),
-        uCloudNeeds: new Uniform(levelVectors()),
-        uCloudLooks: new Uniform(levelVectors()),
-        uCloudTurns: new Uniform(
-          Array.from({ length: CLOUDS_LEVELS }, () => new Matrix3()),
-        ),
-        uCloudPlaces: new Uniform(
-          Array.from({ length: 4 * CLOUDS_LEVELS }, () => new Vector3()),
-        ),
-        uCloudKinds: new Uniform(levelVectors()),
-        uCloudWinds: new Uniform(levelVectors()),
-        uCloudCovers: new Uniform(new Array<number>(CLOUDS_LEVELS).fill(0)),
-        ...this.terrain.uniforms,
-        ...this.lightMaps.uniforms,
-        ...this.coverMap.uniforms,
-        ...this.placeMap.uniforms,
-        uCloudMap: new Uniform<CubeTexture | null>(null),
-        uCloudMapNext: new Uniform<CubeTexture | null>(null),
-        uCloudTypes: new Uniform<CubeTexture | null>(null),
-        uCloudTypesNext: new Uniform<CubeTexture | null>(null),
-        uCloudMapTimes: new Uniform(new Vector3()),
-        uCloudFieldEarth: new Uniform(new Matrix3()),
-        uCloudEarthRadius: new Uniform(1),
-        uCloudMapTexels: new Uniform(0),
-        uCloudCoverTable: new Uniform<Texture>(this.coverTable),
-        uCloudTypeLooks: new Uniform(typeVectors()),
-        uCloudTypeHeights: new Uniform(typeVectors()),
-        uCloudTypeMore: new Uniform(typeVectors()),
-        uCloudGlobal: new Uniform(new Vector4(0, 1, 1, 0)),
-        uCloudMarch: new Uniform(new Vector4(32, 12.8, STEP_DEPTH, 1e-3)),
-        uCloudStepScale: new Uniform(1),
-        uCloudLightSamples: new Uniform(2),
-        uCloudDetail: new Uniform(new Vector3(...DETAIL)),
-        uCloudPhase: new Uniform(new Vector4(...PHASE)),
-        uCloudScatter: new Uniform(new Vector3(...SCATTER)),
-        uCloudMarchMost: new Uniform(0),
-        uCloudDebug: new Uniform(0),
-        uCloudAir: new Uniform(1),
-        // The interleaved march's (`temporal`): set for its draws alone, then put back.
-        uCloudRays: new Uniform(new Vector4(1, 1, 0, 0)),
-        uCloudDerivative: new Uniform(1),
-        uCloudColor: new Uniform(new Color(1, 1, 1)),
-      },
-      // Every pixel writes its depth: the distance to the clouds' front.
-      depthTest: true,
-      depthFunc: AlwaysDepth,
-      depthWrite: true,
-      blending: NoBlending,
-    });
-    const u = this.marchMaterial.uniforms;
+    this.marchDefines = {
+      CLOUD_DEPTH_RANGE: DEPTH_RANGE,
+      CLOUD_LEVELS_MOST: CLOUDS_LEVELS,
+      CLOUD_COVER_SIZE: CLOUD_COVER_VOLUME_SIZE.toFixed(1),
+      CLOUD_COVER_LODS,
+      CLOUD_LUMP_TILES: VOLUME_LUMP_TILES.toFixed(4),
+      CLOUD_PATCHES_TURN: glslMat3(PATCHES_TURN),
+      CLOUD_PATCHES_BROADER: CLOUD_COVER_PATCHES.broader.toFixed(1),
+      CLOUD_PATCHES_FINE: CLOUD_COVER_PATCHES.fine.toFixed(3),
+      CLOUD_LUMPS_TURN: glslMat3(LUMPS_TURN),
+      CLOUD_TYPES: TYPE_ROWS.length,
+      CLOUD_QUANTILES: SOFT_COVER_QUANTILES,
+    };
+    this.marchUniforms = {
+      // The sky's own uniform objects: the sun, the air, the globe.
+      ...sky.uniforms,
+      uCloudShape: new Uniform<Texture | null>(null),
+      uCloudCover: new Uniform<Texture>(this.coverVolume.target.texture),
+      // The spread each level of the cover volume's mipmaps averages away (CloudCoverVolume.spread).
+      uCloudCoverSpread: new Uniform(
+        Array.from({ length: CLOUD_COVER_LODS }, () => new Vector2()),
+      ),
+      uCloudFrameE: new Uniform(this.frameE),
+      uCloudFrameN: new Uniform(this.frameN),
+      uCloudFrameM: new Uniform(this.frameM),
+      uCloudCamera: new Uniform(new Vector3()),
+      uCloudInvRadius: new Uniform(0),
+      uCloudLocalRadius: new Uniform(1),
+      uCloudLocalShape: new Uniform(new Vector2(LOCAL_FADE, LOCAL_WOBBLE)),
+      uCloudScale: new Uniform(1),
+      uCloudLevelCount: new Uniform(0),
+      uCloudShells: new Uniform(levelVectors()),
+      uCloudNeeds: new Uniform(levelVectors()),
+      uCloudLooks: new Uniform(levelVectors()),
+      uCloudTurns: new Uniform(
+        Array.from({ length: CLOUDS_LEVELS }, () => new Matrix3()),
+      ),
+      uCloudPlaces: new Uniform(
+        Array.from({ length: 4 * CLOUDS_LEVELS }, () => new Vector3()),
+      ),
+      uCloudKinds: new Uniform(levelVectors()),
+      uCloudWinds: new Uniform(levelVectors()),
+      uCloudCovers: new Uniform(new Array<number>(CLOUDS_LEVELS).fill(0)),
+      ...this.terrain.uniforms,
+      ...this.lightMaps.uniforms,
+      ...this.coverMap.uniforms,
+      ...this.placeMap.uniforms,
+      uCloudMap: new Uniform<CubeTexture | null>(null),
+      uCloudMapNext: new Uniform<CubeTexture | null>(null),
+      uCloudTypes: new Uniform<CubeTexture | null>(null),
+      uCloudTypesNext: new Uniform<CubeTexture | null>(null),
+      uCloudMapTimes: new Uniform(new Vector3()),
+      uCloudFieldEarth: new Uniform(new Matrix3()),
+      uCloudEarthRadius: new Uniform(1),
+      uCloudMapTexels: new Uniform(0),
+      uCloudCoverTable: new Uniform<Texture>(this.coverTable),
+      uCloudTypeLooks: new Uniform(typeVectors()),
+      uCloudTypeHeights: new Uniform(typeVectors()),
+      uCloudTypeMore: new Uniform(typeVectors()),
+      uCloudGlobal: new Uniform(new Vector4(0, 1, 1, 0)),
+      uCloudMarch: new Uniform(new Vector4(32, 12.8, STEP_DEPTH, 1e-3)),
+      uCloudStepScale: new Uniform(1),
+      uCloudLightSamples: new Uniform(2),
+      uCloudDetail: new Uniform(new Vector3(...DETAIL)),
+      uCloudPhase: new Uniform(new Vector4(...PHASE)),
+      uCloudScatter: new Uniform(new Vector3(...SCATTER)),
+      uCloudMarchMost: new Uniform(0),
+      uCloudDebug: new Uniform(0),
+      uCloudAir: new Uniform(1),
+      // The interleaved march's (`temporal`): set for its draws alone, then put back.
+      uCloudRays: new Uniform(new Vector4(1, 1, 0, 0)),
+      uCloudDerivative: new Uniform(1),
+      uCloudColor: new Uniform(new Color(1, 1, 1)),
+    };
+    const u = this.marchUniforms;
     this.weather = new CloudWeather({
       uCloudMap: u.uCloudMap,
       uCloudMapNext: u.uCloudMapNext,
@@ -915,29 +927,20 @@ export class CloudsRenderer implements ScenerySkyOverlay {
       uCloudTypesNext: u.uCloudTypesNext,
       uCloudMapTimes: u.uCloudMapTimes,
     });
-    this.march = new Mesh(geometry, this.marchMaterial);
-    this.march.frustumCulled = false;
-    // Drawn with whatever layers the camera has on as the composite is drawn.
-    this.march.layers.enableAll();
-    this.marchScene.add(this.march);
-
-    // The film's march (filmWhole): the march's own code, its runs taken whole (CLOUD_FILM), on
-    // the march's uniforms.
-    this.filmMaterial = new ShaderMaterial({
-      name: 'scenery-clouds-film',
-      vertexShader,
-      fragmentShader: marchShader,
-      defines: { ...this.marchMaterial.defines, CLOUD_FILM: '' },
-      uniforms: this.marchMaterial.uniforms,
-      depthTest: true,
-      depthFunc: AlwaysDepth,
-      depthWrite: true,
-      blending: NoBlending,
-    });
-    this.filmMesh = new Mesh(geometry, this.filmMaterial);
-    this.filmMesh.frustumCulled = false;
-    this.filmMesh.layers.enableAll();
-    this.filmMarchScene.add(this.filmMesh);
+    // The shadows' own, over the march's.
+    this.shadowUniforms = {
+      ...u,
+      uCloudShadowPlace: new Uniform(new Vector4()),
+      uCloudShadowEast: new Uniform(new Vector3(1, 0, 0)),
+      uCloudShadowNorth: new Uniform(new Vector3(0, 0, -1)),
+      uCloudShadowSize: new Uniform(SHADOW_SIZE),
+      uCloudShadowSamples: new Uniform(SHADOW_SAMPLES),
+    };
+    // A local weather's programs until set says otherwise.
+    this.programs = this.modeOf(false);
+    this.marchScene.add(this.programs.march);
+    this.filmMarchScene.add(this.programs.film);
+    this.shadowScene.add(this.programs.shadow);
 
     this.compositeMaterial = createCompositeMaterial(
       'scenery-clouds',
@@ -1037,29 +1040,6 @@ void main() {
       this.renderStill(renderer, camera);
     this.filmScene.add(this.still);
 
-    // The shadows: the march's own code, its main the pass's (CLOUD_SHADOW).
-    this.shadowMaterial = new ShaderMaterial({
-      name: 'scenery-clouds-shadow',
-      vertexShader,
-      fragmentShader: marchShader,
-      defines: { ...this.marchMaterial.defines, CLOUD_SHADOW: '' },
-      uniforms: {
-        ...this.marchMaterial.uniforms,
-        uCloudShadowPlace: new Uniform(new Vector4()),
-        uCloudShadowEast: new Uniform(new Vector3(1, 0, 0)),
-        uCloudShadowNorth: new Uniform(new Vector3(0, 0, -1)),
-        uCloudShadowSize: new Uniform(SHADOW_SIZE),
-        uCloudShadowSamples: new Uniform(SHADOW_SAMPLES),
-      },
-      depthTest: false,
-      depthWrite: false,
-      blending: NoBlending,
-    });
-    this.shadowMesh = new Mesh(geometry, this.shadowMaterial);
-    this.shadowMesh.frustumCulled = false;
-    this.shadowMesh.layers.enableAll();
-    this.shadowScene.add(this.shadowMesh);
-
     // A global weather's cover over the scene: its newer map read at the scene's up, over some
     // 40 km (its third level), into one texel read back (readSceneCover).
     this.sceneCoverMaterial = new ShaderMaterial({
@@ -1105,17 +1085,20 @@ void main() {
     this.version++;
 
     const global = settings.global;
-    for (const material of [
-      this.marchMaterial,
-      this.shadowMaterial,
-      this.filmMaterial,
-    ])
-      if ('CLOUD_GLOBAL' in material.defines !== !!global) {
-        if (global) material.defines.CLOUD_GLOBAL = '';
-        else delete material.defines.CLOUD_GLOBAL;
-        material.needsUpdate = true;
-      }
-    if (!global) this.weather.dispose();
+    // The mode's programs drawn: compiled first (programsOf), the switch compiles nothing.
+    const programs = this.modeOf(!!global);
+    if (programs !== this.programs) {
+      const was = this.programs;
+      this.marchScene.remove(was.march);
+      this.filmMarchScene.remove(was.film);
+      this.shadowScene.remove(was.shadow);
+      this.marchScene.add(programs.march);
+      this.filmMarchScene.add(programs.film);
+      this.shadowScene.add(programs.shadow);
+      this.programs = programs;
+    }
+    // A local weather's maps let go of, what draws them kept.
+    if (!global) this.weather.clear();
     (u.uCloudGlobal.value as Vector4).set(
       global?.dominance ?? 0,
       global?.types === false ? 0 : 1,
@@ -1202,6 +1185,74 @@ void main() {
             : 0;
     u.uCloudAir.value = settings.debug.air === false ? 0 : 1;
     (u.uCloudColor.value as Color).copy(settings.color);
+  }
+
+  /**
+   * The march's, its film's and its shadows' programs for a local weather or a global one
+   * (`global`), made the first time: compile them before {@link set} switches to that mode, or
+   * the first frame drawn with them compiles them, standing the page for seconds.
+   */
+  programsOf(global: boolean): readonly Mesh[] {
+    const programs = this.modeOf(global);
+    return [programs.march, programs.film, programs.shadow];
+  }
+
+  private modeOf(global: boolean): CloudsPrograms {
+    const mode = global ? 'global' : 'local';
+    return (this.modes[mode] ??= this.makePrograms(global));
+  }
+
+  // A mode's programs: the march's own code on its uniforms (the same objects), its film's runs
+  // taken whole (CLOUD_FILM) and its shadows' main the pass's (CLOUD_SHADOW). Each drawn with
+  // whatever layers the camera has on.
+  private makePrograms(global: boolean): CloudsPrograms {
+    const defines = global
+      ? { ...this.marchDefines, CLOUD_GLOBAL: '' }
+      : { ...this.marchDefines };
+    const mesh = (material: ShaderMaterial) => {
+      const drawn = new Mesh(this.geometry, material);
+      drawn.frustumCulled = false;
+      drawn.layers.enableAll();
+      return drawn;
+    };
+    // Every pixel writes its depth: the distance to the clouds' front.
+    const marched = {
+      vertexShader,
+      fragmentShader: marchShader,
+      uniforms: this.marchUniforms,
+      depthTest: true,
+      depthFunc: AlwaysDepth,
+      depthWrite: true,
+      blending: NoBlending,
+    };
+    return {
+      march: mesh(
+        new ShaderMaterial({
+          name: 'scenery-clouds-march',
+          defines,
+          ...marched,
+        }),
+      ),
+      film: mesh(
+        new ShaderMaterial({
+          name: 'scenery-clouds-film',
+          defines: { ...defines, CLOUD_FILM: '' },
+          ...marched,
+        }),
+      ),
+      shadow: mesh(
+        new ShaderMaterial({
+          name: 'scenery-clouds-shadow',
+          vertexShader,
+          fragmentShader: marchShader,
+          defines: { ...defines, CLOUD_SHADOW: '' },
+          uniforms: this.shadowUniforms,
+          depthTest: false,
+          depthWrite: false,
+          blending: NoBlending,
+        }),
+      ),
+    };
   }
 
   /** Whether there is anything to draw: a level with cover. */
@@ -2232,7 +2283,7 @@ void main() {
     if (stale) {
       this.sky.syncCamera(camera);
       this.updateCamera(camera, SHADOW_SIZE);
-      const u = this.shadowMaterial.uniforms;
+      const u = this.shadowUniforms;
       (u.uCloudShadowPlace.value as Vector4).set(
         centre.x - cameraAt.x,
         centre.y - cameraAt.y,
@@ -2313,12 +2364,12 @@ void main() {
   }
 
   /**
-   * Dispose of its image and its share of the noise; its materials are the owner's to release,
-   * its ground's through `release` (default `dispose`).
+   * Dispose of its image and its share of the noise; its composite's material is the owner's
+   * to release, the rest of its materials through `release` (default `dispose`).
    */
   dispose(release?: (material: Material) => void) {
     this.target.dispose();
-    this.march.geometry.dispose();
+    this.geometry.dispose();
     this.terrain.dispose(release);
     this.lightMaps.dispose(release);
     this.coverMap.dispose(release);
@@ -2328,13 +2379,15 @@ void main() {
     this.shadowTarget.dispose();
     this.sceneCoverTarget.dispose();
     for (const part of this.parts) part.dispose();
+    const programs = [this.modes.local, this.modes.global].flatMap(mode =>
+      mode ? [mode.march, mode.film, mode.shadow] : [],
+    );
     for (const material of [
       this.stillMaterial,
-      this.shadowMaterial,
       this.sceneCoverMaterial,
-      this.filmMaterial,
       this.rebuildMaterial,
       this.splitMaterial,
+      ...programs.map(mesh => mesh.material as ShaderMaterial),
     ])
       if (release) release(material);
       else material.dispose();
@@ -2347,6 +2400,9 @@ void main() {
 }
 
 const fract = (x: number) => x - Math.floor(x);
+
+// One mode's programs (CloudsRenderer.programsOf): the march's, its film's and its shadows'.
+type CloudsPrograms = { march: Mesh; film: Mesh; shadow: Mesh };
 
 // The renderer's properties of a material: the program it was linked into (three's own).
 type MarchProperties = {
