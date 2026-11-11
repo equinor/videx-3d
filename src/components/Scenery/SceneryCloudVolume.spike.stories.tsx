@@ -106,6 +106,8 @@ type LevelArgs = {
 
 type CloudVolumeArgs = {
   volume: boolean;
+  /** the 3D clouds shown: off hides them, still compiled (`enabled`), to time the frame without them */
+  cloudsEnabled: boolean;
   /** a local weather (its layers about its middle) or a global one (the weather systems) */
   weatherMode: 'local' | 'global';
   /** a global weather's systems (`WeatherSystems.seed`) */
@@ -515,24 +517,33 @@ function cloudViews(args: CloudVolumeArgs): SceneryDebugButton[] {
   }));
 }
 
-// The panel's rows of the story's own: the weather (local or global), its clock (pause, its
-// rates) and whether the sun runs on it, how the march reuses the last frames, how the sun lights
-// the clouds, the ground under them, and the frame's statistics.
+// The panel's rows of the story's own: the weather (local, global, or the clouds off), its clock
+// (pause, its rates) and whether the sun runs on it, how the march reuses the last frames, how the
+// sun lights the clouds, the ground under them, and the frame's statistics.
 function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
   return [
     {
       label: 'weather',
-      buttons: (
-        [
-          ['local', 'The levels’ layers about the local weather’s middle'],
-          ['global', 'The weather systems over the whole Earth'],
-        ] as const
-      ).map(([weatherMode, title]) => ({
-        label: weatherMode,
-        title,
-        on: args.weatherMode === weatherMode,
-        click: () => update({ weatherMode }),
-      })),
+      buttons: [
+        ...(
+          [
+            ['local', 'The levels’ layers about the local weather’s middle'],
+            ['global', 'The weather systems over the whole Earth'],
+          ] as const
+        ).map(([weatherMode, title]) => ({
+          label: weatherMode,
+          title,
+          on: args.cloudsEnabled && args.weatherMode === weatherMode,
+          click: () => update({ weatherMode, cloudsEnabled: true }),
+        })),
+        {
+          label: 'off',
+          title:
+            'The clouds hidden, still compiled: the frame without them, back at once',
+          on: !args.cloudsEnabled,
+          click: () => update({ cloudsEnabled: false }),
+        },
+      ],
     },
     {
       label: 'time',
@@ -705,6 +716,7 @@ const CloudVolumeStory = (args: CloudVolumeArgs) => {
           {sea && <SceneryStage boundary={BOUNDS} />}
           {args.volume && (
             <SceneryCloudVolume
+              enabled={args.cloudsEnabled}
               dominance={args.dominance}
               looks={looks}
               levels={{
@@ -827,6 +839,12 @@ const meta = {
       options: ['local', 'global'],
       description:
         'LOCAL: the levels’ layers about the local weather’s middle, none beyond. GLOBAL: the weather systems over the whole Earth (`WeatherSystems`), each level’s cover and types from their map; the layers unused.',
+      table: { category: 'Weather' },
+    },
+    cloudsEnabled: {
+      control: { type: 'boolean' },
+      description:
+        'The 3D clouds shown. Off hides them, still compiled (`enabled`): the frame without them, to tell their share of it, and back at once.',
       table: { category: 'Weather' },
     },
     systemsSeed: range(
@@ -1009,6 +1027,7 @@ const meta = {
     // Frame rate and frame times, bottom left.
     stats: true,
     volume: true,
+    cloudsEnabled: true,
     weatherMode: 'local',
     systemsSeed: 0,
     globalLow: true,

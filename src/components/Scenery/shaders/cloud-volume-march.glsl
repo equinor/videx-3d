@@ -959,14 +959,17 @@ bool cloudMaybe(CloudLevel L, vec3 o, float extent, float lo, float hi, float w,
 //   where it enters cloud, and changes as fast. A step that found more than CLOUD_AGAIN is walked
 //   again, shorter, sized by what it found.
 //
-// In a local weather clear air is passed over: past a step finding no cloud, the march looks into
-// a stretch twice as long ahead, and on as long as each is clear, up to its run's own layout (its
-// uCloudShells.w steps, growing geometrically from its near end); a stretch that may hold cloud is
-// looked into again at half its length, down to a step's. The bound (cloudMaybe) holds whatever
-// the stretch, so how they fall changes how much is walked, not what is found. Not in a global
-// weather: its cover and heights come from the weather systems' map, whose mipmaps hold means, so
-// a stretch placed over all of it is no bound (a cloudier or deeper place within it was passed
-// over: 3.5 % of the clouds' pixels off from 20 km up, whole clouds missing).
+// Clear air is passed over: past a step finding no cloud, the march looks into a stretch twice as
+// long ahead, and on as long as each is clear, up to its run's own layout (its uCloudShells.w
+// steps, growing geometrically from its near end); a stretch that may hold cloud is looked into
+// again at half its length, down to a step's. In a local weather the bound (cloudMaybe) holds
+// whatever the stretch, so how they fall changes how much is walked, not what is found. In a
+// global weather it does not quite: the level is placed at the stretch's middle (cloudSet), from
+// the weather systems' map, whose mipmaps hold means, so a cloudier or deeper place within a long
+// stretch can be passed over (documents/clouds.md, known issue 11). Walking all of a global
+// weather's clear air instead took 2.5–3.5 times the steps and 1.4–1.6 times the march's time;
+// skipping, from 20 km up 15–17 % of the clouds' pixels were over 0.02 off a march four times
+// finer (by 0.02 on average, the far band), 0.04–0.13 % over 0.3 (2026-11-11).
 //
 // One loop, its turns alike: the density's and the light's reads compiled into it once (written
 // as loops in loops, the march's link took 16 s, 2026-11-10).
@@ -1021,11 +1024,7 @@ void cloudMarchRuns(int count) {
     float inCloud = min(max(pattern, 2.0 * texel), layer);
     float fine = rho > 0.0 ? min(inCloud, uCloudMarch.z / rho) : min(max(pattern, CLOUD_STEP_TEXELS * texel), layer);
     fine = max(fine * uCloudStepScale, 1.0);
-#if defined(CLOUD_GLOBAL)
-    bool skim = false;
-#else
     bool skim = look > fine;
-#endif
     float len = skim ? look : fine;
     float to = t + len;
     if(to > end - 0.25 * len)

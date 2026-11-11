@@ -25,7 +25,9 @@ view; the sea where there is none), looking into the middle of the cloud layer s
 level where the ground lifts the camera over it, its horizon level (`SceneryDebugPanel`'s
 `fly`). The flight keeps the scene's anchor. Its weather controls:
 
-- **`weatherMode`**: `local` or `global` (see "The weather").
+- **`weatherMode`**: `local` or `global` (see "The weather"); the panel's weather row adds `off`
+  (`cloudsEnabled`): the clouds hidden, still compiled (`enabled`), so the frame shows what the
+  rest of the scenery costs, and they come back at once.
 - **Local:** a `preset` (a sky, `SKY_PRESETS`) fills in each level's cover, type, base and
   thickness and the wind, to change from there (`custom` once one is changed by hand); a level's
   cover or type changed sets its heights to the type's typical ones. The middle (latitude and
@@ -445,20 +447,31 @@ Each step reads its level's extinction at its middle over the pixel's footprint 
 takes it as even along the step (exactly, `cloudAdd`), and lights it where its light comes from
 on average, 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ.
 
-In a local weather clear air is passed over. Past a step finding no cloud, clear by four of the edge's deviations
+Clear air is passed over. Past a step finding no cloud, clear by four of the edge's deviations
 however its lumps fell (`CLOUD_CLEAR`, `gClear`), the march looks into a stretch twice as long
 ahead, and on as long as each is clear, up to its run's own layout (the quality's steps over the
 run, growing geometrically from its near end); a stretch that may hold cloud is looked into again
-at half its length, down to a step's. The look (`cloudMaybe`) is a bound: the cover's mean over
-twice the stretch, past it by four of its deviations, the most the lumps add and three of the
-edge's widths, against the least the cover needs in it (at its lowest, let down by the pixel's
-footprint, and toward a local weather's edge raised as little as at the stretch's end or middle
-furthest inside it). So how the stretches fall changes how much is walked, not what is found. A
-global weather walks every step: its cover and heights come from the weather systems' map, whose
-mipmaps hold means, so a stretch placed over all of it is no bound (a cloudier or deeper place
-within it was passed over: 3.5 % of the pixels off from 20 km up, whole clouds missing), and
-bounding it by the deepest and cloudiest the level can be skipped nothing. A bound would need the
-map's greatest cover and depth over a stretch (a pyramid of maxima). Each step places its level
+at half its length, down to a step's. The look (`cloudMaybe`) bounds what a stretch may hold: the
+cover's mean over twice the stretch, past it by four of its deviations, the most the lumps add and
+three of the edge's widths, against the least the cover needs in it (at its lowest, let down by
+the pixel's footprint, and toward a local weather's edge raised as little as at the stretch's end
+or middle furthest inside it). In a local weather it holds whatever the stretch, so how the
+stretches fall changes how much is walked, not what is found. In a global weather it does not
+quite: the level is placed at the stretch's middle from the weather systems' map, whose mipmaps
+hold means, so a cloudier or deeper place within a long stretch can be passed over (known issue
+11).
+
+Walking all of a global weather's clear air instead (2026-11-11, `ed412e43`) cost too much for
+what it found. Against a march with steps four times finer, from 2,885 km up the march took 89
+turns a pixel and 71 ms with every step walked, 35 turns and 49 ms skipping, with 0.47 % and 0.78
+% of the clouds' pixels over 0.02 off; from 3.75 km up, 178 turns and 57 ms against 51 and 35 ms,
+3.0 % and 3.2 % (850 × 381, the march alone, interleaved). From 20 km up, looking over the
+horizon, 15–17 % of the clouds' pixels were over 0.02 off skipping, against 0.2–0.7 % walking
+every step: by 0.02 of opacity on average, over the far band, and 0.04–0.13 % over 0.3. A bound by the weather map's greatest
+values within 8 of its texels (two passes of a max filter over the map about the camera, the
+types along each level's chain at their lowest base, highest top and least need) skipped nothing:
+84–97 % of the stretches may have held cloud by it, and the turns the looks took on top made the
+march 3.3 times slower than walking every step. Each step places its level
 where it lies (`cloudSet`: the weather systems' map, the ground's broad rise); placed once a
 kilometre and lent on, what was drawn depended on where the steps fell (3 % of the pixels).
 
@@ -988,8 +1001,14 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
     cover follows it), how stormy (the lows' depth and number), and named climates as presets.
 11. **The rebuilt march** (2026-11-11): near cumulus are crisper and smaller than before (the
     false spread had blurred them; a type's `softness` softens them on purpose); its time is to
-    be measured again. A global weather walks every step (some 5 times the turns a skipping march
-    took from 20 km up): a pyramid of the weather map's maxima would let it pass clear air again.
+    be measured again. A global weather's skip of clear air places the level at a stretch's middle,
+    which is no bound there: from 20 km up it once missed whole clouds (3.5 % of the pixels off);
+    now it misses little at 2,885 km and 3.75 km, and from 20 km up leaves the far band a little
+    off (above, "The march"). Far off, a thin deck's whole shell is walked in steps sized by the
+    deck: from 2,885 km up, 35 turns a pixel against 19 with steps sized by the deepest the level
+    can be (which put the film back, half the pixels off). Sizing clear steps away from the deck
+    as placed by the whole shell, and walking again a step that crosses the deck, took the turns
+    from 89 a pixel to 31 there with no skip, as accurate.
     From high up the light's crossings of the levels over each point lit (each placed by the
     weather systems' map) are some third of its time, which could be read once a step and lent
     to its points. The horizon aliases in the Earth story.
