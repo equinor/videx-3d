@@ -936,6 +936,19 @@ bool cloudMaybe(CloudLevel L, vec3 o, float extent, float lo, float hi, float w,
   return c.x + 4.0 * sqrt(c.y) + L.look.y * CLOUD_LUMPS_MOST + 3.0 * L.need.z > need;
 }
 
+// The lowest a stretch of the view from `t` to `to` passes over the sea's sphere, its ends
+// `altitudeA` and `altitudeB` over it: an end, or where the view passes closest to the Earth's
+// centre within it.
+float cloudLowestAlong(float t, float to, float altitudeA, float altitudeB) {
+  float lo = min(altitudeA, altitudeB);
+  if(uCloudInvRadius > 0.0) {
+    float closest = -(dot(uCloudCamera, gD) + gD.z / uCloudInvRadius);
+    if(closest > t && closest < to)
+      lo = min(lo, cloudAltitudeOf(cloudFieldPoint(gD, closest)));
+  }
+  return lo;
+}
+
 // The view's `count` runs (gRuns, gLevels), marched front to back in one loop. Each turn of it
 // either looks into a stretch ahead (cloudMaybe) or walks a step: the step's level placed at its
 // middle (cloudSet, every step: where the level was placed must not depend on where the steps
@@ -953,7 +966,12 @@ bool cloudMaybe(CloudLevel L, vec3 o, float extent, float lo, float hi, float w,
 //   type's): uCloudMarch.y steps up it, along the view's slope through it, so what lies over and
 //   under (the tops' edge, the light falling off into a deck) is resolved however grazing the
 //   view. Sized by the deepest the level can be instead, a thin deck's top was found up to a step
-//   late, by where the steps fell, and moved as the camera did (2026-11-11);
+//   late, by where the steps fell, and moved as the camera did (2026-11-11). Away from the deck,
+//   in the clear air of the level's shell over or under it, the steps are sized by the shell's
+//   whole depth instead; one that crosses the deck as placed at its middle is walked again from
+//   where it began, sized by the deck (deckAgain). Walked in the deck's steps all through the
+//   shell, the clear air far off took a sixth more of the march's turns, and the skip's misses
+//   from 20 km up were three times as many (2026-11-11);
 // - what it holds: the extinction the last steps found (halved each step since), so a step through
 //   cloud hides about uCloudMarch.z: the light a view sees comes from within a free path or two of
 //   where it enters cloud, and changes as fast. A step that found more than CLOUD_AGAIN is walked
@@ -990,9 +1008,11 @@ void cloudMarchRuns(int count) {
   float overA = 0.0;
   float rho = 0.0;
   float look = 0.0;
-  // The level as placed for the last step (cloudSet), and which level that was.
+  // The level as placed for the last step (cloudSet), and which level that was; and whether the
+  // step is walked again because the last crossed the deck (see above).
   CloudLevel P = cloudLevel(0);
   int placedLevel = -1;
+  bool deckAgain = false;
   for(int turn = 0; turn < uCloudMarchMost; turn++) {
     if(gTransmit < uCloudDetail.z)
       break;
@@ -1008,6 +1028,7 @@ void cloudMarchRuns(int count) {
       grow = exp(log(1.0 + (end - start) / near) / uCloudShells[l].w) - 1.0;
       t = start;
       rho = 0.0;
+      deckAgain = false;
       look = near * grow;
       vec3 a = cloudFieldPoint(gD, t);
       fieldA = cloudFieldOf(a);
@@ -1018,11 +1039,19 @@ void cloudMarchRuns(int count) {
     // last steps found.
     vec4 shell = placedLevel == l ? P.shell : uCloudShells[l];
     float texel = uCloudLooks[l].w * CLOUD_COVER_SIZE / CLOUD_LUMP_TILES / CLOUD_SHAPE_TEXELS;
-    float rise = abs(dot(gDir, cloudUpAt(t)));
+    float climb = dot(gDir, cloudUpAt(t));
+    float rise = abs(climb);
     float pattern = uCloudDetail.x * uCloudMarch.w * t;
     float layer = (shell.y - shell.x) / (uCloudMarch.y * max(rise, 0.02));
     float inCloud = min(max(pattern, 2.0 * texel), layer);
-    float fine = rho > 0.0 ? min(inCloud, uCloudMarch.z / rho) : min(max(pattern, CLOUD_STEP_TEXELS * texel), layer);
+    // In clear air: the deck's steps where the next of the whole shell's would come within reach of
+    // it (a quarter more, for the view's curve over the Earth), the shell's elsewhere.
+    float clearMost = max(pattern, CLOUD_STEP_TEXELS * texel);
+    vec4 whole = uCloudShells[l];
+    float wholeStep = min(clearMost, (whole.y - whole.x) / (uCloudMarch.y * max(rise, 0.02)));
+    float ahead = altitudeA + climb * 1.25 * max(wholeStep * uCloudStepScale, 1.0);
+    bool nearDeck = deckAgain || placedLevel != l || (max(altitudeA, ahead) > shell.x && min(altitudeA, ahead) < shell.y);
+    float fine = rho > 0.0 ? min(inCloud, uCloudMarch.z / rho) : (nearDeck ? min(clearMost, layer) : wholeStep);
     fine = max(fine * uCloudStepScale, 1.0);
     bool skim = look > fine;
     float len = skim ? look : fine;
@@ -1057,14 +1086,8 @@ void cloudMarchRuns(int count) {
     bool found = false;
     if(skim) {
       gCost += 0.25;
-      // Its lowest: an end, or where the view passes closest to the Earth's centre within it.
-      float lo = min(altitudeA, altitudeB);
+      float lo = cloudLowestAlong(t, to, altitudeA, altitudeB);
       float hi = max(altitudeA, altitudeB);
-      if(uCloudInvRadius > 0.0) {
-        float closest = -(dot(uCloudCamera, gD) + gD.z / uCloudInvRadius);
-        if(closest > t && closest < to)
-          lo = min(lo, cloudAltitudeOf(cloudFieldPoint(gD, closest)));
-      }
       float extent = max(foot, length(fieldB - fieldA));
       if(cloudSet(S, uCloudCamera + o, extent) && cloudMaybe(S, o, extent, lo, hi, foot, fieldA, fieldB)) {
         look = 0.5 * len;
@@ -1075,6 +1098,15 @@ void cloudMarchRuns(int count) {
       P = S;
       bool placed = cloudSet(P, uCloudCamera + o, foot);
       placedLevel = l;
+      // Longer than the deck's steps and crossing the deck as placed here: walked again from where
+      // it began, sized by the deck.
+      if(placed && !deckAgain) {
+        float deckStep = max(min(clearMost, (P.shell.y - P.shell.x) / (uCloudMarch.y * max(rise, 0.02))) * uCloudStepScale, 1.0);
+        if(len > CLOUD_AGAIN * deckStep && max(altitudeA, altitudeB) > P.shell.x && cloudLowestAlong(t, to, altitudeA, altitudeB) < P.shell.y) {
+          deckAgain = true;
+          continue;
+        }
+      }
       gClear = 1e3;
       float sigma = placed ? cloudDensity(P, o, foot, true) : 0.0;
       float clear = gClear;
@@ -1097,6 +1129,7 @@ void cloudMarchRuns(int count) {
       look = !found && clear > CLOUD_CLEAR ? 2.0 * len : 0.0;
     }
     t = to;
+    deckAgain = false;
     fieldA = fieldB;
     altitudeA = altitudeB;
     overA = overB;

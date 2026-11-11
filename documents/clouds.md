@@ -436,7 +436,12 @@ it reads, and no longer:
   the deepest the level can be rather than as placed, a global weather's thin decks (as little as
   a third of their type's depth) had their tops found up to a step late, by where the steps fell:
   from 20 km up 36 % of the clouds' pixels were over 0.02 off, and as the camera moved a film
-  seemed to slide over the decks (2026-11-11).
+  seemed to slide over the decks (2026-11-11). Away from the deck as placed, in the clear air of
+  the level's shell over or under it, the steps are sized by the shell's whole depth; a step that
+  crosses the deck as placed at its middle is walked again from where it began, sized by the deck
+  (`deckAgain`). Walked in the deck's steps all through the shell, a global weather's march far
+  off took a sixth more turns, and from 20 km up the skip left 15 % of the clouds' pixels over
+  0.02 off against 4.9 %. A local weather's deck is its shell, so there it changes nothing.
 - **What it holds:** the extinction the last steps found, halved each step since, so a step
   through cloud hides about `uCloudMarch.z` (an optical depth of 1 at 32 steps). A step that finds
   cloud and is longer than 1.5 of a step through what it found (`CLOUD_AGAIN`) is walked again
@@ -466,14 +471,32 @@ what it found. Against a march with steps four times finer, from 2,885 km up the
 turns a pixel and 71 ms with every step walked, 35 turns and 49 ms skipping, with 0.47 % and 0.78
 % of the clouds' pixels over 0.02 off; from 3.75 km up, 178 turns and 57 ms against 51 and 35 ms,
 3.0 % and 3.2 % (850 × 381, the march alone, interleaved). From 20 km up, looking over the
-horizon, 15–17 % of the clouds' pixels were over 0.02 off skipping, against 0.2–0.7 % walking
-every step: by 0.02 of opacity on average, over the far band, and 0.04–0.13 % over 0.3. A bound by the weather map's greatest
+horizon, 15–17 % of the clouds' pixels were over 0.02 off skipping (4.9 % since the steps away
+from the deck are the shell's, above), against 0.2–0.7 % walking every step: by 0.02 of opacity on
+average, over the far band, and 0.04–0.13 % over 0.3. A bound by the weather map's greatest
 values within 8 of its texels (two passes of a max filter over the map about the camera, the
 types along each level's chain at their lowest base, highest top and least need) skipped nothing:
 84–97 % of the stretches may have held cloud by it, and the turns the looks took on top made the
 march 3.3 times slower than walking every step. Each step places its level
 where it lies (`cloudSet`: the weather systems' map, the ground's broad rise); placed once a
 kilometre and lent on, what was drawn depended on where the steps fell (3 % of the pixels).
+
+**Seen from afar** (tried 2026-11-11). From high up a pixel's footprint is wider than the stretch
+of a deck its view crosses (some 9 km from 2,885 km up), so a run could be walked with its level
+placed and its cover read once, at its middle: the density, and the light through its own level,
+from that one read, and the light across the levels over it read once a run. Tried as a variant
+where a run's span, and the light's through its deck, were within half a footprint: from 2,885 km
+up the march took 15.5 turns a pixel against 35 and a third less time (56 ms against 85), with
+4.2 % of the clouds' pixels over 0.02 off; within a quarter of a footprint, 1.1 % and 8 % less
+time; from 400 km down no run qualified (a run spans its level's whole shell, some 3 km up,
+several footprints across). The points lit did not drop (7.8 a pixel): the time is the density's
+and the light's arithmetic at each lit step through a deck, some 13 to a crossing
+(`uCloudMarch.y`), not their reads. Not kept. Far off the light is half the march (unlit, 40 →
+20 ms from 2,885 km up, 59 → 29 ms from 400 km), its crossings of the levels over each point a
+third of it from 400 km up (59 → 38 ms). While the camera moves, `temporal: 'moving'` (a quarter
+of the pixels marched a frame) took the clouds' share of the frame from 2,885 km up from some
+44 ms to 16 (frames of 74 and 46 ms, 30 without clouds; 1701 × 763 CSS pixels at a pixel ratio of
+1.5).
 
 The march it replaced laid each run out in steps from the camera, looked into each, split those
 holding cloud into parts and the parts into short steps, each read over the stretch it stood for
@@ -1004,11 +1027,10 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
     be measured again. A global weather's skip of clear air places the level at a stretch's middle,
     which is no bound there: from 20 km up it once missed whole clouds (3.5 % of the pixels off);
     now it misses little at 2,885 km and 3.75 km, and from 20 km up leaves the far band a little
-    off (above, "The march"). Far off, a thin deck's whole shell is walked in steps sized by the
-    deck: from 2,885 km up, 35 turns a pixel against 19 with steps sized by the deepest the level
-    can be (which put the film back, half the pixels off). Sizing clear steps away from the deck
-    as placed by the whole shell, and walking again a step that crosses the deck, took the turns
-    from 89 a pixel to 31 there with no skip, as accurate.
-    From high up the light's crossings of the levels over each point lit (each placed by the
+    off (above, "The march"). Far off the time is the steps through each deck, some 13 to a
+    crossing, each lit, the light running the density through its level and across those over it
+    (above, "Seen from afar"). In a local weather the march is 8–9 % of the clouds' pixels over
+    0.02 off one with steps four times finer from 3 and 20 km up, skipping or not: how it
+    converges there is to be looked at. From high up the light's crossings of the levels over each point lit (each placed by the
     weather systems' map) are some third of its time, which could be read once a step and lent
     to its points. The horizon aliases in the Earth story.
