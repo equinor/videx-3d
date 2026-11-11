@@ -36,6 +36,9 @@ varying vec3 vCloudDirection;
 
 // How far off a view with no cloud about it is taken: its direction alone counts.
 #define CLOUD_PART_FAR 1e8
+// An older part is taken as it is where the view has moved its pixel less than x of a pixel of the
+// full image since it was marched, and held within this frame's part about it from y on.
+#define CLOUD_PART_HELD vec2(0.25, 1.0)
 
 ivec2 cloudPartOffset(int k) {
   return ivec2(k & 1, k >> 1);
@@ -116,10 +119,18 @@ void main() {
       vec2 ndc = clip.xy / clip.w;
       vec2 c = ((ndc * 0.5 + 0.5) * uCloudImageSize - 0.5 - vec2(cloudPartOffset(k))) * 0.5;
       if(all(greaterThanEqual(c, vec2(-0.5))) && all(lessThanEqual(c, uCloudPartSize - 0.5))) {
-        // Held within this frame's own about it: where the depth it was moved by is not its
-        // cloud's (at a cloud's edge, the clear sky's beside it), each older part showed the edge
-        // where it lay in its own frame, three edges trailing the one marched (2026-11-10).
-        color = clamp(cloudPartAt(k, c), low, high);
+        // Held within this frame's own about it as far as the view has moved its pixel
+        // (CLOUD_PART_HELD): where the depth it was moved by is not its cloud's (at a cloud's
+        // edge, the clear sky's beside it), each older part showed the edge where it lay in its
+        // own frame, three edges trailing the one marched (2026-11-10). A pixel that has not moved
+        // is where it was marched, and not held: this frame's part, two pixels apart, does not
+        // bound the clouds' detail between its pixels, and held within whichever part was marched
+        // last, every older pixel changed each frame while the camera crept (its controls easing
+        // it to a stop): 3 % of the clouds' pixels over 0.05 off the full march, 5 % from frame to
+        // frame against 0.02 % (2026-11-11).
+        vec4 moved = cloudPartAt(k, c);
+        float shift = 2.0 * length(c - vec2(own));
+        color = mix(moved, clamp(moved, low, high), smoothstep(CLOUD_PART_HELD.x, CLOUD_PART_HELD.y, shift));
         // Its depth as far from this frame's camera.
         float d = cloudPartNearest(k, c);
         depth = 1.0;

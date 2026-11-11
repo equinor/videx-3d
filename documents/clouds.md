@@ -533,39 +533,36 @@ by the rise, and three light models to choose from (`debug.light`, `limb`, `whol
 (`CloudVolumeRenderer.render`): at a pixel ratio of 2, `medium` marched each CSS pixel, 4 times
 the work for little to see (1280 × 720 CSS at 2: 33.8 ms against 11.3).
 
-**Temporal accumulation** (`temporal`, on by default; `cloud-volume-resolve.glsl`). Each frame
-moves every ray by a sub-pixel jitter (Halton 2, 3, eight places) and each run's first step by
-blue noise (`createBlueNoise`, 64², read by pixel, moved on by the golden ratio each frame); a
-resolve blends a tenth of the frame into a history per camera, reprojected by the distance to
-the clouds' front and clamped to the frame's 3 × 3 neighbours, so a moving view leaves no
-trails. The history is read Catmull-Rom (five filtered taps): bilinear reads blurred it a
-little each time the view or the clouds' drift moved it by part of a pixel, the more the longer
-it is kept (some 13 % less detail on drifting clouds at rest). The depth is accumulated too, from where the camera is now and within the neighbours'
-depths: the sub-pixel jitter moves a whole region's depth at once, which flickered against what
-reaches into the clouds. Last frame's depth is interpolated between the four texels about where
-the pixel's cloud lay, not taken from the nearest: from space a texel spans kilometres of a
-slanting layer, more than lies between the clouds' tops and the land under them, and the
-rounding sank stripes of cloud behind the land while the view turned. A pause, a resize or a
-jump starts it over. Blue noise matters:
-interleaved gradient noise left vertical streaks the accumulation never removed, white noise
-blotches; blue noise leaves a fine, even grain that the image's scaling up hides.
+**Reusing frames** (`temporal`: `'off'` by default, `'still'` or `'moving'`; `renderParts`,
+`cloud-volume-rebuild.glsl`). With `temporal` on, the march draws one pixel of each 2 × 2 block a
+frame (a part, each in turn, the diagonals first), each part into an image of its own, its rays
+through exactly the full image's pixels it stands for, with their footprint, so a part holds what
+the full march would there; the full image is rebuilt from the four. `'still'` does so while the
+camera holds still (the clock running), and marches nothing once all four are drawn from what the
+march is drawn from now; as the camera moves it marches every pixel, and splits that image into
+the parts as it stops. `'moving'` does so however the camera moves. A pixel is taken from its own
+part: this frame's as it is; an older one's (at most three frames old) as it was where that part's
+camera is this frame's, else from where its cloud lies in this view (moved by the distance to the
+clouds' front about it in this frame's part), and where that falls outside the part's view, from
+this frame's part between its nearest texels. Each pixel is read once from a march, never from an
+image built before: the temporal resolve this replaced (2026-11-06) blended each frame, its rays
+jittered, into a history, its errors carried on frame after frame, and the clouds morphed as the
+camera moved.
 
-- **Calm** (`CALM_SHARE`): once the view has stood still, what the march reads but the clock has
-  changed less than 10⁻⁴ of itself (the sun on a real-time clock moves less, a slider more) and
-  the clouds have changed less than 0.05 of a pixel where they are and moved less than half a
-  pixel since the frame before, for 20 frames, each frame takes a quarter of its share, eased in
-  over those: the grain left is a third (at 40 m, `medium`: 8.0 → 2.6 near the horizon, 5.6 →
-  1.8 above, as the frames' standard deviation, × 10⁻³) for no detail lost. Any change of the
-  view or the light starts it over, so a change settles as fast as before; never under a
-  timelapse (the clock more than twice real time). A filter over the frame's own neighbours
-  instead (3 × 3, or a plus) lost the detail: on a sparse march it spans 6 × 6 of the screen's
-  pixels.
-- **Far off, softer** (`BLUR_MOST`, `uCloudBlur`): a frame's ray is blended with its neighbours'
-  by a Gaussian of where they crossed from the pixel's middle, of up to a pixel of the image
-  (σ), from the nearest the clouds lie along the view (`paceOf`, at least 1 km) to eight times
-  as far; nearer, the pixel's own ray alone. Far clouds are as small as the grain: the
-  stippled band toward the horizon smooths out (grain 2.6 → 1.85 there, with calm), and the
-  clouds above keep their shapes. From space only the limb is far enough to soften.
+An older part's pixel is held within this frame's part about it (between their least and most)
+as far as the view has moved it since it was marched: not under a quarter of a pixel of the full
+image, fully from one (`CLOUD_PART_HELD`). Held however little it moved, a camera easing to a stop
+(its controls' damping) flickered for seconds: this frame's part, two pixels apart, does not bound
+the clouds' detail between its pixels, and every older pixel changed each frame as the part
+marched last went round. From 1,856 km up, turning 0.01° a frame, 3 % of the clouds' pixels were
+over 0.05 off the full march and 5 % changed from frame to frame (the full march: 0.02 %); held as
+far as moved, 0.4 % and 0.5 %, and none once it slowed. Turning faster it cannot be both sharp and
+steady: a pixel is marched once in four frames and rebuilt from the others in between, and the
+clouds hold detail a pixel across. At 0.04° a frame 5.5 % of the clouds' pixels changed from frame
+to frame against the full march's 1.9 % (9 % held however little they moved). Rebuilt alike while
+the camera moved, this frame's pixels too, from all four parts' nearest samples by a Gaussian of
+0.6 of a pixel, 3.8 %, but the clouds were softer while it moved, and trailed; picking each pixel's
+nearest sample of any part instead, 8.8 %. Neither kept (2026-11-11).
 
 **Quality** (`quality`, `CLOUD_VOLUME_QUALITY`; default `'medium'`). Each level sets the share of
 the screen's resolution in CSS pixels the clouds' image is drawn at, its steps and its samples
@@ -581,23 +578,11 @@ depth of 32 over them (`STEP_DEPTH`; see "The march").
 | `high` | 0.75 | 48 | 3 |
 | `ultra` | 1 | 64 | 4 |
 
-- **Sparse:** one pixel of each 2 × 2 of the image is marched a frame, in turn (across the block
-  first), into an image half as wide and high, each with the sub-pixel jitter of its own in
-  turn; the resolve blends a fifth of it in where it is that pixel's, and keeps what the frames
-  before left the other three, clamped to the march's neighbours about them. Where the view
-  had not seen a pixel before (the edge of a turning view), the march's own, filtered, each of
-  its texels read where its ray crossed (`uCloudSample`), not at its middle. A quarter
-  of the rays: moving, the clouds are a little softer than marched in full, without blocks.
-- **At rest** (`CloudVolumeRenderer.holdAtRest`): once a camera's view and every uniform the
-  march reads but what the clock moves (the sun, the globe, the clouds' settings, their map and
-  ground) have not changed for 48 frames, the march and the resolve stop and the image they
-  settled into is drawn; any change marches again. The clouds then cost only their composite.
-  With the clock running, they are marched again once any level's clouds may have moved or
-  changed 0.3 of a pixel of the image (`paceOf`: its drift, change and rise over the
-  nearest it lies along the view's corner rays, 50 m inside a layer), or 2 s on. At real time
-  (iris Xe, medium): 0.5 marches a second from 200 km and from space, 8 at 40 m over the sea,
-  24 from 3 km over the field, every frame inside a layer. Stopped, it marches on until 96
-  frames have settled at that time (calm keeps more of each), then holds.
+- **Unchanged:** nothing is marched while nothing it is marched from has changed since
+  (`marchUnchanged`: the camera, its sub-pixel jitter aside, the image's size, the clock, what
+  is drawn into its maps and the values of the uniforms its program reads): its image is laid
+  over the scene again as it is, and a still view with the clock held costs the composite
+  alone. With `temporal` on, a quarter of it a frame (see "Reusing frames").
 - **Off** (`enabled` false): nothing is marched, filmed or shadowed, nor are its ground and
   its map of the weather drawn; its programs stay compiled. On again, the map is drawn anew
   (a few strips a frame) once the weather has moved on from the one it had. Unmounted, it
@@ -623,17 +608,6 @@ CPU, by where the march reads its patterns: the march's own work is the same.
   quarter of its period (a cloud's breadth) a lifetime, so clouds grow out of clear air and
   thin away where they are rather than sliding past unchanged; the broad clusters four times
   slower, the detail in ten minutes. Heaped clouds' billows rise (`rise`: cumulus 0.6 m/s).
-- **The temporal resolve follows them:** the history is read where the cloud lay a frame ago,
-  less its level's drift since (`uCloudDrift`, by the height of its front: `uCloudLevels`), so
-  drifting clouds leave no trails. A sparse march's unmarched pixels take some of the frame
-  as the clouds change fast where they are on the screen (`SPARSE_FAST`); under a timelapse
-  their drift counts too, as their cover changes in place as fast (the map's systems and its
-  dissolve): held three frames in four, they stood out as dotted streaks. At real time the
-  drift counted too took 30 % of the frame each march at rest, read at the half-size texels'
-  middles while each ray had crossed elsewhere (the jitter and the pixel of its 2 × 2): the
-  whole layer jumped by up to 0.4 of a pixel of the image some 8 times a second, as if the
-  camera shook in the wind. Now 0.09 at most (40 m over the sea, `medium`): the held image
-  catching up with the drift at each march, and the march's jitter.
 - **Their shadows** are carried with the lowest level's drift since drawn, and drawn again
   once it has moved a tenth of their reach or the clouds have lived 2 % of their lifetime
   (`SHADOW_LIVED`: some 25 s of weather for cumulus). **The bakes** of the air and the sea's
@@ -1033,4 +1007,8 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
     0.02 off one with steps four times finer from 3 and 20 km up, skipping or not: how it
     converges there is to be looked at. From high up the light's crossings of the levels over each point lit (each placed by the
     weather systems' map) are some third of its time, which could be read once a step and lent
-    to its points. The horizon aliases in the Earth story.
+    to its points. Toward the horizon cloud edges step in the Earth story: the clouds change that
+    much from one of the image's rows to the next (2 × 2 CSS pixels at `medium`), filtered or not
+    (from 1,856 km up, 36 % of the top fifth's neighbouring rows over 0.2 of opacity apart, 34 %
+    with four rows marched for each and averaged, the same opacity on average): the image's grid
+    scaled up, not the march.
