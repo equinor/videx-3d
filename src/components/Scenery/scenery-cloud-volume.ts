@@ -19,13 +19,11 @@ import {
   Matrix3,
   Matrix4,
   Mesh,
-  NearestFilter,
   NoBlending,
   RedFormat,
   OneFactor,
   OneMinusSrcAlphaFactor,
   RGBAFormat,
-  RGFormat,
   Scene,
   ShaderMaterial,
   SrcAlphaFactor,
@@ -63,6 +61,7 @@ import {
   releaseCloudNoiseVolumes,
 } from './scenery-cloud-noise';
 import {
+  CLOUD_COVER_LODS,
   CLOUD_COVER_PATCHES,
   CLOUD_COVER_VOLUME_SIZE,
   CloudCoverVolume,
@@ -307,12 +306,6 @@ const VOLUME_LUMP_TILES = 100 / 6;
 // this much in a lifetime, so a cloud this size comes and goes in it, a broader one lasts as
 // much longer as it is broader.
 const LIFE_SIZE = 1500;
-// The march begins where each view first meets cloud (cloud-volume-march.glsl, cloudFirstCloud),
-// found by a program of its own drawn before it: always in a local weather; in a global one
-// only from under this height (m). From higher up most views meet cloud within a few steps, and
-// finding where costs more than it spares (2026-11-10, Iris Xe: 0.85 of the march's time from
-// 20 km, 1.13 from 60 km, 1.42 from 200 km).
-const FIRST_HIGHEST = 30000;
 // A local weather's cover maps reach this far past its radius: its clouds keep within it.
 const COVER_MARGIN = 1.02;
 // A global weather's map about the camera reaches as far as clouds this high show (m).
@@ -322,12 +315,11 @@ const PLACE_TOP = 15000;
 const LIGHT_MARGIN = 25000;
 // The film for the bakes of the air and the sea's reflection (ScenerySkyOverlay.texture): texels
 // a face, each face marched once at this share of them, a still (no frames before it), coarser
-// than the view's: its short steps through cloud, its samples toward the light, and its share of
-// each level's steps. Blurred in the bakes and the sea, a face of 64² costs as long as its
-// slowest ray: the view's march took 49 ms for the six (Iris Xe), this 19.
+// than the view's: its samples toward the light, and its share of each level's steps. Blurred in
+// the bakes and the sea, a face of 64² costs as long as its slowest ray: the view's march took
+// 49 ms for the six (Iris Xe), this 19.
 const FILM_SIZE = 128;
 const FILM_MARCH = 0.5;
-const FILM_FINE_STEPS = 4;
 const FILM_LIGHT_SAMPLES = 1;
 const FILM_STEPS = 0.5;
 // The film is drawn again once the sun has turned this far since (1 − its cosine: half a degree).
@@ -388,31 +380,26 @@ const LUMPS_TURN = [
 ];
 const glslMat3 = (m: number[]) => `mat3(${m.join(', ')})`;
 // By a level's top, the cover a column needs is past the most any reaches by this many of the
-// lumps' and the edge's widths: no cloud reaches the top (cloud-volume-march.glsl, cloudShare).
+// lumps' and the edge's widths: no cloud reaches the top (cloud-volume-march.glsl, cloudDensity).
 const ROUND_REACH = 3;
-// The most short steps through each part of a step holding cloud (cloud-volume-march.glsl,
-// cloudMarchRuns): a part up to 16 mean free paths long is walked in steps of 1, a longer one in
-// longer steps.
-const FINE_STEPS = 16;
-// The march's detail (cloud-volume-march.glsl, uCloudDetail): short steps through cloud no
-// shorter than this many footprints; the lumps read where the footprint resolves features this
-// share of the shape volume's tile across; and the march stops once this little of the light
-// comes through (5 %: unseen, 0.77–0.89 of the time through an overcast).
+// The march's detail (cloud-volume-march.glsl, uCloudDetail): steps no longer than this many of
+// the pixel's footprints (the pattern resolved along the view as across it); the
+// lumps read where the footprint resolves features this share of the shape volume's tile across;
+// and the march stops once this little of the light comes through (5 %: unseen, 0.77–0.89 of the
+// time through an overcast).
 const DETAIL = [2, 0.25, 0.05] as const;
+// The march's steps (cloud-volume-march.glsl, uCloudMarch, cloudMarchRuns), at a quality's
+// `steps`: this share of them up a level's depth, and the optical depth a step through cloud hides
+// at 32 (fewer steps, more).
+const LAYER_STEPS = 0.4;
+const STEP_DEPTH = 1;
 // The phase's two lobes (cloud-light.glsl, uCloudPhase): the forward lobe's g, the backward's,
 // the forward's share, and the most it reaches (4π times: 1 all round).
 const PHASE = [0.6, -0.3, 0.7, 4] as const;
-// How the sun lights them (cloud-light.glsl, uCloudLightModel), by `debug.light` (being chosen):
-// the lumps in the first sample toward the light (1) or not; the diffuse light's weight (0: the
-// octaves instead), how fast it falls off with the optical depth toward the light, and the weight
-// of the light scattered once.
-const LIGHT_MODELS = {
-  single: [0, 0, 0.25, 0.5],
-  diffuse: [0, 0.8, 0.25, 0.5],
-  shaded: [1, 0.8, 0.25, 0.5],
-} as const;
-// The parts a step holding cloud is split in (cloud-volume-march.glsl, CLOUD_SPLIT).
-const MARCH_SPLIT = 4;
+// How the sun's light is shared (cloud-light.glsl, uCloudScatter): the light scattered once (by
+// the phase), the light scattered many times over (all round), and how much slower than the light
+// straight through that falls off with the optical depth toward the light.
+const SCATTER = [0.4, 0.6, 0.3] as const;
 // A level as optically deep straight through as this, or deeper, takes the quality's steps; a
 // thinner one, fewer (down to a quarter).
 const DEEP = 8;
@@ -643,19 +630,6 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
   private readonly sky: SceneryMaterial;
   private readonly marchScene = new Scene();
   private readonly target = createImage();
-  /** where each view first meets cloud, drawn before the march (FIRST_HIGHEST): compile it before it draws */
-  readonly first: Mesh;
-  private readonly firstMaterial: ShaderMaterial;
-  private readonly firstScene = new Scene();
-  // Each pixel's run and the steps of it before cloud (−1: none), as the march's image is laid out.
-  private readonly firstTarget = new WebGLRenderTarget(1, 1, {
-    type: HalfFloatType,
-    format: RGFormat,
-    depthBuffer: false,
-    minFilter: NearestFilter,
-    magFilter: NearestFilter,
-    generateMipmaps: false,
-  });
   // The cover volume the levels read, drawn once they are.
   private readonly coverVolume = new CloudCoverVolume();
   // A global weather's maps of the weather systems, and each type's quantiles of the cover map
@@ -859,6 +833,7 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
         CLOUD_DEPTH_RANGE: DEPTH_RANGE,
         CLOUD_LEVELS_MOST: CLOUD_VOLUME_LEVELS,
         CLOUD_COVER_SIZE: CLOUD_COVER_VOLUME_SIZE.toFixed(1),
+        CLOUD_COVER_LODS,
         CLOUD_LUMP_TILES: VOLUME_LUMP_TILES.toFixed(4),
         CLOUD_PATCHES_TURN: glslMat3(PATCHES_TURN),
         CLOUD_PATCHES_BROADER: CLOUD_COVER_PATCHES.broader.toFixed(1),
@@ -872,6 +847,10 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
         ...sky.uniforms,
         uCloudShape: new Uniform<Texture | null>(null),
         uCloudCover: new Uniform<Texture>(this.coverVolume.target.texture),
+        // The spread each level of the cover volume's mipmaps averages away (CloudCoverVolume.spread).
+        uCloudCoverSpread: new Uniform(
+          Array.from({ length: CLOUD_COVER_LODS }, () => new Vector2()),
+        ),
         uCloudFrameE: new Uniform(this.frameE),
         uCloudFrameN: new Uniform(this.frameN),
         uCloudFrameM: new Uniform(this.frameM),
@@ -912,22 +891,12 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
         uCloudTypeHeights: new Uniform(typeVectors()),
         uCloudTypeMore: new Uniform(typeVectors()),
         uCloudGlobal: new Uniform(new Vector4(0, 1, 1, 0)),
-        uCloudMarch: new Uniform(new Vector4(32, 0, 0, 1e-3)),
+        uCloudMarch: new Uniform(new Vector4(32, 12.8, STEP_DEPTH, 1e-3)),
+        uCloudStepScale: new Uniform(1),
         uCloudLightSamples: new Uniform(2),
-        uCloudFineSteps: new Uniform(FINE_STEPS),
         uCloudDetail: new Uniform(new Vector3(...DETAIL)),
         uCloudPhase: new Uniform(new Vector4(...PHASE)),
-        uCloudLightModel: new Uniform(new Vector4(...LIGHT_MODELS.single)),
-        // Being chosen: unresolved cloud's chunk at most the ray's path through its level.
-        uCloudChunkThrough: new Uniform(0),
-        // Being chosen (debug.limb): views marched for a pixel grazing the levels.
-        uCloudLimbRays: new Uniform(1),
-        // Being chosen (debug.whole): runs taken whole where a pixel spans the level's depth.
-        uCloudWhole: new Uniform(0),
-        // Being chosen (debug.onLayer): the cover read over the pixel's footprint on the level.
-        uCloudOnLayer: new Uniform(0),
-        uCloudFirst: new Uniform<Texture>(this.firstTarget.texture),
-        uCloudFirstOn: new Uniform(false),
+        uCloudScatter: new Uniform(new Vector3(...SCATTER)),
         uCloudMarchMost: new Uniform(0),
         uCloudDebug: new Uniform(0),
         uCloudAir: new Uniform(1),
@@ -955,23 +924,6 @@ export class CloudVolumeRenderer implements ScenerySkyOverlay {
     // Drawn with whatever layers the camera has on as the composite is drawn.
     this.march.layers.enableAll();
     this.marchScene.add(this.march);
-
-    // Where each view first meets cloud: the march's own code, its main the pass's (CLOUD_FIRST),
-    // on the march's uniforms.
-    this.firstMaterial = new ShaderMaterial({
-      name: 'scenery-cloud-volume-first',
-      vertexShader,
-      fragmentShader: marchShader,
-      defines: { ...this.marchMaterial.defines, CLOUD_FIRST: '' },
-      uniforms: this.marchMaterial.uniforms,
-      depthTest: false,
-      depthWrite: false,
-      blending: NoBlending,
-    });
-    this.first = new Mesh(geometry, this.firstMaterial);
-    this.first.frustumCulled = false;
-    this.first.layers.enableAll();
-    this.firstScene.add(this.first);
 
     // The film's march (filmWhole): the march's own code, its runs taken whole (CLOUD_FILM), on
     // the march's uniforms.
@@ -1160,7 +1112,6 @@ void main() {
     for (const material of [
       this.marchMaterial,
       this.shadowMaterial,
-      this.firstMaterial,
       this.filmMaterial,
     ])
       if ('CLOUD_GLOBAL' in material.defines !== !!global) {
@@ -1223,22 +1174,28 @@ void main() {
         texel * reach,
       );
     });
+    const layerSteps = Math.max(quality.steps * LAYER_STEPS, 2);
+    const stepDepth = (STEP_DEPTH * 32) / Math.max(quality.steps, 1);
     (u.uCloudMarch.value as Vector4).set(
       Math.max(Math.round(quality.steps), 1),
-      0,
-      0,
+      layerSteps,
+      stepDepth,
       (u.uCloudMarch.value as Vector4).w,
     );
     u.uCloudLightSamples.value = Math.max(Math.round(quality.lightSamples), 1);
-    // The march's turns at most: every run's steps, each split in its parts, each walked in its
-    // short steps (cloud-volume-march.glsl, cloudMarchRuns), so none is cut short.
-    u.uCloudMarchMost.value = (u.uCloudShells.value as Vector4[])
-      .slice(0, levels.length)
-      .reduce(
-        (most, shell) =>
-          most + 2 * (shell.w + 1) * (1 + MARCH_SPLIT * (1 + FINE_STEPS)),
-        0,
-      );
+    // The march's turns at most (cloud-volume-march.glsl, cloudMarchRuns), so none is cut short:
+    // two runs a level, each its layout's stretches looked into and halved down to a step where
+    // they may hold cloud, its depth's steps, and those through cloud until the view is hidden
+    // (some 3 of optical depth, a step's each, and the steps walked again on entering it).
+    u.uCloudMarchMost.value = Math.ceil(
+      (u.uCloudShells.value as Vector4[])
+        .slice(0, levels.length)
+        .reduce(
+          (most, shell) =>
+            most + 2 * (4 * shell.w + layerSteps + 8 / stepDepth + 32),
+          0,
+        ) / Math.min(u.uCloudStepScale.value as number, 1),
+    );
     u.uCloudDebug.value =
       settings.debug.view === 'cost'
         ? 1
@@ -1248,16 +1205,6 @@ void main() {
             ? 3
             : 0;
     u.uCloudAir.value = settings.debug.air === false ? 0 : 1;
-    (u.uCloudLightModel.value as Vector4).fromArray(
-      LIGHT_MODELS[settings.debug.light ?? 'single'],
-    );
-    u.uCloudLimbRays.value = MathUtils.clamp(
-      Math.round(settings.debug.limb ?? 1),
-      1,
-      4,
-    );
-    u.uCloudWhole.value = settings.debug.whole ? 1 : 0;
-    u.uCloudOnLayer.value = settings.debug.onLayer ? 1 : 0;
     (u.uCloudColor.value as Color).copy(settings.color);
   }
 
@@ -1575,10 +1522,14 @@ void main() {
     const settings = this.settings!;
     const source = this.coverVolume;
     if (!source.update(renderer, settings.seed)) return false;
+    const u = this.marchMaterial.uniforms;
+    const spread = source.spread!;
+    (u.uCloudCoverSpread.value as Vector2[]).forEach((level, k) =>
+      level.set(spread[2 * k], spread[2 * k + 1]),
+    );
     // Each type's row: a global weather's levels' place by place, a local one's over the ground.
     this.updateTypes();
     if (settings.global) return true;
-    const u = this.marchMaterial.uniforms;
     settings.levels
       .slice(0, CLOUD_VOLUME_LEVELS)
       .forEach(({ layer, look }, k) => {
@@ -1666,17 +1617,11 @@ void main() {
     this.updateCoverMap(renderer);
     this.updatePlaceMap(renderer);
     this.updateLightMaps(renderer);
-    const first =
-      !settings.global ||
-      this.sky.globe.altitude(
-        cameraAt.setFromMatrixPosition(camera.matrixWorld),
-      ) < FIRST_HIGHEST;
-    this.marchMaterial.uniforms.uCloudFirstOn.value = first;
     // Interleaved (`temporal`), but for `'still'` while the camera moves: every pixel then.
     const shifted = this.temporal !== 'off' && this.cameraMoved(camera);
     if (shifted) this.poseSerial++;
     if (this.temporal === 'moving' || (this.temporal === 'still' && !shifted)) {
-      this.renderParts(renderer, camera, first, width, height);
+      this.renderParts(renderer, camera, width, height);
       return;
     }
     if (this.temporalDrawn !== this.temporal) {
@@ -1687,8 +1632,6 @@ void main() {
     // them as it stops (renderParts).
     this.partHeld.fill(false);
     this.fullPose = this.poseSerial;
-    if (this.firstTarget.width !== width || this.firstTarget.height !== height)
-      this.firstTarget.setSize(width, height);
     if (this.marchUnchanged(renderer, camera)) return;
 
     // Nested in the scene's render: leave its counters, shadows and clearing alone.
@@ -1698,10 +1641,6 @@ void main() {
     renderer.autoClear = false;
     renderer.info.autoReset = false;
     renderer.shadowMap.autoUpdate = false;
-    if (first) {
-      renderer.setRenderTarget(this.firstTarget);
-      renderer.render(this.firstScene, camera);
-    }
     renderer.setRenderTarget(this.target);
     renderer.render(this.marchScene, camera);
     renderer.setRenderTarget(outer, cubeFace, mipLevel);
@@ -1724,7 +1663,6 @@ void main() {
   private renderParts(
     renderer: WebGLRenderer,
     camera: Camera,
-    first: boolean,
     width: number,
     height: number,
   ) {
@@ -1739,11 +1677,6 @@ void main() {
       for (const part of this.parts) part.setSize(partWidth, partHeight);
       reset = true;
     }
-    if (
-      this.firstTarget.width !== partWidth ||
-      this.firstTarget.height !== partHeight
-    )
-      this.firstTarget.setSize(partWidth, partHeight);
     const unchanged = this.marchUnchanged(renderer, camera);
     if (!unchanged) this.partsFresh = 0;
     if (reset) {
@@ -1809,10 +1742,6 @@ void main() {
         scaleY - 1 + (2 * (k >> 1) - 1) / height,
       );
       u.uCloudDerivative.value = 0.5;
-      if (first) {
-        renderer.setRenderTarget(this.firstTarget);
-        renderer.render(this.firstScene, camera);
-      }
       renderer.setRenderTarget(this.parts[k]);
       renderer.render(this.marchScene, camera);
       this.partViews[k].copy(viewNow);
@@ -2084,15 +2013,10 @@ void main() {
     this.updateCamera(camera, side);
     // Coarser than the view's, set back after.
     const u = this.marchMaterial.uniforms;
-    const fine = u.uCloudFineSteps.value as number;
     const samples = u.uCloudLightSamples.value as number;
-    const firstOn = u.uCloudFirstOn.value as boolean;
     const shells = u.uCloudShells.value as Vector4[];
     const steps = shells.map(shell => shell.w);
-    u.uCloudFineSteps.value = Math.min(fine, FILM_FINE_STEPS);
     u.uCloudLightSamples.value = Math.min(samples, FILM_LIGHT_SAMPLES);
-    // Marched from the camera's own place, not where its views first meet cloud.
-    u.uCloudFirstOn.value = false;
     shells.forEach(shell => {
       shell.w = Math.max(Math.round(shell.w * FILM_STEPS), 4);
     });
@@ -2111,9 +2035,7 @@ void main() {
     renderer.autoClear = autoClear;
     renderer.info.autoReset = autoReset;
     renderer.shadowMap.autoUpdate = shadows;
-    u.uCloudFineSteps.value = fine;
     u.uCloudLightSamples.value = samples;
-    u.uCloudFirstOn.value = firstOn;
     shells.forEach((shell, k) => {
       shell.w = steps[k];
     });
@@ -2416,13 +2338,11 @@ void main() {
     this.stillImage.dispose();
     this.shadowTarget.dispose();
     this.sceneCoverTarget.dispose();
-    this.firstTarget.dispose();
     for (const part of this.parts) part.dispose();
     for (const material of [
       this.stillMaterial,
       this.shadowMaterial,
       this.sceneCoverMaterial,
-      this.firstMaterial,
       this.filmMaterial,
       this.rebuildMaterial,
       this.splitMaterial,

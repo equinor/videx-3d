@@ -1,5 +1,4 @@
 import {
-  FloatType,
   HalfFloatType,
   LinearFilter,
   LinearMipmapLinearFilter,
@@ -7,7 +6,7 @@ import {
   Mesh,
   NoBlending,
   OrthographicCamera,
-  RGFormat,
+  RedFormat,
   Scene,
   ShaderMaterial,
   Texture,
@@ -39,10 +38,11 @@ const camera = new OrthographicCamera();
 
 /**
  * The cover maps of a local weather's 3D clouds (`CloudVolumeRenderer`): for each level, the
- * cover of each column (cloud-volume-march.glsl, cloudCoverAt), as its two reads of the 3D cover
- * volume and their spreads give it, on the field over the weather's disc, fixed on the Earth.
- * A level's cover is the same all up a column, so the march, its light and its shadows read it
- * once from a 2D map (`cloudCoverOf`) instead of twice from the volume, at every step.
+ * mean cover of each column (cloud-volume-march.glsl, cloudCoverAt), as its two reads of the 3D
+ * cover volume give it, on the field over the weather's disc, fixed on the Earth. A level's cover
+ * is the same all up a column, so the march, its light and its shadows read it once from a 2D map
+ * (`cloudCoverOf`) instead of twice from the volume, at every step; its spread about the mean is
+ * the volume's, by the footprint alone (`cloudSpreadOf`).
  *
  * Drawn by the march's own program (`CLOUD_COVER_MAP`), from its uniforms as the frame has them:
  * the levels' drift with their winds and their clouds' forming and fading on the clock, so it is
@@ -133,7 +133,7 @@ export class CloudCoverMap {
 
   // Every level's layer, then the mipmaps.
   private draw(renderer: WebGLRenderer, size: number, levels: number) {
-    const target = this.targetOf(renderer, size, levels);
+    const target = this.targetOf(size, levels);
     const material = this.material!;
     const outer = renderer.getRenderTarget();
     const cubeFace = renderer.getActiveCubeFace();
@@ -156,13 +156,9 @@ export class CloudCoverMap {
     renderer.info.autoReset = autoReset;
   }
 
-  // Its target, `size` texels a side and `levels` deep, made anew if it is not: 32-bit floats
-  // where they can be filtered, the mean square's spread kept where half floats lose it.
-  private targetOf(
-    renderer: WebGLRenderer,
-    size: number,
-    levels: number,
-  ): WebGLArrayRenderTarget {
+  // Its target, `size` texels a side and `levels` deep, made anew if it is not: the mean cover in
+  // half floats.
+  private targetOf(size: number, levels: number): WebGLArrayRenderTarget {
     let target = this.target;
     if (
       target &&
@@ -175,10 +171,8 @@ export class CloudCoverMap {
     }
     if (!target) {
       target = new WebGLArrayRenderTarget(size, size, levels, {
-        type: renderer.extensions.has('OES_texture_float_linear')
-          ? FloatType
-          : HalfFloatType,
-        format: RGFormat,
+        type: HalfFloatType,
+        format: RedFormat,
         minFilter: LinearMipmapLinearFilter,
         magFilter: LinearFilter,
         depthBuffer: false,

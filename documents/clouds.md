@@ -173,8 +173,8 @@ coverage's is wider than the coverage's alone (a broken deck's spread pulled it 
 `profile[1]` up) the level the coverage must pass rises on to past the most it reaches there:
 the coverage's highest, the billows', the detail's and the rows' reach, and the edge as wide as
 it is at that level of detail. So each cloud's top rounds off at a height of its own, from its
-pattern's strength, and nothing reaches the layer's top shell, near or far (the share far off,
-`cloudAbove`, is none past the distribution's end). The density stays whole up to the top.
+pattern's strength, and nothing reaches the layer's top shell, near or far (`cloudDensity`:
+`need.w`, `CLOUD_ROUNDED`). The density stays whole up to the top.
 Thinned instead (the density fading over the top 10 % of a cumulus layer, 25–35 % of a deck),
 every cloud reaching the top was cut flat into a see-through film over the layer: a view along
 the tops looked through it to the clouds below, and as the steps through the film moved with
@@ -231,11 +231,10 @@ Without `mixTypes` the march is compiled without the loop over two types (`CLOUD
 the loop costs some 15 % of the march even where it runs once. Changing it compiles the march
 again.
 
-**The decks' light.** Through a sheet (`heap` under 1) the samples toward the light reach on to
-its top, so an overcast's base lies in its own shadow. Under a deck — its own layer up to its top
-and the layers over it (the optical depth straight up through them, `uCloudStyles.z`) — the
-sky's blue gives way to the grey light the deck lets through, many times scattered, dimmer the
-deeper it is (`CLOUD_DECK`), and the light reaching it is dimmed by the layers over it.
+**The decks' light.** Through a sheet the samples toward the light reach on to its top (up to
+six clouds' sizes, `CLOUD_LIGHT_REACH`), so an overcast's base lies in its own shadow, lit by the
+light scattered many times over through it and the sky's (see "The light"); the light reaching
+it is dimmed by the layers over it.
 
 **Over the ground** the low layer rises with the broad height (`CLOUD_TERRAIN_RISE`), the middle
 one half as much, the high one not at all (`cloudRiseOf`: ice near the tropopause).
@@ -264,18 +263,17 @@ and a 32³ detail volume that roughens their edges close up (wisps toward the ba
 above). Each moves the coverage by its own standard deviations (measured, `CLOUD_BODY` and the
 like in the march), so the cover stays the weather's.
 
-**The same clouds at every distance.** Nothing in a cloud's shape may depend on where the camera
-is but the level of detail, or the clouds morph as the view moves, most of all at a low angle
-over a layer. Each noise is read at the level two of its texels to a footprint take in: a
-footprint of the clouds' own image, so a frame holds only what one frame resolves (finer
-creases, resolved only by the frames' accumulation, came and went as the view moved and came to
-rest). Their averaging calms them as a footprint grows (`CLOUD_SHAPE_KEPT` and
-`CLOUD_DETAIL_KEPT`, measured on their mips), and the edge widens by the spread lost, so a
-footprint's share in cloud stays what it was; there is no fade of their own, which turned
-billowed clouds into smooth blobs some kilometres off. The coverage, a pattern on the layer,
-takes the footprint as stretched over it (by the geometric mean of its sides, at most four
-times); the billows and the detail, in 3D, the ray's own. What varies slowly in the coverage
-(the warp) is read at each step: kept along the view, it moved with the camera.
+**The same clouds at every distance** (2026-11-11). What a point holds and how it is lit are
+functions of where it lies and of the footprint it is seen over — the pixel's cone where it lies,
+its level of detail — and of nothing else of the view (`cloudDensity`, `cloudLight`): not the step
+it is read for, its length or its slope, nor where the view's runs begin. The shape volume's lumps
+are read where the footprint resolves features a quarter of its tile across (`uCloudDetail.y`),
+their spread taken instead where it does not; the cover is read over the footprint, its mean from
+the cover volume's (or the cover map's) mipmaps and its spread from a table measured on the volume
+(see "Far off"). So the clouds change only as the footprint grows, and the march's steps change
+what is drawn only by how finely they resolve it (see "The march"). Until 2026-11-11 each sample
+was read over the stretch of the view it stood for and lit once at one point in it: what the
+clouds looked like depended on how the steps fell, which moved with the camera.
 
 **Fixed to the Earth.** The noise is read in a frame fixed to the Earth (from the globe's frame
 and place), with where the camera lies in each pattern worked out on the CPU in 64-bit floats
@@ -283,17 +281,27 @@ and place), with where the camera lies in each pattern worked out on the CPU in 
 put, and keep their detail, from sea level to 20 000 km, and through a `World`'s change of
 anchor.
 
-**Far off.** A pixel's footprint picks the noise's level. Its edge widens by the spread the
-coarser levels averaged away (each part's lost variance added, `CLOUD_SPREAD_WIDTH`), and once a
-footprint takes in most of a tile the pattern fades into its mean, as the coarser levels would
-otherwise repeat the tile in a grid. There the share of a footprint in cloud is the share of the
-coverage's distribution over the level (`cloudAbove`, the quantiles read backwards): the cover
-itself, at every distance, whatever the edge's width. A widened edge about the mean gave too
-little cloud where the cover was high and too much where it was low, a grey veil over clear
-sky. What a step hides is worked out per chord of a cloud along the view (`cloudExtinction`):
-resolved clouds are their own density, and a mean of cloud and sky hides what the clouds would
-side by side, not a haze of their density. From space a layer's run is three steps of that
-mean: the clouds draped over the Earth, with no switch on the way down.
+**Far off.** A footprint's share in cloud is the share of its columns whose cover passes what they
+need: the cover's mean over the footprint against the need, over an edge as wide as the type's
+softness and the spread the footprint averages away, through the normal distribution's CDF
+(`cloudNormalCdf`: a normal blurred is a wider normal, so a footprint read whole holds what its
+parts do on average). The spread comes from a table measured once from the cover volume
+(`CloudCoverVolume.spread`, `uCloudCoverSpread`): for each level of its mipmaps, the mean over its
+texels of the variance within each, read at the texels' middles (`COVER_SPREAD`), interpolated by
+a read's level of detail and weighed as the reads' means are (`cloudSpreadOf`). Taken per read
+instead, as the volume's squares less its means squared, it held the filter's own spread as well
+— w(1 − w)(a − b)² between two texels a and b, none at a texel's middle, the most halfway — which
+drew the volume's grid into every cloud's edge, and through the cover map baked from it on a grid
+of its own (265 m against the volume's 266 m, turned) a moiré of stripes some kilometres apart:
+an overcast lit through its rounded top was cross-hatched underneath, its far edges streaked, and
+near cumulus came out fuzzier and larger than their cover (an edge of up to 0.09 of cover against
+their own 0.009; 2026-11-11). Cloud the footprint resolves hides as its density; cloud and sky
+mixed across it (the spread across the view, against the edge's own width) hide in chunks of a
+cloud's size (`look.z`), as rays pass through clouds or between them: a broken field seen from
+afar lets through what lies between its clouds, not a haze of their mean. The footprint spans its
+width up and down too, up to the level's depth: what the need climbs over that widens the edge,
+so a view grazing a level's top far off, or the limb from orbit, takes the share its pixel holds
+there rather than all or none.
 
 **The weather far off.** Some hundreds of kilometres from the scene the cover is the weather
 systems': a map over the whole Earth (`scenery-cloud-map.ts`), a cube map 1024² a face (some
@@ -409,66 +417,72 @@ Under the sea, the sea's level.
 - **The cloud map waits** for the Earth's map, so it is not drawn twice; a new drawing of it (the
   `World`'s frame changed) draws the cloud map again.
 
-**The march.** In the clouds' own image (its share of the screen's resolution in CSS pixels,
-whatever the pixel ratio, and its steps from `quality`, below) along each pixel's ray, over each layer's
-runs between its shells, up to the Earth. Steps grow with distance as fast as the runs need to
-fit the quality's steps, no faster than 12 % of the distance (`CLOUD_GROWTH_MOST`), and no
-slower either: at least three to a run. Grown by at least 4 % of the distance, and three times
-longer still through clear air, a view across a layer took a few of its steps in it, strides
-longer than the clouds: a cloud smaller than a stride was hit or missed by where the strides
-landed, which moved with the camera, so the clouds came and went as it moved and were
-see-through where the frames averaged them (40 % too little cloud along a dolly from 5 km up,
-changing as it went: 0.50 to 0.64 opacity against 0.88 from 12 times the steps; now 0.84 and
-0.82). Capped at 6 %, a view from inside the layer ran out of steps within a few kilometres and
-the tail drew a flat, cloudless band beyond, which came and went as the camera crossed the
-layer's top. What the steps do not reach the last of them take, one
-for each run left (the tail): the rest of the run at once, a slab at the pattern's mean, its
-sample toward the light at the mean too, so the far field fades to the layer's look rather
-than ending (lit as a thin layer is, as if even up to its top, a cumulus layer's far edge went
-dark).
-Between two samples the share in cloud is integrated (the edge value linear between them,
-`cloudShareAlong`), so the steps do not slice the clouds into shells; only each run's first
-step has a length of its own per pixel. In cloud a step spans at most an optical depth of 2.
-A step that landed in cloud from clear air used to step back and go in again with shorter
-ones: a choice per pixel, which drew flat, hard-edged disks on the clouds' tops that moved
-with the camera. The samples toward the light take in at least 0.3 of the span each
-stands for, so they cross the billows rather than flicker with each one's crevices.
+**The march** (`cloudMarchRuns`; rebuilt 2026-11-11). In the clouds' own image (its share of the
+screen's resolution in CSS pixels, whatever the pixel ratio), along each pixel's ray over each
+level's runs between its shells, up to the ground, front to back, in one loop whose turns are
+alike (at most `uCloudMarchMost`), so the density's and the light's reads are compiled into it
+once. A turn either looks into a stretch ahead or walks a step. A step is as long as resolves what
+it reads, and no longer:
 
-**What the march skips, and what it reads baked (2026-11-10).** Measured on the bench
-(below), most of a view's time went before it met any cloud, and at each step on reads that
-change only with the clock:
+- **The pattern:** two of the pixel's footprints (`uCloudDetail.x`), but no shorter than eight
+  texels of the shape volume in clear air (`CLOUD_STEP_TEXELS`: the least its lumps change over)
+  or two in cloud.
+- **The level's depth:** `uCloudMarch.y` steps up it (0.4 of the quality's steps) along the view's
+  slope through it, so a deck's top and the light falling off into it are resolved however
+  grazing the view. Relaxed to the pixel's footprint where that was wider, a deck 300 km off had
+  16 % of its pixels over 0.02 off, cumulus 200 km off 29 %.
+- **What it holds:** the extinction the last steps found, halved each step since, so a step
+  through cloud hides about `uCloudMarch.z` (an optical depth of 1 at 32 steps). A step that finds
+  cloud and is longer than 1.5 of a step through what it found (`CLOUD_AGAIN`) is walked again
+  from where it began, as short as that: where the view enters cloud is found to within a free
+  path, and lit there.
 
-- **The first cloud** (`cloudFirstCloud`, `CLOUD_FIRST`, `CloudVolumeRenderer.first`): a lean
-  program of the march's own walks each view's steps, laid out and looked into as the march's
-  are, to the first that holds cloud, into an RG image the march's size (its run, the steps of it
-  before; −1 none). The march goes on from there (`uCloudFirst`), and a view meeting none is not
-  marched: the same steps, so the same image. Always in a local weather; in a global one from
-  under 30 km (`FIRST_HIGHEST`): higher, most views meet cloud within a few steps and finding
-  where costs more than it spares. With it off the march takes 1.16–1.42 times as long in a local
-  weather, 1.8–4.0 in a global one near the field.
+Each step reads its level's extinction at its middle over the pixel's footprint (`cloudDensity`),
+takes it as even along the step (exactly, `cloudAdd`), and lights it where its light comes from
+on average, 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ.
+
+Clear air is passed over. Past a step finding no cloud, clear by four of the edge's deviations
+however its lumps fell (`CLOUD_CLEAR`, `gClear`), the march looks into a stretch twice as long
+ahead, and on as long as each is clear, up to its run's own layout (the quality's steps over the
+run, growing geometrically from its near end); a stretch that may hold cloud is looked into again
+at half its length, down to a step's. The look (`cloudMaybe`) is a bound: the cover's mean over
+twice the stretch, past it by four of its deviations, the most the lumps add and three of the
+edge's widths, against the least the cover needs in it (at its lowest, let down by the pixel's
+footprint, and toward a local weather's edge raised as little as at the stretch's end or middle
+furthest inside it). So how the stretches fall changes how much is walked, not what is found. A
+step's level is placed again (`cloudSet`: the weather systems' map, the ground's broad rise) once
+the march has moved 1 km or a footprint from where it was placed last (`CLOUD_PLACE_AGAIN`).
+
+The march it replaced laid each run out in steps from the camera, looked into each, split those
+holding cloud into parts and the parts into short steps, each read over the stretch it stood for
+and lit once at one point: the steps' length set how blurred the clouds were read and where they
+were lit. As the camera moved the steps moved, and decks' bodies and edges shapeshifted; a step
+reaching into a deck from the sunlit air in front of it was lit there, so far decks glared and
+grew brighter with distance (see "Measured"). What had been added over it to hide its symptoms
+went with it: a first pass finding each view's first cloud, views spread over a limb pixel's
+height, runs taken whole far off, the cover read over the footprint on the layer, chunks bounded
+by the rise, and three light models to choose from (`debug.light`, `limb`, `whole`, `onLayer`).
+
+**What the march reads baked (2026-11-10).** Reads that change only with the clock are baked:
+
 - **A local weather's cover** (`CloudCoverMap`, `scenery-cloud-cover-map.ts`, `CLOUD_COVER_MAP`):
-  each level's cover over its disc, as its two reads of the 3D cover volume and their spreads
-  give it, baked into a layer of a 2D map (768², the cover's texel; its mean and mean square, so
-  its mipmaps hold the spread over their texels), drawn anew by the march's own code whenever
-  the clock moves (0.7 ms) and never for the camera. The march, its light, the first cloud and
-  the shadows read it (`cloudCoverOf`) instead of the volume: 1.13–1.42 times as long without it,
-  the image the same to 0.003 a channel.
+  each level's mean cover over its disc, as its two reads of the 3D cover volume give it, baked
+  into a layer of a 2D map (768², the cover's texel; half floats, with mipmaps), drawn anew by the
+  march's own code whenever the clock moves (0.7 ms) and never for the camera. The march, its
+  light and the shadows read it (`cloudCoverOf`) instead of the volume: 1.13–1.42 times as long
+  without it (the march it replaced), the image the same to 0.003 a channel. Its spread about the
+  mean is the volume's, by the footprint alone (`cloudSpreadOf`; see "Far off").
 - **A global weather's placing** (`CloudPlaceMap`, `scenery-cloud-place-map.ts`,
   `CLOUD_PLACE_MAP`): the cloud map and its types as `cloudPlace` reads them (both drawings,
   drifted, the newer dissolved in), baked on a gnomonic map about the camera's foot, as far as
   clouds 15 km up show over its horizon, at half the cloud map's texel (192²–1024²): drawn anew
   as the clock moves (0.12 ms), the drawings change or the camera's foot moves a tenth of its
   reach. One read of it where the drawings take four cube reads, a value noise and the drift's
-  turns; and the walk to the first cloud passes a step it says holds none of the level without
-  placing the level at all (`cloudPlaceClear`). Together 1.1–1.25 times as long without them,
-  the image the same to 0.004. In the march's own steps past the first cloud the same skip cost
-  more than it spared (1.04–1.43 times as long), so it is not taken there.
+  turns.
 - **Stopped at 5 %** (`uCloudDetail.z`): a view stops once 5 % of what lies behind it comes
   through, not 1 %, and is drawn as opaque as that from there on, so nothing shows through where
   it stopped. Its deepest cloud's light is left out, unseen: 0.77–0.89 of the time through an
-  overcast. Short steps by each part's own optical depth rather than its level's extinction
-  (fewer through thin cloud: 0.6–0.9 of the time through broken cumulus) were tried and
-  rejected: they shaded the clouds' sides in bands, close by too.
+  overcast.
 
 **The image's size** follows the CSS pixels, whatever the screen's pixel ratio
 (`CloudVolumeRenderer.render`): at a pixel ratio of 2, `medium` marched each CSS pixel, 4 times
@@ -509,18 +523,18 @@ blotches; blue noise leaves a fine, even grain that the image's scaling up hides
   clouds above keep their shapes. From space only the limb is far enough to soften.
 
 **Quality** (`quality`, `CLOUD_VOLUME_QUALITY`; default `'medium'`). Each level sets the share of
-the screen's resolution the clouds' image is drawn at, more from high up where a layer is a
-few steps, the most rays marched a frame (past it the image is drawn smaller, so a screen with
-a pixel ratio of 3 costs no more than one of 1), whether the march is sparse, its steps and its
-samples toward the light. `resolution` and `steps` given override the quality's (the budget of
-rays then off).
+the screen's resolution in CSS pixels the clouds' image is drawn at, its steps and its samples
+toward the light (`resolution` given overrides the quality's). The steps lay out a run of a dense
+level (a thin one takes fewer, down to a quarter): the longest stretch the march looks ahead
+over; 0.4 of them go up a level's depth (`LAYER_STEPS`), and a step through cloud hides an optical
+depth of 32 over them (`STEP_DEPTH`; see "The march").
 
-| | share (from 150 km, 500 km) | rays | sparse | steps | light samples |
-| --- | --- | --- | --- | --- | --- |
-| `low` | 0.35 | 60 000 | yes | 28 | 1 |
-| `medium` | 0.5 (0.75) | 150 000 | yes | 40 | 2 |
-| `high` | 0.5 (0.75, 1) | 1 000 000 | no | 40 | 2 |
-| `ultra` | 0.75 (1) | — | no | 64 | 2 |
+| | share | steps | light samples |
+| --- | --- | --- | --- |
+| `low` | 0.35 | 24 | 2 |
+| `medium` | 0.5 | 32 | 2 |
+| `high` | 0.75 | 48 | 3 |
+| `ultra` | 1 | 64 | 4 |
 
 - **Sparse:** one pixel of each 2 × 2 of the image is marched a frame, in turn (across the block
   first), into an image half as wide and high, each with the sub-pixel jitter of its own in
@@ -595,63 +609,36 @@ CPU, by where the march reads its patterns: the march's own work is the same.
   more than 12 h, another seed or other ground draws one anew. Up to three maps at once (some
   100 MB); the blend costs +0.3–0.9 ms of the march (medium).
 
-**How opaque, however finely walked (`cloudShare`, `cloudDepth`; 2026-11-10).** A stretch of a
-view is read for the share of it in cloud, its spread widening the clouds' edge. Of that spread,
-what lies along the view (the stretch's extent, its climb) is averaged along each ray, as its
-light is: a density, σ × share × length, exact however the stretch is cut. Only what lies across
-the pixel's footprint — the cover's spread from the extent it was read over (at least a cover
-texel: finer, its spread is the texels' interpolation) down to the footprint, as its size
-squared, and the lumps the footprint does not resolve — is cloud and sky mixed: the pixel's rays
-pass through clouds or between them, in chunks of a cloud's size (`look.z`, fixed), each hiding
-what a cloud does. Both in proportion to the length, so the clouds are as opaque however finely
-the march walks them: short steps 4 times finer, or bounded by 4 to 8 pixels' footprints, moved
-the total opacity by under 2 % at three views (opening, over, 10 km). Before, mixed cloud was
-taken in chunks of the step's length, and counted all spread as mixed: walked finer the clouds
-grew 2–7 % more opaque, at the footprint far off 19 % less, the same cloud thinned as the camera
-drew away and its steps grew, and resolved near clouds were taken as mixed and turned
-see-through when walked coarser. The light toward the sun reads the same model, so the clouds'
-shaded sides deepened: a deck far off shows its domes' shading rather than a flat white band.
+**As opaque however finely walked** (2026-11-10). A step's optical depth is its extinction (a
+point's, `cloudDensity`) times its length, so the clouds are as opaque however the march walks
+them. Mixed cloud was once taken in chunks of the step's length, with all spread counted as mixed:
+walked finer the clouds grew 2–7 % more opaque, far off 19 % less, and the same cloud thinned as
+the camera drew away. The edge was once a logistic standing for the normal CDF; blurred it is no
+longer one, and in the faint tail a stretch read whole came out 2 to 20 times what its parts held,
+a glow about and between the clouds.
 
-**A step only looked into, and a normal edge (`cloudMarchRuns`, `cloudNormalCdf`; 2026-11-10).**
-A long step of the march hiding less than `CLOUD_THIN` was taken whole, one hiding more split in
-parts; but read whole it held more than its parts found. Its cover is read from a 3D texture's
-mip over a square of the field though it stands for a line along it, its spread too wide; and the
-clouds' edge was a logistic standing for the normal distribution's CDF, which blurred is no
-longer a logistic: in the faint tail, where the gate fell, a step read whole came out 2 to 20
-times what its parts held. With the gate at the steps raised to 0.1 the opening's clouds were
-24 % more opaque, at the parts 1.4 %; as the camera moved and steps crossed the gate, pixels
-jumped by up to 0.2. Now a step is only looked into (any holding cloud is split; the parts keep
-the gate), and the edge is the normal CDF (Abramowitz and Stegun 7.1.26), so a stretch read
-whole holds what its parts do on average. The opening's opacity is within 0.1 % of walking every
-step in short steps (2.9 % over before); under a 0.3 % dolly the mean change of a pixel's opacity
-fell from 10.9, 5.8 and 1.5 thousandths (opening, over, below) to 10.6, 5.4 and 1.2, what walking
-every step gives. The normal's thinner tails took the faint glow about and between the clouds, 4
-to 11 % of their opacity. The work at the opening fell (turns 32.5 → 30.2, parts 6.9 → 5.6, short
-steps 3.3 → 2.4, lights 4.6 → 3.2 a pixel); its time is within the noise (17–23 ms, Iris Xe).
-
-**The light.** Lit where each point lies: the sun's colour and daylight for its elevation there
-(so the night side is dark and the terminator warm), the moon by night, one or two samples
-toward the light (`uCloudLightSamples`, a uniform so Direct3D keeps the loop a loop), the first
-within 120 m (`CLOUD_LIGHT_NEAR`: a fifth of the cloud's depth in, it passed over the billows'
-shading on each other), a two-lobed phase (silver linings), and the sky above and the sea below
-as ambient. The samples toward the light sum the cloud's density as it is, not as a footprint's
-share of the sky hides what lies behind (`cloudExtinction`): taken so, a thin edge of the cloud
-a point lay in let most of the sun through, and clouds facing the sun glowed white all over
-(median 1.84 under `none` looking level toward the sun, 96 % of the cloud over 1; then 0.41
-and 13 %, grey bodies with bright rims). The sun's light straight through falls off as
-e^(−depth) toward it; what is scattered
-many times over inside as three octaves of it, each half as strong, falling off half as fast
-and spread wider (`CLOUD_OCTAVES`, after Wrenninge), so a cloud's shaded side is lit through
-it, the deeper the darker; a flat share of the sun's instead (`1 / (1 + 0.3 depth)`) lit every
-cloud near evenly, overexposed with no definition. The sky's light is mostly the zenith's blue,
-reaches the underside too (off the clouds and the air around), less at a cloud's base under
-the cloud over it (`CLOUD_SKY_BASE`), and outweighs the sun's in the shade
-(`CLOUD_SKY`): by day a cloud's shadows are blue-grey, as in a photograph, not the ash grey a
-mean of the sky's colours with the ground's gave. With the sun low the sky lights them less
-(`CLOUD_SKY_LOW`), so sunset's colours carry. Calibrated under `toneMapping: 'none'`: sunlit
-tops some 0.5–1.2, shade 0.2–0.5, only the silver linings over 1. Then the air's haze over the
-distance their light comes from on average, as the relief is hazed, and from space the air
-over them.
+**The light** (`cloudLight`, `cloudLit`; 2026-11-11). Lit where each point lies: the sun's colour
+and daylight for its elevation there (so the night side is dark and the terminator warm), the moon
+by night, and the sky above and the sea below as ambient. The optical depth toward the light is
+read through the point's own level in `uCloudLightSamples` stretches (a uniform, so Direct3D keeps
+the loop a loop): the first a cloud's skin (200 m, `CLOUD_LIGHT_SKIN`), the rest growing
+geometrically up to the level's top or six clouds' sizes (`CLOUD_LIGHT_REACH`), each read at its
+middle over a footprint of half its length, or the pixel's where wider; then across each level
+over it, where the light crosses its middle, over a quarter of the crossing. Like the view's own
+reads they depend on the point alone: read over the view's step, the light changed as the steps
+did. The sun's light is shared (`uCloudScatter`, `SCATTER`): 0.4 of it scattered once, by a
+two-lobed phase toward the view (`uCloudPhase`: silver linings), falling off as e^(−τ) with the
+optical depth toward the light; 0.6 scattered many times over, leaving a cloud much as it came
+whichever way it is seen from, falling off 0.3 as fast. That carries the sun deep into a cloud,
+so a deck seen far off at a low angle, through its sunlit top, is no brighter than seen from
+above. The octaves it replaced (after Wrenninge) fell off with depth as the light straight
+through did and kept its forward lobe: with the old march's errors, far decks glared. The sky's
+light is mostly the zenith's blue, reaches the underside too (off the clouds and the air around),
+less at a cloud's base under the cloud over it (`CLOUD_SKY_BASE`), and outweighs the sun's in the
+shade (`CLOUD_SKY`): by day a cloud's shadows are blue-grey, as in a photograph. With the sun low
+the sky lights them less (`CLOUD_SKY_LOW`), so sunset's colours carry. Calibrated under
+`toneMapping: 'none'`. Then the air's haze over the distance their light comes from on average,
+as the relief is hazed, and from space the air over them.
 
 **Light maps (an option: `lightMap`, off by default; `scenery-cloud-light.ts`, 2026-11-10).** A
 local weather's clouds can be lit from maps instead of marching toward the light from every point
@@ -788,6 +775,21 @@ Every result carries the conditions it was taken under; compare only those that 
 - A browser hook that wrapped `drawArrays` with a `getError` before and after each draw (from a
   debugging session, not the repository) took 88 % of the page's main thread; the bench warns when
   WebGL's methods are not the browser's own.
+
+**The march rebuilt (2026-11-11)**, measured on the bench at 1280 × 720, `medium`, against the
+same march with every step a tenth as long and no cap on its turns (`uCloudStepScale` 0.1):
+
+- **Low stratus 20–300 km off:** no pixel over 0.02 (of 1) off. The march it replaced was 3.5/255
+  brighter on average at 300 km, 48 % of the deck over 4/255.
+- **Scattered cumulus** (over, level, below, down): 5–8 % of the clouds' pixels over 0.02 off,
+  their mean under 2/255, at the crisp edges of tops 5–20 km off. Moved 20–40 m, the march's image
+  changed some 10 % more than the finer march's (the rest parallax).
+- **Orbiting a stratus deck at 140 km** (12 bearings): its mean brightness 0.63–0.71 (linear), none
+  of it clipped. The march it replaced: 0.78–0.93, 13–84 % clipped white from 8 bearings.
+- **Turns a pixel** (scattered, `count`): mean 38–51, p99 170–335.
+
+Its timings are to be taken again: those of 2026-11-11 were taken with another window drawing on
+the GPU. The timings below are of the march it replaced.
 
 The march at 1280 × 720 CSS, `medium` (640 × 360), scattered cumulus, settled, its first pass
 and baked maps in: local 10–14 ms from 3 km and inside the layer, 3.8 from 200 km, 2.7 from the
@@ -932,8 +934,8 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
    faint horizontal lines left at the far edge from 200 km, and a crinkled texture there;
    the shading could take more light samples and a
    powder term. The map's cover is about a third of the real Earth's. The open cells from space read as scribbles rather
-   than cells; thin streaks' edges still show faint stairs from some 1000 km (whole regions'
-   no longer: `CLOUD_WHOLE`), and a faint short line is left here and there where the flow
+   than cells; thin streaks' edges still show faint stairs from some 1000 km, and a faint short
+   line is left here and there where the flow
    tears the air apart. Whole cloud from above, far off, is flat and pale. An overcast's
    lumps on top (its clouds giving way over the top 35 % of a stratus layer) notch its far
    edge against the sky; a narrower band for the decks would keep their tops flatter.
@@ -975,3 +977,9 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
 10. **A global weather's controls** without data: only its seed, and each level on or off.
     Proposed: a share of the Earth under cloud (the systems' lift threshold, so the map's mean
     cover follows it), how stormy (the lows' depth and number), and named climates as presets.
+11. **The rebuilt march** (2026-11-11): near cumulus are crisper and smaller than before (the
+    false spread had blurred them; a type's `softness` softens them on purpose); its time is to
+    be measured again, and from high up in a global weather the light's crossings of the levels
+    over each point lit (each placed by the weather systems' map) are some third of it, which could
+    be read once a placing and lent to its steps; the Earth story (`CloudVolume`, `Earth`) shows
+    artifacts still to be looked at.

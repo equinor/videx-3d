@@ -148,14 +148,6 @@ type CloudVolumeArgs = {
   debugView: 'none' | 'cost' | 'unlit' | 'map';
   /** the air's haze between the clouds and the camera */
   debugAir: boolean;
-  /** being chosen: how the sun lights them (`debug.light`) */
-  lightModel: 'single' | 'diffuse' | 'shaded';
-  /** being chosen: rays for a pixel grazing the levels (`debug.limb`) */
-  limbRays: number;
-  /** being chosen: runs taken whole where a pixel spans the level's depth (`debug.whole`) */
-  wholeFar: boolean;
-  /** being chosen: the cover read over the pixel's footprint on the level (`debug.onLayer`) */
-  onLayer: boolean;
   /** how far on to jump the weather's clock (minutes): the clouds drift with the wind */
   cloudMinutes: number;
   /** the weather clock's rate (weather seconds a second) */
@@ -592,77 +584,6 @@ function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
       })),
     },
     {
-      // Being chosen: how the sun lights the clouds (LIGHT MODEL).
-      label: 'light',
-      buttons: (
-        [
-          ['single', 'Its light scattered once, by the phase'],
-          [
-            'diffuse',
-            'With the light scattered many times over, much the same from every side',
-          ],
-          [
-            'shaded',
-            'Diffuse, the billows facing away from the sun shaded by their own lumps',
-          ],
-        ] as const
-      ).map(([lightModel, title]) => ({
-        label: lightModel,
-        title,
-        on: args.lightModel === lightModel,
-        click: () => update({ lightModel }),
-      })),
-    },
-    {
-      // Being chosen: the cover read over the pixel's footprint on the level (ON LAYER).
-      label: 'filter',
-      buttons: (
-        [
-          ['across', 'The cover read over the pixel’s width', false],
-          [
-            'on layer',
-            'The cover read over the pixel’s footprint on the level: far, low decks blurred as a pixel holds them',
-            true,
-          ],
-        ] as const
-      ).map(([label, title, onLayer]) => ({
-        label,
-        title,
-        on: args.onLayer === onLayer,
-        click: () => update({ onLayer }),
-      })),
-    },
-    {
-      // Being chosen: runs taken whole far off (WHOLE FAR).
-      label: 'far',
-      buttons: (
-        [
-          ['stepped', 'Every run walked in steps and parts', false],
-          [
-            'whole',
-            'A run taken whole where a pixel spans more than half the level’s depth',
-            true,
-          ],
-        ] as const
-      ).map(([label, title, wholeFar]) => ({
-        label,
-        title,
-        on: args.wholeFar === wholeFar,
-        click: () => update({ wholeFar }),
-      })),
-    },
-    {
-      // Being chosen: rays for a pixel grazing the levels (LIMB RAYS).
-      label: 'limb',
-      buttons: [1, 2, 4].map(limbRays => ({
-        label: limbRays === 1 ? '1 ray' : `${limbRays} rays`,
-        title:
-          'Rays marched for a pixel whose view grazes the levels, averaged',
-        on: args.limbRays === limbRays,
-        click: () => update({ limbRays }),
-      })),
-    },
-    {
       // Being chosen: the clouds over the relief, and a global weather's systems steered by it.
       label: 'ground',
       buttons: (
@@ -805,10 +726,6 @@ const CloudVolumeStory = (args: CloudVolumeArgs) => {
                 types: args.globalTypes,
                 thickness: args.globalThickness,
                 steer: args.steer,
-                light: args.lightModel,
-                limb: args.limbRays,
-                whole: args.wholeFar,
-                onLayer: args.onLayer,
               }}
             />
           )}
@@ -1060,26 +977,6 @@ const meta = {
       description: 'The air’s haze between the clouds and the camera.',
       table: { category: 'Debug' },
     },
-    lightModel: {
-      control: { type: 'inline-radio' },
-      options: ['single', 'diffuse', 'shaded'],
-      description:
-        'Being chosen: how the sun lights the clouds (`debug.light`). SINGLE: its light scattered once, by the phase. DIFFUSE: with the light scattered many times over, leaving much as it came whichever way they are seen from. SHADED: that, the billows facing away from the sun shaded by their own lumps (marched light only, not light maps).',
-      table: { category: 'Cloud volume' },
-    },
-    limbRays: {
-      control: { type: 'inline-radio' },
-      options: [1, 2, 4],
-      description:
-        'Being chosen: rays marched for a pixel whose view grazes the levels (`debug.limb`), toward the Earth’s limb where a pixel spans kilometres of height, spread over its height and averaged.',
-      table: { category: 'Cloud volume' },
-    },
-    wholeFar: {
-      control: { type: 'boolean' },
-      description:
-        'Being chosen: a run through a level taken whole where a pixel spans more than half the level’s depth (`debug.whole`): one step lit once, its share blurred by the pixel’s footprint up and down, rather than walked in steps and parts.',
-      table: { category: 'Cloud volume' },
-    },
     syncClocks: {
       control: { type: 'boolean' },
       description:
@@ -1137,10 +1034,6 @@ const meta = {
     volumeSeed: sceneryDefaults.cloudVolume.seed,
     debugView: 'none',
     debugAir: true,
-    lightModel: 'single',
-    limbRays: 1,
-    wholeFar: false,
-    onLayer: false,
     cloudMinutes: 0,
     cloudRate: 1,
     // The sun on the weather's clock, from the Sun's hour, date and place.

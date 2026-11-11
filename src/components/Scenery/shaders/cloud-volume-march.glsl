@@ -13,11 +13,11 @@
 // soft, lumpy, towering, massed, stretched and dense) comes in uniforms, so a type is data, not
 // code.
 //
-// Stable as the camera moves, however fast and far (documents/clouds.md): every sample takes in
-// what the stretch of the view it stands for holds, never finer — the cover map read
-// anisotropically along the stretch (its mean and its spread, which widens the clouds' edge),
-// the shape volume's lumps only where the stretch resolves them (their spread where it does
-// not) — so it hardly matters where a sample lands, and nothing is jittered. The levels' runs
+// Stable as the camera moves, however fast and far (documents/clouds.md, "The march"): what a
+// point holds and how it is lit are functions of where it lies and of the footprint it is seen
+// over (the view's cone, its level of detail), nothing else of the view (cloudDensity,
+// cloudLight); and the march's steps are short enough to resolve what they read
+// (cloudMarchRuns), so it hardly matters where they fall. Nothing is jittered. The levels' runs
 // along a view are marched front to back.
 
 #include <common>
@@ -25,9 +25,12 @@
 #include ./cloud-field.glsl
 #include ./cloud-light.glsl
 
-// The steps along a run at the quality (for the cost view), and the angle a pixel of the
-// clouds' image spans (w, radians).
+// The march's steps (cloudMarchRuns): x its steps along a run at the quality (for the cost
+// view), y how many steps up a level's depth, z the optical depth a step through cloud hides,
+// w the angle a pixel of the clouds' image spans (radians).
 uniform vec4 uCloudMarch;
+// All the steps' lengths times this: 1, less for a reference march (debugging).
+uniform float uCloudStepScale;
 // 0 drawn, 1 the march's cost (its steps over uCloudMarch.x), 2 unlit (white, as opaque as the
 // clouds are), 3 a global weather's map: each level's cover where the view meets the sea (low
 // red, middle green, high blue).
@@ -35,9 +38,6 @@ uniform int uCloudDebug;
 // The screen's derivatives over the full image's pixels: 1, or 0.5 in the interleaved march's
 // quarter image (scenery-cloud-volume.ts, `temporal`).
 uniform float uCloudDerivative;
-// Views marched for a pixel grazing the levels (main), 1 to CLOUD_LIMB_RAYS_MOST.
-#define CLOUD_LIMB_RAYS_MOST 4
-uniform int uCloudLimbRays;
 // 1 hazed by the air between them and the camera, 0 not.
 uniform float uCloudAir;
 // The cover volume (CloudCoverVolume): (patches, masses, patches², masses²), with mipmaps,
@@ -46,6 +46,13 @@ uniform float uCloudAir;
 // on the plane touching the Earth at the weather's middle instead (a 2D map, 2026-11-09), they
 // were squashed far round the Earth (60 times, 83° from the middle) and past 90° not reached.
 uniform sampler3D uCloudCover;
+// The spread of the cover each level of the cover volume's mipmaps averages away (patches,
+// masses; CloudCoverVolume.spread): measured at its texels' middles, once. The volume's squares
+// read filtered between texels held the filter's own spread as well (w(1 − w)(a − b)² between
+// two texels a and b: none at a texel's middle, the most halfway), which drew the volume's grid
+// into every cloud's edge, and through a cover map baked from it at a grid of its own, a moiré
+// some kilometres across (2026-11-11).
+uniform vec2 uCloudCoverSpread[CLOUD_COVER_LODS];
 // The levels drawn (a uniform count keeps the loops loops in Direct3D), from the ground up;
 // each one's shell (base and top over the sea, m; its extinction in cloud, 1 / m; its steps
 // along a run), the cover its columns need (at its base: its share under cloud, softCoverLevel;
@@ -67,13 +74,11 @@ uniform vec3 uCloudPlaces[4 * CLOUD_LEVELS_MOST];
 // the sea's radius (m).
 uniform mat3 uCloudFieldEarth;
 uniform float uCloudEarthRadius;
-// Stretches toward the light, and short steps through a part holding cloud at most
-// (cloudMarchRuns): uniform counts, so Direct3D keeps the loops loops rather than copying the
-// march into each.
+// Stretches toward the light (cloudLight): a uniform count, so Direct3D keeps the loop a loop
+// rather than copying the march into each turn.
 uniform int uCloudLightSamples;
-uniform int uCloudFineSteps;
-// The march's turns at most (cloudMarchRuns): as many as its runs' steps, parts and short steps
-// can take, so none is cut short; a uniform count, so Direct3D keeps the loop a loop.
+// The march's turns at most (cloudMarchRuns): as many as its runs' steps can take, so none is cut
+// short; a uniform count, so Direct3D keeps the loop a loop.
 uniform int uCloudMarchMost;
 // The clouds' scale (relative).
 uniform float uCloudScale;
@@ -124,11 +129,9 @@ uniform vec2 uCloudLightDrift[2 * CLOUD_LEVELS_MOST];
 uniform int uCloudLightMode;
 // A local weather's cover maps (CloudCoverMap, scenery-cloud-cover-map.ts): a layer a level, on
 // the field over the weather's disc (uCloudCoverArea: the map's middle on the field, its
-// half-width (m), its texels a side), each texel the level's cover over it as cloudCoverAt reads
-// it from the cover volume (two reads of it, and their spreads), drawn anew as the clock runs: its
-// mean, and its mean square (its spread with the mean squared, so a mip's average holds the
-// spread over all of the mip's texel). Read instead of the volume within it (cloudCoverOf), while
-// uCloudCoverOn.
+// half-width (m), its texels a side), each texel the level's mean cover over it as cloudCoverAt
+// reads it from the cover volume (two reads of it), drawn anew as the clock runs. Read instead of
+// the volume within it (cloudCoverOf), while uCloudCoverOn.
 uniform highp sampler2DArray uCloudCoverMap;
 uniform vec4 uCloudCoverArea;
 uniform bool uCloudCoverOn;
@@ -167,38 +170,40 @@ varying vec3 vCloudDirection;
 // Where along the view what lies behind is drawn over the clouds (their depth): where they hide
 // this share of it.
 #define CLOUD_FRONT 0.1
-// A step holding cloud is split in this many parts, each read for what it holds.
-#define CLOUD_SPLIT 4
 // Over this share of a level's depth its base fades in.
 #define CLOUD_BASE_FADE 0.05
-// A step along a view spans no less than this many pixels' footprints: as fine as that, a view
-// straight down through a level from high up spent its steps where nothing changes.
-#define CLOUD_STEP_FOOTPRINTS 2.0
-// A part holding cloud is walked in short steps no shorter than uCloudDetail.x of the pixel's
-// footprints across the view: far off, where a free path is a fraction of a pixel, finer steps
-// read what the pixel cannot show. With the clouds as opaque however finely walked
-// (cloudDepth), 2 changed the image by no more than 0.02 in 99.5 % of its pixels at five views;
-// at 4 the light through the clouds' sides shifted up to 5 %. The lumps (the shape volume) are
-// read where the footprint resolves features uCloudDetail.y of the volume's tile across (its
-// broadest), their spread taken instead where it does not (cloudShare). The march stops once
-// uCloudDetail.z of the light comes through, as opaque as that from there on: at 5 % rather than
-// 1 %, 0.77–0.89 of the time through an overcast, unseen (2026-11-10). Short steps by each part's
-// own optical depth instead of the level's extinction were 0.6–0.9 of the time through broken
-// cumulus, but shaded their sides in bands: rejected. Uniforms, so a choice of them is the same
-// program.
+// x: a step is no longer than this many of the pixel's footprints there (cloudMarchRuns), the
+// pattern resolved along the view as the footprint resolves it across. y: the lumps (the shape
+// volume) are read where the footprint resolves features this share of the volume's tile across
+// (its broadest), their spread taken instead where it does not (cloudDensity). z: the march stops
+// once this share of the light comes through, as opaque as that from there on: at 5 % rather than
+// 1 %, 0.77–0.89 of the time through an overcast, unseen (2026-11-10). Uniforms, so a choice of
+// them is the same program.
 uniform vec3 uCloudDetail;
-// A part holding cloud is walked in short steps this many of its level's mean free paths
-// (1 / extinction) long (cloudMarchRuns). At 4, faint bands came back at a shallow angle; at 2, each
-// step was near opaque, so the clouds were lit as at one point a step, and where a part's whole
-// number of steps dropped by one the steps doubled: their tops coarsened inside a circle about
-// the camera, as under a magnifying glass.
-#define CLOUD_FINE 1.0
+// A step longer than this many of the steps through the cloud it found is walked again, as short
+// as those (cloudMarchRuns).
+#define CLOUD_AGAIN 1.5
+// No step is shorter than this many texels of the shape volume (the least its lumps change over)
+// but where the cloud it finds asks for it: clear air is walked no finer, and a step that comes
+// into cloud is walked again, as short as the cloud asks (CLOUD_AGAIN).
+#define CLOUD_STEP_TEXELS 8.0
+// Past a step finding no cloud, the march looks ahead (cloudMarchRuns) only where the point was
+// clear by this many of the edge's deviations however its lumps fell (gClear); nearer cloud, it
+// walks on.
+#define CLOUD_CLEAR 4.0
+// A step's level is placed again (cloudSet) once the march has moved this far (m) from where it was
+// placed last, or the pixel's footprint there: the weather systems' map and the ground's broad
+// height it is placed by change over tens of kilometres, and placing it every step read them a
+// score of times as often.
+#define CLOUD_PLACE_AGAIN 1000.0
 // The first stretch toward the light: a cloud's skin (m, at scale 1), how its lit side and its
-// shaded side differ.
+// shaded side differ; and the light read through a level's own cloud up to its top, but no
+// further than this many of its clouds' sizes (cloudLight).
 #define CLOUD_LIGHT_SKIN 200.0
+#define CLOUD_LIGHT_REACH 6.0
 // The lumps' second tiling: this many times broader (turned, CLOUD_LUMPS_TURN).
 #define CLOUD_LUMP_BROADER 1.618
-// The clouds' tops round off from this share of a level's depth up (cloudShare).
+// The clouds' tops round off from this share of a level's depth up (cloudDensity).
 #define CLOUD_ROUNDED 0.5
 // How the cover a column needs rises up a level (a power): domed tops over flat bases.
 #define CLOUD_DOME 2.0
@@ -222,14 +227,11 @@ uniform vec3 uCloudDetail;
 // How deep a global weather's cloud reaches up its type's heights by the low cloud's thickness:
 // from this share of them, thin, to all, deep.
 #define CLOUD_MAP_SHALLOW 0.35
-// A stretch whose share in cloud is less than CLOUD_LEAST is left out, unlit: the clouds' soft
-// edge never quite reaches nothing, and gated on a far smaller optical depth, every stretch of the
-// clear air between them was lit, each light read with the levels over it. A part of a step
-// (cloudMarchRuns) holding cloud but hiding less than CLOUD_THIN (optical depth) is taken whole,
-// lit once, not walked in short steps.
+// A point whose share in cloud is less than CLOUD_LEAST holds none (cloudDensity): the clouds'
+// soft edge never quite reaches nothing, and gated on a far smaller share, every step through the
+// clear air between them was lit, each light read with the levels over it.
 #define CLOUD_LEAST 1e-3
-#define CLOUD_THIN 0.02
-// The most the lumps' noise reaches, in its deviations (cloudShare): both reads at 1.
+// The most the lumps' noise reaches, in its deviations (cloudDensity): both reads at 1.
 #define CLOUD_LUMPS_MOST ((1.0 - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y * 1.41421356)
 // The ground (as the 3D clouds' first march had it, abaecc83): the share of its broad height the
 // low level rises by, as cloud bases rise over high ground (the middle level by half as much, the
@@ -273,17 +275,11 @@ float gCost = 0.0;
 bool gTerrain = false;
 float gSlack = 0.0;
 bool gEnded = false;
-// Whether this view may go on from the first pass (uCloudFirst): not a limb pixel's rays (main),
-// whose views are not the one it looked along.
-bool gFirstOn = true;
-// Whether the run marched now is taken whole (cloudWhole): its share blurred by the pixel's
-// footprint up and down (cloudShare).
-bool gWhole = false;
 vec4 gBroad = vec4(0.0);
 
 // A cloud level (the uniforms' `l`th). In a global weather, its shell's base and top, its
 // extinction, its need and its look's masses and lumps are its place's (cloudPlace), read once a
-// step and once a part of one (cloudMarchRuns).
+// step (cloudMarchRuns).
 struct CloudLevel {
   vec4 shell;
   vec4 need;
@@ -498,36 +494,10 @@ bool cloudPlace(inout CloudLevel L, vec3 p, float extent) {
   return true;
 }
 
-// Whether the map baked about the camera (CloudPlaceMap) says level `l` holds no cloud at `p`
-// (on the field's frame), read over `extent` (m): its cover there under what cloudPlace takes as
-// none, so cloudPlace would find none either (the levels covering more only cut it). False out
-// of the map: not known. One read, where a step's level and its placing cost a score: the walk
-// to the first cloud passes most steps so (2026-11-10, global near the field: 7–14 % of the march).
-bool cloudPlaceClear(int l, vec3 p, float extent) {
-#if defined(CLOUD_PLACE_MAP)
-  return false;
-#else
-  vec3 way = normalize(uCloudFieldEarth * vec3(p.xy, p.z + uCloudEarthRadius));
-  float facing = dot(way, uCloudPlaceAxes[2]);
-  if(uCloudPlaceArea.w < 0.5 || facing <= 0.0)
-    return false;
-  vec2 at = vec2(dot(way, uCloudPlaceAxes[0]), dot(way, uCloudPlaceAxes[1])) / (facing * uCloudPlaceArea.x) * 0.5 + 0.5;
-  if(any(lessThan(at, vec2(0.0))) || any(greaterThan(at, vec2(1.0))))
-    return false;
-  vec4 m = textureLod(uCloudPlaceMap, vec3(at, 0.0), log2(max(2.0 * extent / uCloudPlaceArea.z, 1.0)));
-  int channel = int(uCloudKinds[l].z);
-  float cover = channel == 0 ? m.r : (channel == 1 ? m.b : m.a);
-  return cover < 0.003;
-#endif
-}
 #else
 // A local weather's levels are as their uniforms have them everywhere.
 bool cloudPlace(inout CloudLevel L, vec3 p, float extent) {
   return true;
-}
-
-bool cloudPlaceClear(int l, vec3 p, float extent) {
-  return false;
 }
 #endif
 
@@ -676,21 +646,39 @@ vec3 cloudFootOf(vec3 o, vec3 up, float altitude) {
   return uCloudFieldEarth * (o - up * altitude);
 }
 
+// The spread of the cover volume's patches (x) and masses (y) a read at the level `lod` of its
+// mipmaps averages away (uCloudCoverSpread), linear between its levels as the read is.
+vec2 cloudCoverSpreadAt(float lod) {
+  float x = clamp(lod, 0.0, float(CLOUD_COVER_LODS - 1));
+  int i = int(min(floor(x), float(CLOUD_COVER_LODS - 2)));
+  return mix(uCloudCoverSpread[i], uCloudCoverSpread[i + 1], x - float(i));
+}
+
+// The spread of level `L`'s cover over `extent` (m) about its mean: what its reads of the cover
+// volume (cloudCoverAt) average away, weighed as their means are. The same everywhere at a
+// footprint: what a footprint holds about its mean, as the volume holds it on average.
+float cloudSpreadOf(CloudLevel L, float extent) {
+  float lod = log2(max(extent / L.look.w, 1.0));
+  vec2 fine = cloudCoverSpreadAt(lod);
+  float broad = cloudCoverSpreadAt(max(lod - log2(CLOUD_PATCHES_BROADER), 0.0)).x;
+  float w = L.look.x;
+  float f = CLOUD_PATCHES_FINE;
+  return broad + f * f * fine.x + w * w * fine.y;
+}
+
 // Level `L`'s cover's mean and spread over `extent` (m) about where a column stands (`foot`,
 // cloudFootOf): the volume read there for the masses and the fine patches, and a second time
 // CLOUD_PATCHES_BROADER times broader, turned, for the broad patches, which the fine ones run on
-// from (CLOUD_PATCHES_FINE). A 3D texture is filtered every way alike, so a stretch of a view is
-// read over all of its extent: read narrower, at its middle, what lay between its samples was
-// skipped, and grains came and went as the view moved.
+// from (CLOUD_PATCHES_FINE); the spread they average away (cloudSpreadOf). A 3D texture is
+// filtered every way alike, so a stretch of a view is read over all of its extent: read narrower,
+// at its middle, what lay between its samples was skipped, and grains came and went as the view
+// moved.
 vec2 cloudCoverAt(CloudLevel L, vec3 foot, float extent) {
   vec3 at = L.turn * foot;
   float lod = log2(max(extent / L.look.w, 1.0));
-  vec4 c = textureLod(uCloudCover, at + L.place, lod);
-  vec4 b = textureLod(uCloudCover, CLOUD_PATCHES_TURN * at / CLOUD_PATCHES_BROADER + L.broad, max(lod - log2(CLOUD_PATCHES_BROADER), 0.0));
-  float w = L.look.x;
-  float f = CLOUD_PATCHES_FINE;
-  float spread = max(b.z - b.x * b.x, 0.0) + f * f * max(c.z - c.x * c.x, 0.0) + w * w * max(c.w - c.y * c.y, 0.0);
-  return vec2(b.x + f * c.x + w * c.y, spread);
+  vec2 c = textureLod(uCloudCover, at + L.place, lod).xy;
+  float b = textureLod(uCloudCover, CLOUD_PATCHES_TURN * at / CLOUD_PATCHES_BROADER + L.broad, max(lod - log2(CLOUD_PATCHES_BROADER), 0.0)).x;
+  return vec2(b + CLOUD_PATCHES_FINE * c.x + L.look.x * c.y, cloudSpreadOf(L, extent));
 }
 
 // As cloudCoverAt, the column at `field` (on the field): from a local weather's cover map where
@@ -703,8 +691,7 @@ vec2 cloudCoverOf(CloudLevel L, vec3 foot, vec2 field, float extent) {
   vec2 at = (field - uCloudCoverArea.xy) / side + 0.5;
   if(uCloudCoverOn && all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0)))) {
     float lod = log2(max(extent * uCloudCoverArea.w / side, 1.0));
-    vec2 m = textureLod(uCloudCoverMap, vec3(at, L.kind.w), lod).xy;
-    return vec2(m.x, max(m.y - m.x * m.x, 0.0));
+    return vec2(textureLod(uCloudCoverMap, vec3(at, L.kind.w), lod).x, cloudSpreadOf(L, extent));
   }
 #endif
   return cloudCoverAt(L, foot, extent);
@@ -723,224 +710,106 @@ float cloudNormalCdf(float z) {
   return z < 0.0 ? tail : 1.0 - tail;
 }
 
-// The share in cloud of a stretch of a view about `p` in level `L` (x), and how much of it is
-// cloud and sky mixed across the pixel's footprint rather than the clouds' soft edge (y; see
-// cloudDepth): `along` the stretch's extent on the field (m), `across` the width it takes in
-// across it (m), `rise` how far it climbs (m). Not `fine` (toward the light), the lumps' spread
-// alone. In a global weather, `L`
-// as the weather systems have it there (cloudPlace, read by the caller). Only the part of the
-// stretch's climb within L's shell holds cloud: its share of the climb, read at its middle. Read
-// at the stretch's middle alone, a place's cloud thinner than its level's shell was missed
-// wherever a stretch's middle passed over or under it though the stretch ran through it, and as
-// the steps, laid out from the camera, moved with it, whole clouds came and went.
-// A run through a level is taken whole (uCloudWhole: being chosen) where a pixel spans more than
-// CLOUD_WHOLE_AT of the level's depth where it begins: one step, read over all of it and lit once,
-// its share blurred by the pixel's footprint up and down. There a pixel cannot show what lies
-// within the level, and walked in steps and parts it showed instead where they happened to lie:
-// from orbit, a 0.1 % dolly flipped 1.5 % of the clouds' pixels, the views grazing a level from
-// opaque to clear, and the march took 3 times as long (2026-11-10).
-#define CLOUD_WHOLE_AT 0.5
-uniform float uCloudWhole;
-// The flattest slope through a level the pixel's footprint on it is taken at (its sine): some 1°.
-#define CLOUD_FLATTEST 0.02
-uniform float uCloudOnLayer;
+// The extinction (1 / m) of level `L` at the point `o` from the camera (on the field's frame),
+// seen over a footprint `w` wide (m): the view's cone there, or what a sample toward the light
+// stands for. The footprint is all it takes from the view, as the level of detail of what it
+// reads: never the step it is read for, its length, its slope or where it begins. So the clouds
+// keep their shape and their light however the march is laid out, and change only as the
+// footprint grows (documents/clouds.md, "The march"). In a global weather, `L` as the weather
+// systems have it there (cloudSet, by the caller). `lumps`: the shape volume read where the
+// footprint resolves it (the view), or its spread taken instead (toward the light).
+//
+// Its share in cloud is the share of the footprint's columns whose cover passes what they need at
+// its height: the cover's mean and spread over the footprint (cloudCoverOf), the lumps where the
+// footprint resolves them, a normal edge (cloudNormalCdf: a normal blurred is a wider normal, so a
+// footprint read whole holds what its parts do on average). The footprint spans `w` up and down
+// too, up to the level's depth: what the need climbs over that widens the edge, so a view grazing
+// a level's top far off takes the share its pixel holds there rather than all or none.
+//
+// Cloud the footprint resolves hides as its density. Cloud and sky mixed across it (the spread it
+// holds across the view, against the edge's own width) hide as rays passing through clouds or
+// between them, in chunks of a cloud's size (L.look.z, fixed): a broken field seen from afar lets
+// through what lies between its clouds, not a haze of their mean.
+//
+// It leaves in gClear how far clear the point is however the lumps fall there (the edge's
+// deviations): over CLOUD_CLEAR, the air about it is taken as clear enough to look ahead
+// (cloudMarchRuns).
+float gClear = 0.0;
 
-bool cloudWhole(int l, vec2 run) {
-  return uCloudWhole > 0.5 && uCloudMarch.w * max(run.x, 0.0) > CLOUD_WHOLE_AT * (uCloudShells[l].y - uCloudShells[l].x);
-}
-
-float cloudRampSquared(float x) {
-  float y = max(x, 0.0);
-  return 0.5 * y * y;
-}
-
-// How much of a climb from `a0` to `a1`, blurred by a box `f` high, lies below `z` (m).
-float cloudBlurredBelow(float z, float a0, float a1, float f) {
-  return (cloudRampSquared(z + 0.5 * f - a0) - cloudRampSquared(z + 0.5 * f - a1) - cloudRampSquared(z - 0.5 * f - a0) + cloudRampSquared(z - 0.5 * f - a1)) / f;
-}
-
-vec2 cloudShare(CloudLevel L, vec3 o, vec2 along, float across, float rise, bool fine) {
+float cloudDensity(CloudLevel L, vec3 o, float w, bool lumps) {
   vec3 p = uCloudCamera + o;
   float altitude = cloudAltitudeOf(p);
-  float own = altitude;
   float depth = L.shell.y - L.shell.x;
-  float within = 1.0;
-  // A run taken whole (gWhole), from the view: the share of its climb within the level as every
-  // view in the pixel's footprint, moved up or down by up to half its height, has it (its height:
-  // its width, as level as the stretch runs). The climb's box blurred by the footprint's.
-  float foot = 0.0;
-  if(fine && gWhole) {
-    float level = length(along);
-    foot = across * level / max(sqrt(level * level + rise * rise), 1e-6);
-  }
-  if(foot > 1.0) {
-    float a0 = altitude - 0.5 * rise;
-    float a1 = altitude + 0.5 * rise + 1e-3;
-    within = (cloudBlurredBelow(L.shell.y, a0, a1, foot) - cloudBlurredBelow(L.shell.x, a0, a1, foot)) / max(rise, 1e-3);
-    if(within <= 1e-5)
-      return vec2(0.0);
-    altitude = 0.5 * (max(a0 - 0.5 * foot, L.shell.x) + min(a1 + 0.5 * foot, L.shell.y));
-    rise = clamp(min(a1, L.shell.y) - max(a0, L.shell.x), 0.0, rise);
-  } else if(rise > 1.0) {
-    float lo = max(altitude - 0.5 * rise, L.shell.x);
-    float hi = min(altitude + 0.5 * rise, L.shell.y);
-    if(hi <= lo)
-      return vec2(0.0);
-    within = (hi - lo) / rise;
-    altitude = 0.5 * (lo + hi);
-    rise = hi - lo;
-  }
   float u = (altitude - L.shell.x) / depth;
-  // The base fades in, over the stretch's climb too.
-  float base = smoothstep(-0.5 * rise, CLOUD_BASE_FADE * depth + 0.5 * rise, altitude - L.shell.x);
-  if(base <= 0.0 || u >= 1.0)
-    return vec2(0.0);
+  gClear = 1e3;
+  if(u <= 0.0 || u >= 1.0)
+    return 0.0;
+  float base = smoothstep(0.0, CLOUD_BASE_FADE * depth, altitude - L.shell.x);
   vec2 field = cloudFieldOf(p);
   vec3 up = cloudUpOf(p);
-  // The pixel's footprint on the level, from the view (uCloudOnLayer, being chosen): its width
-  // over the sine of the view's slope through the level, so far off and low, foreshortened, the
-  // cover and the lumps are read as blurred as a pixel holds them. Read over the pixel's width
-  // alone, at 2° over the horizon a pixel held some 200 km of the level along the view: the
-  // pattern slid through it as the view tilted, and decks shimmered (orbiting down 0.05°: 5.3 %
-  // of the clouds' pixels changed by over 0.05, 2.2 % so; 2026-11-10).
-  float stretch = length(along);
-  float reach = max(stretch, across);
-  if(fine && uCloudOnLayer > 0.5) {
-    float slant = sqrt(stretch * stretch + rise * rise);
-    reach = max(reach, across * slant / max(rise, CLOUD_FLATTEST * slant + 1e-3));
-  }
-  vec2 c = cloudCoverOf(L, cloudFootOf(o, up, own), field, reach);
-  // The cover the column needs here, and its spread over the stretch's climb.
-  float h = clamp(u, 0.0, 1.0);
+  vec2 c = cloudCoverOf(L, cloudFootOf(o, up, altitude), field, w);
+  // The cover the column needs here, domed over the level's lower part, and over its upper part
+  // climbing on (as the square of the way up it) past the most any column reaches by its top
+  // (need.w): each cloud's top rounds off at a height of its own cover's, and none reaches the
+  // level's top, which would cut the tallest flat. And how fast it climbs, for the footprint's
+  // spread up the level.
   float span = L.need.y - L.need.x;
-  float need = L.need.x + span * pow(h, CLOUD_DOME);
-  float slope = span * CLOUD_DOME * pow(max(h, 0.05), CLOUD_DOME - 1.0) / depth;
-  // Over the level's upper part the need climbs on (as the square of the way up it), by the
-  // top past the most any column reaches (need.w): each cloud's top rounds off at a height of
-  // its own cover's, and none reaches the level's top, which cut the tallest flat.
-  float rounding = max(h - CLOUD_ROUNDED, 0.0) / (1.0 - CLOUD_ROUNDED);
+  float need = L.need.x + span * pow(u, CLOUD_DOME);
+  float slope = span * CLOUD_DOME * pow(max(u, 0.05), CLOUD_DOME - 1.0) / depth;
+  float rounding = max(u - CLOUD_ROUNDED, 0.0) / (1.0 - CLOUD_ROUNDED);
   need += L.need.w * rounding * rounding;
   slope += L.need.w * 2.0 * rounding / ((1.0 - CLOUD_ROUNDED) * depth);
-  float spread = c.y + slope * slope * rise * rise / 12.0;
-  // The lumps where the stretch resolves them, as the pixel's footprint sees them across it and
-  // half its extent along it; their spread where it does not. Their tile is the cover's over
-  // CLOUD_LUMP_TILES, turned and stretched with it.
+  float tall = min(w, depth);
+  float spread = c.y + slope * slope * tall * tall / 12.0;
+  // The lumps where the footprint resolves them, as features uCloudDetail.y of the shape volume's
+  // tile across; their spread where it does not. Their tile is the cover's over CLOUD_LUMP_TILES,
+  // turned and stretched with it.
   float tile = L.look.w * CLOUD_COVER_SIZE / CLOUD_LUMP_TILES;
-  float res = max(max(across, 0.5 * max(length(along), rise)), uCloudOnLayer > 0.5 && fine ? reach : 0.0);
-  float keep = fine ? 1.0 - smoothstep(0.15, 0.5, res / (uCloudDetail.y * tile)) : 0.0;
-  spread += L.look.y * L.look.y * (1.0 - keep * keep);
+  float keep = lumps ? 1.0 - smoothstep(0.15, 0.5, w / (uCloudDetail.y * tile)) : 0.0;
+  float lumpSpread = L.look.y * L.look.y * (1.0 - keep * keep);
   float soft = L.need.z * L.need.z;
-  float scale = inversesqrt(soft + spread);
+  float scale = inversesqrt(soft + spread + lumpSpread);
   // Toward the local weather's edge, fewer and smaller clouds: the need raised, by its edge past
   // the most any column reaches. Faded instead, they turned see-through, a haze from far off.
   float inside = cloudLocalEdge(field);
-  float apart = (1.0 - inside) * (span + L.need.w + 4.0 * sqrt(soft + spread));
-  float fade = within * base * smoothstep(0.0, 0.15, inside);
+  float apart = (1.0 - inside) * (span + L.need.w + 4.0 * sqrt(soft + spread + lumpSpread));
+  float fade = base * smoothstep(0.0, 0.15, inside);
   float mean = c.x;
+  // How far clear the point is however the lumps fall (in the edge's deviations, gClear): the most
+  // they add, against what the point needs.
+  float most = mean + L.look.y * keep * CLOUD_LUMPS_MOST - need - apart;
+  gClear = -most * scale;
   if(keep > 0.0) {
     // In clear air, not read: with the most the lumps add, the share would be no more than
-    // CLOUD_LEAST, which every caller reading them (`fine`) takes as none. So the same, and
-    // the most of a march through clear air spared two reads of the shape volume a step.
-    float most = mean + L.look.y * keep * CLOUD_LUMPS_MOST - need - apart;
+    // CLOUD_LEAST, taken as none.
     if(fade * cloudNormalCdf(most * scale) <= CLOUD_LEAST)
-      return vec2(0.0);
+      return 0.0;
     // Read twice, the second turned and CLOUD_LUMP_BROADER times broader, at equal weight: one
-    // tiling's period showed as a grid over a whole deck (as the coverage's once did).
+    // tiling's period showed as a grid over a whole deck. In 3D where the point lies, fixed on
+    // the Earth.
     float broader = tile * CLOUD_LUMP_BROADER;
-    // In 3D where the point lies (at the middle of its climb within the level), fixed on the
-    // Earth.
-    vec3 at = L.turn * (uCloudFieldEarth * (o + up * (altitude - own))) * CLOUD_LUMP_TILES;
+    vec3 at = L.turn * (uCloudFieldEarth * o) * CLOUD_LUMP_TILES;
     vec3 q = at + L.lump;
     vec3 q2 = CLOUD_LUMPS_TURN * at / CLOUD_LUMP_BROADER + L.lump2;
-    float lod = max(log2(max(res, 1.0) * CLOUD_SHAPE_TEXELS / tile), 0.0);
-    float lod2 = max(log2(max(res, 1.0) * CLOUD_SHAPE_TEXELS / broader), 0.0);
+    float lod = max(log2(max(w, 1.0) * CLOUD_SHAPE_TEXELS / tile), 0.0);
+    float lod2 = max(log2(max(w, 1.0) * CLOUD_SHAPE_TEXELS / broader), 0.0);
     float n = textureLod(uCloudShape, q, lod).r + textureLod(uCloudShape, q2, lod2).r;
     n = (0.5 * n - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y * 1.41421356;
     mean += L.look.y * keep * n;
   }
   float share = fade * cloudNormalCdf((mean - need - apart) * scale);
-  // What of the spread lies across the pixel's footprint alone: the cover's, from the extent it
-  // was read over down to the footprint (within a footprint smaller than the clouds, as its size
-  // squared), and the lumps the footprint does not resolve. What lies along the view (the rest of
-  // the extent, the climb) is averaged along each ray, as its light is: not cloud and sky mixed.
-  // Read over less than a texel of the cover, its spread is its texels' interpolation's, a
-  // texel's: scaled from the stretch's extent instead, walked finer near by the clouds were
-  // counted as mixed and thinned.
-  float extent = max(max(length(along), across), L.look.w);
-  float a = across / extent;
-  float keepAcross = 1.0 - smoothstep(0.15, 0.5, across / (uCloudDetail.y * tile));
-  float spreadAcross = c.y * a * a + L.look.y * L.look.y * (1.0 - keepAcross * keepAcross);
-  return vec2(share, spreadAcross / (soft + spreadAcross));
-}
-
-// The optical depth of a stretch of level `L` `len` long with `share` of it in cloud, `unresolved`
-// of that cloud and sky mixed across the pixel's footprint (cloudShare). Resolved, a density:
-// along a ray the light is lost as the cloud's mean (exact however the stretch is cut). Mixed
-// across the footprint, its rays pass through clouds or between them: in chunks of a cloud's
-// size (L.look.z, fixed), each hiding what a cloud does. Both in proportion to the length, so the
-// clouds are as opaque however finely the march walks them. With the chunk the stretch's length
-// (2026-11-10), mixed cloud was as many chances to be hit as steps along it: walked 4 times finer
-// they were 2 % more opaque, at the pixel's footprint far off 19 % less, and as steps grew with
-// the distance the same cloud thinned as the camera drew away. And the resolved cloud near by was
-// counted as mixed, so walked coarser near clouds turned see-through.
-//
-// A ray crossing a level steeply passes its clouds' columns once, however far apart they lie: its
-// chances of meeting cloud in the crossing are one, not its path over a cloud's size. With the
-// chunk a cloud's size only, an overcast stratus 350 m deep seen from 50 km was 0.6 opaque, and
-// as the camera moved and the stretches were cut otherwise, it jumped to 0.8 (2026-11-10). So the
-// chunk is at most the ray's path through the level (`rise`: how far the stretch climbs), with
-// uCloudChunkThrough (being chosen; 0, a cloud's size alone).
-uniform float uCloudChunkThrough;
-
-float cloudDepth(CloudLevel L, float share, float unresolved, float len, float rise) {
+  if(share <= CLOUD_LEAST)
+    return 0.0;
+  // What of the spread lies across the footprint: the cover's (within a footprint narrower than a
+  // texel of the cover, its interpolation's, as the footprint's share of the texel squared) and
+  // the lumps it does not resolve.
+  float across = min(w / L.look.w, 1.0);
+  float mixed = c.y * across * across + lumpSpread;
+  float unresolved = mixed / (soft + mixed);
   float sigma = L.shell.z;
   float chunk = L.look.z;
-  if(uCloudChunkThrough > 0.5)
-    chunk = clamp((L.shell.y - L.shell.x) * len / max(rise, 1e-3 * len), 1.0, chunk);
-  float mixed = -log(max(1.0 - share * (1.0 - exp(-sigma * chunk)), 1e-6)) * (len / chunk);
-  return mix(sigma * share * len, mixed, unresolved);
-}
-
-// The optical depth toward the light across level `K`'s cloud, from a point `o` from the camera
-// (at `altitude`)
-// under it: a stretch across it, taken in whole, where the light crosses its middle. In a global
-// weather, its cloud's where the light crosses its shell (cloudPlace), at that cloud's own
-// middle (read once, at the shell's): read at the middle of the whole shell, it was over the
-// top of a place's lower cloud, and the shadow came and went in sharp straight edges where that
-// cloud's top passed it.
-float cloudCrossing(CloudLevel K, vec3 o, float altitude, float rising, float across) {
-  float len = (K.shell.y - K.shell.x) / rising;
-  vec3 q = o + gWay * ((0.5 * (K.shell.x + K.shell.y) - altitude) / rising);
-#if defined(CLOUD_GLOBAL)
-  if(!cloudPlace(K, uCloudCamera + q, max(across, 0.25 * len)))
-    return 0.0;
-#endif
-  // Raised over the broad ground under the step, as the level lit is.
-  if(gTerrain)
-    K.shell.xy += cloudRiseOf(K.kind) * gBroad.x;
-  len = (K.shell.y - K.shell.x) / rising;
-  q = o + gWay * ((0.5 * (K.shell.x + K.shell.y) - altitude) / rising);
-  vec2 s = cloudShare(K, q, gWay.xy * len, max(across, 0.25 * len), K.shell.y - K.shell.x, false);
-  return cloudDepth(K, s.x, s.y, len, K.shell.y - K.shell.x);
-}
-
-// The optical depth toward the light through the levels over level `l`, from the point `o` from
-// the camera: a far, broad
-// shadow, read once a step (cloudMarchRuns) and lent to the points lit in it. Each level read by a
-// constant index: read in a loop by the level's own, through the uniform arrays, in every point
-// lit, three levels cost three times one.
-float cloudAbove(int l, vec3 o, float across) {
-  vec3 p = uCloudCamera + o;
-  float rising = cloudRisingAt(p);
-  if(rising <= 0.02)
-    return 0.0;
-  float altitude = cloudAltitudeOf(p);
-  float tau = 0.0;
-  if(l < 1 && uCloudLevelCount > 1)
-    tau += cloudCrossing(cloudLevel(1), o, altitude, rising, across);
-  if(l < 2 && uCloudLevelCount > 2)
-    tau += cloudCrossing(cloudLevel(2), o, altitude, rising, across);
-  return tau;
+  float through = -log(max(1.0 - share * (1.0 - exp(-sigma * chunk)), 1e-6)) / chunk;
+  return mix(sigma * share, through, unresolved);
 }
 
 // A light map's optical depth from `h` up its level's shell (0 its base, 1 its top) to the top,
@@ -974,426 +843,281 @@ float cloudLightFromMap(CloudLevel L, vec3 p, float h, float h1, float across) {
   return max(tau, 0.0);
 }
 
-// The light a point `o` from the camera of level `L` scatters toward it: the light's through its shell
-// toward it (gWay), in uCloudLightSamples stretches each taken in whole (no narrower than
-// `across`), the first a cloud's skin (CLOUD_LIGHT_SKIN), the rest growing geometrically; then
-// `above`, through the levels over it (cloudAbove); and the sky's and the ground's by its height
-// in its level. The cloud toward the light hides it as a stretch of cloud and sky mixed does
-// (cloudDepth), as the view's own stretches do: chosen by eye over its density as it is
-// (2026-11-09), which shaded the clouds' undersides far darker. It lets more of the sun through
-// deep in a cloud, so clouds facing the sun, or seen from above in a high sun, are brighter.
-vec3 cloudLight(CloudLevel L, vec3 o, float across, float above) {
+// The light the point `o` from the camera, in level `l` placed as `L`, scatters toward it, seen
+// over a footprint `w` wide (m). The optical depth toward the light (gWay): through its own level
+// in uCloudLightSamples stretches, the first a cloud's skin (CLOUD_LIGHT_SKIN), the rest growing
+// geometrically up to its top or CLOUD_LIGHT_REACH clouds' sizes (or from its light maps:
+// `lightMap`); then across each level over it, where the light crosses its middle. Each stretch is
+// read once at its middle over a footprint of its own length (half of it; a quarter of a crossing),
+// or `w` where wider, through cloudDensity: like the view's own, what the light passes is the same
+// however the view's steps fall. One loop over all of them, with a uniform count, so the density's
+// reads are compiled into it once.
+vec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {
   vec3 p = uCloudCamera + o;
   float altitude = cloudAltitudeOf(p);
   float depth = L.shell.y - L.shell.x;
   float rising = cloudRisingAt(p);
-  float toTop = max(L.shell.y - altitude, 0.0) / max(rising, 0.05);
-  float reach = min(toTop, 6.0 * L.look.z);
-  float skin = min(CLOUD_LIGHT_SKIN * uCloudScale, reach);
-  float grow = uCloudLightSamples > 1 ? pow(max(reach / max(skin, 1.0), 1.0), 1.0 / float(uCloudLightSamples - 1)) : 1.0;
   float h = clamp((altitude - L.shell.x) / depth, 0.0, 1.0);
-  float tau = above;
+  float toTop = max(L.shell.y - altitude, 0.0) / max(rising, 0.05);
+  float reach = min(toTop, CLOUD_LIGHT_REACH * L.look.z);
+  float skin = min(CLOUD_LIGHT_SKIN * uCloudScale, reach);
+  int own = uCloudLightSamples;
+  float tau = 0.0;
 #if !defined(CLOUD_GLOBAL)
-  // A local weather's from its light maps (`lightMap`), as far as the same reach.
-  if(uCloudLightMode > 0)
-    tau += cloudLightFromMap(L, p, h, min(h + reach * max(gWay.z, 0.05) / depth, 1.0), across);
-  else
+  if(uCloudLightMode > 0) {
+    tau += cloudLightFromMap(L, p, h, min(h + reach * max(gWay.z, 0.05) / depth, 1.0), w);
+    own = 0;
+  }
 #endif
-  {
-    float before = 0.0;
-    float d = skin;
-    for(int j = 0; j < uCloudLightSamples; j++) {
-      float len = d - before;
-      if(len > 1.0) {
-        vec3 q = o + gWay * (before + 0.5 * len);
-        // The skin with the lumps where they are resolved (uCloudLightModel.x): the billows
-        // facing the light lit, those behind them shaded.
-        vec2 s = cloudShare(L, q, gWay.xy * len, max(across, 0.25 * len), abs(rising) * len, j == 0 && uCloudLightModel.x > 0.5);
-        tau += cloudDepth(L, s.x, s.y, len, abs(rising) * len);
-      }
+  // The levels over it the light crosses: none with the light under their horizon.
+  int over = rising > 0.02 ? uCloudLevelCount - 1 - l : 0;
+  float grow = own > 1 ? pow(max(reach / max(skin, 1.0), 1.0), 1.0 / float(own - 1)) : 1.0;
+  float before = 0.0;
+  float d = skin;
+  for(int j = 0; j < uCloudLightSamples + CLOUD_LEVELS_MOST; j++) {
+    if(j >= own + over)
+      break;
+    CloudLevel K = L;
+    vec3 q = o;
+    float len = 0.0;
+    float foot = w;
+    if(j < own) {
+      len = d - before;
+      q = o + gWay * (before + 0.5 * len);
+      foot = max(w, 0.5 * len);
       before = d;
       d *= grow;
+    } else {
+      K = cloudLevel(l + 1 + j - own);
+#if defined(CLOUD_GLOBAL)
+      // As the weather systems have it where the light crosses its shell's middle: read at the
+      // middle of the whole shell, it was over the top of a place's lower cloud, and the shadow
+      // came and went in sharp straight edges where that cloud's top passed it.
+      vec3 crossing = o + gWay * ((0.5 * (K.shell.x + K.shell.y) - altitude) / rising);
+      if(!cloudPlace(K, uCloudCamera + crossing, max(w, 0.25 * (K.shell.y - K.shell.x) / rising)))
+        continue;
+#endif
+      // Raised over the broad ground under the point, as the level lit is.
+      if(gTerrain)
+        K.shell.xy += cloudRiseOf(K.kind) * gBroad.x;
+      len = (K.shell.y - K.shell.x) / rising;
+      q = o + gWay * ((0.5 * (K.shell.x + K.shell.y) - altitude) / rising);
+      foot = max(w, 0.25 * len);
     }
+    if(len > 1.0)
+      tau += cloudDensity(K, q, foot, false) * len;
   }
-  return cloudLit(gLighting, h, tau, 0.0, rising);
+  return cloudLit(gLighting, h, tau);
 }
 
 // The runs along the view (main), in order: each one's stretch and its level.
 vec2 gRuns[2 * CLOUD_LEVELS_MOST];
 int gLevels[2 * CLOUD_LEVELS_MOST];
 
-// The view's `count` runs (gRuns, gLevels), marched front to back in one loop: each turn of it
-// takes one stretch of the view, reads its level's cloud there once and lights it at most once,
-// at one of three grains (`mode`):
-//
-// - 0, a step of a run: in stretches growing geometrically from its near end, as a geometric
-//   series of its length over its distance in the level's steps, but none finer than
-//   CLOUD_STEP_FOOTPRINTS pixels' footprints. Over the ground each step raises the level over the
-//   broad ground under it (cloudSet), and the view ends where it meets the ground (gEnded): its
-//   last step shortened to it, so the clouds before it are all there. In a global weather, the
-//   step placed as the weather systems have it over all of it, so it misses no cloud in it. A
-//   step is only looked into, never taken: any holding cloud is split. Taken whole where it hid
-//   less than CLOUD_THIN, its cover read over a square of the field (a 3D texture's mip) though
-//   it stands for a line, the clouds it held came out more than its parts found, and as the
-//   camera moved and steps crossed the gate, pixels jumped by up to 0.2 (2026-11-10):
-// - 1, a part of a step holding cloud, one of CLOUD_SPLIT: a stretch's share is read along all of
-//   it, and a long one, at a shallow angle to the level, smeared the clouds' fronts over the rows
-//   of pixels it spans. In a global weather each part placed again at its middle, as fine as a
-//   pixel's footprint, and its short steps and their light lent that: read in each of them, at
-//   the extent of each, the cloud changed as a tilt of the view changed the steps, and its light,
-//   read apart, lit another cloud than the one it lit. A part hiding less than CLOUD_THIN is
-//   taken whole, lit once; one hiding more is walked in:
-// - 2, short steps CLOUD_FINE of its mean free paths long (fewer and longer past
-//   uCloudFineSteps), each read for its own share and lit where its light comes from on
-//   average, 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ: near its front where it is
-//   dense, its middle where it is thin. The light a view sees comes from within a free path or
-//   two of where it enters a cloud, and changes as fast: lit once per long step, the clouds
-//   banded where the steps fell, as the camera tilted. None shorter than uCloudDetail.x
-//   pixels' footprints across the view, though: far off, finer steps read what the pixel cannot
-//   show. The footprint alone bounds the detail across the view, not along it: walked only that
-//   fine, from high up one step through a level was lit 100 m into the clouds' shade, their tops
-//   dark.
-//
-// One loop, its turns alike: written as loops in loops (runs, steps, parts, short steps), the
-// march's reads and its light were copied into the program a score of times, its link took 16 s,
-// and the pixels the GPU runs together waited on one another's walks through cloud one after
-// another (2026-11-10). The depth toward the light through the levels over a step (cloudAbove)
-// is read once a step, lent to its parts and short steps.
-//
-// With uCloudFirstOn, the march begins where the view first meets cloud (cloudFirstCloud, drawn
-// before it into uCloudFirst: its run and the steps of it before), a view meeting none not
-// marched at all: the same steps from there, so the same image, without walking the clear air
-// before it in this program (2026-11-10: local 8–18 % faster, global near the field 14–33 %).
-uniform sampler2D uCloudFirst;
-uniform bool uCloudFirstOn;
-
-void cloudMarchRuns(int count) {
-  // Where the view first meets cloud: its run, and the steps of it before.
-  int firstRun = 0;
-  int firstStep = 0;
-  if(uCloudFirstOn && gFirstOn) {
-    vec2 first = texelFetch(uCloudFirst, ivec2(gl_FragCoord.xy), 0).xy;
-    if(first.x < 0.0)
-      return;
-    firstRun = int(first.x + 0.5);
-    firstStep = int(first.y + 0.5);
-  }
-  // The run: its index, level, steps (n) and steps taken (i); its near end and how far it reaches
-  // in the log of the distance (k), a step of it (dk), where the step ends (u) and the next (next).
-  int r = firstRun - 1;
-  int l = 0;
-  int n = 0;
-  int i = 0;
-  float start = 0.0;
-  float near = 50.0;
-  float k = 0.0;
-  float dk = 1.0;
-  float u = 0.0;
-  float next = 0.0;
-  // The step: from and to, the field's point, altitude and height over the ground at each end,
-  // whether it meets the ground, the depth toward the light over it.
-  float from = 0.0;
-  float to = 0.0;
-  vec2 fieldA = vec2(0.0);
-  vec2 fieldB = vec2(0.0);
-  float altitudeA = 0.0;
-  float altitudeB = 0.0;
-  float overA = 0.0;
-  float overB = 0.0;
-  bool meets = false;
-  float above = 0.0;
-  // Its parts: which, how long, the field's point and altitude where the part starts and ends.
-  int mode = 0;
-  int j = 0;
-  float part = 0.0;
-  vec2 fieldP = vec2(0.0);
-  float altitudeP = 0.0;
-  vec2 fieldQ = vec2(0.0);
-  float altitudeQ = 0.0;
-  // A part's short steps: which, how many, how long, from where; the field's point and altitude
-  // where the next starts.
-  int g = 0;
-  int steps = 0;
-  float stride = 0.0;
-  float fine = 0.0;
-  vec2 fieldF = vec2(0.0);
-  float altitudeF = 0.0;
-  // The level as placed for what is read now: a step's, a part's (global), lent to short steps.
-  CloudLevel P = cloudLevel(0);
-  for(int turn = 0; turn < uCloudMarchMost; turn++) {
-    if(gTransmit < uCloudDetail.z || (mode == 0 && gEnded))
-      break;
-    // A step of a run, the next run begun where the last has ended.
-    if(mode == 0 && (r < 0 || u >= k || i > n)) {
-      r++;
-      if(r >= count)
-        break;
-      l = gLevels[r];
-      vec2 run = gRuns[r];
-      gWhole = cloudWhole(l, run);
-      n = gWhole ? 1 : int(uCloudShells[l].w);
-      i = 0;
-      start = run.x;
-      near = max(run.x, 50.0);
-      k = max(log(1.0 + (run.y - run.x) / near), 1e-4);
-      dk = gWhole ? k : max(k / float(n), log(1.0 + CLOUD_STEP_FOOTPRINTS * uCloudMarch.w));
-      u = 0.0;
-      next = dk;
-      from = run.x;
-      // The first run met in cloud: on from the step that meets it, as laid out from its start.
-      if(r == firstRun && firstStep > 0) {
-        u = float(firstStep) * dk;
-        next = u + dk;
-        i = firstStep;
-        from = start + near * (exp(u) - 1.0);
-      }
-      vec3 a = cloudFieldPoint(gD, from);
-      fieldA = cloudFieldOf(a);
-      altitudeA = cloudAltitudeOf(a);
-      overA = cloudOverGround(a, from);
-    }
-    // The stretch read: where it starts and ends, the field's point and altitude at each end, and
-    // its middle.
-    float segFrom = 0.0;
-    float segLen = 1.0;
-    float mid = 0.0;
-    vec2 fieldS = vec2(0.0);
-    vec2 fieldE = vec2(0.0);
-    float altitudeS = 0.0;
-    float altitudeE = 0.0;
-    if(mode == 0) {
-      i++;
-      gCost += 1.0;
-      u = min(next, k);
-      next += dk;
-      to = start + near * (exp(u) - 1.0);
-      vec3 b = cloudFieldPoint(gD, to);
-      // Into the ground: the step ends where it meets it (between the two ends' heights over
-      // it), and the view with it.
-      overB = cloudOverGround(b, to);
-      meets = overB < 0.0;
-      if(meets) {
-        gEnded = true;
-        to = from + (to - from) * max(overA, 0.0) / (max(overA, 0.0) - overB);
-        if(to - from <= 1.0)
-          break;
-        b = cloudFieldPoint(gD, to);
-      }
-      fieldB = cloudFieldOf(b);
-      altitudeB = cloudAltitudeOf(b);
-      segFrom = from;
-      segLen = to - from;
-      mid = from + 0.5 * segLen;
-      fieldS = fieldA;
-      fieldE = fieldB;
-      altitudeS = altitudeA;
-      altitudeE = altitudeB;
+// Whether level `L` may hold cloud anywhere in a stretch of the view about `o` (from the camera)
+// whose field it spans `extent` (m) across, from `fieldA` to `fieldB`, between the altitudes `lo`
+// and `hi`: a bound on what cloudDensity could find there at any footprint. The cover's mean over
+// twice the extent, past it by four of its deviations there, the most the lumps add and three of
+// the edge's widths, against the least the cover needs in it: at its lowest, let down by the
+// pixel's footprint `w` (over which cloudDensity blurs the need up and down), and toward a local
+// weather's edge raised as little as at the stretch's end or middle furthest inside it. A stretch
+// it says holds none is passed over unread.
+bool cloudMaybe(CloudLevel L, vec3 o, float extent, float lo, float hi, float w, vec2 fieldA, vec2 fieldB) {
+  float depth = L.shell.y - L.shell.x;
+  if(hi <= L.shell.x || lo >= L.shell.y)
+    return false;
+  float u = max((lo - min(w, depth) - L.shell.x) / depth, 0.0);
+  vec3 p = uCloudCamera + o;
+  vec2 field = cloudFieldOf(p);
+  float rounding = max(u - CLOUD_ROUNDED, 0.0) / (1.0 - CLOUD_ROUNDED);
+  float need = L.need.x + (L.need.y - L.need.x) * pow(u, CLOUD_DOME) + L.need.w * rounding * rounding;
 #if !defined(CLOUD_GLOBAL)
-      gEdgeNoise = cloudEdgeNoise(0.5 * (fieldA + fieldB));
+  float inside = max(cloudLocalEdge(field), max(cloudLocalEdge(fieldA), cloudLocalEdge(fieldB)));
+  if(inside <= 0.0)
+    return false;
+  need += (1.0 - inside) * (L.need.y - L.need.x + L.need.w);
 #endif
-      // The broad ground under the step (some 110 km): read once, lent to its parts and lights.
-      if(gTerrain)
-        gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + gD * mid));
-    } else {
-      float segTo = 0.0;
-      if(mode == 1) {
-        segLen = part;
-        segTo = from + part * float(j + 1);
-        fieldS = fieldP;
-        altitudeS = altitudeP;
-      } else {
-        segLen = stride;
-        segTo = fine + stride * float(g + 1);
-        fieldS = fieldF;
-        altitudeS = altitudeF;
-      }
-      vec3 q = cloudFieldPoint(gD, segTo);
-      fieldE = cloudFieldOf(q);
-      altitudeE = cloudAltitudeOf(q);
-      segFrom = segTo - segLen;
-      mid = segTo - 0.5 * segLen;
-      if(mode == 2)
-        gCost += 0.25;
-    }
-    float across = max(uCloudMarch.w * mid, 0.5);
-    vec3 o = gD * mid;
-    float rise = abs(altitudeE - altitudeS);
-    // Placed: a step always, over all of it; a part in a global weather, at its middle.
-    bool placed = true;
-#if defined(CLOUD_GLOBAL)
-    bool place = mode < 2;
-#else
-    bool place = mode == 0;
-#endif
-    if(place) {
-      P = cloudLevel(l);
-      placed = cloudSet(P, uCloudCamera + o, mode == 0 ? max(across, max(length(fieldE - fieldS), rise)) : across);
-    }
-    vec2 s = placed ? cloudShare(P, o, fieldE - fieldS, across, rise, true) : vec2(0.0);
-    float tau = s.x > CLOUD_LEAST ? cloudDepth(P, s.x, s.y, segLen, rise) : 0.0;
-    if(mode == 0)
-      above = tau > 0.0 ? cloudAbove(l, o, max(across, 0.5 * segLen)) : 0.0;
-    // A part taken whole, lit once, or a short step lit where its light comes from; a step is
-    // only looked into, but for a run taken whole (gWhole), lit once.
-    bool add = tau > 0.0 && (mode == 2 || (mode == 1 && tau < CLOUD_THIN) || (mode == 0 && gWhole));
-    vec3 lightAt = o;
-    if(mode == 2 && add) {
-      float into = tau < 1e-3 ? 0.5 : 1.0 / tau - 1.0 / (exp(min(tau, 80.0)) - 1.0);
-      lightAt = gD * (segFrom + into * segLen);
-    }
-    if(add)
-      cloudAdd(segFrom, segLen, tau / segLen, cloudLight(P, lightAt, max(across, 0.5 * segLen), above));
-    // On: into a step's parts, into a part's short steps, or on to the next stretch.
-    bool stepDone = false;
-    if(mode == 0) {
-      if(tau > 0.0 && !gWhole) {
-        mode = 1;
-        j = 0;
-        part = segLen / float(CLOUD_SPLIT);
-        fieldP = fieldA;
-        altitudeP = altitudeA;
-      } else
-        stepDone = true;
-    } else if(mode == 1) {
-      fieldQ = fieldE;
-      altitudeQ = altitudeE;
-      if(tau >= CLOUD_THIN) {
-        mode = 2;
-        g = 0;
-        steps = int(clamp(ceil(part / max(CLOUD_FINE / max(P.shell.z, 1e-6), uCloudDetail.x * across)), 1.0, float(uCloudFineSteps)));
-        stride = part / float(steps);
-        fine = segFrom;
-        fieldF = fieldP;
-        altitudeF = altitudeP;
-      } else {
-        fieldP = fieldQ;
-        altitudeP = altitudeQ;
-        j++;
-      }
-    } else {
-      fieldF = fieldE;
-      altitudeF = altitudeE;
-      g++;
-      if(g >= steps) {
-        mode = 1;
-        fieldP = fieldQ;
-        altitudeP = altitudeQ;
-        j++;
-      }
-    }
-    if(mode == 1 && j >= CLOUD_SPLIT) {
-      mode = 0;
-      stepDone = true;
-    }
-    if(stepDone) {
-      if(meets)
-        break;
-      from = to;
-      fieldA = fieldB;
-      altitudeA = altitudeB;
-      overA = overB;
-    }
-  }
+  vec2 c = cloudCoverOf(L, cloudFootOf(o, cloudUpOf(p), cloudAltitudeOf(p)), field, 2.0 * extent);
+  return c.x + 4.0 * sqrt(c.y) + L.look.y * CLOUD_LUMPS_MOST + 3.0 * L.need.z > need;
 }
 
-#if defined(CLOUD_FIRST)
-// Where the view first meets cloud (CLOUD_FIRST, for uCloudFirst): its runs' steps alone, laid out
-// and looked into as cloudMarchRuns' steps are (mode 0), up to the first holding cloud: (its run,
-// the steps of it before); (−1, 0) where none does. ⚠️ Keep it in step with cloudMarchRuns' steps:
-// the march goes on from where this says, so any difference between the two is cloud missed.
-vec2 cloudFirstCloud(int count) {
+// The view's `count` runs (gRuns, gLevels), marched front to back in one loop. Each turn of it
+// either looks into a stretch ahead (cloudMaybe) or walks a step: the step's level placed at its
+// middle (cloudSet), its extinction read there over the pixel's footprint (cloudDensity), taken as
+// even along the step (exactly: cloudAdd), and lit where the step's light comes from on average,
+// 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ.
+//
+// The footprint read is the pixel's cone where the step lies, and nothing else of the march: how
+// the steps fall changes what is drawn only by how finely they resolve it (documents/clouds.md,
+// "The march"). A step is as long as resolves what it reads, and no longer:
+//
+// - the pattern: uCloudDetail.x of the footprint's width, but no finer than two texels of the
+//   shape volume (what the finest of it holds);
+// - the level's depth: uCloudMarch.y steps up it, along the view's slope through it, so what lies
+//   over and under (the tops' edge, the light falling off into a deck) is resolved however
+//   grazing the view;
+// - what it holds: the extinction the last steps found (halved each step since), so a step through
+//   cloud hides about uCloudMarch.z: the light a view sees comes from within a free path or two of
+//   where it enters cloud, and changes as fast. A step that found more than CLOUD_AGAIN is walked
+//   again, shorter, sized by what it found.
+//
+// Clear air is passed over: past a step finding no cloud, the march looks into a stretch twice as
+// long ahead, and on as long as each is clear, up to its run's own layout (its uCloudShells.w
+// steps, growing geometrically from its near end); a stretch that may hold cloud is looked into
+// again at half its length, down to a step's. The bound (cloudMaybe) holds whatever the stretch,
+// so how they fall changes how much is walked, not what is found.
+//
+// One loop, its turns alike: the density's and the light's reads compiled into it once (written
+// as loops in loops, the march's link took 16 s, 2026-11-10).
+void cloudMarchRuns(int count) {
   int r = -1;
   int l = 0;
-  int n = 0;
-  int i = 0;
+  // The run: its near end, how far it reaches, the distance its layout grows from and by how much
+  // a step.
   float start = 0.0;
+  float end = -1.0;
   float near = 50.0;
-  float k = 0.0;
-  float dk = 1.0;
-  float u = 0.0;
-  float next = 0.0;
-  float from = 0.0;
+  float grow = 0.0;
+  // Where the march is (its field's point, its altitude and its height over the ground there), the
+  // extinction the last steps found, and the stretch ahead to look into (none: walking).
+  float t = 0.0;
   vec2 fieldA = vec2(0.0);
   float altitudeA = 0.0;
   float overA = 0.0;
+  float rho = 0.0;
+  float look = 0.0;
+  // The level as last placed for a step (cloudSet): where, over what footprint, and whether it
+  // holds any cloud there.
+  CloudLevel P = cloudLevel(0);
+  vec3 placedAt = vec3(0.0);
+  float placedFoot = 0.0;
+  int placedLevel = -1;
+  bool placed = false;
   for(int turn = 0; turn < uCloudMarchMost; turn++) {
-    if(gEnded)
+    if(gTransmit < uCloudDetail.z)
       break;
-    if(r < 0 || u >= k || i > n) {
+    if(t >= end) {
       r++;
       if(r >= count)
         break;
       l = gLevels[r];
       vec2 run = gRuns[r];
-      gWhole = cloudWhole(l, run);
-      n = gWhole ? 1 : int(uCloudShells[l].w);
-      i = 0;
-      start = run.x;
-      near = max(run.x, 50.0);
-      k = max(log(1.0 + (run.y - run.x) / near), 1e-4);
-      dk = gWhole ? k : max(k / float(n), log(1.0 + CLOUD_STEP_FOOTPRINTS * uCloudMarch.w));
-      u = 0.0;
-      next = dk;
-      from = run.x;
-      vec3 a = cloudFieldPoint(gD, from);
+      start = max(run.x, 0.0);
+      end = run.y;
+      near = max(start, 50.0);
+      grow = exp(log(1.0 + (end - start) / near) / uCloudShells[l].w) - 1.0;
+      t = start;
+      rho = 0.0;
+      look = near * grow;
+      vec3 a = cloudFieldPoint(gD, t);
       fieldA = cloudFieldOf(a);
       altitudeA = cloudAltitudeOf(a);
-      overA = cloudOverGround(a, from);
+      overA = cloudOverGround(a, t);
     }
-    i++;
-    u = min(next, k);
-    next += dk;
-    float to = start + near * (exp(u) - 1.0);
+    // A step's length from here (see above): through cloud, and through clear air past what the
+    // last steps found.
+    vec4 shell = uCloudShells[l];
+    float texel = uCloudLooks[l].w * CLOUD_COVER_SIZE / CLOUD_LUMP_TILES / CLOUD_SHAPE_TEXELS;
+    float rise = abs(dot(gDir, cloudUpAt(t)));
+    float pattern = uCloudDetail.x * uCloudMarch.w * t;
+    float layer = (shell.y - shell.x) / (uCloudMarch.y * max(rise, 0.02));
+    float inCloud = min(max(pattern, 2.0 * texel), layer);
+    float fine = rho > 0.0 ? min(inCloud, uCloudMarch.z / rho) : min(max(pattern, CLOUD_STEP_TEXELS * texel), layer);
+    fine = max(fine * uCloudStepScale, 1.0);
+    bool skim = look > fine;
+    float len = skim ? look : fine;
+    float to = t + len;
+    if(to > end - 0.25 * len)
+      to = end;
+    // Into the ground: the stretch ends where it meets it (between the two ends' heights over it),
+    // and the view with it.
     vec3 b = cloudFieldPoint(gD, to);
     float overB = cloudOverGround(b, to);
-    if(overB < 0.0) {
-      gEnded = true;
-      to = from + (to - from) * max(overA, 0.0) / (max(overA, 0.0) - overB);
-      if(to - from <= 1.0)
+    bool meets = overB < 0.0;
+    if(meets) {
+      to = t + (to - t) * max(overA, 0.0) / (max(overA, 0.0) - overB);
+      if(to - t <= 1.0) {
+        gEnded = true;
         break;
+      }
       b = cloudFieldPoint(gD, to);
     }
     vec2 fieldB = cloudFieldOf(b);
     float altitudeB = cloudAltitudeOf(b);
-    float mid = from + 0.5 * (to - from);
+    len = to - t;
+    float mid = t + 0.5 * len;
+    vec3 o = gD * mid;
+    float foot = max(uCloudMarch.w * mid, 0.5);
 #if !defined(CLOUD_GLOBAL)
-    gEdgeNoise = cloudEdgeNoise(0.5 * (fieldA + fieldB));
+    gEdgeNoise = cloudEdgeNoise(cloudFieldOf(uCloudCamera + o));
 #endif
     if(gTerrain)
-      gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + gD * mid));
-    float across = max(uCloudMarch.w * mid, 0.5);
-    vec3 o = gD * mid;
-    float rise = abs(altitudeB - altitudeA);
-    float extent = max(across, max(length(fieldB - fieldA), rise));
-    // Clear there as the baked weather has it: on, without placing the level.
-    if(cloudPlaceClear(l, uCloudCamera + o, extent)) {
-      from = to;
-      fieldA = fieldB;
-      altitudeA = altitudeB;
-      overA = overB;
-      continue;
+      gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + o));
+    CloudLevel S = cloudLevel(l);
+    bool found = false;
+    if(skim) {
+      gCost += 0.25;
+      // Its lowest: an end, or where the view passes closest to the Earth's centre within it.
+      float lo = min(altitudeA, altitudeB);
+      float hi = max(altitudeA, altitudeB);
+      if(uCloudInvRadius > 0.0) {
+        float closest = -(dot(uCloudCamera, gD) + gD.z / uCloudInvRadius);
+        if(closest > t && closest < to)
+          lo = min(lo, cloudAltitudeOf(cloudFieldPoint(gD, closest)));
+      }
+      float extent = max(foot, length(fieldB - fieldA));
+      if(cloudSet(S, uCloudCamera + o, extent) && cloudMaybe(S, o, extent, lo, hi, foot, fieldA, fieldB)) {
+        look = 0.5 * len;
+        continue;
+      }
+      look = min(2.0 * len, (to - start + near) * grow);
+    } else {
+      // Placed again once it has moved CLOUD_PLACE_AGAIN or its footprint on from where it was
+      // last: what places it changes over tens of kilometres.
+      if(placedLevel != l || distance(o, placedAt) > max(CLOUD_PLACE_AGAIN, foot) || foot > 2.0 * placedFoot) {
+        P = S;
+        placed = cloudSet(P, uCloudCamera + o, foot);
+        placedAt = o;
+        placedFoot = foot;
+        placedLevel = l;
+      }
+      gClear = 1e3;
+      float sigma = placed ? cloudDensity(P, o, foot, true) : 0.0;
+      float clear = gClear;
+      gCost += 1.0;
+      float tau = sigma * len;
+      // Longer than a step through what it found: walked again from where it began, as short as
+      // that.
+      float want = max(min(inCloud, uCloudMarch.z / max(sigma, 1e-9)) * uCloudStepScale, 1.0);
+      if(sigma > 0.0 && len > CLOUD_AGAIN * want) {
+        rho = sigma;
+        continue;
+      }
+      if(tau > 0.0 && gTransmit * (1.0 - exp(-tau)) > 1e-4) {
+        float into = tau < 1e-3 ? 0.5 : 1.0 / tau - 1.0 / (exp(min(tau, 80.0)) - 1.0);
+        cloudAdd(t, len, sigma, cloudLight(P, l, gD * (t + into * len), foot));
+      }
+      found = sigma > 0.0;
+      // Past cloud, what it found halves each step, and is forgotten once a tenth of the level's.
+      rho = found ? max(sigma, 0.5 * rho) : (rho < 0.2 * shell.z ? 0.0 : 0.5 * rho);
+      look = !found && clear > CLOUD_CLEAR ? 2.0 * len : 0.0;
     }
-    CloudLevel P = cloudLevel(l);
-    bool placed = cloudSet(P, uCloudCamera + o, extent);
-    vec2 s = placed ? cloudShare(P, o, fieldB - fieldA, across, rise, true) : vec2(0.0);
-    if(s.x > CLOUD_LEAST)
-      return vec2(float(r), float(i - 1));
-    from = to;
+    t = to;
     fieldA = fieldB;
     altitudeA = altitudeB;
     overA = overB;
+    if(meets) {
+      gEnded = true;
+      break;
+    }
   }
-  return vec2(-1.0, 0.0);
 }
-#endif
 
 #if defined(CLOUD_FILM)
 // The film's view (CloudVolumeRenderer.film: the scene's bakes of the air and the sea's
-// reflection, blurred in both): each run through a level taken whole, one stretch read over all of
-// it and lit once at its middle, toward the light in the march's own way. As opaque as the
-// march's stretches make it (cloudDepth), its detail averaged over the run (the cover's mean and
-// spread along it); no lumps. Marching the film as the view is marched, its rays along the layers
-// to the horizon took 3–4 ms a face (Iris Xe, 2026-11-10).
+// reflection, blurred in both): each run through a level read once at its middle over a footprint
+// of half its length (or the pixel's cone, where wider), and lit there. Marching the film as the
+// view is marched took 3–4 ms a face (Iris Xe, 2026-11-10).
 void cloudFilmRuns(int count) {
   for(int r = 0; r < 2 * CLOUD_LEVELS_MOST; r++) {
     if(r >= count || gTransmit < 0.01)
@@ -1405,27 +1129,19 @@ void cloudFilmRuns(int count) {
     if(len <= 1.0)
       continue;
     float mid = from + 0.5 * len;
-    vec3 a = cloudFieldPoint(gD, from);
-    vec3 b = cloudFieldPoint(gD, run.y);
-    vec2 fieldA = cloudFieldOf(a);
-    vec2 fieldB = cloudFieldOf(b);
-    float rise = abs(cloudAltitudeOf(b) - cloudAltitudeOf(a));
     vec3 o = gD * mid;
-    float across = max(uCloudMarch.w * mid, 0.5);
+    float foot = max(uCloudMarch.w * mid, 0.5 * len);
 #if !defined(CLOUD_GLOBAL)
-    gEdgeNoise = cloudEdgeNoise(0.5 * (fieldA + fieldB));
+    gEdgeNoise = cloudEdgeNoise(cloudFieldOf(uCloudCamera + o));
 #endif
     if(gTerrain)
       gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + o));
     CloudLevel P = cloudLevel(l);
-    if(!cloudSet(P, uCloudCamera + o, max(across, max(length(fieldB - fieldA), rise))))
+    if(!cloudSet(P, uCloudCamera + o, foot))
       continue;
-    vec2 s = cloudShare(P, o, fieldB - fieldA, across, rise, false);
-    if(s.x <= CLOUD_LEAST)
-      continue;
-    float tau = cloudDepth(P, s.x, s.y, len, rise);
-    float wide = max(across, 0.5 * len);
-    cloudAdd(from, len, tau / len, cloudLight(P, o, wide, cloudAbove(l, o, wide)));
+    float sigma = cloudDensity(P, o, foot, false);
+    if(sigma > 0.0)
+      cloudAdd(from, len, sigma, cloudLight(P, l, o, foot));
   }
 }
 #endif
@@ -1448,11 +1164,11 @@ uniform int uCloudLightLevel;
 uniform vec2 uCloudLightShift;
 
 // A texel of level uCloudLightLevel's light map (CloudLightMap): the ray toward the light from
-// where it leaves the level's base, through its shell, in CLOUD_LIGHT_STEPS stretches each taken
-// whole over no less than a texel, as the march's light's are (cloudLight); out, the optical
-// depth from its base, and from a quarter, half and three quarters of the way up, to its top.
-// Height and distance go together along it by the light's rise at the weather's middle (no less
-// than 0.05, as the march's light takes it), as they are read (cloudLightFromMap).
+// where it leaves the level's base, through its shell, in CLOUD_LIGHT_STEPS stretches each read at
+// its middle over half its length or a texel, as the march's light's are (cloudLight); out, the
+// optical depth from its base, and from a quarter, half and three quarters of the way up, to its
+// top. Height and distance go together along it by the light's rise at the weather's middle (no
+// less than 0.05, as the march's light takes it), as they are read (cloudLightFromMap).
 void main() {
   gTerrain = uCloudTerrain.x > 0.5 && globeOn();
   vec3 way = cloudLightWay(uCloudFrameM);
@@ -1476,16 +1192,15 @@ void main() {
   vec4 quarters = vec4(0.0);
   for(int k = 0; k < CLOUD_LIGHT_STEPS; k++) {
     vec3 q = b + gWay * (len * (float(k) + 0.5));
-    vec2 s = cloudShare(S, q - uCloudCamera, gWay.xy * len, max(texel, 0.25 * len), r * len, false);
-    if(s.x > 0.0)
-      quarters += cloudDepth(S, s.x, s.y, len, r * len) * vec4(equal(ivec4(k * 4 / CLOUD_LIGHT_STEPS), ivec4(0, 1, 2, 3)));
+    float tau = cloudDensity(S, q - uCloudCamera, max(texel, 0.5 * len), false) * len;
+    quarters += tau * vec4(equal(ivec4(k * 4 / CLOUD_LIGHT_STEPS), ivec4(0, 1, 2, 3)));
   }
   gl_FragColor = vec4(dot(quarters, vec4(1.0)), quarters.y + quarters.z + quarters.w, quarters.z + quarters.w, quarters.w);
 }
 #elif defined(CLOUD_COVER_MAP)
 // A texel of level uCloudCoverLevel's cover map (CloudCoverMap): the cover of the column at its
 // middle, read from the cover volume over a texel as the march reads it (cloudCoverAt), with the
-// clock's drift and lives in the level's uniforms; out, its mean and its mean square.
+// clock's drift and lives in the level's uniforms; out, its mean.
 uniform int uCloudCoverLevel;
 
 void main() {
@@ -1495,7 +1210,7 @@ void main() {
   CloudLevel L = cloudLevel(uCloudCoverLevel);
   vec3 o = cloudFieldColumn(field, 0.0) - uCloudCamera;
   vec2 c = cloudCoverAt(L, cloudFootOf(o, vec3(0.0, 0.0, 1.0), 0.0), texel);
-  gl_FragColor = vec4(c.x, c.y + c.x * c.x, 0.0, 1.0);
+  gl_FragColor = vec4(c.x, 0.0, 0.0, 1.0);
 }
 #elif defined(CLOUD_PLACE_MAP) && defined(CLOUD_GLOBAL)
 // A texel of the weather baked about the camera (CloudPlaceMap): layer uCloudPlaceLayer of what
@@ -1564,15 +1279,12 @@ void main() {
     if(to <= from)
       continue;
     float len = (to - from) / float(uCloudShadowSamples);
-    float extent = max(texel, 0.25 * len);
+    float extent = max(texel, 0.5 * len);
     for(int k = 0; k < uCloudShadowSamples; k++) {
       vec3 q = g + gWay * (from + (float(k) + 0.5) * len);
       CloudLevel S = L;
-      if(!cloudSet(S, q, extent))
-        continue;
-      vec2 s = cloudShare(S, q - uCloudCamera, gWay.xy * len, extent, r * len, false);
-      if(s.x > 0.0)
-        tau += cloudDepth(S, s.x, s.y, len, r * len);
+      if(cloudSet(S, q, extent))
+        tau += cloudDensity(S, q - uCloudCamera, extent, false) * len;
     }
   }
   gl_FragColor = vec4(exp(-tau), 0.0, 0.0, 1.0);
@@ -1615,66 +1327,6 @@ void main() {
   if(gTerrain && height < uCloudTerrain.y + CLOUD_TERRAIN_SLACK)
     gSlack = max(cloudGround(cloudUpEarthOf(uCloudCamera)) - height + CLOUD_TERRAIN_SLACK, 0.0);
 
-  // A pixel whose view grazes the levels (toward the Earth's limb: it comes within half the
-  // pixel's height there of the highest level's top before or without meeting the ground) spans
-  // kilometres of height, where a level may be a few hundred metres deep: marched along its middle
-  // alone, it held all of a level or none of it as its lowest point passed a level's top or base,
-  // and as the camera moved, rows of pixels along the limb flipped (a 0.1 % dolly: 1.5 % of the
-  // clouds' pixels by over 0.05, some from opaque to clear; 2026-11-10). So uCloudLimbRays views
-  // spread over its height, each marched as any view, averaged.
-  vec3 centre = dir;
-  int rays = 1;
-  vec3 tilt = vec3(0.0);
-#if !defined(CLOUD_FIRST) && !defined(CLOUD_FILM)
-  if(uCloudLimbRays > 1 && globeOn()) {
-    float lowestAt = -dot(gO, centre);
-    if(lowestAt > 0.0) {
-      vec3 low = gO + centre * lowestAt;
-      float lowest = length(low) - R;
-      float halfFoot = 0.5 * uCloudMarch.w * lowestAt;
-      float highest = 0.0;
-      float thinnest = CLOUD_FAR;
-      for(int l = 0; l < CLOUD_LEVELS_MOST; l++) {
-        if(l >= uCloudLevelCount)
-          break;
-        highest = max(highest, uCloudShells[l].y + (gTerrain ? cloudRiseOf(uCloudKinds[l]) * uCloudTerrain.y : 0.0));
-        thinnest = min(thinnest, uCloudShells[l].y - uCloudShells[l].x);
-      }
-      // Only where the pixel spans more of a level than a run is taken whole at (CLOUD_WHOLE_AT):
-      // nearer, a view grazing the levels along the horizon resolves them, and 4 views each cost
-      // 1.85 times the march from 3 km up (2026-11-10).
-      if(lowest > -halfFoot && lowest < highest + halfFoot && 2.0 * halfFoot > CLOUD_WHOLE_AT * thinnest) {
-        rays = uCloudLimbRays;
-        vec3 up = low / length(low);
-        tilt = normalize(up - centre * dot(up, centre)) * uCloudMarch.w;
-        // Its views are not the one the first pass looked along.
-        gFirstOn = false;
-      }
-    }
-  }
-#endif
-  vec4 sum = vec4(0.0);
-  float nearest = 1.0;
-  float costs = 0.0;
-  for(int k = 0; k < CLOUD_LIMB_RAYS_MOST; k++) {
-    if(k >= rays)
-      break;
-    if(rays > 1) {
-      dir = normalize(centre + tilt * ((float(k) + 0.5) / float(rays) - 0.5));
-      gDir = dir;
-      gD = vec3(dot(dir, uCloudFrameE), dot(dir, uCloudFrameN), dot(dir, uCloudFrameM));
-      reach = globeReach(cameraPosition, dir, 0.0);
-      ground = reach.y < 0.5 ? reach.x : CLOUD_FAR;
-      gColor = vec3(0.0);
-      gTransmit = 1.0;
-      gDepthSum = 0.0;
-      gWeight = 0.0;
-      gFront = -1.0;
-      gEnded = false;
-      gBroad = vec4(0.0);
-      gEdgeNoise = 0.0;
-    }
-    gCost = 0.0;
   // Each level's runs along the view, within the local weather's radius: two at most a level
   // (before the view dips under its base and after it comes back up), marched front to back.
 #if defined(CLOUD_GLOBAL)
@@ -1743,12 +1395,6 @@ void main() {
     gRuns[r] = runs[r];
     gLevels[r] = levels[r];
   }
-#if defined(CLOUD_FIRST)
-  // Where it first meets cloud, for the march (uCloudFirst).
-  gl_FragColor = vec4(cloudFirstCloud(count), 0.0, 1.0);
-  return;
-#endif
-
   // Lit as where the view first meets cloud.
   gLighting = cloudLightingAt(dir, cloudUpAt(count > 0 ? max(runs[0].x, 0.0) : 0.0));
   gWay = vec3(dot(gLighting.way, uCloudFrameE), dot(gLighting.way, uCloudFrameN), dot(gLighting.way, uCloudFrameM));
@@ -1758,44 +1404,35 @@ void main() {
   cloudMarchRuns(count);
 #endif
 
-    costs += gCost;
-    float alpha = 1.0 - gTransmit;
-    if(alpha < 1e-4)
-      continue;
-    // Where their light comes from on average: hazed over that distance.
-    float mean = gDepthSum / max(gWeight, 1e-6);
-    vec3 lit = uCloudDebug == 2 ? vec3(1.0) : gColor / alpha;
-    vec3 seen = lit;
-    if(uCloudAir > 0.5 && uCloudDebug == 0) {
-      vec3 p = cameraPosition + dir * mean;
-      seen = cloudFromSpace(cloudThroughAir(lit, dir, mean, blend), lit, p, globeAltitude(p));
-    }
-    // Stopped short (uCloudDetail.z): as opaque as where it stops, over what it hides once
-    // stopped, so a view stopped there hides all behind it.
-    float shown = clamp(alpha / (1.0 - uCloudDetail.z), 0.0, 1.0);
-    sum += vec4(seen * shown, shown);
-    // Their front (CLOUD_FRONT), where they hide that much at all: as log2 over
-    // CLOUD_DEPTH_RANGE, which the composite reads; the nearest of the pixel's views.
-    float depth = gFront >= 0.0 ? gFront : mean;
-    nearest = min(nearest, clamp(log2(max(depth, 1.0)) / CLOUD_DEPTH_RANGE, 0.0, 0.999999));
-  }
-
   if(uCloudDebug == 1) {
-    // The march's cost, all the pixel's views': blue none, through green and yellow, to red at
-    // its most.
-    float cost = clamp(costs / uCloudMarch.x, 0.0, 1.0);
+    // The march's cost: blue none, through green and yellow, to red at its most.
+    float cost = clamp(gCost / uCloudMarch.x, 0.0, 1.0);
     vec3 heat = clamp(vec3(4.0 * cost - 2.0, 2.0 - abs(4.0 * cost - 2.0), 2.0 - 4.0 * cost), 0.0, 1.0);
     gl_FragColor = vec4(heat, 1.0);
     gl_FragDepth = 0.999999;
     return;
   }
-  sum /= float(rays);
-  if(sum.a < 1e-4) {
+  float alpha = 1.0 - gTransmit;
+  if(alpha < 1e-4) {
     gl_FragColor = vec4(0.0);
     gl_FragDepth = 1.0;
     return;
   }
-  gl_FragColor = sum;
-  gl_FragDepth = nearest;
+  // Where their light comes from on average: hazed over that distance.
+  float mean = gDepthSum / max(gWeight, 1e-6);
+  vec3 lit = uCloudDebug == 2 ? vec3(1.0) : gColor / alpha;
+  vec3 seen = lit;
+  if(uCloudAir > 0.5 && uCloudDebug == 0) {
+    vec3 p = cameraPosition + dir * mean;
+    seen = cloudFromSpace(cloudThroughAir(lit, dir, mean, blend), lit, p, globeAltitude(p));
+  }
+  // Stopped short (uCloudDetail.z): as opaque as where it stops, over what it hides once
+  // stopped, so a view stopped there hides all behind it.
+  float shown = clamp(alpha / (1.0 - uCloudDetail.z), 0.0, 1.0);
+  gl_FragColor = vec4(seen * shown, shown);
+  // Their front (CLOUD_FRONT), where they hide that much at all: as log2 over
+  // CLOUD_DEPTH_RANGE, which the composite reads.
+  float depth = gFront >= 0.0 ? gFront : mean;
+  gl_FragDepth = clamp(log2(max(depth, 1.0)) / CLOUD_DEPTH_RANGE, 0.0, 0.999999);
 }
 #endif

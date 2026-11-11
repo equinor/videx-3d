@@ -150,10 +150,6 @@ export type FramesResult = {
  * it whatever only fed it: such a variant times less than it seems to. Its `diff` (the mean
  * difference of its image from the march's) shows a variant that changed what is drawn, whose
  * time then also changed with what it drew.
- *
- * The march's first pass (where each view first meets cloud, `uCloudFirstOn`) is drawn before a
- * variant as before the march: a variant that lays out or looks into the steps otherwise must
- * turn it off (`apply`), or it goes on from steps its own walk would not stop at.
  */
 export type BenchVariant = {
   edits?: [string, string][];
@@ -161,9 +157,8 @@ export type BenchVariant = {
   apply?: (uniforms: Record<string, IUniform>) => () => void;
   /**
    * A program of the march's own (edited as `edits` say) drawn first, each time, into a float
-   * RGBA image of the march's size: the variant reads it as `uniform sampler2D uCloudPrepass`,
-   * and as `uCloudFirst` (the march's own first pass), so a `CLOUD_FIRST` prepass of its own, its
-   * defines `{ CLOUD_FIRST: '' }`, stands in for the march's. Its time is counted in the variant's.
+   * RGBA image of the march's size: the variant reads it as `uniform sampler2D uCloudPrepass`. Its
+   * time is counted in the variant's.
    */
   prepass?: { edits?: [string, string][]; defines?: BenchVariant['defines'] };
 };
@@ -200,10 +195,10 @@ export type AbResult = {
 
 export type CountResult = {
   conditions: BenchConditions;
-  /** per pixel: the loop's turns, steps of a run, short steps and points lit */
+  /** per pixel: the loop's turns, steps, steps walked again (shorter) and points lit */
   turns: Stat & { p99: number };
   steps: Stat;
-  fine: Stat;
+  again: Stat;
   lights: Stat;
   /** mean turns over the most turns in each 8×4 block: how evenly pixels run together (1 even) */
   coherence: number;
@@ -361,18 +356,21 @@ class Segments {
   }
 }
 
-/** The march's loop counted: turns, steps of a run, short steps, points lit (count()). */
+/** The march's loop counted: turns, steps, steps walked again, points lit (count()). */
 const COUNT_EDITS: [string, string][] = [
   [
-    'vec3 cloudLight(CloudLevel L, vec3 o, float across, float above) {',
-    'vec4 gBenchCount = vec4(0.0);\nvec3 cloudLight(CloudLevel L, vec3 o, float across, float above) {\n  gBenchCount.w += 1.0;',
+    'vec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {',
+    'vec4 gBenchCount = vec4(0.0);\nvec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {\n  gBenchCount.w += 1.0;',
   ],
   [
     'for(int turn = 0; turn < uCloudMarchMost; turn++) {',
     'for(int turn = 0; turn < uCloudMarchMost; turn++) {\n    gBenchCount.x += 1.0;',
   ],
-  ['gCost += 1.0;', 'gCost += 1.0;\n      gBenchCount.y += 1.0;'],
-  ['gCost += 0.25;', 'gCost += 0.25;\n        gBenchCount.z += 1.0;'],
+  ['gCost += 1.0;', 'gCost += 1.0;\n    gBenchCount.y += 1.0;'],
+  [
+    'if(sigma > 0.0 && len > CLOUD_AGAIN * want) {',
+    'if(sigma > 0.0 && len > CLOUD_AGAIN * want) {\n        gBenchCount.z += 1.0;',
+  ],
   [
     '  cloudMarchRuns(count);\n',
     '  cloudMarchRuns(count);\n  gl_FragColor = gBenchCount;\n  gl_FragDepth = 0.5;\n  return;\n',
@@ -383,8 +381,6 @@ type VolumeInternals = {
   target: WebGLRenderTarget;
   marchScene: Scene;
   marchMaterial: ShaderMaterial;
-  firstScene: Scene;
-  firstTarget: WebGLRenderTarget;
   shadowScene: Scene;
   shadowTarget: WebGLRenderTarget;
   filmedVersion: number;
@@ -528,14 +524,7 @@ export function createCloudBench(
     v.updateCamera(camera, v.target.height);
   };
 
-  // Where each view first meets cloud, drawn before a march as the frame's is, while it is on
-  // (scenery-cloud-volume.ts, FIRST_HIGHEST): part of the march's time.
-  const drawFirst = (v: VolumeInternals, camera: Camera) => {
-    if (v.marchMaterial.uniforms.uCloudFirstOn?.value)
-      draw(v.firstScene, v.firstTarget, camera);
-  };
   const drawMarch = (v: VolumeInternals, camera: Camera) => {
-    drawFirst(v, camera);
     draw(v.marchScene, v.target, camera);
   };
 
@@ -841,7 +830,6 @@ export function createCloudBench(
       try {
         await warm(v, camera, options.warmup ?? 2000);
         aimMarch(v, camera);
-        drawFirst(v, camera);
         const baseImage = imageOf(v.marchScene, readback, camera);
         for (const [name, variant] of Object.entries(variants)) {
           // With a prepass: its image, drawn before the variant each time, read by it.
@@ -857,27 +845,21 @@ export function createCloudBench(
                 }),
               }
             : null;
-          // Read as `uCloudPrepass`, and as the march's own first pass (`uCloudFirst`): a
-          // `CLOUD_FIRST` prepass stands in for it.
+          // Read as `uCloudPrepass`.
           const { scene, material } = variantScene(
             v,
             variant,
             before
-              ? {
-                  uCloudPrepass: new Uniform(before.target.texture),
-                  uCloudFirst: new Uniform(before.target.texture),
-                }
+              ? { uCloudPrepass: new Uniform(before.target.texture) }
               : undefined,
           );
           const drawVariant = (target: WebGLRenderTarget) => {
             if (before) draw(before.scene, before.target, camera);
-            else drawFirst(v, camera);
             draw(scene, target, camera);
           };
           try {
             const undo = variant.apply?.(march.uniforms) ?? (() => {});
             if (before) draw(before.scene, before.target, camera);
-            else drawFirst(v, camera);
             const image = imageOf(scene, readback, camera);
             undo();
             if (before) runnable(before.material);
@@ -934,7 +916,6 @@ export function createCloudBench(
       const { scene, material } = variantScene(v, { edits: COUNT_EDITS });
       try {
         aimMarch(v, camera);
-        drawFirst(v, camera);
         const pixels = imageOf(scene, readback, camera);
         runnable(material);
         const w = readback.width;
@@ -983,7 +964,7 @@ export function createCloudBench(
             p99: sorted[Math.floor(0.99 * sorted.length)] ?? 0,
           },
           steps: stat(channel(1)),
-          fine: stat(channel(2)),
+          again: stat(channel(2)),
           lights: stat(channel(3)),
           coherence:
             blockMost > 0 ? Math.round((blockMean / blockMost) * 100) / 100 : 1,
@@ -998,13 +979,13 @@ export function createCloudBench(
   const hold = (seconds: number) =>
     exclusive(true, () => sleep(seconds * 1000));
 
-  // The canvas as drawn, `frames` frames on: read from the drawing buffer once the frame's render
+  // The canvas as drawn, `after` frames on: read from the drawing buffer once the frame's render
   // is done (an after effect), rows top first.
-  const capture = (frames: number) =>
+  const capture = (after: number) =>
     new Promise<AbImage>(resolve => {
       let frame = 0;
       const stop = addAfterEffect(() => {
-        if (++frame < frames) return;
+        if (++frame < after) return;
         stop();
         const gl = renderer();
         const ctx = context();
@@ -1030,17 +1011,17 @@ export function createCloudBench(
     options: { title?: string; frames?: number } = {},
   ) =>
     exclusive(false, async () => {
-      const frames = options.frames ?? 12;
+      const after = options.frames ?? 12;
       const real = volume();
       const context_ = {
         uniforms: inside(real).marchMaterial.uniforms,
         volume: real,
       };
       const undoA = await a.apply(context_);
-      const imageA = await capture(frames);
+      const imageA = await capture(after);
       undoA();
       const undoB = await b.apply(context_);
-      const imageB = await capture(frames);
+      const imageB = await capture(after);
       undoB();
       const stats = showAb(imageA, imageB, {
         a: a.label,

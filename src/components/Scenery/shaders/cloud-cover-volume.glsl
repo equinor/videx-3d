@@ -11,7 +11,9 @@
 // Out, slice by slice: (patches, masses, patches², masses²) at the texel's middle, so the
 // mipmaps give what a footprint holds: each one's mean and spread. With COVER_SAMPLE, at two
 // points scattered over the tile: the patches and the masses at the first, the patches at the
-// second (the broad read's, which lies elsewhere in the tile), for the distribution.
+// second (the broad read's, which lies elsewhere in the tile), for the distribution. With
+// COVER_SPREAD, the volume drawn read at the middles of texels scattered over each level of its
+// mipmaps (COVER_SPREAD_ROWS rows a level), for the spread each level averages away.
 
 precision highp float;
 precision highp int;
@@ -21,6 +23,9 @@ precision highp int;
 uniform float uCoverSize;
 uniform float uCoverSlice;
 uniform float uCoverSeed;
+#if defined(COVER_SPREAD)
+uniform highp sampler3D uCoverVolume;
+#endif
 
 uint coverHash(uvec3 p, uint layer) {
   uint h = (p.x * 0x8da6b343u) ^ (p.y * 0xd8163841u) ^ (p.z * 0xcb1ab31fu) ^ (layer * 0x9e3779b9u);
@@ -104,6 +109,17 @@ void main() {
   vec3 first = vec3(coverRandom(h), coverRandom(h * 0x9e3779b9u + 0x632be5abu), coverRandom(h * 0x85ebca6bu + 0x27d4eb2fu));
   vec3 second = vec3(coverRandom(g), coverRandom(g * 0x9e3779b9u + 0x632be5abu), coverRandom(g * 0x85ebca6bu + 0x27d4eb2fu));
   gl_FragColor = vec4(coverAt(first), coverAt(second).x, 1.0);
+#elif defined(COVER_SPREAD)
+  // A texel of a level of the mipmaps (by the pixel's row), picked by the pixel, read at its
+  // middle: the spread of the patches and of the masses within it (its mean square less its mean
+  // squared), and their means.
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  int level = px.y / COVER_SPREAD_ROWS;
+  uint side = max(uint(uCoverSize) >> uint(level), 1u);
+  uvec3 at = uvec3(uvec2(px), 0x2545f491u + uint(uCoverSeed));
+  uvec3 texel = uvec3(coverHash(at, 2u), coverHash(at, 3u), coverHash(at, 4u)) % side;
+  vec4 v = texelFetch(uCoverVolume, ivec3(texel), level);
+  gl_FragColor = vec4(v.zw - v.xy * v.xy, v.xy);
 #else
   vec2 c = coverAt(vec3(gl_FragCoord.xy, uCoverSlice + 0.5) / uCoverSize);
   gl_FragColor = vec4(c, c * c);

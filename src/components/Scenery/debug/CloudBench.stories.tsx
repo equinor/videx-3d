@@ -109,10 +109,6 @@ type CloudBenchArgs = {
   weatherPaused: boolean;
   cloudRate: number;
   debugView: 'none' | 'cost' | 'unlit';
-  /** being chosen: how the sun lights them (`debug.light`) */
-  lightModel: 'single' | 'diffuse' | 'shaded';
-  /** being chosen: the cover read over the pixel's footprint on the level (`debug.onLayer`) */
-  onLayer: boolean;
 };
 
 function weatherOf(args: CloudBenchArgs): WeatherState {
@@ -185,8 +181,6 @@ const CloudBenchStory = (args: CloudBenchArgs) => {
             lightMap={args.lightMap}
             debug={{
               view: args.debugView === 'none' ? undefined : args.debugView,
-              light: args.lightModel,
-              onLayer: args.onLayer,
             }}
           />
         </Scenery>
@@ -252,7 +246,7 @@ const framesText = (r: FramesResult) =>
 
 const countText = (r: CountResult) =>
   `turns mean ${r.turns.mean} p90 ${r.turns.p90} p99 ${r.turns.p99} max ${r.turns.max}\n` +
-  `steps ${r.steps.mean}, fine ${r.fine.mean}, lit ${r.lights.mean}, coherence ${r.coherence}\n` +
+  `steps ${r.steps.mean}, again ${r.again.mean}, lit ${r.lights.mean}, coherence ${r.coherence}\n` +
   `bands ${r.bands.join(' ')}`;
 
 const bench = (): CloudBench => {
@@ -456,16 +450,6 @@ const meta = {
       control: { type: 'inline-radio' },
       options: ['none', 'cost', 'unlit'],
     },
-    lightModel: {
-      control: { type: 'inline-radio' },
-      options: ['single', 'diffuse', 'shaded'],
-      description: 'Being chosen: how the sun lights the clouds (`debug.light`).',
-    },
-    onLayer: {
-      control: { type: 'boolean' },
-      description:
-        'Being chosen: the cover read over the pixel’s footprint on the level (`debug.onLayer`).',
-    },
   },
   args: {
     viewport: '1280x720',
@@ -484,8 +468,6 @@ const meta = {
     weatherPaused: true,
     cloudRate: 1,
     debugView: 'none',
-    lightModel: 'single',
-    onLayer: false,
   },
 } satisfies Meta<typeof CloudBenchStory>;
 

@@ -199,10 +199,6 @@ export const SceneryCloudVolume = ({
   const debugView = debug.view;
   const debugAir = debug.air;
   const debugSteer = debug.steer;
-  const debugLight = debug.light;
-  const debugLimb = debug.limb;
-  const debugWhole = debug.whole;
-  const debugOnLayer = debug.onLayer;
 
   // The light maps' program, compiled once they are asked for (`lightMap`): lit as marched until
   // then, so the default compiles nothing more.
@@ -257,10 +253,6 @@ export const SceneryCloudVolume = ({
         view: debugView,
         air: debugAir,
         steer: debugSteer,
-        light: debugLight,
-        limb: debugLimb,
-        whole: debugWhole,
-        onLayer: debugOnLayer,
       },
     });
   }, [
@@ -280,10 +272,6 @@ export const SceneryCloudVolume = ({
     debugView,
     debugAir,
     debugSteer,
-    debugLight,
-    debugLimb,
-    debugWhole,
-    debugOnLayer,
     lit,
   ]);
 
@@ -307,9 +295,6 @@ export const SceneryCloudVolume = ({
         }),
       ),
       precompile(gl, volume.march, camera, scene, 'offscreen', {
-        priority: PRECOMPILE_PRIORITY.background,
-      }),
-      precompile(gl, volume.first, camera, scene, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       precompile(gl, volume.coverGenerator(), camera, scene, 'offscreen', {

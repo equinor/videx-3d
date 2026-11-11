@@ -152,33 +152,6 @@ export type SceneryCloudVolumeDebug = {
   types?: boolean;
   /** Being chosen, then removed: the low cloud's thickness sets how deep and dense a global weather's cloud is (true), or its type alone. Default true */
   thickness?: boolean;
-  /**
-   * Being chosen (2026-11-10), then removed: how the sun lights them. `'single'` its light
-   * scattered once, by the phase; `'diffuse'` with the light scattered many times over leaving
-   * much as it came, whichever way they are seen from; `'shaded'` that, the billows facing away
-   * from the light shaded by their own lumps. Default `'single'`
-   */
-  light?: 'single' | 'diffuse' | 'shaded';
-  /**
-   * Being chosen (2026-11-10), then removed: rays marched for a pixel whose view grazes the
-   * levels (toward the Earth's limb, where a pixel spans kilometres of height), spread over its
-   * height and averaged. Default 1
-   */
-  limb?: number;
-  /**
-   * Being chosen (2026-11-10), then removed: a run through a level taken whole where a pixel
-   * spans more than half the level's depth (far off, from orbit): one step lit once, its share
-   * blurred by the pixel's footprint up and down, rather than walked in steps and parts. Default
-   * false
-   */
-  whole?: boolean;
-  /**
-   * Being chosen (2026-11-10), then removed: the cover and the lumps read over each pixel's
-   * footprint on the level — its width over the sine of the view's slope through it — so far off
-   * and low, foreshortened, decks are as blurred as a pixel holds them rather than shimmering as
-   * the view tilts. Default false
-   */
-  onLayer?: boolean;
 };
 
 /**

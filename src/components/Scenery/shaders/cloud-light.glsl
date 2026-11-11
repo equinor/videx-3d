@@ -1,9 +1,8 @@
-// The 3D clouds' light (SceneryCloudVolume), as the march before the rebuild lit them
-// (documents/clouds.md, "The light"; calibrated under toneMapping 'none'): the sun's colour and
-// daylight where each point lies, the moon by night, a two-lobed phase, the light scattered many
-// times over inside as octaves of the light straight through, and the sky above and below as
-// ambient; then the air's haze over the distance their light comes from, and from space the
-// air over them.
+// The 3D clouds' light (SceneryCloudVolume; documents/clouds.md, "The light"; calibrated under
+// toneMapping 'none'): the sun's colour and daylight where each point lies, the moon by night,
+// the light scattered once (by a two-lobed phase) and many times over (all round), and the sky
+// above and below as ambient; then the air's haze over the distance their light comes from, and
+// from space the air over them.
 
 uniform float uSkyHorizonBlend;
 uniform vec3 uSkyEast;
@@ -13,11 +12,6 @@ uniform float uSkyMoonPhase;
 uniform float uSkySunRadiance;
 uniform vec3 uCloudColor;
 
-// The light scattered many times over inside a cloud, as octaves of the light straight through
-// (after Wrenninge): each x of the one before, falling off y as fast with the optical depth
-// toward the light, its phase z as peaked. A cloud's shaded side is lit through it, deeper in
-// darker, rather than by a flat share of the sun's.
-#define CLOUD_OCTAVES vec3(0.5, 0.5, 0.5)
 // The sun's weight against the sky's.
 #define CLOUD_SUN 0.8
 // The sky's light: how far overhead is toward the zenith's blue from the horizon's; the
@@ -27,11 +21,6 @@ uniform vec3 uCloudColor;
 #define CLOUD_SKY vec4(0.85, 0.7, 0.5, 0.95)
 #define CLOUD_SKY_LOW 0.5
 #define CLOUD_SKY_BASE 0.55
-// Under a deck (cloudLight's `deck`: the optical depth straight up to the open sky): how fast
-// the sky's blue is lost (e^(−x deck)), how fast the grey light the deck lets through, many
-// times scattered, dims (1 / (1 + y deck)), and how much of the sun's light falling on the
-// deck's top it carries against the sky's.
-#define CLOUD_DECK vec3(0.6, 0.12, 0.6)
 
 // 4π times Henyey-Greenstein's phase function: 1 all round for g = 0.
 float cloudPhase(float cosine, float g) {
@@ -42,11 +31,10 @@ float cloudPhase(float cosine, float g) {
 // The phase's two lobes (cloudLightingAt): the forward lobe's g, the backward's, the forward's
 // share, and the most it reaches (4π times: 1 all round).
 uniform vec4 uCloudPhase;
-// How the sun lights them (cloudLit, cloudLight): x 1, the lumps in the first sample toward the
-// light (their own shade); y over 0, the light scattered many times over as diffuse, y of the
-// light straight through, falling off z as fast with the optical depth toward the light, and the
-// light scattered once w of it with the phase; y 0, the octaves (CLOUD_OCTAVES).
-uniform vec4 uCloudLightModel;
+// How the sun's light is shared (cloudLit): x the light scattered once, by the phase, falling
+// off as e^(−τ) with the optical depth τ toward the light; y the light scattered many times over,
+// leaving a cloud much as it came whichever way it is seen from, falling off z as fast.
+uniform vec3 uCloudScatter;
 
 // Where the light comes from for a point whose up is `up`: the sun while it is up there, the
 // moon once its light is gone (skyMoonlight's hand-over, so it shows nothing).
@@ -56,15 +44,15 @@ vec3 cloudLightWay(vec3 up) {
 
 // What lights the clouds seen along `dir` where their up is `up`, all but what depends on the
 // point (cloudLit): the light's way and its colour (the sun's, or the moon's by night, by the
-// clouds' colour and CLOUD_SUN), the phase of each octave of it (CLOUD_OCTAVES: the two lobes
-// as peaked as the octave is, by its weight), and the ambient light at a cloud's base and top
-// (the sky above and the ground below, as dark as the night is where they lie; about sunrise
-// and sunset the undersides' glow, most toward the sun, in `glow`). The same for every sample
-// of a view: within a local weather's radius the sun stands within a degree of itself.
+// clouds' colour and CLOUD_SUN), the phase toward the view (the two lobes, at most
+// uCloudPhase.w), and the ambient light at a cloud's base and top (the sky above and the ground
+// below, as dark as the night is where they lie; about sunrise and sunset the undersides' glow,
+// most toward the sun, in `glow`). The same for every sample of a view: within a local weather's
+// radius the sun stands within a degree of itself.
 struct CloudLighting {
   vec3 way;
   vec3 direct;
-  vec3 phases;
+  float phase;
   vec3 base;
   vec3 top;
   vec3 glow;
@@ -83,12 +71,7 @@ CloudLighting cloudLightingAt(vec3 dir, vec3 up) {
   l.way = cloudLightWay(up);
   l.direct = uCloudColor * CLOUD_SUN * (l.way == uSkySunDirection ? sun : moon);
   float cosine = dot(dir, l.way);
-  vec3 octave = vec3(1.0);
-  for(int o = 0; o < 3; o++) {
-    float phase = min(mix(cloudPhase(cosine, uCloudPhase.y * octave.z), cloudPhase(cosine, uCloudPhase.x * octave.z), uCloudPhase.z), uCloudPhase.w);
-    l.phases[o] = octave.x * phase;
-    octave *= CLOUD_OCTAVES;
-  }
+  l.phase = min(mix(cloudPhase(cosine, uCloudPhase.y), cloudPhase(cosine, uCloudPhase.x), uCloudPhase.z), uCloudPhase.w);
   float dayLevel = mix(SKY_NIGHT_LEVEL, 1.0, skySunlit(up));
   vec3 overhead = mix(uSkyHorizonColor, uSkyZenithColor, CLOUD_SKY.x) * dayLevel;
   vec3 under = mix(mix(uSkyGroundColor, uSkyHorizonColor, 0.5) * CLOUD_SKY.y * dayLevel, overhead, CLOUD_SKY.z);
@@ -100,27 +83,17 @@ CloudLighting cloudLightingAt(vec3 dir, vec3 up) {
   return l;
 }
 
-// The light a cloud scatters toward the camera at a point `h` up its cloud (0 its base, 1 its
+// The light a cloud scatters toward the camera at a point `h` up its level (0 its base, 1 its
 // top), lit as `l` (cloudLightingAt), where the cloud toward the light is `depth` deep (optical
-// depth). The light that comes straight through falls off as e^(−depth); the light scattered
-// many times over inside as octaves of it (CLOUD_OCTAVES), so a cloud's shaded side is lit
-// through it, the deeper the darker. Under a deck, `deck` deep (the optical depth straight up
-// to the open sky), the sky's blue gives way to the grey light the deck lets through
-// (CLOUD_DECK), with `rising` the sine of the light's height there.
-vec3 cloudLit(CloudLighting l, float h, float depth, float deck, float rising) {
-  vec3 falls = exp(-depth * vec3(1.0, CLOUD_OCTAVES.y, CLOUD_OCTAVES.y * CLOUD_OCTAVES.y));
-  float through = dot(l.phases, falls);
-  // Diffuse: the light scattered many times over leaves a cloud much as it came, whichever way
-  // it is seen from; only the light scattered once keeps the phase.
-  if(uCloudLightModel.y > 0.0)
-    through = uCloudLightModel.w * l.phases.x * falls.x + uCloudLightModel.y * exp(-uCloudLightModel.z * depth);
+// depth): the light scattered once and many times over (uCloudScatter), and the sky's. The light
+// scattered many times over falls off far slower than the light straight through: it carries the
+// sun's light deep into a cloud, so what a view sees changes little with how far in it is seen,
+// and a deck far off, seen at a low angle (a long way through its sunlit top), is not brighter than
+// seen from above.
+vec3 cloudLit(CloudLighting l, float h, float depth) {
+  float through = uCloudScatter.x * l.phase * exp(-depth) + uCloudScatter.y * exp(-uCloudScatter.z * depth);
   float upward = smoothstep(0.0, 1.0, h);
   vec3 ambient = (mix(l.base, l.top, upward) + l.glow * (1.0 - h)) * mix(CLOUD_SKY_BASE, 1.0, upward);
-  if(deck > 0.0) {
-    vec3 onTop = l.direct / CLOUD_SUN * max(rising, 0.0) * CLOUD_DECK.z + ambient;
-    float grey = dot(onTop, vec3(0.2126, 0.7152, 0.0722)) / (1.0 + CLOUD_DECK.y * deck);
-    ambient = mix(vec3(grey), ambient, exp(-CLOUD_DECK.x * deck));
-  }
   return l.direct * through + ambient;
 }
 
