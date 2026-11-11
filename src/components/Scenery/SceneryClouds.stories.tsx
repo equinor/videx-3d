@@ -58,19 +58,19 @@ import { Weather } from '../Weather/Weather';
 import { useWeatherClock } from '../Weather/weather-context';
 import { World } from '../World/World';
 import { Scenery } from './Scenery';
-import { SceneryCloudVolume } from './SceneryCloudVolume';
+import { SceneryClouds } from './SceneryClouds';
 import { SceneryStage } from './SceneryStage';
 import {
-  CLOUD_VOLUME_LOOKS,
-  CLOUD_VOLUME_QUALITY,
-  cloudVolumeChainLayer,
-  type CloudVolumeLook,
-} from './scenery-cloud-volume';
+  CLOUDS_LOOKS,
+  CLOUDS_QUALITY,
+  cloudsChainLayer,
+  type CloudsLook,
+} from './scenery-clouds';
 import {
   sceneryDefaults,
   type SceneryCloudLook,
-  type SceneryCloudVolumeQuality,
-  type SceneryCloudVolumeTemporal,
+  type SceneryCloudsQuality,
+  type SceneryCloudsTemporal,
 } from './scenery-model';
 import type { SceneryStageBounds } from './scenery-stage';
 
@@ -104,7 +104,7 @@ type LevelArgs = {
   [L in CloudLevel as `${L}Top`]: number;
 };
 
-type CloudVolumeArgs = {
+type CloudsArgs = {
   volume: boolean;
   /** the 3D clouds shown: off hides them, still compiled (`enabled`), to time the frame without them */
   cloudsEnabled: boolean;
@@ -127,7 +127,7 @@ type CloudVolumeArgs = {
   /** a local weather's clouds lit from light maps (`lightMap`) */
   lightMap: boolean;
   /** how the march reuses the last frames' (`temporal`) */
-  temporal: SceneryCloudVolumeTemporal;
+  temporal: SceneryCloudsTemporal;
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -142,7 +142,7 @@ type CloudVolumeArgs = {
   localRadius: number;
   volumeScale: number;
   density: number;
-  quality: SceneryCloudVolumeQuality;
+  quality: SceneryCloudsQuality;
   /** a resolution of its own instead of the quality's */
   ownResolution: boolean;
   resolution?: number;
@@ -169,7 +169,7 @@ function levelOf(
   level: CloudLevel,
   type: CloudType,
   cover: number,
-): Partial<CloudVolumeArgs> {
+): Partial<CloudsArgs> {
   const { base, top } = CLOUD_TYPE_HEIGHTS[type];
   return {
     [`${level}Type`]: type,
@@ -182,10 +182,10 @@ function levelOf(
 // The levels' controls and the wind's for a sky: its layers, one a level (none: no cover, at
 // the level's first type's heights), and its wind (the sea's controls take the bearing it blows
 // toward).
-function presetArgs(preset: SkyPreset): Partial<CloudVolumeArgs> {
+function presetArgs(preset: SkyPreset): Partial<CloudsArgs> {
   const { layers, wind } = SKY_PRESETS[preset];
   const byLevel = cloudLayersByLevel(layers);
-  const args: Partial<CloudVolumeArgs> = {
+  const args: Partial<CloudsArgs> = {
     windSpeed: wind.speed,
     windDirection: (wind.from + 180) % 360,
   };
@@ -207,7 +207,7 @@ function presetArgs(preset: SkyPreset): Partial<CloudVolumeArgs> {
 }
 
 // A level's layer from the story's controls; null without cover.
-function layerOf(args: CloudVolumeArgs, level: CloudLevel): CloudLayer | null {
+function layerOf(args: CloudsArgs, level: CloudLevel): CloudLayer | null {
   const cover = args[`${level}Cover`];
   if (cover <= 0) return null;
   const base = args[`${level}Base`];
@@ -221,7 +221,7 @@ function layerOf(args: CloudVolumeArgs, level: CloudLevel): CloudLayer | null {
 
 // The weather from the story's controls: its wind, and its layers about its middle, or its
 // weather systems.
-function weatherFromArgs(args: CloudVolumeArgs): WeatherState {
+function weatherFromArgs(args: CloudsArgs): WeatherState {
   if (args.weatherMode === 'global')
     return {
       wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
@@ -253,13 +253,13 @@ const levelKeys = CLOUD_LEVELS.flatMap(level =>
  * 'custom'. `useArgs` is valid only in a decorator.
  */
 const cloudLayerDecorator: Decorator = Story => {
-  const [args, updateArgs] = useArgs<CloudVolumeArgs>();
-  const seen = useRef<CloudVolumeArgs | null>(null);
+  const [args, updateArgs] = useArgs<CloudsArgs>();
+  const seen = useRef<CloudsArgs | null>(null);
   useEffect(() => {
     const before = seen.current;
     seen.current = args;
     if (!before) return;
-    let changes: Partial<CloudVolumeArgs> = {};
+    let changes: Partial<CloudsArgs> = {};
     // The sun on the weather's clock: set from the time, its hour, date and place shown.
     if (args.syncClocks && !args.sunFromTime) changes = { sunFromTime: true };
     else if (args.preset !== before.preset && args.preset !== 'custom')
@@ -277,10 +277,10 @@ const cloudLayerDecorator: Decorator = Story => {
         changes = { preset: 'custom' };
     }
     const changed = Object.entries(changes).filter(
-      ([key, value]) => args[key as keyof CloudVolumeArgs] !== value,
+      ([key, value]) => args[key as keyof CloudsArgs] !== value,
     );
     if (changed.length === 0) return;
-    const update = Object.fromEntries(changed) as Partial<CloudVolumeArgs>;
+    const update = Object.fromEntries(changed) as Partial<CloudsArgs>;
     seen.current = { ...args, ...update };
     updateArgs(update);
   }, [args, updateArgs]);
@@ -290,9 +290,9 @@ const cloudLayerDecorator: Decorator = Story => {
 // Where a double-click on the globe takes the camera (the scenery's panel's `fly`): 300 m over
 // the ground or the sea, looking into the middle of the level edited some kilometres on: its
 // layer's in a local weather, its chain's shell's in a global one.
-const flyFromArgs = (args: CloudVolumeArgs) => {
+const flyFromArgs = (args: CloudsArgs) => {
   const chain =
-    args.weatherMode === 'global' ? cloudVolumeChainLayer(args.edit) : null;
+    args.weatherMode === 'global' ? cloudsChainLayer(args.edit) : null;
   const base = chain?.base ?? args[`${args.edit}Base`];
   const top = chain?.top ?? args[`${args.edit}Top`];
   return { height: 300, lookAt: 0.5 * (base + top), ahead: 6000 };
@@ -301,7 +301,7 @@ const flyFromArgs = (args: CloudVolumeArgs) => {
 // Views to judge the clouds from by the edited level's heights (scene metres: X east, Z south;
 // the local weather's middle at 0, 0): the camera's place and what it looks at. LEVEL in the
 // level looking along it, the hardest view to march; HORIZON just over its top.
-function viewsOf(args: CloudVolumeArgs): Record<string, [Vec3, Vec3]> {
+function viewsOf(args: CloudsArgs): Record<string, [Vec3, Vec3]> {
   const base = args[`${args.edit}Base`];
   const top = Math.max(args[`${args.edit}Top`], base + 10);
   const middle = 0.5 * (base + top);
@@ -344,7 +344,7 @@ const DEPTH = 100;
 const BOUNDS: SceneryStageBounds = [-5000, -5000, 5000, 5000];
 
 // A type's look's sliders.
-const LOOK_SLIDERS: [keyof CloudVolumeLook, number, number, number][] = [
+const LOOK_SLIDERS: [keyof CloudsLook, number, number, number][] = [
   ['scale', 0.1, 5, 0.05],
   ['stretch', 1, 10, 0.1],
   ['softness', 0, 1, 0.01],
@@ -436,19 +436,19 @@ function Choices<T>({
 }
 
 // All the clouds' types, for their looks.
-const ALL_TYPES = Object.keys(CLOUD_VOLUME_LOOKS) as CloudType[];
+const ALL_TYPES = Object.keys(CLOUDS_LOOKS) as CloudType[];
 
 // The story's args changed from the panel (in the scenery panel's own React root, outside the
 // decorators that `useArgs` is valid in).
-const update = (args: Partial<CloudVolumeArgs>) => void setStoryArgs(args);
+const update = (args: Partial<CloudsArgs>) => void setStoryArgs(args);
 
 // Each type's look, which has no Storybook control of its own: shown with LOOKS, a type picked,
 // its sliders, and its look set back to the default.
-const LookControls = ({ args }: { args: CloudVolumeArgs }) => {
+const LookControls = ({ args }: { args: CloudsArgs }) => {
   const [shown, setShown] = useReactState(false);
   // The type whose look the sliders set: the edited level's to begin with.
   const [type, setType] = useReactState<CloudType>(args[`${args.edit}Type`]);
-  const look = { ...CLOUD_VOLUME_LOOKS[type], ...args.looks[type] };
+  const look = { ...CLOUDS_LOOKS[type], ...args.looks[type] };
   return (
     <>
       <div style={ROW}>
@@ -502,7 +502,7 @@ const LookControls = ({ args }: { args: CloudVolumeArgs }) => {
 };
 
 // The views by the level edited, for the panel's view row; their names apart from its own.
-function cloudViews(args: CloudVolumeArgs): SceneryDebugButton[] {
+function cloudViews(args: CloudsArgs): SceneryDebugButton[] {
   const names: Record<string, string> = {
     level: 'in level',
     horizon: 'over top',
@@ -520,7 +520,7 @@ function cloudViews(args: CloudVolumeArgs): SceneryDebugButton[] {
 // The panel's rows of the story's own: the weather (local, global, or the clouds off), its clock
 // (pause, its rates) and whether the sun runs on it, how the march reuses the last frames, how the
 // sun lights the clouds, the ground under them, and the frame's statistics.
-function cloudRows(args: CloudVolumeArgs): SceneryDebugRow[] {
+function cloudRows(args: CloudsArgs): SceneryDebugRow[] {
   return [
     {
       label: 'weather',
@@ -642,7 +642,7 @@ const ClockedScenery = ({
   args,
   children,
 }: {
-  args: CloudVolumeArgs;
+  args: CloudsArgs;
   children: ReactNode;
 }) => {
   const clock = useWeatherClock();
@@ -681,7 +681,7 @@ const ClockedScenery = ({
   );
 };
 
-const CloudVolumeStory = (args: CloudVolumeArgs) => {
+const CloudsStory = (args: CloudsArgs) => {
   const frame = sceneryReliefFrame(args);
   const relief = sceneryReliefFromArgs(args);
   const sea = args.skyWater || args.skySeabed;
@@ -715,7 +715,7 @@ const CloudVolumeStory = (args: CloudVolumeArgs) => {
           />
           {sea && <SceneryStage boundary={BOUNDS} />}
           {args.volume && (
-            <SceneryCloudVolume
+            <SceneryClouds
               enabled={args.cloudsEnabled}
               dominance={args.dominance}
               looks={looks}
@@ -806,8 +806,8 @@ const levelArgTypes = Object.fromEntries(
 );
 
 const meta = {
-  title: 'Spikes/Scenery/CloudVolume',
-  component: CloudVolumeStory,
+  title: 'Components/Misc/Clouds',
+  component: CloudsStory,
   decorators: [
     Canvas3dDecorator,
     // The relief's, read from the store by a generator.
@@ -831,7 +831,7 @@ const meta = {
     ...progressArgTypes,
     volume: {
       control: { type: 'boolean' },
-      description: 'The 3D clouds (`SceneryCloudVolume`).',
+      description: 'The 3D clouds (`SceneryClouds`).',
       table: { category: 'Cloud volume' },
     },
     weatherMode: {
@@ -930,7 +930,7 @@ const meta = {
     looks: {
       control: { type: 'object' },
       description:
-        'Each type’s look over `CLOUD_VOLUME_LOOKS` (`looks`), by type: scale, stretch, softness, lumps, towering, masses, extinction, lifetime, rise.',
+        'Each type’s look over `CLOUDS_LOOKS` (`looks`), by type: scale, stretch, softness, lumps, towering, masses, extinction, lifetime, rise.',
       table: { category: 'Cloud volume' },
     },
     ...levelArgTypes,
@@ -965,7 +965,7 @@ const meta = {
       control: { type: 'select' },
       options: ['low', 'medium', 'high', 'ultra'],
       description:
-        'How much they spend for how they look (`quality`, `CLOUD_VOLUME_QUALITY`): the share of the screen’s resolution, and how finely they are marched.',
+        'How much they spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen’s resolution, and how finely they are marched.',
       table: { category: 'Cloud volume' },
     },
     ownResolution: {
@@ -1022,8 +1022,6 @@ const meta = {
     ...sceneryProgressArgs,
     // The demo's relief: land for the clouds to cross.
     relief: true,
-    // The band along the horizon off: the volume reaches it on its own.
-    clouds: false,
     // Frame rate and frame times, bottom left.
     stats: true,
     volume: true,
@@ -1042,15 +1040,15 @@ const meta = {
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',
-    dominance: sceneryDefaults.cloudVolume.dominance,
+    dominance: sceneryDefaults.clouds.dominance,
     looks: {},
     localRadius: WEATHER_LOCAL_RADIUS / 1000,
-    volumeScale: sceneryDefaults.cloudVolume.scale,
-    density: sceneryDefaults.cloudVolume.density,
-    quality: sceneryDefaults.cloudVolume.quality,
+    volumeScale: sceneryDefaults.clouds.scale,
+    density: sceneryDefaults.clouds.density,
+    quality: sceneryDefaults.clouds.quality,
     ownResolution: false,
-    resolution: CLOUD_VOLUME_QUALITY.medium.resolution,
-    volumeSeed: sceneryDefaults.cloudVolume.seed,
+    resolution: CLOUDS_QUALITY.medium.resolution,
+    volumeSeed: sceneryDefaults.clouds.seed,
     debugView: 'none',
     debugAir: true,
     cloudMinutes: 0,
@@ -1059,8 +1057,8 @@ const meta = {
     syncClocks: true,
     sunFromTime: true,
     weatherPaused: false,
-  } as CloudVolumeArgs,
-} satisfies Meta<typeof CloudVolumeStory>;
+  } as CloudsArgs,
+} satisfies Meta<typeof CloudsStory>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

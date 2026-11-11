@@ -2,18 +2,14 @@ export * from './Scenery';
 export * from './SceneryAbyss';
 export * from './SceneryAnchor';
 export * from './SceneryClouds';
-export * from './SceneryCloudVolume';
 export {
-  CLOUD_VOLUME_CHAINS,
-  CLOUD_VOLUME_LEVELS,
-  CLOUD_VOLUME_LOOKS,
-  CLOUD_VOLUME_QUALITY,
-  cloudVolumeChainLayer,
-} from './scenery-cloud-volume';
-export type {
-  CloudVolumeLook,
-  CloudVolumeQualityLevel,
-} from './scenery-cloud-volume';
+  CLOUDS_CHAINS,
+  CLOUDS_LEVELS,
+  CLOUDS_LOOKS,
+  CLOUDS_QUALITY,
+  cloudsChainLayer,
+} from './scenery-clouds';
+export type { CloudsLook, CloudsQualityLevel } from './scenery-clouds';
 export * from './SceneryCutaway';
 export * from './SceneryOcean';
 export * from './SceneryStage';

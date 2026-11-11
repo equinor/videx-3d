@@ -28,7 +28,7 @@ export const CLOUD_COVER_VOLUME_SIZE = 128;
 /** Levels of the cover volume's mipmaps, its own included: down to one texel. */
 export const CLOUD_COVER_LODS = Math.log2(CLOUD_COVER_VOLUME_SIZE) + 1;
 /**
- * How the march reads the cover volume's patches (cloud-volume-march.glsl, cloudCoverOf):
+ * How the march reads the cover volume's patches (cloud-march.glsl, cloudCoverOf):
  * twice, a second time `broader` times broader (turned), at full weight, and where the masses
  * are, at `fine`'s weight: the broad read's octaves run on into the fine read's, halving.
  */
@@ -250,7 +250,7 @@ export class CloudCoverVolume {
           if (this.key === key && !this.disposed) this.read = buffer;
         })
         .catch(error =>
-          console.warn('SceneryCloudVolume: no cover statistics', error),
+          console.warn('SceneryClouds: no cover statistics', error),
         );
       const rows = SPREAD_ROWS * CLOUD_COVER_LODS;
       const spread = new Float32Array(SAMPLES * rows * 4);
@@ -267,9 +267,7 @@ export class CloudCoverVolume {
           if (this.key === key && !this.disposed)
             this.lost = lostSpread(spread);
         })
-        .catch(error =>
-          console.warn('SceneryCloudVolume: no cover spread', error),
-        );
+        .catch(error => console.warn('SceneryClouds: no cover spread', error));
     }
     return false;
   }

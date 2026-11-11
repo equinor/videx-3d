@@ -45,7 +45,6 @@ import vertexShader from './shaders/sky-vertex.glsl';
 import {
   SCENERY_EARTH_RADIUS,
   SCENERY_HOLLOW_RIM,
-  SceneryCloudsProps,
   skyDaylight,
   sceneryDefaults,
   skyMoonlight,
@@ -59,9 +58,6 @@ import type {
 
 // The naked-eye planets (`PLANETS`); sky.glsl's `uSkyPlanets` has as many.
 const SKY_PLANET_COUNT = 5;
-
-// Octaves of the cloud band's noise.
-const SKY_CLOUD_BAND_OCTAVES = 5;
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
@@ -194,7 +190,6 @@ export class SceneryMaterial extends ShaderMaterial {
           ),
         ),
         uSkyPlanetCount: new Uniform(0),
-        uSkyCloudBandOctaves: new Uniform(SKY_CLOUD_BAND_OCTAVES),
         uSkyStarCells: new Uniform<DataTexture | null>(null),
         uSkyStarList: new Uniform<DataTexture | null>(null),
         uSkySunRadiance: new Uniform(1),
@@ -267,10 +262,6 @@ export class SceneryMaterial extends ShaderMaterial {
         uHollowView: new Uniform(new Vector4()),
         // The embers' pulse: its two waves' phases, and how far it dims (sceneryHollowPulse).
         uHollowPulse: new Uniform(new Vector3()),
-        uSkyClouds: new Uniform(new Vector4()),
-        uSkyCloudsColor: new Uniform(new Vector4(1, 1, 1, 1)),
-        uSkyCloudsSeed: new Uniform(new Vector2()),
-        uSkyCloudsShape: new Uniform(new Vector4()),
         uSkyAir: new Uniform(new Vector3()),
         uSkyHaze: new Uniform(
           new Vector2(sceneryDefaults.air.hazeHeight, sceneryDefaults.air.haze),
@@ -775,14 +766,6 @@ export class SceneryMaterial extends ShaderMaterial {
     this.needsUpdate = true;
   }
 
-  /** a deck of still clouds (see {@link setClouds}); changing it recompiles their layer */
-  get clouds(): boolean {
-    return this.switches.SKY_CLOUDS !== undefined;
-  }
-  set clouds(value: boolean) {
-    this.setSwitch('SKY_CLOUDS', value);
-  }
-
   /**
    * What the background's layers, its stages and its relief are compiled with, beyond the
    * sky's own (`defines`, the sky's layer alone): its features and the sea's (its waves, the
@@ -798,34 +781,6 @@ export class SceneryMaterial extends ShaderMaterial {
     if (on) this.switches[name] = '';
     else delete this.switches[name];
     this.switchesVersion++;
-  }
-
-  /** the clouds' look (see `SceneryCloudsProps`) */
-  setClouds(clouds: Required<Omit<SceneryCloudsProps, 'enabled'>>) {
-    this.uniforms.uSkyClouds.value.set(
-      MathUtils.clamp(clouds.coverage, 0, 1),
-      Math.max(clouds.altitude, 1),
-      Math.max(clouds.scale, 1),
-      MathUtils.clamp(clouds.softness, 0, 1),
-    );
-    this.uniforms.uSkyCloudsShape.value.set(
-      this.globe.radius + Math.max(clouds.altitude, 1),
-      Math.max(clouds.thickness, 0),
-      { deck: 0, band: 1, both: 2 }[clouds.layers],
-      Math.max(clouds.bandDistance, 1),
-    );
-    const color = new Color(clouds.color);
-    this.uniforms.uSkyCloudsColor.value.set(
-      color.r,
-      color.g,
-      color.b,
-      MathUtils.clamp(clouds.opacity, 0, 1),
-    );
-    // Any seed lands somewhere else in the pattern, far from the others.
-    this.uniforms.uSkyCloudsSeed.value.set(
-      (clouds.seed * 12.9898) % 1000,
-      (clouds.seed * 78.233) % 1000,
-    );
   }
 
   /**
@@ -1342,9 +1297,6 @@ export class SceneryMaterial extends ShaderMaterial {
     // Out to where the sea's detail has faded (OceanMaterial.detailFadeDistance).
     const fade = this.uniforms.uDetailFade?.value as Vector2 | undefined;
     this.oceanCharts.setCamera(cameraAt, fade ? fade.y : Infinity);
-    // The deck lies at its altitude over the globe, whose radius its frame sets.
-    this.uniforms.uSkyCloudsShape.value.x =
-      this.globe.radius + this.uniforms.uSkyClouds.value.y;
     this.syncHollow();
     this.claimStage(cameraAt);
   }

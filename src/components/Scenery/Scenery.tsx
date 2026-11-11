@@ -95,7 +95,6 @@ import {
   SKY_HDR_SUN_RADIANCE,
   SceneryAbyssProps,
   SkyAir,
-  SceneryCloudsProps,
   SkyColors,
   skyDaylight,
   sceneryDefaults,
@@ -150,8 +149,9 @@ export type SceneryCaptureOptions = {
 
 /**
  * A layer the {@link Scenery} draws itself: its background's (see `SceneryBackgroundLayer`:
- * the sky itself, its clouds, the void, the sea seen from the air, the view from in the
- * water, the sea's surface), and all of them at once (`background`).
+ * the sky itself, the void, the sea seen from the air, the view from in the water, the sea's
+ * surface), and all of them at once (`background`); and its clouds (`clouds`: the
+ * `SceneryClouds` it holds, which draw themselves where the sky shows).
  */
 export type SceneryLayer =
   | 'background'
@@ -313,7 +313,6 @@ function createSceneryStandInMaterial(sky: SceneryMaterial) {
 }
 
 const NO_FEATURES: SceneryFeatures = {
-  clouds: null,
   ocean: null,
   abyss: null,
   cutaway: null,
@@ -322,7 +321,6 @@ const NO_FEATURES: SceneryFeatures = {
 // Each layer mesh's own, for which compiles first (sceneryLayersShown).
 const LAYER_DATA = {
   sky: { sceneryLayer: 'sky' },
-  clouds: { sceneryLayer: 'clouds' },
   abyss: { sceneryLayer: 'abyss' },
   sea: { sceneryLayer: 'sea' },
   water: { sceneryLayer: 'water' },
@@ -331,8 +329,8 @@ const LAYER_DATA = {
 /**
  * The world around the data: a procedural sky that shows where the horizon and the sun
  * are, and the light that comes from it — a directional sun light, an environment map and
- * a light probe, all from the same sky — and whatever else it holds: clouds
- * (`SceneryClouds`), an endless sea (`SceneryOcean`) with the void below it
+ * a light probe, all from the same sky — and whatever else it holds: clouds that draw
+ * themselves (`SceneryClouds`), an endless sea (`SceneryOcean`) with the void below it
  * (`SceneryAbyss`) and a cut through it (`SceneryCutaway`), and stages that draw the sea
  * and the relief on real geometry (`SceneryStage`). Each is drawn as a layer of its own and
  * compiled on its own (see `SceneryBackgroundLayer`), so a scenery without a sea compiles
@@ -349,7 +347,7 @@ const LAYER_DATA = {
  *
  * @example
  * <Scenery sun={{ azimuth: 200, elevation: 35 }}>
- *   <SceneryClouds layers="both" />
+ *   <SceneryClouds />
  *   <SceneryOcean depth={120} />
  * </Scenery>
  *
@@ -453,23 +451,6 @@ export const Scenery = ({
     starsOptions?.density ?? sceneryDefaults.stars.density,
   );
   const starLatitude = starsOptions?.latitude ?? sceneryDefaults.stars.latitude;
-  const cloudsOptions: SceneryCloudsProps | null = features.clouds;
-  const cloudsOn = cloudsOptions !== null;
-  const cloudDefaults = sceneryDefaults.clouds;
-  const cloudCoverage = cloudsOptions?.coverage ?? cloudDefaults.coverage;
-  const cloudAltitude = cloudsOptions?.altitude ?? cloudDefaults.altitude;
-  const cloudScale = cloudsOptions?.scale ?? cloudDefaults.scale;
-  const cloudLayers = cloudsOptions?.layers ?? cloudDefaults.layers;
-  const cloudThickness = cloudsOptions?.thickness ?? cloudDefaults.thickness;
-  const cloudBandDistance =
-    cloudsOptions?.bandDistance ?? cloudDefaults.bandDistance;
-  const cloudSoftness = cloudsOptions?.softness ?? cloudDefaults.softness;
-  const cloudOpacity =
-    cloudsOptions?.enabled === false
-      ? 0
-      : (cloudsOptions?.opacity ?? cloudDefaults.opacity);
-  const cloudColor = toHex(cloudsOptions?.color ?? cloudDefaults.color);
-  const cloudSeed = cloudsOptions?.seed ?? cloudDefaults.seed;
   const zenith = toHex(colors?.zenith ?? sceneryDefaults.colors.zenith);
   const horizon = toHex(colors?.horizon ?? sceneryDefaults.colors.horizon);
   const ground = toHex(colors?.ground ?? sceneryDefaults.colors.ground);
@@ -603,8 +584,7 @@ export const Scenery = ({
   useEffect(() => () => hollow.dispose(), [hollow]);
   // The radius the rim grip left (SceneryHollow.handle), kept until `radius` changes.
   const hollowDragged = useRef<number | null>(null);
-  const hollowRadius = () =>
-    hollowDragged.current ?? hollowLook?.radius ?? 0;
+  const hollowRadius = () => hollowDragged.current ?? hollowLook?.radius ?? 0;
   const onHollowRadius = useRef<((radius: number) => void) | undefined>(
     undefined,
   );
@@ -691,7 +671,6 @@ export const Scenery = ({
   // it. A no-op unless a switch changed. The waves' defines likewise, for the sea's layers.
   material.oceanBedDetail = bedDetail;
   material.voidBackground = voided;
-  material.clouds = cloudsOn;
   material.ocean = hasOcean;
   // With a sea, the void lies below its seabed.
   material.abyss = hasAbyss || hasOcean;
@@ -700,11 +679,6 @@ export const Scenery = ({
   const definesKey = JSON.stringify(sceneryOceanDefines(material));
 
   // The background's layers over the sky, each with only the switches it needs.
-  const cloudsLayer = useSceneryLayerMaterial(
-    material,
-    'clouds',
-    cloudsOn && !voided,
-  );
   const abyssLayer = useSceneryLayerMaterial(
     material,
     'abyss',
@@ -713,7 +687,6 @@ export const Scenery = ({
   const seaLayer = useSceneryLayerMaterial(material, 'sea', hasOcean);
   const waterLayer = useSceneryLayerMaterial(material, 'water', hasOcean);
   const skyMesh = useRef<Mesh>(null);
-  const cloudsMesh = useRef<Mesh>(null);
   const abyssMesh = useRef<Mesh>(null);
   const seaMesh = useRef<Mesh>(null);
   const waterMesh = useRef<Mesh>(null);
@@ -1110,19 +1083,6 @@ export const Scenery = ({
         })),
       );
     }
-    material.clouds = cloudsOn;
-    material.setClouds({
-      coverage: cloudCoverage,
-      altitude: cloudAltitude,
-      scale: cloudScale,
-      layers: cloudLayers,
-      thickness: cloudThickness,
-      bandDistance: cloudBandDistance,
-      softness: cloudSoftness,
-      opacity: cloudOpacity,
-      color: cloudColor,
-      seed: cloudSeed,
-    });
     material.setAir(
       airLevel,
       airScaleHeight,
@@ -1164,17 +1124,6 @@ export const Scenery = ({
     observedAt,
     observedLatitude,
     observedLongitude,
-    cloudsOn,
-    cloudCoverage,
-    cloudAltitude,
-    cloudScale,
-    cloudLayers,
-    cloudThickness,
-    cloudBandDistance,
-    cloudSoftness,
-    cloudOpacity,
-    cloudColor,
-    cloudSeed,
     airLevel,
     airScaleHeight,
     airVisibility,
@@ -1354,13 +1303,7 @@ export const Scenery = ({
     const group = own.current;
     if (!group) return;
     const resolution = hasEnvironment ? environmentResolution : null;
-    const layers = [
-      cloudsLayer,
-      abyssLayer,
-      seaLayer,
-      waterLayer,
-      surfaceLayer,
-    ];
+    const layers = [abyssLayer, seaLayer, waterLayer, surfaceLayer];
     const key = [
       JSON.stringify(material.defines),
       JSON.stringify(material.switches),
@@ -1425,7 +1368,6 @@ export const Scenery = ({
     material,
     baker,
     bakeProbe,
-    cloudsLayer,
     abyssLayer,
     seaLayer,
     waterLayer,
@@ -1443,7 +1385,6 @@ export const Scenery = ({
     water,
     hasAbyss,
     hasOcean,
-    cloudsOn,
     definesKey,
     voided,
     progress,
@@ -1616,7 +1557,6 @@ export const Scenery = ({
           !debug?.hide?.includes('background');
     };
     showLayer(skyMesh.current, 'sky');
-    showLayer(cloudsMesh.current, 'clouds');
     showLayer(abyssMesh.current, 'abyss');
     // The hollow, where it can show: through an opening in the seabed, or from below it inside
     // its rim. Below it outside the rim the camera is in solid crust: the void's own layer.
@@ -1667,13 +1607,13 @@ export const Scenery = ({
     }
     showLayer(seaMesh.current, 'sea');
     showLayer(waterMesh.current, 'water');
-    // For the clouds that draw themselves (SceneryCloudVolume): as the clouds' layer would be.
+    // For the clouds, which draw themselves (SceneryClouds): where the sky shows.
     registry.view.renderOrder = renderOrder;
     registry.view.clouds =
       drawn &&
       ready &&
       !voided &&
-      shown.clouds &&
+      shown.sky &&
       !debug?.hide?.includes('clouds') &&
       !debug?.hide?.includes('background');
 
@@ -1790,19 +1730,6 @@ export const Scenery = ({
           onBeforeRender={material.onBeforeDraw}
           dispose={null}
         />
-        {cloudsLayer && (
-          <mesh
-            ref={cloudsMesh}
-            geometry={geometry}
-            material={cloudsLayer}
-            frustumCulled={false}
-            renderOrder={renderOrder + SCENERY_LAYER_ORDER.clouds}
-            visible={false}
-            userData={LAYER_DATA.clouds}
-            onBeforeRender={material.onBeforeDraw}
-            dispose={null}
-          />
-        )}
         {abyssLayer && (
           <mesh
             ref={abyssMesh}

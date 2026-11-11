@@ -145,7 +145,9 @@ const Field = ({ args }: { args: HollowArgs }) => {
                 }}
               >
                 <Trajectory
-                  radius={(wellbore.id === selected ? 0.2 : 0.1) * args.wellSize}
+                  radius={
+                    (wellbore.id === selected ? 0.2 : 0.1) * args.wellSize
+                  }
                   color={colorScale(wellbore.well)}
                 />
               </Wellbore>
@@ -235,8 +237,7 @@ const meta = {
     ...sceneryArgs,
     ...sceneryReliefArgs,
     ...sceneryProgressArgs,
-    // Peeled down to the void: no clouds, no water, no seabed.
-    clouds: false,
+    // Peeled down to the void: no water, no seabed.
     skyWater: false,
     skySeabed: false,
     relief: true,

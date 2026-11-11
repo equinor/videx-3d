@@ -19,15 +19,15 @@ import {
   type IUniform,
   type WebGLRenderer,
 } from 'three';
-import { CloudVolumeRenderer } from '../../components/Scenery/scenery-cloud-volume';
+import { CloudsRenderer } from '../../components/Scenery/scenery-clouds';
 import type { CameraManager } from '../../sdk/managers/CameraManager';
 import { showAb, type AbImage, type AbStats } from './ab-viewer';
 import { registerVidex3d } from './videx3d';
 
 /**
- * Timing the 3D clouds (`SceneryCloudVolume`) on the GPU, from the browser console:
+ * Timing the 3D clouds (`SceneryClouds`) on the GPU, from the browser console:
  * `window.videx3d.cloudBench` in a story that renders `<CloudBenchBridge />` (the
- * `debug/Scenery/Cloud Bench` story, and the CloudVolume spike). Storybook only.
+ * `debug/Scenery/Cloud Bench` story, and the Clouds spike). Storybook only.
  *
  * - {@link CloudBench.pass}: each pass alone (march, shadows, film), the loop held, back to back.
  * - {@link CloudBench.frames}: frames as they run, each step of the clouds' frame timed apart.
@@ -65,7 +65,7 @@ export type CompareSide = {
   label: string;
   apply: (context: {
     uniforms: Record<string, IUniform>;
-    volume: CloudVolumeRenderer;
+    volume: CloudsRenderer;
   }) => (() => void) | Promise<() => void>;
 };
 
@@ -414,16 +414,16 @@ export function createCloudBench(
     return ext as TimerExt;
   };
 
-  const volume = (): CloudVolumeRenderer => {
-    let found: CloudVolumeRenderer | null = null;
+  const volume = (): CloudsRenderer => {
+    let found: CloudsRenderer | null = null;
     get().scene.traverse(object => {
-      const candidate = object.userData.cloudVolume;
-      if (!found && candidate instanceof CloudVolumeRenderer) found = candidate;
+      const candidate = object.userData.clouds;
+      if (!found && candidate instanceof CloudsRenderer) found = candidate;
     });
-    if (!found) throw new Error('no SceneryCloudVolume in the scene');
+    if (!found) throw new Error('no SceneryClouds in the scene');
     return found;
   };
-  const inside = (v: CloudVolumeRenderer) => v as unknown as VolumeInternals;
+  const inside = (v: CloudsRenderer) => v as unknown as VolumeInternals;
 
   const conditions = (): BenchConditions => {
     const gl = renderer();
@@ -647,7 +647,7 @@ export function createCloudBench(
       wrap(v.weather, 'update', 'weatherMap');
       // The march, then the composite's own draw until its onAfterRender.
       const render = real.render;
-      real.render = (...args: Parameters<CloudVolumeRenderer['render']>) => {
+      real.render = (...args: Parameters<CloudsRenderer['render']>) => {
         if (segments.name === null) return render.apply(real, args);
         segments.mark('march');
         try {
@@ -1036,7 +1036,7 @@ export function createCloudBench(
 
 /**
  * Publishes {@link CloudBench} as `window.videx3d.cloudBench` for the clouds in this canvas.
- * Render it inside the canvas of a story with a `SceneryCloudVolume`.
+ * Render it inside the canvas of a story with a `SceneryClouds`.
  */
 export const CloudBenchBridge = () => {
   const get = useThree(state => state.get);

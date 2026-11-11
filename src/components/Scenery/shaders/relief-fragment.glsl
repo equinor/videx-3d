@@ -65,7 +65,7 @@ vec3 reliefAlbedo(float height, float weight, int look) {
 // How much nearer land that only just clears the sea is drawn than the sea, as a share of the
 // distance: some ten times what the depth buffer tells apart (a logarithmic one some 1e-6 of
 // the distance, fp32's log2 a little more), so the land wins the tie. ⚠️ Not more: the 3D
-// clouds (SceneryCloudVolume) lie a few hundred metres over the sea, and land drawn 1e-4 of
+// clouds (SceneryClouds) lie a few hundred metres over the sea, and land drawn 1e-4 of
 // 20 000 km nearer (2 km) cut through them from space.
 #define RELIEF_DEPTH_TIE 1e-5
 

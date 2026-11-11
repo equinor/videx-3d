@@ -8,8 +8,7 @@ anywhere under it:
 
 | Component | Adds |
 |--|--|
-| `<SceneryClouds>` | still clouds: a band along the horizon, a deck overhead, or both |
-| `<SceneryCloudVolume>` | 3D clouds, from sea level to space, from a `Weather` (see [clouds.md](./clouds.md)) |
+| `<SceneryClouds>` | 3D clouds, from sea level to space, from a `Weather` (see [clouds.md](./clouds.md)) |
 | `<SceneryOcean>` | an endless sea with a seabed, and the void below it |
 | `<SceneryAbyss>` | the void's look below a level (with a sea, its seabed) |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
@@ -35,7 +34,7 @@ With clouds and a sea:
 import { Scenery, SceneryClouds, SceneryOcean } from '@equinor/videx-3d'
 
 <Scenery sun={{ azimuth: 200, elevation: 35 }}>
-  <SceneryClouds layers="both" />
+  <SceneryClouds />
   <SceneryOcean level={0} depth={120} />
   {/* the scene */}
 </Scenery>
@@ -76,8 +75,7 @@ and sunset (`skyTwilight`: from about 12° down to
 and orange around, replacing the blue rather than tinting it (red over blue reads pink).
 It closes about the sun while it is up, spreads widest about sunset and sinks onto the
 horizon as the sun goes down. The disc stays near white-gold (it is overexposed even when
-its light is red), clouds toward the sun go dark with bright linings, those away from it
-catch the light, and a faint pink belt rises opposite; `twilight` scales it all (default
+its light is red), and a faint pink belt rises opposite; `twilight` scales it all (default
 1, 0 for none). The sea reflects it, with a broad glitter path under the low sun
 (`OceanMaterial.sunGlintSpread`), and the bakes see it.
 
@@ -143,107 +141,23 @@ Revised Ed.*, Astronomical Data Center, NSSDC/ADC; CDS catalogue V/50.
 
 ## Clouds
 
-3D clouds are on their way: `<SceneryCloudVolume>` (see [clouds.md](./clouds.md)) marches the
-weather's layers of cumulus and stratus on the globe, from sea level to space, and draws them
-over the scene. It is to replace the deck below; the band along the horizon stays as a cheap
-option.
-
-`<SceneryClouds>` adds still clouds, lit by the sun, or the moon at night: a deck seen
-from below, and a band of distant ones along the horizon (see below). Without it there
-are none:
+`<SceneryClouds>` adds 3D clouds: a `Weather`'s layers of cumulus, stratus and the rest about the
+field, or its weather systems over the whole Earth, marched on the globe from sea level to space
+and drawn over the scene. The sea reflects them, the bakes take them, and their shadows lie on
+the sea and the relief. Without a `Weather` it draws a few high clouds; without it there are
+none. See [clouds.md](./clouds.md).
 
 ```tsx
-<Scenery>
-  <SceneryClouds layers="both" coverage={0.5} altitude={6000} scale={4000} seed={3} />
-</Scenery>
+<Weather weather={weatherPresetOf('scattered')}>
+  <Scenery>
+    <SceneryClouds />
+  </Scenery>
+</Weather>
 ```
 
-`coverage` is how much of the sky they cover (0 for none; below 0.2 they thin out fast),
-`altitude` the height of their base, `scale` the size of the clouds and `softness` the
-width of their edges; `seed` picks another pattern. `opacity` (default 1) is how much they
-stand out from the sky behind them, for a softer look; the sun, moon and stars stay hidden
-behind them as if opaque, and only from 0.5 down less so. They fade into the haze toward the
-horizon. Close up the deck would show it is flat, so it fades out from about 0.7 of its
-altitude from the camera, gone by 0.3. Its own pattern breaks up that distance, so wisps go
-before cores and the fade has no clean edge: from sea level nothing fades, and climbing to
-the deck clears it from overhead out toward the horizon.
-
-A flat deck shows no parallax: climbing only zooms it, moving only slides it, so it reads
-as a painted ceiling. Two cheap departures from the plane give it depth. The deck lies on
-a sphere about the Earth's centre, the globe's radius plus `altitude` (`SCENERY_EARTH_RADIUS`
-without a frame; with one, the Earth's there, as the globe has it), so it
-bends down toward the horizon and is not squeezed into streaks there; it costs a square
-root more than a plane. A tighter dome looks curved further up but puts the horizon a
-finite distance away: clouds then slide over its rim as the camera moves instead of
-shrinking into the horizon.
-`thickness` (world units, default 1500; 0 for a sheet) makes it a slab: each cloud's
-thicker parts are looked up further along the view ray, so they shift against its outline
-as the view moves. The shading is the same either way. Marching the slab for real sides
-was tried and dropped: a 2D pattern on a vertical wall streaks, and its silhouettes cut
-hard.
-
-### The band on the horizon
-
-`layers` picks what is drawn: `'deck'`, the deck alone out to the horizon; `'band'` (the
-default), only a band of distant clouds along the horizon; or `'both'`. Switching is instant.
-
-The band is fixed to directions, as the stars are: its clouds are `bandDistance` off (default
-75 km) and more, so the camera's moves barely shift them. That is what clouds near the horizon
-do, and it is where a deck, flat or not, gives itself away: squeezed into streaks that slide as
-the camera moves. Its nearest clouds have their base at `altitude` and their tops up to
-`thickness` above it, seen side-on: 4.6° and 5.7° from sea level by default. Below that base,
-ever further ones overlap densely down to the horizon; above it, their tops vary. They are as
-wide as clouds of `scale` look at that distance and as tall as ones of `thickness`, so a higher
-`altitude` raises the band and fills it with more of them rather than stretching them. They
-take the same `coverage`, `softness`, `opacity`, `color` and `seed` as the deck's, and are lit
-the same way (both share `skyCloudColor`). The band melts into the air's haze over its
-distance, so it clears as the camera climbs and thickens toward the horizon. Climbing, it goes
-down with the horizon as the Earth's curve lowers it (see The globe); on a flat sea
-(`globe: false`) it stays on the horizon. With the curve it also squashes onto
-the horizon as far as its tops would sink seen from the camera's height: as clouds
-`bandDistance` off, and from over them as their layer's own horizon. By default its tops stand
-5.7° over the horizon up to about 1 km, 3.5° at its base's height, 1.2° at 15 km and 0.4° at
-100 km, its clouds flattened with it. Its clouds also flatten a little, quickly at first and
-then hardly at all, and it stays in view above the deck. From 100 km up it fades out, gone by
-250 km: from there it would rim the whole globe.
-
-With both, the deck is drawn along each view ray turned down, by the hinge over the horizon and
-not at all straight up, so that its own horizon sits at the band's base, where the deck is at
-the band's distance: it never crosses the band. Where the view runs within about 9° of parallel
-to it, it dissolves, wisps first, rather than being squeezed toward that line.
-
-The numbers are fixed (`SKY_CLOUD_*` in `sky.glsl`). Tried and dropped along the way:
-
-- narrowing the band's clouds as the camera climbs: a ring of directions can only gain
-  clouds by sampling a new pattern, which churns;
-- squashing the band onto the horizon at a rate set by hand as the camera climbs, and sinking
-  it linearly: both read as the band moving with the camera (its squash now follows where its
-  tops would show, and barely starts below a few kilometres);
-- sinking it on a flat sea as the camera climbs, by up to 1.5° (removed 2026-10-26, with the
-  globe of world.md step 2): the curve lowers the horizon itself;
-- a soft warp of the deck down to the real horizon instead of the hinge;
-- rings or rows of clouds between band and deck, at distances of their own, each shifting at
-  its rate: cardboard cut-outs.
-
-Adding or removing `<SceneryClouds>` compiles or drops their layer and nothing else. To
-switch them often, keep it and toggle `enabled` instead: they stay compiled, so it is
-instant, and while hidden they cost a single branch.
-
-The sun shows through all but the thickest parts: a softened disc through thin cloud,
-a glow around it and bright silver edges where cloud thins in front of it. The moon does
-the same at night; the stars are hidden. ⚠️ Without a `RenderingPipeline` (R3F's own render
-to the canvas) the clouds' layer is tone mapped before it is blended over the sky's, so
-where they are thin the sun behind them shows a little dimmer than in a pipeline, which
-blends in linear light (see [Rendering](#rendering)). The moon takes over as the sun's light ends
-(−6°) and fades in as the scene's moonlight does, so the hand-over shows nothing. When the
-output is tone mapped, the sunlight on them is doubled (`SKY_CLOUD_HDR_SUNLIGHT`), as the
-sun's disc is brightened: at noon their sunlit parts would otherwise be only 1.5 times the
-sky's brightness, and tone mapping squeezes them into it. Their shaded sides and moonlight
-are left as they are.
-
-⚠️ `altitude` is measured along `up` from the world origin, not from sea level. The
-clouds are part of the background only: the water does not reflect them, and they do
-not dim the scene's light.
+They draw themselves, after the background's layers (see [Rendering](#rendering)), where the
+sky shows; `debug.hide` with `'clouds'` hides them. `enabled` false hides them, still
+compiled, so showing them again is instant.
 
 ## Graticule
 
@@ -300,15 +214,13 @@ deep blue higher, fading by e every 60 km the view passes over the ground (`SKY_
 and brighter toward the sun, so from far off the Earth keeps a soft halo. Where the sky is all but black (under a
 twentieth of its light) the stars, the planets and the moon show as at night, by day too: none
 from 20 km at noon, the full field from about 40 km. The sun's disc and glare are drawn over
-it as before. The sea reflects the sky as seen from the sea. From over the clouds' tops, the
-band's clouds are lit from above: white, or warm at twilight, instead of their shaded
-undersides.
+it as before. The sea reflects the sky as seen from the sea.
 
 On the globe, the sun sets later the higher up: from 20 km it is still up
 4.5° below the level. So the sky's own light (its daylight, twilight and moonlight, the sun's
 colour, when the stars come out) goes by the sun over the horizon where it is seen: the
 camera's for the air above it, the sea's for the air low along the horizon, in between by
-height for the clouds (`SceneryMaterial.setAirLight`, from `Scenery` each frame). From high up the air
+the lowest height the view reaches (`SceneryMaterial.setAirLight`, from `Scenery` each frame). From high up the air
 around the camera stays lit after the sea's sunset, over a horizon already in twilight. The
 sea, the scene's light and the bakes keep the sea's light.
 
@@ -367,21 +279,20 @@ the horizon there (`skyLightFrom`, `skySunDiscUp`). Over the field nothing chang
 530 km the sea 15° past the terminator had kept a bright glint streak, and the land on
 the night side was lit as by day.
 
-The deck of clouds is not drawn from above it and the band is gone above 250 km, so from
-space there are none (3D clouds would change that). Below 100 km nothing changes. A
-physical atmosphere (scattering tables) is left for the 3D clouds' work.
+The clouds from space are `SceneryClouds`' ([clouds.md](./clouds.md)). Below 100 km nothing
+changes. A physical atmosphere (scattering tables) is not done.
 
 ## The globe
 
 `globe` (default on) lets the sea, the sky and the clouds follow the Earth's curve
 (`SCENERY_EARTH_RADIUS`, or with a frame the Earth's radius there, 6385.6 km at Volve in the
-map's units; the sky and its clouds take the globe's since 2026-10-26): as the camera
+map's units; the sky and the clouds take the globe's): as the camera
 climbs, the horizon drops below the level by about
 √(2h/R) — 0.2° at 40 m, 1° at 1 km, 4° at 15 km — and from high up it bows across the
 view. The sea ends at it, its waves tipped with the curve so that the view grazes them there
 and they reflect the horizon's colour. The sky's gradient, its twilight and the haze's colour
-are measured from it, the sun, moon and stars set behind it rather than at the level, and the
-clouds' band sits on it, squashed onto it from high up. The water reflects the sky as seen from
+are measured from it, and the sun, moon and stars set behind it rather than at the level. The
+water reflects the sky as seen from
 where it lies, with its own level horizon: far out, where the sea is tipped with the curve, a
 wave's reflection is turned by that tilt onto the up the sky is seen by (`globeTurnFrom`):
 turned into the field's frame instead, far round the Earth it fell below the camera's
@@ -468,7 +379,7 @@ at least every `capture.maxWait` (default 1000 ms). The scene's light probe ease
 each new bake of its zone over a fraction of a second, so the light does not step as the
 sun moves; another zone's is swapped in at once. The environment map is swapped in.
 
-With 3D clouds (`SceneryCloudVolume`), the air's bakes take them too, filmed from where the
+With clouds (`SceneryClouds`), the air's bakes take them too, filmed from where the
 air is filmed and drawn over the sky; the sea reflects them (blurred from high up, and far off
 the weather's own cover); the directional light and the
 sea's glint are dimmed by the share of the light they let through, so overcast takes the sun
@@ -502,8 +413,8 @@ again, and the scene stays lit, by the subsurface.
 the stand-in shows while the sky compiles: the lid's colour overhead fading to the
 horizon's, and the depths' below, measured from the horizon the Earth's curve lowers, so
 from high up it meets the far ground's haze without a seam. There is no air, sun, moon,
-stars or clouds (all compiled
-out of the sky's layer, `SKY_VOID`, and the clouds' layer is not drawn). The void itself,
+stars (all compiled
+out of the sky's layer, `SKY_VOID`), and no clouds. The void itself,
 a stage and a sea are drawn as ever; with neither water nor a seabed it is the
 void all round. The scene is lit by the subsurface everywhere, as with `false`, so only its
 zone is baked. Changing to or from it recompiles the sky's own layer.
@@ -807,20 +718,20 @@ default):
 | Layer | Drawn from | What |
 |--|--|--|
 | `sky` | `<Scenery>` | the air, sun, moon and stars, or the void's gradient (`background: 'void'`) |
-| `clouds` | `<SceneryClouds>` | the band and the deck |
 | `abyss` | `<SceneryAbyss>`, or a sea | below its level, the lid and the depths over everything; above it, the depths only where the sea's layers leave them showing (no seabed, a see-through one, the cutaway, a stage's opening) |
 | `sea` | `<SceneryOcean>` | the seabed seen through the water from the air |
 | `water` | `<SceneryOcean>` | the view from in the water |
 | `surface` | `<SceneryOcean>` | the sea's surface, at the next `renderOrder` |
 
-The relief's overview draws after them. Transparent parts draw after everything. It works with R3F's own render and with a
+The relief's overview draws after them, and the clouds (`<SceneryClouds>`) after the sea's
+surface layer, drawing themselves. Transparent parts draw after everything. It works with R3F's own render and with a
 `RenderingPipeline` of `OITRenderPass` + `OutputPass`.
 
 - Each layer is a program of its own, compiled with only the switches it needs
-  (`sceneryLayerDefines`): adding clouds compiles their layer and nothing else; the seabed's detail only the sea's, the water's and the
+  (`sceneryLayerDefines`): adding a void compiles its layer and nothing else; the seabed's detail only the sea's, the water's and the
   stages'. The sky's own (`SceneryMaterial`) recompiles only for `background: 'void'`.
 - Each frame a layer that can show nothing from where the camera is is not drawn at all
-  (`sceneryLayersShown`): in the water the sky and the clouds only through a cutaway's cut;
+  (`sceneryLayersShown`): in the water the sky only through a cutaway's cut;
   below the seabed only the void; from the air the void only while something opens the
   seabed onto it. Each shader still finds where it draws itself, so near a level both
   sides are drawn and nothing is missed.
@@ -828,8 +739,7 @@ The relief's overview draws after them. Transparent parts draw after everything.
   layers give what one program would (measured: identical to the last two decimals of a
   block mean in every pose). Without one, R3F draws to the canvas and three tone maps and
   encodes each layer before it is blended, so where a layer is partly see-through it
-  differs a little: the sun through thin cloud shows dimmer, and so, slightly, does the
-  edge of a see-through seabed, the cutaway's cut seen from in the water and the void
+  differs a little: the edge of a see-through seabed shows slightly dimmer, and so do the cutaway's cut seen from in the water and the void
   fading in without a sea. The sea's surface layer has always been drawn that way.
 
 ⚠️ An opaque object that writes no depth (`depthWrite: false` without `transparent`) is
@@ -878,7 +788,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
 
 - The shaders are large. Measured cold on an Intel Iris Xe laptop (ANGLE / Direct3D
   11): the background ~2.5 s, the sea surface layer ~1.7 s, a stage's surface ~1.6 s,
-  each seabed part ~0.4 s. Clouds add ~0.4 s to the background. Fully cold (Chrome's and
+  each seabed part ~0.4 s. Fully cold (Chrome's and
   the driver's caches bypassed, every program at once, 2026-10-27, RTX A1000 laptop):
   ~39 s of Direct3D compiling in all, a stage's surface 10.9 s and the sea surface layer
   ~8.5 s, twice (drawn to the screen and into the bakes, without a `RenderingPipeline`).
@@ -906,17 +816,17 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
 - Why it was slow: the background was one program for every zone and feature, and
   Direct3D's compile time grows about as a program's size to the power 2.5. Measured on
   its HLSL with `D3DCompile` itself (2026-10-27): the abyss and its walls (since removed), the sea from the
-  air, the clouds and the view in the water were each a third to two thirds of it. First,
+  air, the still clouds (since removed) and the view in the water were each a third to two
+  thirds of it. First,
   with no change to what is drawn: loops whose count Direct3D would copy out per iteration
-  take it from a uniform (`uOceanDetailOctaves`, `uSkyCloudBandOctaves`,
-  `uSkyPlanetCount`), the seabed is shaded once for the views from the air and in the water
+  take it from a uniform (`uOceanDetailOctaves`, `uSkyPlanetCount`), the seabed is shaded once for the views from the air and in the water
   (`skyOceanBedReach`), and the walls' two rock tests shared one copy of their shape:
   ~30% faster (320 → 244 KB of bytecode), a stage's surface
   ~35% and the sea surface layer ~42%.
 - Then the background was split into its layers (see [Rendering](#rendering)), each
   compiled on its own and in parallel. Timed one at a time with `D3DCompile` (RTX A1000
   laptop, 2026-10-27): the one program took 19.5 s; its layers take the sky 0.8 s, the
-  clouds 1.2 s, the sea from the air 1.2 s, the void 2.3 s and the view in the water 2.3 s,
+  still clouds 1.2 s (since removed), the sea from the air 1.2 s, the void 2.3 s and the view in the water 2.3 s,
   7.8 s in all. The longest compiles are now a stage's surface (3.4 s) and the sea surface
   layer (2.3 s). Fully cold, every program at once, ReliefTiles shows its scenery at
   16 s instead of 68 s (84 s before either step). The layers the camera's zone draws
@@ -1027,8 +937,8 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | File | Role |
 |--|--|
 | `Scenery.tsx` | the component: props and its features' → material, the layers and which are drawn each frame, the directional light, the bakes |
-| `SceneryClouds.tsx`, `SceneryOcean.tsx`, `SceneryAbyss.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
-| `SceneryCloudVolume.tsx`, `scenery-cloud-volume.ts`, `shaders/cloud-volume-*.glsl` | the 3D clouds, which draw themselves and read the scenery's material and `SceneryView` from its registry ([clouds.md](./clouds.md)) |
+| `SceneryOcean.tsx`, `SceneryAbyss.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
+| `SceneryClouds.tsx`, `scenery-clouds.ts`, `shaders/cloud-*.glsl` | the 3D clouds, which draw themselves and read the scenery's material and `SceneryView` from its registry ([clouds.md](./clouds.md)) |
 | `SceneryCutaway.tsx` | the cutaway: its props, its grip, and its per-frame placement, which the `Scenery` runs |
 | `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |
 | `scenery-model.ts` | option types, defaults, and the pure rules (`sceneryZone`, `skyDaylight`, `skyMoonlight`, `skySunColor`, …) |
@@ -1038,7 +948,7 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `SceneryStageReliefTiles.tsx`, `scenery-relief-tiles.ts`, `SceneryStageReliefOverview.tsx`, `scenery-relief.ts`, `scenery-relief-atlas.ts` | the relief: its tiles, and its overview past the far plane, read from the same tiles through an index (see [tiles.md](./tiles.md)) |
 | `scenery-defs.ts`, `generators/scenery-relief-tile-generator.ts` | the `sceneryReliefTile` generator: the relief's tiles, for the stage, its overview and the `Minimap` |
 | `scenery-context.ts` | `useScenery`, `useSceneryOcean` |
-| `shaders/sky.glsl` | the background's layers: `skyAir`, `skyCloudsLayer`, `skyAbyssLayer`, `skySeaLayer`, `skyWaterLayer`, and the sky, clouds and void they draw |
+| `shaders/sky.glsl` | the background's layers: `skyAir`, `skyAbyssLayer`, `skySeaLayer`, `skyWaterLayer`, and the sky and void they draw |
 | `shaders/sky-fragment.glsl`, `sky-layer-fragment.glsl` | the sky's layer, and the others over it (one by its `SKY_LAYER_*` define) |
 | `shaders/sky-gradient.glsl` | the gradient alone |
 | `shaders/sky-void.glsl` | the void's gradient alone: its colours, the depths' gradient, and the whole of it as the stand-in and `background: 'void'` draw it |

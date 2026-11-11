@@ -21,8 +21,6 @@ import type { SceneryStageLayer } from '../../components/Scenery/SceneryStage';
 import {
   sceneryDefaults,
   type SceneryAbyssProps,
-  type SceneryCloudLayers,
-  type SceneryCloudsProps,
   type SceneryHollowStyle,
   type SceneryOceanProps,
   type SkyMoon,
@@ -82,17 +80,6 @@ export type SceneryArgs = {
   sunRays: number;
   sunShimmer: boolean;
   sunTwilight: number;
-  // Clouds
-  clouds: boolean;
-  cloudLayers: SceneryCloudLayers;
-  cloudCoverage: number;
-  cloudAltitude: number;
-  cloudScale: number;
-  cloudThickness: number;
-  cloudBandDistance: number;
-  cloudSoftness: number;
-  cloudOpacity: number;
-  cloudSeed: number;
   // Graticule
   graticuleLatLon: boolean;
   graticuleLatLonColor: string;
@@ -231,16 +218,6 @@ export const sceneryArgs: SceneryArgs = {
   sunRays: sceneryDefaults.sun.rays,
   sunShimmer: sceneryDefaults.sun.shimmer,
   sunTwilight: sceneryDefaults.sun.twilight,
-  clouds: true,
-  cloudLayers: sceneryDefaults.clouds.layers,
-  cloudCoverage: sceneryDefaults.clouds.coverage,
-  cloudAltitude: sceneryDefaults.clouds.altitude,
-  cloudScale: sceneryDefaults.clouds.scale,
-  cloudThickness: sceneryDefaults.clouds.thickness,
-  cloudBandDistance: sceneryDefaults.clouds.bandDistance,
-  cloudSoftness: sceneryDefaults.clouds.softness,
-  cloudOpacity: sceneryDefaults.clouds.opacity,
-  cloudSeed: sceneryDefaults.clouds.seed,
   graticuleLatLon: false,
   graticuleLatLonColor: GRATICULE_DEFAULTS.lines.color,
   graticuleLatLonThickness: GRATICULE_DEFAULTS.lines.thickness,
@@ -474,22 +451,6 @@ export const skySunFromArgs = (args: SceneryArgs): SkySun => ({
   twilight: args.sunTwilight,
 });
 
-/** A `SceneryClouds`' props from {@link SceneryArgs}; `false` for none. */
-export const sceneryCloudsFromArgs = (
-  args: SceneryArgs,
-): SceneryCloudsProps | false =>
-  args.clouds && {
-    layers: args.cloudLayers,
-    coverage: args.cloudCoverage,
-    altitude: args.cloudAltitude,
-    scale: args.cloudScale,
-    thickness: args.cloudThickness,
-    bandDistance: args.cloudBandDistance,
-    softness: args.cloudSoftness,
-    opacity: args.cloudOpacity,
-    seed: args.cloudSeed,
-  };
-
 /** A `GeoGraticule`'s lines from {@link SceneryArgs}; `false` for none. */
 export const sceneryGraticuleFromArgs = (
   args: SceneryArgs,
@@ -595,7 +556,7 @@ export const sceneryAbyssFromArgs = (args: SceneryArgs): SceneryAbyssProps => ({
 });
 
 /**
- * Every `<Scenery>` prop {@link SceneryArgs} set. Its features (clouds, sea, void, cutaway)
+ * Every `<Scenery>` prop {@link SceneryArgs} set. Its features (graticule, sea, void, cutaway)
  * are components of their own under it: see `SceneryArgsFeatures`.
  */
 export const sceneryPropsFromArgs = (args: SceneryArgs) =>
@@ -751,7 +712,6 @@ const ADVANCED = new Set<string>([
 ]);
 
 const SUN = 'Sun';
-const CLOUDS = 'Clouds';
 const GRATICULE = 'Graticule';
 const SKY = 'Scenery';
 const SEA = 'Sea';
@@ -840,68 +800,6 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SUN,
     'Strength of the warm glow along the horizon at sunrise and sunset, and the pink belt opposite it; 0 for none.',
   ),
-  clouds: toggle(
-    CLOUDS,
-    'Still clouds, lit by the sun, or the moon at night: a deck overhead and a band of distant ones along the horizon. The deck fades out close to the camera, so climbing to it clears it from overhead outward, and the water does not reflect them.',
-  ),
-  cloudLayers: {
-    control: { type: 'inline-radio' },
-    options: ['deck', 'band', 'both'],
-    description:
-      'The deck alone, out to the horizon; the band alone; or both, the deck meeting the band at its base.',
-    if: { arg: 'clouds' },
-    table: { category: CLOUDS },
-  },
-  cloudCoverage: {
-    ...range(0, 1, 0.01, CLOUDS, 'How much of the sky they cover; 0 for none.'),
-    if: { arg: 'clouds' },
-  },
-  cloudAltitude: {
-    ...range(500, 30000, 100, CLOUDS, 'Height of their base, in metres.'),
-    if: { arg: 'clouds' },
-  },
-  cloudScale: {
-    ...range(200, 30000, 100, CLOUDS, 'Size of the clouds, in metres.'),
-    if: { arg: 'clouds' },
-  },
-  cloudThickness: {
-    ...range(
-      0,
-      5000,
-      50,
-      CLOUDS,
-      'Depth of the clouds, in metres: how far the band\u2019s tops reach above their base, and how far the deck\u2019s thicker parts shift against their outlines as the view moves.',
-    ),
-    if: { arg: 'clouds' },
-  },
-  cloudBandDistance: {
-    ...range(
-      20000,
-      200000,
-      1000,
-      CLOUDS,
-      'How far off the band\u2019s clouds are, in metres: further, they sit lower, look smaller and are hazier.',
-    ),
-    if: { arg: 'clouds' },
-  },
-  cloudSoftness: {
-    ...range(0, 1, 0.01, CLOUDS, 'Width of their edges.'),
-    if: { arg: 'clouds' },
-  },
-  cloudOpacity: {
-    ...range(
-      0,
-      1,
-      0.01,
-      CLOUDS,
-      'How much they stand out from the sky behind them. The sun, moon and stars stay hidden behind them, from 0.5 down less so.',
-    ),
-    if: { arg: 'clouds' },
-  },
-  cloudSeed: {
-    ...range(0, 100, 1, CLOUDS, 'Picks another pattern.'),
-    if: { arg: 'clouds' },
-  },
   graticuleLatLon: toggle(
     GRATICULE,
     'Lines of latitude and longitude (`GeoGraticule` `latLon`): on the sea\u2019s surface, the land and a dry seabed, at any distance. A layer of its own, drawn over what lies under it.',
@@ -1234,7 +1132,10 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     if: { arg: 'hollow', truthy: false },
   },
   abyssDepth: {
-    ...color(SUBSURFACE, 'The plain void (hollow off): straight down, deep in it.'),
+    ...color(
+      SUBSURFACE,
+      'The plain void (hollow off): straight down, deep in it.',
+    ),
     if: { arg: 'hollow', truthy: false },
   },
   abyssFadeDistance: range(
@@ -1335,19 +1236,31 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     if: { arg: 'hollow' },
   },
   hollowWalls: {
-    ...color(SUBSURFACE, 'The hollow\u2019s walls\u2019 rock; unset, the style\u2019s.'),
+    ...color(
+      SUBSURFACE,
+      'The hollow\u2019s walls\u2019 rock; unset, the style\u2019s.',
+    ),
     if: { arg: 'hollow' },
   },
   hollowFloor: {
-    ...color(SUBSURFACE, 'The hollow\u2019s floor\u2019s rock; unset, the style\u2019s.'),
+    ...color(
+      SUBSURFACE,
+      'The hollow\u2019s floor\u2019s rock; unset, the style\u2019s.',
+    ),
     if: { arg: 'hollow' },
   },
   hollowEmberColor: {
-    ...color(SUBSURFACE, 'The glow in the floor\u2019s cracks; unset, the style\u2019s.'),
+    ...color(
+      SUBSURFACE,
+      'The glow in the floor\u2019s cracks; unset, the style\u2019s.',
+    ),
     if: { arg: 'hollow' },
   },
   hollowLidColor: {
-    ...color(SUBSURFACE, 'The simple style\u2019s lid, seen from inside; unset, the style\u2019s.'),
+    ...color(
+      SUBSURFACE,
+      'The simple style\u2019s lid, seen from inside; unset, the style\u2019s.',
+    ),
     if: { arg: 'hollow' },
   },
   hollowEmbers: {

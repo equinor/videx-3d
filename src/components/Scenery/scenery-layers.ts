@@ -19,14 +19,12 @@ import {
 
 /**
  * The layers of a `Scenery`'s background, in the order they are drawn, each blended over
- * those before it: the sky itself (the `SceneryMaterial`'s own program), its clouds, the
- * void (lid and depths), the sea seen from the air, the view from in the water, and
- * the sea's surface. Each is a program of its own, so each compiles on its own and a switch
+ * those before it: the sky itself (the `SceneryMaterial`'s own program), the void (lid and
+ * depths), the sea seen from the air, the view from in the water, and the sea's surface. Each is a program of its own, so each compiles on its own and a switch
  * recompiles only the layers it touches.
  */
 export type SceneryBackgroundLayer =
   | 'sky'
-  | 'clouds'
   | 'abyss'
   | 'sea'
   | 'water'
@@ -38,7 +36,6 @@ export type SceneryOverLayer = Exclude<SceneryBackgroundLayer, 'sky'>;
 /** Each layer's `renderOrder` after the scenery's. */
 export const SCENERY_LAYER_ORDER: Record<SceneryBackgroundLayer, number> = {
   sky: 0,
-  clouds: 0.2,
   abyss: 0.4,
   sea: 0.6,
   water: 0.8,
@@ -48,7 +45,6 @@ export const SCENERY_LAYER_ORDER: Record<SceneryBackgroundLayer, number> = {
 /** The layers a scenery with `sky`'s switches draws, in order. */
 export function sceneryLayers(sky: SceneryMaterial): SceneryBackgroundLayer[] {
   const layers: SceneryBackgroundLayer[] = ['sky'];
-  if (sky.clouds && !sky.voidBackground) layers.push('clouds');
   if (sky.abyss) layers.push('abyss');
   // The view in the water is compiled with the sea, so switching the water on is instant.
   if (sky.ocean) layers.push('sea', 'water', 'surface');
@@ -65,10 +61,7 @@ export function sceneryLayerDefines(
 ) {
   const defines: Record<string, unknown> = { SKY_AT_FAR: '' };
   const switches = sky.switches;
-  if (layer === 'clouds') {
-    defines.SKY_LAYER_CLOUDS = '';
-    defines.SKY_CLOUDS = '';
-  } else if (layer === 'abyss') {
+  if (layer === 'abyss') {
     defines.SKY_LAYER_ABYSS = '';
     defines.SKY_ABYSS = '';
     // Under a sea, where it leaves the void showing: the sea's code, but not its seabed's detail.
@@ -214,7 +207,6 @@ export function sceneryLayersShown({
   const sky = !covered && !(inWater && cutawayWater <= 0);
   return {
     sky,
-    clouds: sky,
     abyss: underLid || (!!abyss && !!ocean && !belowBed && voidOpen),
     sea: !!ocean && !belowBed && !inWater,
     water: maybeInWater,

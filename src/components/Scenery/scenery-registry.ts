@@ -10,7 +10,6 @@ import type {
 import type { SceneryMaterial } from './scenery-material';
 import type {
   SceneryAbyssProps,
-  SceneryCloudsProps,
   SceneryOceanProps,
   SceneryZone,
 } from './scenery-model';
@@ -36,7 +35,6 @@ export type SceneryCutawayFeature = {
 
 /** What a scenery's feature components hand it, each null while there is none. */
 export type SceneryFeatures = {
-  clouds: SceneryCloudsProps | null;
   ocean: SceneryOceanProps | null;
   abyss: SceneryAbyssProps | null;
   cutaway: SceneryCutawayFeature | null;
@@ -68,7 +66,7 @@ export type ScenerySkyShadow = {
 
 /**
  * What draws itself in a scenery's sky rather than as one of its background's layers (the 3D
- * clouds, `SceneryCloudVolume`) hands its scenery, for the light: what it looks like from the
+ * clouds, `SceneryClouds`) hands its scenery, for the light: what it looks like from the
  * scene, for the bakes of the air over the sea and for the sea to reflect, how much of the
  * scene's light it lets through, and its shadows.
  */
@@ -130,7 +128,6 @@ export const SceneryRegistryContext = createContext<SceneryRegistry | null>(
 );
 
 const COMPONENTS: Record<keyof SceneryFeatures, string> = {
-  clouds: 'SceneryClouds',
   ocean: 'SceneryOcean',
   abyss: 'SceneryAbyss',
   cutaway: 'SceneryCutaway',

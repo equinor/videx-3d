@@ -1,7 +1,7 @@
 // The clouds' cover volume (CloudCoverVolume, scenery-cloud-cover.ts): a tile of noise repeating
 // every way, of how much each column is clouded over (any value: a level's share under cloud
 // picks a level of it, softCoverLevel), read on the Earth's curved surface where each column
-// stands (cloud-volume-march.glsl), so the clouds are fixed to the Earth and keep their shape
+// stands (cloud-march.glsl), so the clouds are fixed to the Earth and keep their shape
 // anywhere on the globe, as the 3D clouds' first noise was (documents/clouds.md, "Fixed to the
 // Earth"). Broad patches of cloud and clear sky (gradient noise in octaves), and apart from them
 // masses (rounded bumps of many sizes about scattered points, at three scales). The surface cuts

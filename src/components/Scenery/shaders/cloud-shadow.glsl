@@ -1,6 +1,6 @@
 // The 3D clouds' shadows on what the sky lights (SceneryMaterial.setCloudShadow): a map of how
 // much of the light reaches the ground through them, over a square about the camera's foot
-// (scenery-cloud-volume.ts, cloud-volume-march.glsl's CLOUD_SHADOW), the sea and the relief
+// (scenery-clouds.ts, cloud-march.glsl's CLOUD_SHADOW), the sea and the relief
 // reading it at the place they shade. The scene's light is already dimmed by the share the
 // clouds let through on the whole (uSkyCloudShadowLight.x): this gives what to scale it by
 // here instead.

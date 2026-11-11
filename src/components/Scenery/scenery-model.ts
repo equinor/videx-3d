@@ -82,68 +82,29 @@ export type SkyStars = {
   latitude?: number;
 };
 
-/** Which of a {@link Scenery}'s cloud layers are drawn (see {@link SceneryCloudsProps}). */
-export type SceneryCloudLayers = 'deck' | 'band' | 'both';
-
 /**
- * Still clouds over a {@link Scenery}, lit by the sun, or the moon at night, and not reflected by
- * the water: a deck overhead, on a sphere about the Earth's centre (the globe's radius plus
- * `altitude`), and a band of distant clouds along the horizon (`layers`). The
- * deck fades out close to the camera, wisps before cores, so climbing to it clears it from
- * overhead outward.
- */
-export type SceneryCloudsProps = {
-  /** false hides them, still compiled in, so showing them again is instant. Default true */
-  enabled?: boolean;
-  /**
-   * `'deck'` the deck alone, out to the horizon; `'band'` the band alone; `'both'` the band,
-   * with the deck meeting it at its base and dissolving where seen nearly edge-on. Switching
-   * is instant. Default 'band'
-   */
-  layers?: SceneryCloudLayers;
-  /** how much of the sky they cover, from 0 (none) to 1. Default 0.2 */
-  coverage?: number;
-  /** height of their base along `up`, in world units. Default 6000 */
-  altitude?: number;
-  /** size of the clouds, in world units. Default 4000 */
-  scale?: number;
-  /** depth of the clouds, in world units: the band's tops reach this far above their base, and the deck's thicker parts shift against their outlines as the view moves, so it reads as a slab rather than a sheet. Default 1500 */
-  thickness?: number;
-  /** how far off the band's clouds are, in world units: further, they sit lower, look smaller and are hazier. Default 75000 */
-  bandDistance?: number;
-  /** width of their edges, from 0 (crisp) to 1. Default 0.25 */
-  softness?: number;
-  /** how much they stand out from the sky behind them, from 0 (none: no clouds) to 1; the sun, moon and stars stay hidden behind them as if opaque, from 0.5 down less so. Default 1 */
-  opacity?: number;
-  /** their colour in full light. Default `#ffffff` */
-  color?: ColorRepresentation;
-  /** picks another pattern. Default 0 */
-  seed?: number;
-};
-
-/**
- * How much a {@link SceneryCloudVolumeProps}'s clouds spend for how they look, from `'low'` (a
+ * How much a {@link SceneryCloudsProps}'s clouds spend for how they look, from `'low'` (a
  * laptop's integrated GPU, some 2 ms) to `'ultra'` (powerful GPUs).
  */
-export type SceneryCloudVolumeQuality = 'low' | 'medium' | 'high' | 'ultra';
+export type SceneryCloudsQuality = 'low' | 'medium' | 'high' | 'ultra';
 
 /**
- * How a {@link SceneryCloudVolumeProps}'s clouds reuse what they marched over the last frames.
+ * How a {@link SceneryCloudsProps}'s clouds reuse what they marched over the last frames.
  * `'off'`: every pixel marched every frame. `'still'`: while the camera holds still (the
  * weather's clock running), a quarter of the pixels a frame, each of the rest as it was marched
  * at most three frames before; every pixel once the camera moves. `'moving'`: a quarter a frame
  * however the camera moves, the rest moved to where their clouds lie in the view now.
  */
-export type SceneryCloudVolumeTemporal = 'off' | 'still' | 'moving';
+export type SceneryCloudsTemporal = 'off' | 'still' | 'moving';
 
 /**
- * What a {@link SceneryCloudVolumeProps}'s clouds show instead of themselves, to see how they
+ * What a {@link SceneryCloudsProps}'s clouds show instead of themselves, to see how they
  * are made: `view` `'cost'` the march's iterations along each view (blue none, through green and
  * yellow, to red at the quality's most), `'unlit'` white, as opaque as they are, `'map'` a global
  * weather's map: each level's cover where the view meets the sea (low red, middle green, high
  * blue); `air` false leaves out the air's haze between them and the camera.
  */
-export type SceneryCloudVolumeDebug = {
+export type SceneryCloudsDebug = {
   view?: 'cost' | 'unlit' | 'map';
   air?: boolean;
   /** Being chosen (2026-11-09), then removed: the ground steers the weather systems' wind (slower over land, turned along the ridges it would blow up). Default true */
@@ -155,7 +116,7 @@ export type SceneryCloudVolumeDebug = {
 };
 
 /**
- * How a {@link SceneryCloudVolumeProps}'s clouds draw a `CloudType` (`CLOUD_VOLUME_LOOKS` its
+ * How a {@link SceneryCloudsProps}'s clouds draw a `CloudType` (`CLOUDS_LOOKS` its
  * defaults): rounded masses of many sizes, domed over flat bases and rounding off below their
  * layer's top, from a map of how much each column is clouded over (fixed to the Earth, drifting
  * with the layer's wind). Shares and weights from 0 to 1 unless said.
@@ -195,7 +156,7 @@ export type SceneryCloudLook = {
  * is dimmed by the share of it they let through, and their shadows fall on the sea and the
  * relief.
  */
-export type SceneryCloudVolumeProps = {
+export type SceneryCloudsProps = {
   /** false hides them, still compiled, so showing them again is instant. Default true */
   enabled?: boolean;
   /**
@@ -213,7 +174,7 @@ export type SceneryCloudVolumeProps = {
    * each level as given. Default 0.8
    */
   dominance?: number;
-  /** how each type is drawn, by type, over `CLOUD_VOLUME_LOOKS`. Default those */
+  /** how each type is drawn, by type, over `CLOUDS_LOOKS`. Default those */
   looks?: Partial<Record<CloudType, SceneryCloudLook>>;
   /**
    * a global weather's levels drawn: false leaves one out, a quality control as much as a look
@@ -230,18 +191,18 @@ export type SceneryCloudVolumeProps = {
   /** picks another pattern of clouds. Default 0 */
   seed?: number;
   /**
-   * how much they spend for how they look (`CLOUD_VOLUME_QUALITY`): the share of the screen's
+   * how much they spend for how they look (`CLOUDS_QUALITY`): the share of the screen's
    * resolution they are marched at, and how finely. Every pixel is marched every frame. Default
    * `'medium'`
    */
-  quality?: SceneryCloudVolumeQuality;
+  quality?: SceneryCloudsQuality;
   /**
    * the share of the screen's resolution in CSS pixels their image is drawn at (whatever the
    * screen's pixel ratio), from 0.25 to 1, instead of the quality's. Default the quality's
    */
   resolution?: number;
   /** what they show instead of themselves, to see how they are made. Default none */
-  debug?: SceneryCloudVolumeDebug;
+  debug?: SceneryCloudsDebug;
   /**
    * the ground they lie over: a `GeoRelief` in the enclosing `World` (its tiles' loader). Their
    * levels rise over high ground, a view ends where it meets it, a local weather gains cover
@@ -260,10 +221,10 @@ export type SceneryCloudVolumeProps = {
   lightMap?: boolean;
   /**
    * how they reuse what they marched over the last frames (see
-   * {@link SceneryCloudVolumeTemporal}): the march costs a quarter as much while the clock runs
+   * {@link SceneryCloudsTemporal}): the march costs a quarter as much while the clock runs
    * (`'still'`) or the camera moves too (`'moving'`). Default `'off'`
    */
-  temporal?: SceneryCloudVolumeTemporal;
+  temporal?: SceneryCloudsTemporal;
 };
 
 /**
@@ -694,27 +655,15 @@ export const sceneryDefaults = {
   moon: { intensity: 0.3, color: '#c4cfdf', size: 0.6, glow: 0.3 },
   stars: { brightness: 1, density: 0.5, latitude: 60 },
   clouds: {
-    layers: 'band' as SceneryCloudLayers,
-    coverage: 0.2,
-    altitude: 6000,
-    scale: 4000,
-    thickness: 1500,
-    bandDistance: 75000,
-    softness: 0.25,
-    opacity: 1,
-    color: '#ffffff',
-    seed: 0,
-  },
-  cloudVolume: {
     scale: 1,
     density: 1,
     color: '#ffffff',
     seed: 0,
-    quality: 'medium' as SceneryCloudVolumeQuality,
+    quality: 'medium' as SceneryCloudsQuality,
     dominance: 0.8,
     terrain: true,
     lightMap: false,
-    temporal: 'off' as SceneryCloudVolumeTemporal,
+    temporal: 'off' as SceneryCloudsTemporal,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

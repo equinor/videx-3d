@@ -179,8 +179,8 @@ void main() {
   float high = smoothstep(0.45 - fwidth(highLift), 1.2, highLift);
 
 #ifdef CLOUD_MAP_TYPES
-  // Where each level's cloud lies along its chain of types (CLOUD_TYPE_CHAINS in
-  // scenery-cloud-volume.ts), each part at its own place weighed by how much of the cover it
+  // Where each level's cloud lies along its chain of types (CLOUDS_CHAINS in
+  // scenery-clouds.ts), each part at its own place weighed by how much of the cover it
   // lays. Low (cumulus 0, stratocumulus 1, stratus 2): the open cells and the trades' cumulus
   // heaped; the closed cells' decks; the systems' sheets, stratus where they run deep or the
   // air is polar, heaped again in the convergence zone's thunderstorms. Middle (altocumulus 0,

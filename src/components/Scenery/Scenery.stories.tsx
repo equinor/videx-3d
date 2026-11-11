@@ -210,7 +210,6 @@ const meta = {
     speed: 0.5,
     sunFromTime: true,
     sunHour: 5,
-    clouds: true,
     // Sooner than the Scenery's own 1000, so the light keeps up with the sun.
     captureMaxWait: 250,
     tanker: true,

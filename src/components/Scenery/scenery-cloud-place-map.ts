@@ -50,8 +50,8 @@ const north = new Vector3();
 const pole = new Vector3();
 
 /**
- * A global weather's cloud map and types about the camera (`CloudVolumeRenderer`), as the march
- * reads them at each place it marches (cloud-volume-march.glsl, `cloudPlace`): both drawings,
+ * A global weather's cloud map and types about the camera (`CloudsRenderer`), as the march
+ * reads them at each place it marches (cloud-march.glsl, `cloudPlace`): both drawings,
  * each where its cloud has drifted to, the newer dissolved in. On a gnomonic map of the Earth
  * about the camera's foot, as far as the clouds over the horizon, at half the cloud map's texel
  * (as fine as a texel of its, so its reads cost what a read of the drawings would, and give

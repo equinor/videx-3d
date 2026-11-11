@@ -1,5 +1,5 @@
-// The 3D clouds (SceneryCloudVolume) drawn over the scene at full resolution, from the march's
-// smaller image (cloud-volume-march.glsl), at the depth of their front: so what lies in front
+// The 3D clouds (SceneryClouds) drawn over the scene at full resolution, from the march's
+// smaller image (cloud-march.glsl), at the depth of their front: so what lies in front
 // of them hides them, crisp at the screen's own resolution.
 
 #include <common>

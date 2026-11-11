@@ -30,13 +30,13 @@ import { GeoRelief } from '../../Layers/GeoRelief';
 import { Weather } from '../../Weather/Weather';
 import { World } from '../../World/World';
 import { Scenery, type SceneryLayer } from '../Scenery';
-import { SceneryCloudVolume } from '../SceneryCloudVolume';
-import { CLOUD_VOLUME_QUALITY } from '../scenery-cloud-volume';
-import type { SceneryCloudVolumeQuality } from '../scenery-model';
+import { SceneryClouds } from '../SceneryClouds';
+import { CLOUDS_QUALITY } from '../scenery-clouds';
+import type { SceneryCloudsQuality } from '../scenery-model';
 
 // The 3D clouds alone, to time them (documents/clouds.md, "Measuring"): a bare Scenery (no sky
 // drawn behind them, no sea, stage, hollow, bakes or relief unless asked for) and its
-// SceneryCloudVolume, in a canvas of a fixed size at a fixed pixel ratio, from named poses. The
+// SceneryClouds, in a canvas of a fixed size at a fixed pixel ratio, from named poses. The
 // panel (top right) runs `window.videx3d.cloudBench` (src/storybook/debug/cloud-bench.ts) and
 // shows what it measured, with the conditions it measured under.
 
@@ -51,7 +51,7 @@ type Viewport = keyof typeof VIEWPORTS;
 // Scene metres (X east, Z south; the local weather's middle at 0, 0), for the 'scattered' sky's
 // cumulus (1200–2400 m): the camera's place and what it looks at.
 const POSES = {
-  // Over the field from 3 km, out over the clouds (the CloudVolume spike's default).
+  // Over the field from 3 km, out over the clouds (the Clouds spike's default).
   over: [
     [-9000, 3000, 9000],
     [6000, 1200, -6000],
@@ -96,7 +96,7 @@ type CloudBenchArgs = {
   weatherMode: 'local' | 'global';
   preset: SkyPreset;
   systemsSeed: number;
-  quality: SceneryCloudVolumeQuality;
+  quality: SceneryCloudsQuality;
   ownResolution: boolean;
   resolution: number;
   /** none: the sea's level everywhere; loaded: the relief's ground, not drawn; drawn: and drawn */
@@ -149,7 +149,6 @@ const CloudBenchStory = (args: CloudBenchArgs) => {
     ...sceneryArgs,
     sunFromTime: true,
     hollow: false,
-    clouds: false,
     environment: args.bakes,
     lightProbe: args.bakes,
   };
@@ -174,7 +173,7 @@ const CloudBenchStory = (args: CloudBenchArgs) => {
           {...props}
           debug={{ ...props.debug, hide: args.sky ? undefined : SKY_HIDDEN }}
         >
-          <SceneryCloudVolume
+          <SceneryClouds
             quality={args.quality}
             resolution={args.ownResolution ? args.resolution : undefined}
             terrain={args.ground !== 'none'}
@@ -460,7 +459,7 @@ const meta = {
     systemsSeed: 0,
     quality: 'medium',
     ownResolution: false,
-    resolution: CLOUD_VOLUME_QUALITY.medium.resolution,
+    resolution: CLOUDS_QUALITY.medium.resolution,
     ground: 'none',
     sky: false,
     bakes: false,

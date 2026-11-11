@@ -802,10 +802,9 @@ night side dark, the sea lit where it lies), a physical atmosphere left for the 
   The probe's guard (6d) stays: a probe lights every later bake.
 - **The `glGetProgramiv` warnings** come only right after a shader is edited under Vite's
   hot reload: none on a clean load, a reload or a story switch.
-- **One radius:** the cloud deck's sphere and the horizon's dip (`Scenery`, the debug panel)
-  take the globe's radius, the conformal sphere's matched at the field, not the mean
-  Earth's `SCENERY_EARTH_RADIUS`: 14.6 km apart at Volve. The deck's is refreshed with the
-  camera (`SceneryMaterial.syncCamera`), so a frame set later moves it too.
+- **One radius:** the horizon's dip (`Scenery`, the debug panel) takes the globe's radius,
+  the conformal sphere's matched at the field, not the mean Earth's
+  `SCENERY_EARTH_RADIUS`: 14.6 km apart at Volve.
 - **Seen:** both poles from 3000 km whole; the 180th meridian from 600 km (Fiji) with no
   seam.
 - **The stage's claim far off:** the stage takes the sea where a view meets it inside its
@@ -943,10 +942,10 @@ that followed the camera would have made the sea depend on the camera's path.
   so the waves never tear where the wind turns. A CPU sampler of the sky's sea for floating
   objects far off (the Ocean's `OceanSampler` is the field's plane's) takes `OceanCharts`
   the same way.
-- **Not done:** the cloud deck's pattern is still laid on the field's plane and streaks far
-  off; left for the 3D clouds (step 8), which can take the same charts. The 3D clouds
-  (`SceneryCloudVolume`, [clouds.md](./clouds.md), 2026-11-04) need none: their pattern is read
-  in a frame fixed to the Earth, one field from sea level to space.
+- **The clouds:** the still clouds' deck, its pattern laid on the field's plane, streaked far
+  off; it is gone, for the 3D clouds (`SceneryClouds`, [clouds.md](./clouds.md)), which need
+  no charts: their pattern is read in a frame fixed to the Earth, one field from sea level to
+  space.
 
 ### 4e: a level horizon for a host (built 2026-10-26)
 

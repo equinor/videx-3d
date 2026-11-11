@@ -30,7 +30,7 @@ export type WeatherProps = {
 /**
  * The weather for everything inside it: the wind raises the waves of an `Ocean`, a
  * `SceneryOcean` and a `ChunkStack`'s water, its cloud (a local weather's layers, a global
- * one's weather systems) is what a `SceneryCloudVolume`
+ * one's weather systems) is what a `SceneryClouds`
  * draws, and its clock (`WeatherClock`, `useWeatherClock`) moves both: the clouds drift with
  * the wind and change, the weather systems travel, and the waves run at its pace. Each still
  * takes its own props first: the weather fills in only what they leave out. It draws nothing,
@@ -40,7 +40,7 @@ export type WeatherProps = {
  * <Weather weather={weatherPreset('scattered', 'cumulus', { speed: 10, from: 240 })}>
  *   <Scenery>
  *     <SceneryOcean />
- *     <SceneryCloudVolume />
+ *     <SceneryClouds />
  *   </Scenery>
  * </Weather>
  *

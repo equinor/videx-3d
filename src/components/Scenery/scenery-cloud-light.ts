@@ -57,9 +57,9 @@ type Held = {
 const camera = new OrthographicCamera();
 
 /**
- * The light maps of a local weather's 3D clouds (`CloudVolumeRenderer`): for each level, how much
+ * The light maps of a local weather's 3D clouds (`CloudsRenderer`): for each level, how much
  * of its cloud lies toward the light from anywhere in its shell, so a point of the march is lit
- * by a read of it rather than by marching toward the light (cloud-volume-march.glsl,
+ * by a read of it rather than by marching toward the light (cloud-march.glsl,
  * `cloudLightFromMap`). A layer a level, on the field over the weather's disc, fixed on the
  * Earth: it never depends on where the camera is. Drawn by the march's own program
  * (`CLOUD_LIGHT_MAP`), so it holds the cloud the march draws: a ray toward the light a texel,

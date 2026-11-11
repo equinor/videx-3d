@@ -1,4 +1,4 @@
-// The 3D clouds' field (SceneryCloudVolume): the frame their patterns lie on, fixed on the
+// The 3D clouds' field (SceneryClouds): the frame their patterns lie on, fixed on the
 // Earth.
 //
 // Positions are on the field's frame (uCloudFrameE/N/M: east, north and up at the weather's
@@ -49,8 +49,7 @@ vec4 cloudPermute(vec4 x) {
   return mod(((x * 34.0) + 10.0) * x, 289.0);
 }
 
-// Value noise in [0, 1) at `p` in cells, smooth, repeating every 289 cells: the twin of
-// cloudValueNoise in cloud-noise.ts.
+// Value noise in [0, 1) at `p` in cells, smooth, repeating every 289 cells.
 float cloudValueNoise(vec3 p) {
   vec3 f = floor(p);
   vec3 i = mod(f, 289.0);

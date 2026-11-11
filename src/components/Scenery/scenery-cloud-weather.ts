@@ -22,7 +22,7 @@ const STRIPS_FIRST = 16;
 const STRIPS_NEXT = 1;
 // As the clock runs, maps are drawn at least this far apart (weather seconds: the systems
 // travel some 20 km), further where the clock runs so fast that drawing each takes longer than
-// MAP_DRAW_SHARE of the time between them: STRIPS_NEXT strips a frame, more (up to STRIPS_MOST)
+// DRAW_SHARE of the time between them: STRIPS_NEXT strips a frame, more (up to STRIPS_MOST)
 // where that would set them more than SPAN_MOST apart.
 const SPAN = 1800;
 const SPAN_MOST = 6 * 3600;
@@ -31,7 +31,7 @@ const STRIPS_MOST = 4;
 // A jump of the clock this far past the newer map (weather seconds) draws one anew.
 const JUMP = 12 * 3600;
 
-/** The uniforms a {@link CloudWeather} sets: the march's (`cloud-volume-march.glsl`). */
+/** The uniforms a {@link CloudWeather} sets: the march's (`cloud-march.glsl`). */
 export type CloudWeatherUniforms = {
   uCloudMap: IUniform<CubeTexture | null>;
   uCloudMapNext: IUniform<CubeTexture | null>;

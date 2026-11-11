@@ -1,4 +1,4 @@
-// The 3D clouds' light (SceneryCloudVolume; documents/clouds.md, "The light"; calibrated under
+// The 3D clouds' light (SceneryClouds; documents/clouds.md, "The light"; calibrated under
 // toneMapping 'none'): the sun's colour and daylight where each point lies, the moon by night,
 // the light scattered once (by a two-lobed phase) and many times over (all round), and the sky
 // above and below as ambient; then the air's haze over the distance their light comes from, and

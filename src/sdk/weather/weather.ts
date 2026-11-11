@@ -75,11 +75,7 @@ export function cloudLevelOf(type: CloudType): CloudLevel {
  * @group Weather
  */
 export type CloudLayer = {
-  /**
-   * what its clouds are made of. The 3D clouds (`SceneryCloudVolume`, with `mixTypes`) move a
-   * share of them on to the next type of its level (`CLOUD_TYPE_CHAINS`) by its cover:
-   * cumulus closing up spread out into stratocumulus, stratus thinning breaks into it
-   */
+  /** what its clouds are made of */
   type: CloudType;
   /** the share of the ground the layer's cloud lies over, from 0 (none) to 1 (overcast) */
   cover: number;
@@ -427,7 +423,7 @@ const skyLayer = (
  * - `clear`: a high's clear sky, a light breeze;
  * - `fair`: a few small fair-weather cumulus, flat-topped under the high's inversion;
  * - `few-high`: a few cirrus streaks and altocumulus patches, nothing low: a sky that hides
- *   little of what lies under it (`SceneryCloudVolume`'s default);
+ *   little of what lies under it (`SceneryClouds`'s default);
  * - `scattered`: an afternoon's scattered cumulus, a few cirrus far above;
  * - `streets`: scattered cumulus lined up into streets in a fresh, cold wind;
  * - `marine-sc`: a broken deck of stratocumulus low over the sea, nothing above its inversion;
@@ -541,8 +537,8 @@ export function weatherPresetOf(
  * `'scattered cumulus'` the cumulus alone.
  *
  * @example
- * <SceneryCloudVolume layers="warm-front-approach" />
- * <SceneryCloudVolume layers="overcast stratus" />
+ * <SceneryClouds layers="warm-front-approach" />
+ * <SceneryClouds layers="overcast stratus" />
  *
  * @group Weather
  */

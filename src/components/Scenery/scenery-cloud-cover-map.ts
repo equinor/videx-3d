@@ -37,8 +37,8 @@ export type CloudCoverMapInputs = {
 const camera = new OrthographicCamera();
 
 /**
- * The cover maps of a local weather's 3D clouds (`CloudVolumeRenderer`): for each level, the
- * mean cover of each column (cloud-volume-march.glsl, cloudCoverAt), as its two reads of the 3D
+ * The cover maps of a local weather's 3D clouds (`CloudsRenderer`): for each level, the
+ * mean cover of each column (cloud-march.glsl, cloudCoverAt), as its two reads of the 3D
  * cover volume give it, on the field over the weather's disc, fixed on the Earth. A level's cover
  * is the same all up a column, so the march, its light and its shadows read it once from a 2D map
  * (`cloudCoverOf`) instead of twice from the volume, at every step; its spread about the mean is

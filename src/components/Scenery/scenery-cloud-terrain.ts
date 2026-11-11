@@ -75,10 +75,10 @@ type NearFrame = { centre: Vector3; east: Vector3; north: Vector3 };
  * its slope east and north (g, b), some 20 km to a texel; and about the camera a finer map of
  * its height, some 400 m to a texel. Drawn on the GPU from grids of longitude and latitude,
  * through the globe's conformal sphere (cloud-terrain.glsl). Under the sea, the sea's level.
- * Internal to `SceneryCloudVolume`.
+ * Internal to `SceneryClouds`.
  */
 export class CloudTerrain {
-  /** what the march reads (cloud-volume-march.glsl) */
+  /** what the march reads (cloud-march.glsl) */
   readonly uniforms = {
     uCloudTerrainMap: new Uniform<Texture | null>(null),
     uCloudTerrainNear: new Uniform<Texture | null>(null),
@@ -104,8 +104,11 @@ export class CloudTerrain {
   private earthOrigin: ConformalOrigin | null = null;
   private earthDrawn = false;
   // The near map's grid, where it lies (degrees), and what it was drawn for.
-  private nearGrid: { grid: GeoReliefGrid; latitude: number; longitude: number } | null =
-    null;
+  private nearGrid: {
+    grid: GeoReliefGrid;
+    latitude: number;
+    longitude: number;
+  } | null = null;
   private nearOrigin: ConformalOrigin | null = null;
   private nearDrawn = false;
   private nearLoading = false;
@@ -125,7 +128,9 @@ export class CloudTerrain {
         uTerrainGrid: new Uniform<Texture | null>(null),
         uTerrainGridSize: new Uniform(new Vector2(1, 1)),
         uTerrainGridPlace: new Uniform(new Vector3(0, 0, 1)),
-        uTerrainLatitudes: new Uniform(new Array<number>(LATITUDES + 1).fill(0)),
+        uTerrainLatitudes: new Uniform(
+          new Array<number>(LATITUDES + 1).fill(0),
+        ),
         uTerrainLongitude: new Uniform(new Vector2()),
         uTerrainMode: new Uniform(0),
         uTerrainNearCentre: new Uniform(new Vector3(0, 0, 1)),
@@ -275,7 +280,7 @@ export class CloudTerrain {
     const generation = this.generation;
     const span = 180 / 2 ** NEAR_DEPTH;
     // The square's corners lie √2 its reach off: some margin over that.
-    const reach = ((1.5 * NEAR_REACH) / radius) / DEG;
+    const reach = (1.5 * NEAR_REACH) / radius / DEG;
     const south = Math.max(latitude - reach, -90);
     const north = Math.min(latitude + reach, 90);
     const widest = Math.min(Math.max(Math.abs(south), Math.abs(north)), 85);
@@ -348,7 +353,11 @@ export class CloudTerrain {
     const u = this.material.uniforms;
     u.uTerrainGrid.value = texture;
     (u.uTerrainGridSize.value as Vector2).set(grid.columns, grid.rows);
-    (u.uTerrainGridPlace.value as Vector3).set(grid.west, grid.north, grid.step);
+    (u.uTerrainGridPlace.value as Vector3).set(
+      grid.west,
+      grid.north,
+      grid.step,
+    );
     const latitudes = u.uTerrainLatitudes.value as number[];
     for (let i = 0; i <= LATITUDES; i++)
       latitudes[i] = geodeticLatitude(

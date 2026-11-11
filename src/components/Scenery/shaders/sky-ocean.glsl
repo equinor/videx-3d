@@ -416,7 +416,7 @@ float skyOceanSurfaceOpacity(float flatness) {
   return mix(uOpacity, 1.0, max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, above)));
 }
 
-// The film's (uSkyOceanClouds) coarsest level: its side, CUBE_SIZE in scenery-cloud-volume.ts, is 128.
+// The film's (uSkyOceanClouds) coarsest level: its side, CUBE_SIZE in scenery-clouds.ts, is 128.
 #define SKY_OCEAN_CLOUD_LODS 7.0
 // The least cloud base its blur is reckoned from (world units).
 #define SKY_OCEAN_CLOUD_BASE 100.0

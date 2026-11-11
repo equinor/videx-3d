@@ -1,6 +1,6 @@
 /**
  * Where the weather systems lie over the Earth: the lows and the highs the 3D clouds' map of
- * the weather far off is drawn about (`SceneryCloudVolume`, `documents/clouds.md`). Plain data,
+ * the weather far off is drawn about (`SceneryClouds`, `documents/clouds.md`). Plain data,
  * so it can be made up from a seed, as here, or come from an analysis's pressure centres.
  *
  * @module
@@ -233,6 +233,7 @@ export function weatherSystemCentresAt(
       smoothstep(0, DEEPENING, age / lifetime) *
       (1 - smoothstep(1 - FILLING, 1, age / lifetime));
     const there = travel(system, age);
-    return { ...there, pressure: system.pressure * strength };
+    there.pressure = system.pressure * strength;
+    return there;
   });
 }

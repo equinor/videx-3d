@@ -1,4 +1,4 @@
-// The 3D clouds' interleaved image rebuilt (SceneryCloudVolume, `temporal`). The march draws one
+// The 3D clouds' interleaved image rebuilt (SceneryClouds, `temporal`). The march draws one
 // pixel of each 2 × 2 block a frame (a part, each in turn), each part into an image of its own
 // half as wide and high, from the camera it was drawn from. Each pixel of the full image is taken
 // from its own part: this frame's as it is; another's (at most three frames old) as it was, where

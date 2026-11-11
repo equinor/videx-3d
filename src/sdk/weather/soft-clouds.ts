@@ -1,6 +1,7 @@
 /**
- * Soft clouds (a spike, 2026-11-09: `SceneryCloudVolume`'s `soft`): rounded masses of many sizes
- * in one layer, drawn from a map of how much each column is clouded over. Here, what is known of
+ * The 3D clouds' cover (`SceneryClouds`): rounded masses of many sizes in each level, drawn
+ * from a map of how much each column is clouded over (the cover volume, `scenery-cloud-cover.ts`).
+ * Here, what is known of
  * that map's values (sampled from it as it is drawn) and the level of it a layer's share under
  * cloud picks: the share of columns whose cover passes the level is the share of the ground
  * under cloud, whatever the noise's distribution.

@@ -1,8 +1,8 @@
-// The 3D clouds (SceneryCloudVolume), marched along each pixel's view ray through up to three
+// The 3D clouds (SceneryClouds), marched along each pixel's view ray through up to three
 // cloud levels' shells about the Earth's centre (low, middle, high: CLOUD_LEVELS_MOST), at a
 // share of the screen's resolution. Written as premultiplied linear colour and alpha, and as
 // depth log2 of the distance to their front (CLOUD_FRONT): the composite
-// (cloud-volume-composite.glsl) draws them over the scene at that depth. One colour attachment,
+// (cloud-composite.glsl) draws them over the scene at that depth. One colour attachment,
 // so ANGLE compiles its pixel shader once (scenery.md, Performance).
 //
 // Each level is rounded masses of many sizes, from a map of the cover fixed to the Earth
@@ -36,7 +36,7 @@ uniform float uCloudStepScale;
 // red, middle green, high blue).
 uniform int uCloudDebug;
 // The screen's derivatives over the full image's pixels: 1, or 0.5 in the interleaved march's
-// quarter image (scenery-cloud-volume.ts, `temporal`).
+// quarter image (scenery-clouds.ts, `temporal`).
 uniform float uCloudDerivative;
 // 1 hazed by the air between them and the camera, 0 not.
 uniform float uCloudAir;
@@ -63,7 +63,7 @@ uniform vec2 uCloudCoverSpread[CLOUD_COVER_LODS];
 // volume's tiles (turned as its wind has carried it about the Earth's centre, stretched along
 // it), and where the camera lies in it, from 64-bit floats (in the cover, its broad read, and
 // the lumps' two tilings: four a level), each read on through its noise as the clouds form and
-// fade (scenery-cloud-volume.ts, updateCamera).
+// fade (scenery-clouds.ts, updateCamera).
 uniform int uCloudLevelCount;
 uniform vec4 uCloudShells[CLOUD_LEVELS_MOST];
 uniform vec4 uCloudNeeds[CLOUD_LEVELS_MOST];
@@ -120,7 +120,7 @@ uniform vec4 uCloudTerrain;
 // older (uCloudLightFade: the newer's share), each read where the level's wind has carried its
 // clouds since it was drawn (uCloudLightDrift, m on the field: a level's newer, then its older).
 // How the light is had (uCloudLightMode): 0 marched (cloudLight), 1 from the map
-// (SceneryCloudVolume's `lightMap`).
+// (SceneryClouds's `lightMap`).
 uniform highp sampler2DArray uCloudLightNewer;
 uniform highp sampler2DArray uCloudLightOlder;
 uniform vec4 uCloudLightArea;
@@ -984,7 +984,7 @@ float cloudLowestAlong(float t, float to, float altitudeA, float altitudeB) {
 // whatever the stretch, so how they fall changes how much is walked, not what is found. In a
 // global weather it does not quite: the level is placed at the stretch's middle (cloudSet), from
 // the weather systems' map, whose mipmaps hold means, so a cloudier or deeper place within a long
-// stretch can be passed over (documents/clouds.md, known issue 11). Walking all of a global
+// stretch can be passed over (documents/clouds.md, known issue 10). Walking all of a global
 // weather's clear air instead took 2.5–3.5 times the steps and 1.4–1.6 times the march's time;
 // skipping, from 20 km up 15–17 % of the clouds' pixels were over 0.02 off a march four times
 // finer (by 0.02 on average, the far band), 0.04–0.13 % over 0.3 (2026-11-11).
@@ -1141,7 +1141,7 @@ void cloudMarchRuns(int count) {
 }
 
 #if defined(CLOUD_FILM)
-// The film's view (CloudVolumeRenderer.film: the scene's bakes of the air and the sea's
+// The film's view (CloudsRenderer.film: the scene's bakes of the air and the sea's
 // reflection, blurred in both): each run through a level read once at its middle over a footprint
 // of half its length (or the pixel's cone, where wider), and lit there. Marching the film as the
 // view is marched took 3–4 ms a face (Iris Xe, 2026-11-10).
@@ -1258,7 +1258,7 @@ void main() {
   gl_FragColor = value;
 }
 #elif defined(CLOUD_SHADOW)
-// The clouds' shadows (CloudVolumeRenderer.updateShadow): over a square about the camera's foot
+// The clouds' shadows (CloudsRenderer.updateShadow): over a square about the camera's foot
 // (its middle from the camera and how far it reaches to its sides, world; its east and north),
 // texels a side.
 uniform vec4 uCloudShadowPlace;
@@ -1266,7 +1266,7 @@ uniform vec3 uCloudShadowEast;
 uniform vec3 uCloudShadowNorth;
 uniform float uCloudShadowSize;
 
-// Samples across each level toward the light (CloudVolumeRenderer.updateShadow's own count).
+// Samples across each level toward the light (CloudsRenderer.updateShadow's own count).
 uniform int uCloudShadowSamples;
 
 // The share of the light (the sun's, or the moon's) that reaches the ground under a texel of the
