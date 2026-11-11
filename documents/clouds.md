@@ -498,6 +498,17 @@ of the pixels marched a frame) took the clouds' share of the frame from 2,885 km
 44 ms to 16 (frames of 74 and 46 ms, 30 without clouds; 1701 × 763 CSS pixels at a pixel ratio of
 1.5).
 
+The light by part (2026-11-11, the march alone, 850 × 381, each part taken out in turn): from
+2,885 km, 400 km and 3.75 km up it was 9.7, 25.5 and 4.5 ms of 32, 53 and 12; its crossings of the
+levels over each point lit 8.4, 19.5 and none, its own level's samples 4.1, 16.7 and none (each
+alone; together more than both, which a copy of the level kept by the light's loop did not explain:
+written in place, the same time to 0.1 ms), the lighting itself under 1 ms. A map of the levels'
+shadows about the camera, read for those crossings, would not save it for nothing: covering what
+the view reaches (as the weather systems' map about the camera does), its texels were 1.5, 2.9 and
+5.4 times as wide as the footprint the crossings are read over, and no more than 0.2 % of the
+crossings as wide as a texel. It would blur the high clouds' shadows on the low ones as much, or
+take finer maps in cascades about the camera, drawn anew as the clock runs. Not built.
+
 The march it replaced laid each run out in steps from the camera, looked into each, split those
 holding cloud into parts and the parts into short steps, each read over the stretch it stood for
 and lit once at one point: the steps' length set how blurred the clouds were read and where they
@@ -1005,9 +1016,9 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
     crossing, each lit, the light running the density through its level and across those over it
     (above, "Seen from afar"). In a local weather the march is 8–9 % of the clouds' pixels over
     0.02 off one with steps four times finer from 3 and 20 km up, skipping or not: how it
-    converges there is to be looked at. From high up the light's crossings of the levels over each point lit (each placed by the
-    weather systems' map) are some third of its time, which could be read once a step and lent
-    to its points. Toward the horizon cloud edges step in the Earth story: the clouds change that
+    converges there is to be looked at. From high up the light's crossings of the levels over each
+    point lit (each placed by the weather systems' map) are a third of the march (above, "Seen from
+    afar"). Toward the horizon cloud edges step in the Earth story: the clouds change that
     much from one of the image's rows to the next (2 × 2 CSS pixels at `medium`), filtered or not
     (from 1,856 km up, 36 % of the top fifth's neighbouring rows over 0.2 of opacity apart, 34 %
     with four rows marched for each and averaged, the same opacity on average): the image's grid
