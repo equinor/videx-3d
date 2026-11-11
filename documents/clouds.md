@@ -427,10 +427,14 @@ it reads, and no longer:
 - **The pattern:** two of the pixel's footprints (`uCloudDetail.x`), but no shorter than eight
   texels of the shape volume in clear air (`CLOUD_STEP_TEXELS`: the least its lumps change over)
   or two in cloud.
-- **The level's depth:** `uCloudMarch.y` steps up it (0.4 of the quality's steps) along the view's
-  slope through it, so a deck's top and the light falling off into it are resolved however
-  grazing the view. Relaxed to the pixel's footprint where that was wider, a deck 300 km off had
-  16 % of its pixels over 0.02 off, cumulus 200 km off 29 %.
+- **The level's depth, as placed at the last step:** `uCloudMarch.y` steps up it (0.4 of the
+  quality's steps) along the view's slope through it, so a deck's top and the light falling off
+  into it are resolved however grazing the view. Relaxed to the pixel's footprint where that was
+  wider, a deck 300 km off had 16 % of its pixels over 0.02 off, cumulus 200 km off 29 %. Sized by
+  the deepest the level can be rather than as placed, a global weather's thin decks (as little as
+  a third of their type's depth) had their tops found up to a step late, by where the steps fell:
+  from 20 km up 36 % of the clouds' pixels were over 0.02 off, and as the camera moved a film
+  seemed to slide over the decks (2026-11-11).
 - **What it holds:** the extinction the last steps found, halved each step since, so a step
   through cloud hides about `uCloudMarch.z` (an optical depth of 1 at 32 steps). A step that finds
   cloud and is longer than 1.5 of a step through what it found (`CLOUD_AGAIN`) is walked again
@@ -441,7 +445,7 @@ Each step reads its level's extinction at its middle over the pixel's footprint 
 takes it as even along the step (exactly, `cloudAdd`), and lights it where its light comes from
 on average, 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ.
 
-Clear air is passed over. Past a step finding no cloud, clear by four of the edge's deviations
+In a local weather clear air is passed over. Past a step finding no cloud, clear by four of the edge's deviations
 however its lumps fell (`CLOUD_CLEAR`, `gClear`), the march looks into a stretch twice as long
 ahead, and on as long as each is clear, up to its run's own layout (the quality's steps over the
 run, growing geometrically from its near end); a stretch that may hold cloud is looked into again
@@ -450,8 +454,13 @@ twice the stretch, past it by four of its deviations, the most the lumps add and
 edge's widths, against the least the cover needs in it (at its lowest, let down by the pixel's
 footprint, and toward a local weather's edge raised as little as at the stretch's end or middle
 furthest inside it). So how the stretches fall changes how much is walked, not what is found. A
-step's level is placed again (`cloudSet`: the weather systems' map, the ground's broad rise) once
-the march has moved 1 km or a footprint from where it was placed last (`CLOUD_PLACE_AGAIN`).
+global weather walks every step: its cover and heights come from the weather systems' map, whose
+mipmaps hold means, so a stretch placed over all of it is no bound (a cloudier or deeper place
+within it was passed over: 3.5 % of the pixels off from 20 km up, whole clouds missing), and
+bounding it by the deepest and cloudiest the level can be skipped nothing. A bound would need the
+map's greatest cover and depth over a stretch (a pyramid of maxima). Each step places its level
+where it lies (`cloudSet`: the weather systems' map, the ground's broad rise); placed once a
+kilometre and lent on, what was drawn depended on where the steps fell (3 % of the pixels).
 
 The march it replaced laid each run out in steps from the camera, looked into each, split those
 holding cloud into parts and the parts into short steps, each read over the stretch it stood for
@@ -979,7 +988,8 @@ off), 4.5 from 200 km. Coarser levels read faster than the per-step warp costs.
     cover follows it), how stormy (the lows' depth and number), and named climates as presets.
 11. **The rebuilt march** (2026-11-11): near cumulus are crisper and smaller than before (the
     false spread had blurred them; a type's `softness` softens them on purpose); its time is to
-    be measured again, and from high up in a global weather the light's crossings of the levels
-    over each point lit (each placed by the weather systems' map) are some third of it, which could
-    be read once a placing and lent to its steps; the Earth story (`CloudVolume`, `Earth`) shows
-    artifacts still to be looked at.
+    be measured again. A global weather walks every step (some 5 times the turns a skipping march
+    took from 20 km up): a pyramid of the weather map's maxima would let it pass clear air again.
+    From high up the light's crossings of the levels over each point lit (each placed by the
+    weather systems' map) are some third of its time, which could be read once a step and lent
+    to its points. The horizon aliases in the Earth story.

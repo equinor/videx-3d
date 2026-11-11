@@ -191,11 +191,6 @@ uniform vec3 uCloudDetail;
 // clear by this many of the edge's deviations however its lumps fell (gClear); nearer cloud, it
 // walks on.
 #define CLOUD_CLEAR 4.0
-// A step's level is placed again (cloudSet) once the march has moved this far (m) from where it was
-// placed last, or the pixel's footprint there: the weather systems' map and the ground's broad
-// height it is placed by change over tens of kilometres, and placing it every step read them a
-// score of times as often.
-#define CLOUD_PLACE_AGAIN 1000.0
 // The first stretch toward the light: a cloud's skin (m, at scale 1), how its lit side and its
 // shaded side differ; and the light read through a level's own cloud up to its top, but no
 // further than this many of its clouds' sizes (cloudLight).
@@ -943,7 +938,8 @@ bool cloudMaybe(CloudLevel L, vec3 o, float extent, float lo, float hi, float w,
 
 // The view's `count` runs (gRuns, gLevels), marched front to back in one loop. Each turn of it
 // either looks into a stretch ahead (cloudMaybe) or walks a step: the step's level placed at its
-// middle (cloudSet), its extinction read there over the pixel's footprint (cloudDensity), taken as
+// middle (cloudSet, every step: where the level was placed must not depend on where the steps
+// fell), its extinction read there over the pixel's footprint (cloudDensity), taken as
 // even along the step (exactly: cloudAdd), and lit where the step's light comes from on average,
 // 1/τ − 1/(e^τ − 1) of the way in for its optical depth τ.
 //
@@ -953,19 +949,24 @@ bool cloudMaybe(CloudLevel L, vec3 o, float extent, float lo, float hi, float w,
 //
 // - the pattern: uCloudDetail.x of the footprint's width, but no finer than two texels of the
 //   shape volume (what the finest of it holds);
-// - the level's depth: uCloudMarch.y steps up it, along the view's slope through it, so what lies
-//   over and under (the tops' edge, the light falling off into a deck) is resolved however
-//   grazing the view;
+// - the level's depth as placed at the last step (a global weather's deck can be a third of its
+//   type's): uCloudMarch.y steps up it, along the view's slope through it, so what lies over and
+//   under (the tops' edge, the light falling off into a deck) is resolved however grazing the
+//   view. Sized by the deepest the level can be instead, a thin deck's top was found up to a step
+//   late, by where the steps fell, and moved as the camera did (2026-11-11);
 // - what it holds: the extinction the last steps found (halved each step since), so a step through
 //   cloud hides about uCloudMarch.z: the light a view sees comes from within a free path or two of
 //   where it enters cloud, and changes as fast. A step that found more than CLOUD_AGAIN is walked
 //   again, shorter, sized by what it found.
 //
-// Clear air is passed over: past a step finding no cloud, the march looks into a stretch twice as
-// long ahead, and on as long as each is clear, up to its run's own layout (its uCloudShells.w
-// steps, growing geometrically from its near end); a stretch that may hold cloud is looked into
-// again at half its length, down to a step's. The bound (cloudMaybe) holds whatever the stretch,
-// so how they fall changes how much is walked, not what is found.
+// In a local weather clear air is passed over: past a step finding no cloud, the march looks into
+// a stretch twice as long ahead, and on as long as each is clear, up to its run's own layout (its
+// uCloudShells.w steps, growing geometrically from its near end); a stretch that may hold cloud is
+// looked into again at half its length, down to a step's. The bound (cloudMaybe) holds whatever
+// the stretch, so how they fall changes how much is walked, not what is found. Not in a global
+// weather: its cover and heights come from the weather systems' map, whose mipmaps hold means, so
+// a stretch placed over all of it is no bound (a cloudier or deeper place within it was passed
+// over: 3.5 % of the clouds' pixels off from 20 km up, whole clouds missing).
 //
 // One loop, its turns alike: the density's and the light's reads compiled into it once (written
 // as loops in loops, the march's link took 16 s, 2026-11-10).
@@ -986,13 +987,9 @@ void cloudMarchRuns(int count) {
   float overA = 0.0;
   float rho = 0.0;
   float look = 0.0;
-  // The level as last placed for a step (cloudSet): where, over what footprint, and whether it
-  // holds any cloud there.
+  // The level as placed for the last step (cloudSet), and which level that was.
   CloudLevel P = cloudLevel(0);
-  vec3 placedAt = vec3(0.0);
-  float placedFoot = 0.0;
   int placedLevel = -1;
-  bool placed = false;
   for(int turn = 0; turn < uCloudMarchMost; turn++) {
     if(gTransmit < uCloudDetail.z)
       break;
@@ -1016,7 +1013,7 @@ void cloudMarchRuns(int count) {
     }
     // A step's length from here (see above): through cloud, and through clear air past what the
     // last steps found.
-    vec4 shell = uCloudShells[l];
+    vec4 shell = placedLevel == l ? P.shell : uCloudShells[l];
     float texel = uCloudLooks[l].w * CLOUD_COVER_SIZE / CLOUD_LUMP_TILES / CLOUD_SHAPE_TEXELS;
     float rise = abs(dot(gDir, cloudUpAt(t)));
     float pattern = uCloudDetail.x * uCloudMarch.w * t;
@@ -1024,7 +1021,11 @@ void cloudMarchRuns(int count) {
     float inCloud = min(max(pattern, 2.0 * texel), layer);
     float fine = rho > 0.0 ? min(inCloud, uCloudMarch.z / rho) : min(max(pattern, CLOUD_STEP_TEXELS * texel), layer);
     fine = max(fine * uCloudStepScale, 1.0);
+#if defined(CLOUD_GLOBAL)
+    bool skim = false;
+#else
     bool skim = look > fine;
+#endif
     float len = skim ? look : fine;
     float to = t + len;
     if(to > end - 0.25 * len)
@@ -1072,15 +1073,9 @@ void cloudMarchRuns(int count) {
       }
       look = min(2.0 * len, (to - start + near) * grow);
     } else {
-      // Placed again once it has moved CLOUD_PLACE_AGAIN or its footprint on from where it was
-      // last: what places it changes over tens of kilometres.
-      if(placedLevel != l || distance(o, placedAt) > max(CLOUD_PLACE_AGAIN, foot) || foot > 2.0 * placedFoot) {
-        P = S;
-        placed = cloudSet(P, uCloudCamera + o, foot);
-        placedAt = o;
-        placedFoot = foot;
-        placedLevel = l;
-      }
+      P = S;
+      bool placed = cloudSet(P, uCloudCamera + o, foot);
+      placedLevel = l;
       gClear = 1e3;
       float sigma = placed ? cloudDensity(P, o, foot, true) : 0.0;
       float clear = gClear;
