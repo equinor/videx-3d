@@ -1,18 +1,9 @@
-import { useFrame, useThree } from '@react-three/fiber';
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite';
-import {
-  type CSSProperties,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { DataUtils } from 'three';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { createOceanPlane } from '../../../sdk/geometries/ocean-geometry';
 import type { Vec2, Vec3 } from '../../../sdk/types/common';
 import { directionFromCompass } from '../../../sdk/utils/vector-operations';
-import { SeaState } from '../../../sdk/weather/sea-state';
-import { seaHexTiles } from '../../../sdk/weather/sea-hex';
+import type { SeaQuality } from '../../../sdk/weather/sea-state';
 import {
   SKY_PRESETS,
   WEATHER_LOCAL_RADIUS,
@@ -38,11 +29,9 @@ import {
   type SeaTimes,
   type SeaTourResult,
 } from '../../../storybook/debug/sea-bench';
-import {
-  setStoryArgs,
-  registerVidex3d,
-} from '../../../storybook/debug/videx3d';
+import { setStoryArgs } from '../../../storybook/debug/videx3d';
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
+import { RenderStats } from '../../Html/RenderStats/RenderStats';
 import { Scenery } from '../../Scenery/Scenery';
 import { SceneryClouds } from '../../Scenery/SceneryClouds';
 import { SceneryStage } from '../../Scenery/SceneryStage';
@@ -50,10 +39,6 @@ import type { SceneryStageBounds } from '../../Scenery/scenery-stage';
 import { Weather } from '../../Weather/Weather';
 import { World } from '../../World/World';
 import { Ocean } from '../Ocean';
-import { OceanMaterial } from '../ocean-material';
-import { applyOceanWaterProps } from '../ocean-material-sync';
-import { SeaWaveBake } from '../sea-wave-bake';
-import { createSeaCoreMaterial } from './sea-core-material';
 
 // The sea alone, to time it (documents/ocean.md, "Measuring"): the stand-alone `Ocean` or a
 // `Scenery`'s endless sea, with the same sun, wind and poses, in a canvas of a fixed size at a
@@ -84,19 +69,18 @@ type SeaBenchArgs = {
   viewport: Viewport;
   pixelRatio: number;
   scene: 'ocean' | 'scenery';
-  /** the stand-alone sea's waves: the Ocean's own, the wave core's prototype, or both drawn (to time them in the same frames) */
-  waves: 'current' | 'core' | 'both';
+  /** the stand-alone sea's quality (`Ocean`'s `quality`) */
+  quality: SeaQuality;
   pose: SeaPoseName;
   sunHour: number;
   windSpeed: number;
   /** the compass bearing the wind blows toward */
   windDirection: number;
   foamAmount: number;
-  tonalVariation: number;
-  waveCount: number;
-  detailOctaves: number;
   stage: boolean;
   clouds: 'none' | SkyPreset;
+  /** the frame stats overlay (`RenderStats`), bottom left */
+  stats: boolean;
 };
 
 // The Scenery's args the bench sets; the rest as the scenery stories have them.
@@ -108,7 +92,6 @@ const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   windSpeed: args.windSpeed,
   windDirection: args.windDirection,
   foamAmount: args.foamAmount,
-  seaTonalVariation: args.tonalVariation,
 });
 
 // A compass bearing as the sea's X/Z, north −Z (as sceneryOceanFromArgs).
@@ -152,12 +135,10 @@ const StandAlone = ({
   return (
     <Ocean
       geometry={geometry}
-      waveCount={args.waveCount}
-      detailOctaves={args.detailOctaves}
+      quality={args.quality}
       windSpeed={args.windSpeed}
       windDirection={windOf(args.windDirection)}
       foamAmount={args.foamAmount}
-      tonalVariation={args.tonalVariation}
       sunDirection={sunDirection}
       // As the Ocean stories.
       sunColor="#d6d39f"
@@ -165,153 +146,6 @@ const StandAlone = ({
     />
   );
 };
-
-// The wave core's prototype on the same plane: a SeaState eased toward the args' wind, its
-// layers baked each frame (SeaWaveBake), drawn with the Ocean's own shading.
-const CoreOcean = ({ args, sky }: { args: SeaBenchArgs; sky: SceneryArgs }) => {
-  const geometry = useMemo(() => createOceanPlane({ size: OCEAN_SIZE }), []);
-  const water = useMemo(() => new OceanMaterial(), []);
-  // Made once; the wind is eased toward from then on (below).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const sea = useMemo(() => new SeaState(seaInput(args)), []);
-  const bake = useMemo(() => new SeaWaveBake(sea.layers), [sea]);
-  const material = useMemo(
-    () => createSeaCoreMaterial(water, bake),
-    [water, bake],
-  );
-  useEffect(
-    () => () => {
-      geometry.dispose();
-      water.dispose();
-      bake.dispose();
-      material.dispose();
-    },
-    [geometry, water, bake, material],
-  );
-
-  const { windSpeed, windDirection } = args;
-  useEffect(
-    () => sea.setInput(seaInput({ windSpeed, windDirection })),
-    [sea, windSpeed, windDirection],
-  );
-
-  const { azimuth, elevation } = skySunPosition(sky);
-  useEffect(() => {
-    applyOceanWaterProps(water, {
-      windSpeed,
-      windDirection: windOf(windDirection),
-      sunDirection: directionFromCompass(azimuth, elevation) as Vec3,
-      // As the Ocean stories.
-      sunColor: '#d6d39f',
-      skyColor: '#465a6a',
-    });
-    material.opacity = water.opacity;
-  }, [water, material, windSpeed, windDirection, azimuth, elevation]);
-
-  // Baking held, for timing what the bake costs a frame; and the bake timed in the frames as
-  // they run (a timer query held over an idle, held loop times the GPU waiting too).
-  const baking = useRef(true);
-  // The sea and its bake held still, for comparing the baked tiles with the sea state.
-  const running = useRef(true);
-  const timing = useRef<{
-    left: number;
-    queries: WebGLQuery[];
-    done: (ms: number) => void;
-  } | null>(null);
-  useFrame(({ gl }, delta) => {
-    if (!running.current) return;
-    sea.update(delta);
-    const stats = sea.stats();
-    material.uniforms.uSeaResidual.value = stats.residualSlopeVariance;
-    const variances = material.uniforms.uSeaLayerVariance.value as number[];
-    stats.layers.forEach((layer, i) => (variances[i] = layer.slopeVariance));
-    if (!baking.current) return;
-    const tables = sea.layerTables();
-    const run = timing.current;
-    const ctx = gl.getContext() as WebGL2RenderingContext;
-    const ext = run
-      ? (ctx.getExtension('EXT_disjoint_timer_query_webgl2') as {
-          TIME_ELAPSED_EXT: number;
-          GPU_DISJOINT_EXT: number;
-        } | null)
-      : null;
-    if (!run || !ext || run.left <= 0) {
-      bake.update(gl, tables);
-    } else {
-      const query = ctx.createQuery();
-      ctx.beginQuery(ext.TIME_ELAPSED_EXT, query);
-      bake.update(gl, tables);
-      ctx.endQuery(ext.TIME_ELAPSED_EXT);
-      run.queries.push(query);
-      run.left--;
-    }
-    if (run && ext && run.left <= 0) {
-      const ready = run.queries.every(q =>
-        ctx.getQueryParameter(q, ctx.QUERY_RESULT_AVAILABLE),
-      );
-      if (!ready) return;
-      const disjoint = ctx.getParameter(ext.GPU_DISJOINT_EXT) as boolean;
-      const ms = run.queries
-        .map(q => ctx.getQueryParameter(q, ctx.QUERY_RESULT) / 1e6)
-        .sort((a, b) => a - b);
-      for (const q of run.queries) ctx.deleteQuery(q);
-      timing.current = null;
-      run.done(disjoint ? NaN : ms[ms.length >> 1]);
-    }
-  });
-
-  const gl = useThree(state => state.gl);
-  useEffect(
-    () =>
-      registerVidex3d({
-        seaCore: {
-          sea,
-          setBaking: (on: boolean) => {
-            baking.current = on;
-          },
-          setRunning: (on: boolean) => {
-            running.current = on;
-          },
-          hexTiles: seaHexTiles,
-          timeBake: (frames = 60) =>
-            new Promise<number>(done => {
-              timing.current = { left: frames, queries: [], done };
-            }),
-          readLayer: (index: number) => {
-            const { layer } = bake.layers[index];
-            const n = layer.texels;
-            const raw = new Uint16Array(n * n * 4);
-            gl.readRenderTargetPixels(
-              bake.targets[index],
-              0,
-              0,
-              n,
-              n,
-              raw,
-              undefined,
-              0,
-            );
-            const heights = new Float32Array(n * n);
-            for (let i = 0; i < n * n; i++)
-              heights[i] = DataUtils.fromHalfFloat(raw[i * 4 + 2]);
-            return { size: layer.size, angle: layer.angle, texels: n, heights };
-          },
-        },
-      }),
-    [sea, bake, gl],
-  );
-
-  return <mesh geometry={geometry} material={material} />;
-};
-
-// The sea state's input from the args: the wind alone for now.
-const seaInput = ({
-  windSpeed,
-  windDirection,
-}: Pick<SeaBenchArgs, 'windSpeed' | 'windDirection'>) => ({
-  windSpeed,
-  windDirection: windOf(windDirection),
-});
 
 const weatherOf = (preset: SkyPreset): WeatherState => {
   const { layers, wind } = SKY_PRESETS[preset];
@@ -358,15 +192,13 @@ const SeaBenchStory = (args: SeaBenchArgs) => {
   return (
     <>
       {ocean ? (
-        <>
-          {args.waves !== 'core' && <StandAlone args={args} sky={sky} />}
-          {args.waves !== 'current' && <CoreOcean args={args} sky={sky} />}
-        </>
+        <StandAlone args={args} sky={sky} />
       ) : (
         <SceneryScene args={args} sky={sky} />
       )}
       <BenchPose pose={args.pose} />
       <SeaBenchBridge poses={ocean ? OCEAN_POSES : SCENERY_POSES} />
+      {args.stats && <RenderStats origin="bottom-left" />}
     </>
   );
 };
@@ -557,11 +389,11 @@ const meta = {
       description:
         'OCEAN: the stand-alone `Ocean`, a 50 km plane. SCENERY: a `Scenery`’s endless sea, with a stage over the field as in its Timelapse.',
     },
-    waves: {
+    quality: {
       control: { type: 'inline-radio' },
-      options: ['current', 'core', 'both'],
+      options: ['low', 'medium', 'high', 'ultra'],
       description:
-        'The stand-alone sea’s waves. CURRENT: the `Ocean`’s own. CORE: the wave core’s prototype (a `SeaState`’s layers baked by `SeaWaveBake`), with the same Fresnel, reflection and glint, and no tonal patches or foam. BOTH: both drawn over each other, to time them in the same frames.',
+        'The stand-alone sea’s `quality`: how much of the sea state’s waves it draws (`SEA_QUALITY`).',
       if: { arg: 'scene', eq: 'ocean' },
     },
     pose: {
@@ -581,17 +413,6 @@ const meta = {
       description: 'The compass bearing the wind blows toward.',
     },
     foamAmount: { control: { type: 'range', min: 0, max: 1, step: 0.01 } },
-    tonalVariation: { control: { type: 'range', min: 0, max: 1, step: 0.01 } },
-    waveCount: {
-      control: { type: 'range', min: 1, max: 64, step: 1 },
-      description: 'The stand-alone sea’s only.',
-      if: { arg: 'scene', eq: 'ocean' },
-    },
-    detailOctaves: {
-      control: { type: 'range', min: 1, max: 8, step: 1 },
-      description: 'The stand-alone sea’s only.',
-      if: { arg: 'scene', eq: 'ocean' },
-    },
     stage: {
       control: { type: 'boolean' },
       description:
@@ -605,22 +426,24 @@ const meta = {
         'A local weather’s sky (`SKY_PRESETS`), drawn by `SceneryClouds` at medium quality; the sea keeps its own wind.',
       if: { arg: 'scene', eq: 'scenery' },
     },
+    stats: {
+      control: { type: 'boolean' },
+      description: 'The frame stats overlay (`RenderStats`), bottom left.',
+    },
   },
   args: {
     viewport: '1920x1080',
     pixelRatio: 1,
     scene: 'scenery',
-    waves: 'current',
+    quality: 'medium',
     pose: '300m',
     sunHour: 10,
     windSpeed: 10,
     windDirection: 90,
     foamAmount: 0.5,
-    tonalVariation: 0.4,
-    waveCount: 16,
-    detailOctaves: 4,
     stage: true,
     clouds: 'none',
+    stats: false,
   },
 } satisfies Meta<typeof SeaBenchStory>;
 
@@ -633,9 +456,4 @@ export const Default: Story = {};
 /** The stand-alone `Ocean`, a 50 km plane, at the same size, sun, wind and pose. */
 export const StandAloneOcean: Story = {
   args: { scene: 'ocean' },
-};
-
-/** The wave core's prototype on the stand-alone plane: a `SeaState`'s baked layers. */
-export const WaveCore: Story = {
-  args: { scene: 'ocean', waves: 'core' },
 };

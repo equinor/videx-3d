@@ -1,5 +1,6 @@
 import { Vector2, Vector3 } from 'three';
 import { Vec2, Vec3 } from '../../sdk/types/common';
+import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
 import { OceanBedMaterial } from './ocean-bed-material';
 import { OceanMaterial } from './ocean-material';
 import { OceanVolumeMaterial } from './ocean-volume-material';
@@ -26,9 +27,14 @@ export type OceanWaterProps = {
   windSpeed?: number;
   /** Wave height multiplier on top of the spectrum's physical Hs. */
   amplitude?: number;
-  /** Angular spread (radians) of the wave directions around the wind. */
+  /**
+   * Swells from weather far away, running on regardless of the wind here: each its
+   * significant height (m), peak period (s) and the way it travels.
+   */
+  swells?: SeaSwell[];
+  /** @deprecated the waves spread about the wind as the spectrum has them; ignored */
   directionalSpread?: number;
-  /** Apparent surface choppiness (normal exaggeration / Gerstner sharpness). */
+  /** The waves' slopes scaled for show: 1 (the default) as the spectrum gives them. */
   steepness?: number;
   /**
    * Enables vertex displacement (`false` = off / flat, per-pixel normals
@@ -112,13 +118,13 @@ export type OceanWaterProps = {
    * Default 0.3 — this is what softens the band as you zoom out.
    */
   shoreFoamFade?: number;
-  /** Strength of the large-scale tonal variation (currents / slicks), 0 = off. */
+  /** @deprecated the tonal patches are no longer drawn; ignored */
   tonalVariation?: number;
-  /** Approximate size of the tonal variation patches, in kilometers. */
+  /** @deprecated ignored */
   tonalScale?: number;
-  /** Crispness of the tonal variation patch edges (0 = soft, 1 = hard). */
+  /** @deprecated ignored */
   tonalSharpness?: number;
-  /** Colour the water drifts toward in the tonal variation (current / algae / pollution tint). */
+  /** @deprecated ignored */
   tonalColor?: string;
   /** Zenith sky colour used for the procedural reflection. */
   skyColor?: string;
@@ -134,17 +140,21 @@ export type OceanWaterProps = {
   sunShininess?: number;
   /** Foam colour. */
   foamColor?: string;
-  /** Foam amount, 0 = none. */
+  /**
+   * Whitecaps, 0 = none: 0.5 (the default) covers the share of the sea measured at sea for
+   * the wind (Monahan and O'Muircheartaigh, about 1 % at 10 m/s and 10 % at 20 m/s), 1 twice
+   * that.
+   */
   foamAmount?: number;
   /** Fresnel exponent (higher = reflections concentrated near the horizon). */
   fresnelPower?: number;
-  /** Micro-ripple frequency (waves per world unit) for close-up detail. */
+  /** The foam's feature frequency, per metre. Default 0.05. */
   detailScale?: number;
-  /** Micro-ripple normal strength. */
+  /** @deprecated the fine ripples are the sea's finest layer; ignored */
   detailStrength?: number;
   /**
-   * Distances from the camera, `[start, end]`, over which the waves, foam and tonal
-   * variation fade out, leaving a flat mirror. Default `[15000, 60000]`.
+   * Distances from the camera, `[start, end]`, over which the waves and foam fade
+   * out, leaving a flat mirror. Default `[15000, 60000]`.
    */
   detailFadeDistance?: [number, number];
 };
@@ -226,6 +236,7 @@ export function applyOceanWaterProps(
     );
   if (props.windSpeed !== undefined) material.windSpeed = props.windSpeed;
   if (props.amplitude !== undefined) material.amplitude = props.amplitude;
+  if (props.swells) material.swells = props.swells;
   if (props.directionalSpread !== undefined)
     material.directionalSpread = props.directionalSpread;
   if (props.steepness !== undefined) material.steepness = props.steepness;
@@ -319,15 +330,10 @@ export function applyOceanBodyProps(
   material.masterOpacity = opacity;
   material.opacity = Math.min(opacity, 0.999);
 
-  // Make the wall top ring follow the same wave displacement as the surface so
-  // the rim stays sealed. The surface mutates its tables in place on sea-state
-  // changes, so sharing them by reference keeps the walls in step for free.
+  // Make the wall top ring follow the same wave heights as the surface so the rim
+  // stays sealed: its sea layers, shared by reference.
   if (surface) {
-    material.setWaveTables(
-      surface.uniforms.uWaveA.value,
-      surface.uniforms.uWaveB.value,
-    );
-    material.steepness = surface.steepness;
+    material.linkSea(surface);
     material.displacement = surface.displacement;
   }
 }

@@ -30,6 +30,8 @@ export type SeaSpectrumInput = {
   /** the way the wind blows toward, in the wave plane (X, Z); need not be unit */
   windDirection: Vec2;
   swells?: SeaSwell[];
+  /** every wave's height scaled by this, the spectrum's variance by its square. Default 1 */
+  heightScale?: number;
 };
 
 /** A long swell's default spreading exponent (cos^2s): narrow. */
@@ -137,10 +139,11 @@ type Part = {
  */
 export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
   const parts: Part[] = [];
+  const scale2 = Math.max(input.heightScale ?? 1, 0) ** 2;
   const wind = windSeaPeak(input.windSpeed);
-  if (wind.height > 0) {
+  if (wind.height > 0 && scale2 > 0) {
     const wp = wind.omega;
-    const m0 = (wind.height / 4) ** 2;
+    const m0 = (wind.height / 4) ** 2 * scale2;
     // The shape at wp is the unit one scaled: ∫ = JONSWAP_UNIT · wp^-4.
     const scale = m0 / (JONSWAP_UNIT * Math.pow(wp, -4));
     parts.push({
@@ -151,10 +154,10 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
     });
   }
   for (const swell of input.swells ?? []) {
-    if (!(swell.height > 0) || !(swell.period > 0)) continue;
+    if (!(swell.height > 0) || !(swell.period > 0) || scale2 <= 0) continue;
     const ws = (2 * Math.PI) / swell.period;
     const sigma = SWELL_WIDTH * ws;
-    const m0 = (swell.height / 4) ** 2;
+    const m0 = (swell.height / 4) ** 2 * scale2;
     const s = swell.spread ?? SEA_SWELL_SPREAD;
     parts.push({
       frequency: w =>

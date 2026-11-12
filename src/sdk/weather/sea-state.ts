@@ -42,7 +42,37 @@ export const SEA_LAYERS_MEDIUM: readonly SeaLayerSpec[] = [
   { size: 47, texels: 128, waves: 256 },
 ];
 
+/**
+ * How much a sea draws of its waves: `low` its layers on coarser tiles, `high` a fourth layer
+ * down to waves a quarter of a metre long, for close up, `ultra` finer tiles still. `medium`
+ * is sized for a mid-range laptop's integrated GPU.
+ *
+ * @group Weather
+ */
+export type SeaQuality = 'low' | 'medium' | 'high' | 'ultra';
+
+/** The layers each {@link SeaQuality} draws. */
+export const SEA_QUALITY: Readonly<
+  Record<SeaQuality, readonly SeaLayerSpec[]>
+> = {
+  low: SEA_LAYERS_MEDIUM.map(layer => ({ ...layer, texels: 64, waves: 128 })),
+  medium: SEA_LAYERS_MEDIUM,
+  high: [...SEA_LAYERS_MEDIUM, { size: 7.3, texels: 128, waves: 256 }],
+  ultra: [
+    ...SEA_LAYERS_MEDIUM.map(layer => ({ ...layer, texels: 256, waves: 384 })),
+    { size: 7.3, texels: 256, waves: 384 },
+  ],
+};
+
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+/**
+ * The detail octave: the finest layer's tile read this many times smaller (about the ratio of
+ * one layer's size to the next), for the ripples below its band, at no bake of its own.
+ */
+export const SEA_DETAIL_SCALE = 6.4;
+// The detail octave's slope variance over its finest layer's, at most.
+const DETAIL_RATIO_LIMIT = 4;
 
 /** The layers `specs` make: each one's band from the last's top to its own 4-texel limit. */
 export function seaLayers(specs: readonly SeaLayerSpec[]): SeaLayer[] {
@@ -132,6 +162,12 @@ export type SeaStateStats = {
   targetHeight: number;
   /** per layer: height variance and slope variance (both axes summed) of its waves drawn */
   layers: { variance: number; slopeVariance: number }[];
+  /**
+   * The detail octave ({@link SeaState.detail}): the gain on the finest layer's slopes as it
+   * reads them, the slope variance that gives, and its tile point's shift now, [0, 1) — its
+   * ripples drifting downwind at their own speed.
+   */
+  detail: { gain: number; slopeVariance: number; offset: [number, number] };
   /** slope variance no wave stands for, the smallest waves' included (Cox and Munk) */
   residualSlopeVariance: number;
 };
@@ -150,6 +186,13 @@ export type SeaStateStats = {
  */
 export class SeaState {
   readonly layers: SeaLayer[];
+  /**
+   * The detail octave: the finest layer's tile {@link SEA_DETAIL_SCALE} times smaller, turned
+   * apart from it, standing for the ripples in the band below it (`kMin` to `kMax`). It draws
+   * no waves of its own (`waves` 0): the surface reads the finest layer's texture again,
+   * scaled by the gain {@link SeaState.stats} gives.
+   */
+  readonly detail: SeaLayer;
   readonly response: number;
   readonly seed: number;
   /** each layer's tile read hex-tiled, as the surface reads it */
@@ -158,6 +201,8 @@ export class SeaState {
   time = 0;
 
   private spectrum: SeaSpectrum | null = null;
+  // the detail octave's slope variance over its finest layer's, in the spectrum
+  private detailRatio = 0;
   private readonly candidates: Candidates[];
   private readonly pools: Pool[];
   private readonly tables: SeaLayerTable[];
@@ -168,6 +213,15 @@ export class SeaState {
 
   constructor(input: SeaSpectrumInput, options: SeaStateOptions = {}) {
     this.layers = seaLayers(options.layers ?? SEA_LAYERS_MEDIUM);
+    const finest = this.layers[this.layers.length - 1];
+    this.detail = {
+      size: finest.size / SEA_DETAIL_SCALE,
+      angle: (finest.angle + GOLDEN_ANGLE) % (2 * Math.PI),
+      texels: finest.texels,
+      kMin: finest.kMax,
+      kMax: finest.kMax * SEA_DETAIL_SCALE,
+      waves: 0,
+    };
     this.response = options.response ?? SEA_RESPONSE_ACCELERATED;
     this.seed = options.seed ?? 0;
     this.hex = options.hex ?? true;
@@ -270,6 +324,22 @@ export class SeaState {
       this.strongest[l] = strongest;
       this.select(l, spectrum);
     });
+    // The detail octave's band, over the slope variance its finest layer draws once eased.
+    const l = this.layers.length - 1;
+    const cand = this.candidates[l];
+    let drawn = 0;
+    for (const i of this.orders[l]) {
+      const a = cand.target[i] * this.gains[l];
+      drawn +=
+        0.5 * a * a * (cand.kx[i] * cand.kx[i] + cand.kz[i] * cand.kz[i]);
+    }
+    this.detailRatio =
+      drawn > 0
+        ? Math.min(
+            spectrum.slopeVariance(this.detail.kMin, this.detail.kMax) / drawn,
+            DETAIL_RATIO_LIMIT,
+          )
+        : 0;
   }
 
   // The strongest targets this layer has room for, strongest first: sorted as the targets change.
@@ -464,14 +534,42 @@ export class SeaState {
       return { variance: v, slopeVariance: sv };
     });
     const input = this.spectrum?.input;
+    // The detail octave follows its finest layer as that eases, at the spectrum's ratio.
+    const finest = layers[layers.length - 1];
+    const detailSlope = this.detailRatio * finest.slopeVariance;
+    drawnSlope += detailSlope;
     return {
       significantHeight: 4 * Math.sqrt(variance),
       targetHeight: this.spectrum?.significantHeight ?? 0,
       layers,
+      detail: {
+        gain: Math.sqrt(this.detailRatio),
+        slopeVariance: detailSlope,
+        offset: this.detailOffset(),
+      },
       residualSlopeVariance: Math.max(
         coxMunkSlopeVariance(input?.windSpeed ?? 0) - drawnSlope,
         0,
       ),
     };
+  }
+
+  // Ripples drift downwind at their phase speed (in the middle of their band), as the detail
+  // octave's tile point shifts: back along that, in its turned tile, wrapped.
+  private detailOffset(): [number, number] {
+    const input = this.spectrum?.input;
+    if (!input) return [0, 0];
+    const [wx, wz] = input.windDirection;
+    const length = Math.hypot(wx, wz);
+    if (!(length > 0)) return [0, 0];
+    const { size, angle, kMin, kMax } = this.detail;
+    const speed = Math.sqrt(SEA_G / Math.sqrt(kMin * kMax));
+    const dx = ((wx / length) * speed * this.time) / size;
+    const dz = ((wz / length) * speed * this.time) / size;
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const u = -(c * dx + s * dz);
+    const v = -(-s * dx + c * dz);
+    return [u - Math.floor(u), v - Math.floor(v)];
   }
 }

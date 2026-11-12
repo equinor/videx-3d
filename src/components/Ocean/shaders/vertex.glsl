@@ -1,36 +1,28 @@
 // Ocean surface vertex shader.
 //
-// The visible wave shape at oilfield scale comes almost entirely from the
-// fragment shader's per-pixel normals (a single wave is sub-pixel to a few
-// pixels across when the field spans tens of kilometres). Actual vertex
-// displacement is therefore OFF by default (uDisplacement = 0): it only becomes
-// perceptible when the camera is very close to the surface, and even then only
-// the longest, lowest-frequency swells are displaced. Its purpose is to support
-// floating objects that need to follow the real surface height.
+// The visible waves come from the fragment shader's per-pixel normals (sea-layers.glsl): at
+// oilfield scale a wave is sub-pixel to a few pixels across. Actual vertex displacement is
+// therefore OFF by default (uDisplacement = 0): it only shows with the camera close to the
+// surface, and then only the longest layers displace, vertically. Its purpose is to let the
+// surface meet floating objects, which ride the same heights (SeaState.heightAt).
 //
 // Displacement (when enabled) is evaluated in WORLD space so it is seamless
 // across tiled/patched geometry.
 
-#ifndef OCEAN_WAVE_COUNT
-#define OCEAN_WAVE_COUNT 16
-#endif
-#ifndef OCEAN_DISPLACE_COUNT
-#define OCEAN_DISPLACE_COUNT 3
+// The last of the sea's layers the surface is displaced by: the longest two.
+#ifndef SEA_DISPLACE_LAST
+#define SEA_DISPLACE_LAST 1
 #endif
 
-uniform float uTime;
-uniform float uSteepness; // Gerstner choppiness for the displaced swells
 uniform float uDisplacement; // 0 = off (normals only), 1 = full swell height
 
 varying vec3 vWorldPosition;
 varying vec3 vViewPosition;
 varying vec2 vUv;
-// Undisplaced world X/Z of this vertex. The fragment shader evaluates the wave
-// field (and foam/tonal/ripples) here rather than at the displaced world
-// position: the horizontal Gerstner displacement, linearly interpolated across
-// each triangle, otherwise warps the sampling coordinate into a regular
-// vertex-grid moiré (a lens/polka-dot pattern). When displacement is off this
-// equals vWorldPosition.xz, so the default look is unchanged.
+// Undisplaced world X/Z of this vertex: the fragment shader reads the waves and
+// foam here rather than at the displaced world position, so the surface's
+// texture stays where the waves are, however the vertices move. When
+// displacement is off this equals vWorldPosition.xz.
 varying vec2 vSurfaceXZ;
 
 #if defined(OCEAN_BATHYMETRY) || defined(OCEAN_FENCE)
@@ -51,7 +43,7 @@ varying float vSectionDist;
 #include <common>
 #include <fog_pars_vertex>
 #include <logdepthbuf_pars_vertex>
-#include ./waves.glsl
+#include ./sea-layers.glsl
 
 void main() {
   vUv = uv;
@@ -67,15 +59,10 @@ void main() {
   vec4 worldPos = modelMatrix * vec4(position, 1.0);
   vSurfaceXZ = worldPos.xz; // capture before displacement
 
-  if(uDisplacement > 0.0) {
-    // Shared displacement (see oceanDisplacement in waves.glsl): the horizontal
-    // Gerstner orbit is proportional to each swell's own amplitude (flattened by
-    // uSteepness) so it stays in proportion with the height and can never fold.
-    // The water-body wall top uses the SAME helper, so the surface edge and wall
-    // rim stay sealed together.
-    vec3 disp = oceanDisplacement(worldPos.xz, uTime, uSteepness, uDisplacement, OCEAN_DISPLACE_COUNT);
-    worldPos.xyz += disp;
-  }
+  if(uDisplacement > 0.0)
+    // The same height as the water-body wall's top ring (volume-vertex.glsl), so the rim
+    // stays sealed.
+    worldPos.y += uDisplacement * seaHeight(worldPos.xz, SEA_DISPLACE_LAST);
 
   vWorldPosition = worldPos.xyz;
 

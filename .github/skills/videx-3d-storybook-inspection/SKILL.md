@@ -105,9 +105,9 @@ coordinates yourself.
   with `window.videx3d.cloudBench`: `pass`, `frames`, `count`, `ab` — documents/clouds.md,
   "Measuring"), `debug-ocean-sea-bench--default` / `--stand-alone-ocean` (the Scenery's sea or
   the stand-alone `Ocean`, fixed 1920 × 1080 at 1; time each sea draw with
-  `window.videx3d.seaBench`: `frames`, `tour`, `ab` — documents/ocean.md, "Measuring"),
-  `debug-ocean-sea-bench--wave-core` (the wave core's prototype; `args=waves:both` draws it and
-  the `Ocean` in the same frames to time them; `window.videx3d.seaCore` — documents/ocean-waves.md).
+  `window.videx3d.seaBench`: `frames`, `tour`, `ab` — documents/ocean.md, "Measuring"). ⚠️ The
+  sea's wave bake (`OceanMaterial.renderWaves`) draws outside the scene: no draw group times it,
+  only `frame` holds it — judge a sea change by the frame too.
 - ⚠️ GPU A/B on the Iris Xe: the clock jumps between plateaus (one march 11→52 ms) and a program
   just compiled runs ~2× slow for seconds. Judge only interleaved per-round ratios with a no-op
   control, new programs drawn untimed ~3 s first (`cloudBench.ab` does both).

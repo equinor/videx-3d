@@ -110,6 +110,32 @@ describe('SeaState', () => {
     expect(Math.abs(meanDirection(sea) - Math.PI / 2)).toBeLessThan(0.1);
   });
 
+  it('draws the ripples below its finest layer as the detail octave, out of the residual, without a jump', () => {
+    const sea = new SeaState(wind(10));
+    const before = sea.stats();
+    const finest = sea.layers[sea.layers.length - 1];
+    const band = seaSpectrum(wind(10)).slopeVariance(
+      sea.detail.kMin,
+      sea.detail.kMax,
+    );
+    expect(sea.detail.kMin).toBeCloseTo(finest.kMax, 9);
+    const share = before.detail.slopeVariance / band;
+    expect(share, 'the band’s slope variance, as drawn').toBeGreaterThan(0.8);
+    expect(share).toBeLessThan(1.2);
+    // What the detail octave draws, the residual no longer holds.
+    const drawn = before.layers.reduce((s, l) => s + l.slopeVariance, 0);
+    expect(
+      drawn + before.detail.slopeVariance + before.residualSlopeVariance,
+    ).toBeCloseTo(0.003 + 0.00512 * 10, 6);
+    // A change of wind eases it with its finest layer rather than jumping.
+    sea.setInput(wind(3));
+    sea.update(1 / 60);
+    const after = sea.stats();
+    expect(
+      after.detail.slopeVariance / before.detail.slopeVariance,
+    ).toBeGreaterThan(0.9);
+  });
+
   it('lets waves join and leave only at no amplitude', () => {
     const sea = new SeaState(wind(8, EAST));
     const amplitudes = () => {

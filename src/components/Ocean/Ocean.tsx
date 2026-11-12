@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { BufferGeometry, Group, Vector3 } from 'three';
 import { CommonComponentProps, CustomMaterialProps } from '../../common/types';
+import type { SeaQuality } from '../../sdk/weather/sea-state';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import { OceanBedMaterial } from './ocean-bed-material';
@@ -57,9 +58,15 @@ export type OceanProps = CommonComponentProps &
      * it is rendered as a separate sun-shaded mesh below the surface.
      */
     bedGeometry?: BufferGeometry;
-    /** Number of summed spectral wave components (compile-time). */
+    /**
+     * How much of the sea's waves it draws: `low`, `medium` (the default, sized for a
+     * mid-range laptop), `high` (a fourth, finest layer for close up) or `ultra`.
+     * ⚠️ Compile-time: another quality is another material.
+     */
+    quality?: SeaQuality;
+    /** @deprecated the waves are a sea state's layers (`quality`); ignored */
     waveCount?: number;
-    /** Number of FBM micro-ripple octaves (compile-time). */
+    /** Octaves of the shore's ragged edge noise (compile-time). */
     detailOctaves?: number;
     /** Master opacity multiplier (also drives OIT routing). */
     opacity?: number;
@@ -89,12 +96,12 @@ export type OceanProps = CommonComponentProps &
  * Stylized animated ocean surface.
  *
  * Renders the provided geometry as a procedurally animated, OIT-compatible
- * water surface. The wave field is sampled from a North-Sea JONSWAP spectrum
- * driven by the wind speed (m/s); the visible waves are reconstructed per-pixel
- * as surface normals (plus a fine micro-ripple layer up close), all evaluated
- * in world X/Z space so the pattern is continuous across tiled patches with no
- * repeating texture assets. Level-of-detail uses per-wave footprint
- * anti-aliasing, so there is no visible LOD ring. Transparency is Fresnel-driven
+ * water surface. Its waves are a sea state's (`SeaState`): a North-Sea JONSWAP
+ * spectrum for the wind (m/s) and swells, which a change of wind eases toward
+ * rather than rewrites, drawn from a few layers baked each frame and read so they
+ * never repeat, all in world X/Z space so the pattern is continuous across tiled
+ * patches. Each layer is filtered to the pixel, so there is no visible LOD ring,
+ * and floating children ride the same waves. Transparency is Fresnel-driven
  * (see-through looking down, reflective at grazing angles) and composites
  * correctly with the other transparent subsurface geometry through the
  * OITRenderPass.
@@ -113,10 +120,11 @@ export const Ocean = forwardRef(
       windDirection,
       windSpeed,
       amplitude,
+      swells,
       directionalSpread,
       steepness,
       displacement,
-      waveCount = 16,
+      quality = 'medium',
       detailOctaves = 4,
       deepColor,
       shallowColor,
@@ -176,14 +184,14 @@ export const Ocean = forwardRef(
 
     const material = useMemo(() => {
       if (customMaterial) return customMaterial;
-      return new OceanMaterial({ waveCount, detailOctaves });
-    }, [customMaterial, waveCount, detailOctaves]);
+      return new OceanMaterial({ quality, detailOctaves });
+    }, [customMaterial, quality, detailOctaves]);
 
     // Optional water-body (side walls) material — a separate mesh so it routes
     // through OIT independently of the surface and sea bed.
     const volumeMaterial = useMemo(
-      () => (bodyGeometry ? new OceanVolumeMaterial({ waveCount }) : null),
-      [bodyGeometry, waveCount],
+      () => (bodyGeometry ? new OceanVolumeMaterial() : null),
+      [bodyGeometry],
     );
 
     // Optional sea-bed material — a separate mesh so an opaque bed (opacity 1)
@@ -210,6 +218,12 @@ export const Ocean = forwardRef(
     const contactRegistry = useMemo(createOceanContactRegistry, []);
     // The camera in the ocean's own frame, where its floating children report their footprints.
     const [viewFrom] = useState(() => new Vector3());
+    // The surface's height in that frame: how high the camera is over it.
+    const surfaceY = useMemo(() => {
+      if (!geometry.boundingBox) geometry.computeBoundingBox();
+      const box = geometry.boundingBox!;
+      return (box.min.y + box.max.y) / 2;
+    }, [geometry]);
 
     // Sync prop-driven uniforms onto the material.
     useEffect(() => {
@@ -219,6 +233,7 @@ export const Ocean = forwardRef(
             windDirection: seaWindDirection,
             windSpeed: seaWindSpeed,
             amplitude,
+            swells,
             directionalSpread,
             steepness,
             displacement,
@@ -251,6 +266,7 @@ export const Ocean = forwardRef(
         windDirection: seaWindDirection,
         windSpeed: seaWindSpeed,
         amplitude,
+        swells,
         directionalSpread,
         steepness,
         displacement,
@@ -279,6 +295,7 @@ export const Ocean = forwardRef(
       seaWindDirection,
       seaWindSpeed,
       amplitude,
+      swells,
       directionalSpread,
       steepness,
       displacement,
@@ -363,21 +380,22 @@ export const Ocean = forwardRef(
 
     // Advance the animation clock: the enclosing Weather's pace.
     const step = useWeatherStep();
-    useFrame(({ camera }, delta) => {
+    useFrame(({ camera, gl }, delta) => {
       const waveStep = step(delta);
       if (material instanceof OceanMaterial) {
         material.time += waveStep;
+        const group = ref.current;
+        const view = group
+          ? group.worldToLocal(viewFrom.copy(camera.position))
+          : camera.position;
+        // Layers too fine to show from the camera's height are not baked.
+        material.renderWaves(gl, camera, view.y - surfaceY);
 
         // Collect the registered floating-object footprints and upload them as
         // contact foam, the nearest the camera when there are more than it draws.
         // Skipped entirely when nothing is registered, so there is no per-frame
         // cost on an ocean with no floating children.
-        const group = ref.current;
-        contactRegistry.upload(material, {
-          from: group
-            ? group.worldToLocal(viewFrom.copy(camera.position))
-            : camera.position,
-        });
+        contactRegistry.upload(material, { from: view });
       }
       if (volumeMaterial) {
         volumeMaterial.time += waveStep;

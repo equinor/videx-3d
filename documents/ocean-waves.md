@@ -1,15 +1,14 @@
-# The sea's waves (wave core, prototype)
+# The sea's waves (wave core)
 
-The `Ocean` and the `Scenery`'s sea sum 16 sines per pixel, warp them with two noise fields so
-their sum does not show its period, and add four more noise fields of ripples. That is
-expensive, it repeats as striping toward the horizon, and the wind can only rewrite it: a new
-wind rescales and turns the whole pattern in one frame. Floating objects follow the unwarped
-sum, so they are out of step with the waves drawn.
+The `Ocean` and the `Scenery`'s sea used to sum 16 sines per pixel, warp them with two noise
+fields so their sum did not show its period, and add four more noise fields of ripples. That
+was expensive, it repeated as striping toward the horizon, and the wind could only rewrite it:
+a new wind rescaled and turned the whole pattern in one frame. Floating objects followed the
+unwarped sum, so they were out of step with the waves drawn.
 
 The wave core replaces that with a **sea state** on the CPU and a few **baked layers** on the
-GPU. It is a prototype: the `debug/Ocean/Sea Bench` story's `WaveCore` (and `waves: 'both'`,
-which draws it and the `Ocean` in the same frames to time them). `Ocean` and `Scenery` do not
-use it yet.
+GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
+(`OceanMaterial.renderWaves` each frame, `shaders/sea-layers.glsl` and `ocean-surface.glsl`).
 
 ## The sea state (`sdk/weather/sea-state.ts`)
 
@@ -46,7 +45,26 @@ use it yet.
   variance-preservingly. CPU and GPU hash the cells in the same 32-bit integers, so
   `heightAt` blends the same copies.
 - The surface reads each layer at one mip for the three copies; past its coarsest mip all of a
-  layer lies below the pixel, and only its slope variance is added, with no fetch.
+  layer lies below the pixel, and only its slope variance is added, with no fetch. Past the
+  detail fade (`detailFadeDistance`) no layer is read at all. The mips come from the pixel's
+  size, taken once, so the reads may sit under branches.
+- **The detail octave** (`SeaState.detail`): the finest layer's texture read again,
+  `SEA_DETAIL_SCALE` (6.4) times smaller, turned apart and on its own hex cells, for the
+  ripples below the finest layer's band (1.5 m down to 0.23 m in `medium`, the band `high`
+  bakes a fourth layer for) at no bake of its own. Its gain gives it the spectrum's slope
+  variance in that band over what the finest layer draws, so it eases with that layer, and
+  what it draws leaves the glint's residual. A scaled copy's waves run too slowly for their
+  size, so it slides downwind at the band's phase speed, under cells that stay put (a whole
+  tile's slide changes nothing, so it never pops).
+- **Bake only what shows**: given the camera and its height over the sea, `renderWaves` skips
+  the layers whose whole tile a pixel there spans (`SEA_BAKE_PIXEL_MARGIN`, 2): the surface reads
+  none of them. A layer of tile `size` stops once the camera is higher than
+  size · rows / (2 · margin · tan(fov / 2)): with 1080 rows and a 50° view, the 47 m layer from
+  about 27 km up, the 307 m one from 180 km, the 2011 m one from 1160 km.
+- **Whitecaps** (`oceanWindFoam`, `oceanFoam`): the share of the sea the wind's whitecaps
+  cover (Monahan and O'Muircheartaigh 1980, 3.84·10⁻⁶·U^3.41; `foamAmount` 0.5 as measured),
+  as a threshold on the wind sea's crests in standard deviations (all but the longest layer,
+  broken up by the finest and the ripples); sub-pixel, the share itself. No noise of its own.
 
 ## Measured (2026-11-12, NVIDIA RTX A1000, 1920 × 1080 at 1)
 
@@ -77,6 +95,38 @@ normal. Both seas drawn in the same frames, three interleaved rounds:
   a minute on, toward 4.8) and turns over two minutes.
 - **The sea state on the CPU**: 0.05 ms a frame; 7 ms when the wind or swells change.
 
+## Measured on the Iris Xe (2026-11-12, 1920 × 1080 at 1)
+
+The medium preset's hardware, where the ratios differ from the A1000's: a filtered half-float
+fetch is dear, arithmetic cheap.
+
+| pose | today's core | the new core: draw | bake | total |
+|--|--|--|--|--|
+| 30 m | 1.00 ms | 0.78 | 0.60 | ≈ 1.4 |
+| 300 m | 0.67 | 0.93 | 0.60 | ≈ 1.5 |
+| 2 km | 0.38 | 1.23 | 0.60 | ≈ 1.8 |
+| 20 km | 0.88 | 1.16 | 0.60 | ≈ 1.8 |
+| down, 2 km | 0.64 | 1.32 | 0.60 | ≈ 1.9 |
+
+- Today's core reads ±0.5 ms from round to round; the new core's are steady.
+- **The bake** costs about the same as on the A1000, 0.60 ms; waves a layer barely matter
+  (256 → 64 saves 0.12 ms), so most of it is per pass.
+- **The surface's fetches**: the layers read plainly cost 0.77 ms over a flat normal (300 m),
+  hex-tiled 1.43 ms, hex-tiled with a hash of no integer multiplies (which Intel's GPUs emulate)
+  1.02 ms.
+- **Today's surface** on the Iris Xe is 7.4–8 ms, of which its waves are 5–13 %: 6.5–7.3 ms is
+  its tonal patches and foam noise.
+
+So the wave core alone did not pass on the Iris Xe; it is judged by the whole sea's cost
+instead, which the tonal patches and foam noise dominate (decided 2026-11-12).
+
+## In the sea (2026-11-12, A1000)
+
+With the core in the `Ocean`'s and the `Scenery`'s surface (the tonal patches and every noise
+field but the shore's gone, the whitecaps and the ripples as above), the whole frame is
+0.51–0.90 of the baseline's in the `Scenery` and 0.31–0.57 stand-alone, at every pose
+(documents/ocean.md, "Measuring").
+
 ## Across the globe
 
 A sea state stands for a region's weather. Only the waves near the camera are drawn as waves;
@@ -90,9 +140,14 @@ weather the bake eases toward it as it does for the wind.
 
 ## Still to do
 
-- **Iris Xe**: the bake is a fixed ~0.5 ms on the A1000, some 3 ms there; the presets (layers,
-  texels, waves a layer, how often the long layer is baked) are to be sized on it.
-- **Close up**: the finest layer stops at 1.5 m waves, so up close the sea is softer than today's
-  ripple noise; a fourth layer (about 7 m) for the high presets.
-- **Into the sea**: `Ocean` and `Scenery` (the charts), `Weather` (wind, `swell`, one sea state
-  shared), buoyancy through `heightAt`, foam from the layers, the water's optics.
+- **The whole sea on the Iris Xe**, against the baseline (documents/ocean.md, "Measuring"),
+  and the presets tuned there: layers, texels, hex tiling per layer.
+- **Ripples with the wind**: JONSWAP's tail holds a fixed Phillips constant, so the waves well
+  below the peak, and the ripples, are the same at 3 m/s as at 10 (only the residual's Cox and
+  Munk slopes follow the wind). A short-wave range that grows with the wind (Elfouhaily et
+  al. 1997) would calm them.
+- **Glitter**: the ripples no layer draws only widen the glint, so it is a smooth patch where
+  the sea sparkles.
+- **Into the sea**: `Weather` (`swell`, one sea state shared), the `Scenery`'s far charts for
+  floating objects, gusts and slicks as roughness (where the tonal patches were), the whitecaps'
+  life (streaks downwind, decay), the water's optics.

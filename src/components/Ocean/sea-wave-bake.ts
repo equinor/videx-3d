@@ -90,11 +90,19 @@ export class SeaWaveBake {
     });
   }
 
-  /** Draw the layers' tables (`SeaState.layerTables`) into their tiles. */
-  update(renderer: WebGLRenderer, tables: readonly SeaLayerTable[]): void {
+  /**
+   * Draw the layers' tables (`SeaState.layerTables`) into their tiles, those `drawn` says
+   * (default all): a tile left out keeps what it last held.
+   */
+  update(
+    renderer: WebGLRenderer,
+    tables: readonly SeaLayerTable[],
+    drawn?: (index: number) => boolean,
+  ): void {
     const previous = renderer.getRenderTarget();
     const uniforms = this.material.uniforms;
     tables.forEach((table, i) => {
+      if (drawn && !drawn(i)) return;
       const waves = this.tables[i];
       (waves.image.data as Float32Array).set(table.data);
       waves.needsUpdate = true;

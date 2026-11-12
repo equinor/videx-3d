@@ -64,7 +64,7 @@ const NO_STAGE = [1, 1, -1, -1] as const;
 
 /** The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}. */
 export const SCENERY_SHARED_DEFINES = [
-  'OCEAN_WAVE_COUNT',
+  'SEA_LAYERS',
   'OCEAN_CONTACT_COUNT',
   ...SURFACE_DETAIL_DEFINES,
 ];
@@ -1014,19 +1014,20 @@ export class SceneryMaterial extends ShaderMaterial {
 
   /**
    * Draw the sea with an {@link OceanMaterial}'s water. Its uniform objects are shared
-   * by reference, so its setters, wave tables and clock drive the sky's sea too.
+   * by reference, so its setters, sea layers and clock drive the sky's sea too; the water
+   * bakes its layers each frame (`OceanMaterial.renderWaves`).
    */
   linkOcean(water: OceanMaterial) {
     for (const name of OCEAN_SURFACE_UNIFORMS) {
       this.uniforms[name] = water.uniforms[name];
     }
-    const waves = water.uniforms.uWaveA.value.length;
+    const layers = water.seaState.layers.length;
     const contacts = water.contactCount;
     if (
-      this.switches.OCEAN_WAVE_COUNT !== waves ||
+      this.switches.SEA_LAYERS !== layers ||
       this.switches.OCEAN_CONTACT_COUNT !== contacts
     ) {
-      this.switches.OCEAN_WAVE_COUNT = waves;
+      this.switches.SEA_LAYERS = layers;
       this.switches.OCEAN_CONTACT_COUNT = contacts;
       this.switchesVersion++;
     }

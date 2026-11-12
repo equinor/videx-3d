@@ -123,7 +123,7 @@ export function useStackWater(
     // The bed grid is in the stack's frame, so the level it is measured against
     // has to be too.
     materials.surface.waterLevel = level;
-    // The body shares the surface's wave tables by reference, so its top edge
+    // The body shares the surface's sea layers by reference, so its top edge
     // follows the same swells.
     applyOceanBodyProps(materials.volume, props, materials.surface);
     if (materials.face)
@@ -135,10 +135,11 @@ export function useStackWater(
 
   // The waves at the enclosing Weather's pace.
   const step = useWeatherStep();
-  useFrame((_, delta) => {
+  useFrame(({ gl: renderer }, delta) => {
     const waveStep = step(delta);
     if (!materials) return;
     materials.surface.time += waveStep;
+    materials.surface.renderWaves(renderer);
     materials.volume.time += waveStep;
     if (materials.face) materials.face.time += waveStep;
 

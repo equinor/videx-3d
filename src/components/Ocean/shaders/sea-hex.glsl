@@ -3,21 +3,14 @@
 
 #define SEA_HEX_SCALE 3.4641016
 
-// lowbias32.
-uint seaHash(uint x) {
-  x ^= x >> 16u;
-  x *= 0x7feb352du;
-  x ^= x >> 15u;
-  x *= 0x846ca68bu;
-  x ^= x >> 16u;
-  return x;
-}
-
+// A cell's offset in tile units: one hash, its halves the two 16-bit offsets. Three integer
+// multiplies (the layer's folds away), as Intel's GPUs emulate them.
 vec2 seaHexOffset(ivec2 cell, int layer) {
-  uint seed = (uint(cell.x) * 73856093u) ^ (uint(cell.y) * 19349663u) ^ (uint(layer) * 83492791u);
-  uint a = seaHash(seed);
-  uint b = seaHash(a);
-  return vec2(float(a), float(b)) / 4294967296.0;
+  uint h = (uint(cell.x) * 0x8da6b343u) ^ (uint(cell.y) * 0xd8163841u) ^ (uint(layer) * 0xcb1ab31fu);
+  h ^= h >> 16u;
+  h *= 0x7feb352du;
+  h ^= h >> 15u;
+  return vec2(float(h & 0xffffu), float(h >> 16u)) / 65536.0;
 }
 
 // The three copies blended at `uv` (tile units): offsets o1–o3, weights w.

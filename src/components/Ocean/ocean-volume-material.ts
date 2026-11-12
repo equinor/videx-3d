@@ -5,6 +5,7 @@ import {
   ShaderMaterial,
   ShaderMaterialParameters,
   Uniform,
+  Vector2,
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
@@ -12,6 +13,7 @@ import {
   applyFenceField,
   FenceFieldUniforms,
 } from '../../sdk/materials/fence-field';
+import { SEA_LAYER_UNIFORMS, type OceanMaterial } from './ocean-material';
 import fragmentShader from './shaders/volume-fragment.glsl';
 import vertexShader from './shaders/volume-vertex.glsl';
 
@@ -45,10 +47,10 @@ export const DEFAULT_OCEAN_BODY_FOG_DENSITY = 0.004;
  * double-sided so the walls are visible from either side. Shares the surface's
  * deep and shallow colours so the body matches the surface.
  *
- * The wall's top ring follows the same spectral wave displacement as the ocean
- * surface (tapered to zero at the sea bed) so the rim stays sealed when vertex
- * displacement is enabled. Share the surface's wave tables via
- * {@link OceanVolumeMaterial.setWaveTables} so the walls move in lock-step.
+ * The wall's top ring follows the same wave heights as the ocean surface (tapered
+ * to zero at the sea bed) so the rim stays sealed when vertex displacement is
+ * enabled. Share the surface's sea layers via {@link OceanVolumeMaterial.linkSea}
+ * so the walls move in lock-step.
  *
  * Wired for the OITRenderPass via {@link attachOitVariants} (variants share this
  * material's `uniforms` by reference, so animated uniforms stay live).
@@ -58,22 +60,13 @@ export class OceanVolumeMaterial extends ShaderMaterial {
 
   constructor(parameters: OceanVolumeMaterialParameters = {}) {
     const {
-      waveCount = 16,
+      // Deprecated: the walls read the surface's sea layers (linkSea).
+      waveCount: _waveCount,
       wallAttribute = false,
       sectionPlane,
       fence,
       ...rest
     } = parameters;
-
-    // Preallocated wave-component tables. Normally replaced by the surface's
-    // tables (shared by reference) via setWaveTables(); the placeholders keep
-    // the uniform arrays the right length until then.
-    const waveA: Vector4[] = [];
-    const waveB: Vector4[] = [];
-    for (let i = 0; i < waveCount; i++) {
-      waveA.push(new Vector4());
-      waveB.push(new Vector4());
-    }
 
     super({
       vertexShader,
@@ -82,17 +75,26 @@ export class OceanVolumeMaterial extends ShaderMaterial {
       side: DoubleSide,
       depthWrite: false,
       defines: {
-        OCEAN_WAVE_COUNT: waveCount,
-        OCEAN_DISPLACE_COUNT: 3,
+        SEA_LAYERS: 3,
         ...(wallAttribute ? { OCEAN_WALL_ATTRIBUTE: '' } : {}),
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
       },
       uniforms: {
         uTime: new Uniform(0),
-        uWaveA: new Uniform(waveA),
-        uWaveB: new Uniform(waveB),
-        uSteepness: new Uniform(0.7),
+        // The surface's sea layers, shared by linkSea; none until then.
+        uSeaSurface0: new Uniform(null),
+        uSeaSurface1: new Uniform(null),
+        uSeaSurface2: new Uniform(null),
+        uSeaSurface3: new Uniform(null),
+        uSeaLayers: new Uniform([new Vector4(), new Vector4(), new Vector4()]),
+        uSeaLayerStats: new Uniform([
+          new Vector2(),
+          new Vector2(),
+          new Vector2(),
+        ]),
+        uSeaResidual: new Uniform(0),
+        uSteepness: new Uniform(1),
         uDisplacement: new Uniform(0),
         uDeepColor: new Uniform(new Color('#0a2540')),
         uShallowColor: new Uniform(new Color('#1b6f8a')),
@@ -113,14 +115,17 @@ export class OceanVolumeMaterial extends ShaderMaterial {
   }
 
   /**
-   * Point this material's wave-component uniform arrays at the surface
-   * material's tables (by reference) so the displaced wall top ring tracks the
-   * surface waves with no extra per-frame work. The surface mutates those
-   * Vector4s in place when the sea state changes, so the walls update for free.
+   * Read the surface material's sea layers (its uniform objects, by reference) so the
+   * displaced wall top ring tracks the surface's waves with no extra per-frame work.
    */
-  setWaveTables(waveA: Vector4[], waveB: Vector4[]): void {
-    this.uniforms.uWaveA.value = waveA;
-    this.uniforms.uWaveB.value = waveB;
+  linkSea(surface: OceanMaterial): void {
+    for (const name of SEA_LAYER_UNIFORMS)
+      this.uniforms[name] = surface.uniforms[name];
+    const layers = surface.seaState.layers.length;
+    if (this.defines.SEA_LAYERS !== layers) {
+      this.defines.SEA_LAYERS = layers;
+      this.needsUpdate = true;
+    }
   }
 
   get time(): number {
@@ -130,7 +135,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
     this.uniforms.uTime.value = value;
   }
 
-  /** Gerstner choppiness applied to the displaced top-ring swells. */
+  /** @deprecated the top ring is displaced vertically, by the surface's heights */
   get steepness(): number {
     return this.uniforms.uSteepness.value;
   }

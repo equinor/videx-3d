@@ -1,23 +1,15 @@
 // Ocean surface fragment shader (stylized).
 //
-// The visible wave shape is reconstructed per-pixel from the spectral wave
-// model (see waves.glsl) as a surface normal, plus a fine procedural FBM micro-
-// ripple layer for close-up detail. Everything is sampled in WORLD X/Z space so
-// it tiles seamlessly across patched geometry; no texture assets are used.
-//
-// Level-of-detail is handled by per-component footprint anti-aliasing (each
-// wave fades out smoothly when its wavelength approaches the on-screen pixel
-// size) rather than a fixed world-distance fade, so there is no visible LOD
-// ring/circle and the horizon does not shimmer.
+// The visible waves are a sea state's layers (sea-layers.glsl), baked into tiling textures each
+// frame and read hex-tiled so they never repeat, in WORLD X/Z, so patched geometry is seamless.
+// Each layer is filtered to the pixel by its mips, and what they filter out roughens the sun's
+// glint, so there is no LOD ring and the horizon does not shimmer.
 //
 // Reflections use a procedural analytic sky gradient, Fresnel-weighted against
 // a tunable see-through water body. The material is OIT-compatible: it includes
 // the shared oit.glsl chunk and routes its final colour through oitProcess() so
 // it composites correctly with the other transparent subsurface geometry.
 
-#ifndef OCEAN_WAVE_COUNT
-#define OCEAN_WAVE_COUNT 16
-#endif
 // Brightness multiplier applied when the surface is viewed from below (the
 // underside, inside the water body) so looking up through the water reads
 // darker than looking down onto the sky-lit top. 1.0 disables the effect.
@@ -128,15 +120,15 @@ void main() {
   #include <logdepthbuf_fragment>
 
   vec2 worldXZ = vSurfaceXZ;
-  // World units covered by one pixel (used for footprint-based LOD/AA).
+  // World units covered by one pixel (used for the foam's footprint).
   float texel = max(length(fwidth(worldXZ)), 1e-3);
   float flatness = oceanFlatness(distance(cameraPosition, vWorldPosition));
 
   vec2 slope;
   float height;
-  vec2 np;
+  vec2 crest;
   float rough;
-  vec3 N = oceanWaveNormal(worldXZ, texel, flatness, slope, height, np, rough);
+  vec3 N = oceanWaves(worldXZ, flatness, slope, height, crest, rough);
 
   // Viewed from below (inside the ocean box), the surface is back-facing; flip
   // the normal toward the camera so the underside is shaded as a water surface
@@ -212,14 +204,10 @@ void main() {
   #endif
   vec3 waterColor = mix(uShallowColor, uDeepColor, bodyMix);
 
-  float tonalReflect;
-  float tonalSpec;
-  oceanTonal(worldXZ, flatness, waterColor, tonalReflect, tonalSpec);
-
-  vec3 color = oceanShade(N, V, waterColor, oceanSkyReflection(reflect(-V, N)), fresnel, tonalReflect, tonalSpec, rough);
+  vec3 color = oceanShade(N, V, waterColor, oceanSkyReflection(reflect(-V, N)), fresnel, 1.0, rough);
 
   // Foam: wind-driven whitecaps, then the foam the contacts and the shore add.
-  float foamCoverage = oceanWindFoam(slope, height);
+  float foamCoverage = oceanWindFoam();
 
   // Foam stirred up where floating objects touch the water. How much each object
   // generates is supplied per-contact (uContactB.w intensity) — driven CPU-side
@@ -250,8 +238,8 @@ void main() {
     float edge = waterDepth;
     if(uShoreNoise.x > 0.0) {
       // A ragged edge rather than the bathymetry contour exactly. ⚠️ Drifts slowly
-      // on its own rather than with the wind `flow` that carries `np`: a
-      // coastline's raggedness belongs to the shore and must not stream downwind.
+      // on its own rather than with the waves: a coastline's raggedness belongs to
+      // the shore and must not stream downwind.
       float n = oceanFbm(worldXZ * uShoreNoise.y + uTime * 0.02);
       float nAA = 1.0 - smoothstep(0.5, 3.0, uShoreNoise.y * 6.2831853 * texel);
       edge += (n - 0.5) * 2.0 * uShoreNoise.x * nAA;
@@ -292,7 +280,7 @@ void main() {
   #endif
 
   float foamFar;
-  float foamBlend = oceanFoam(np, texel, foamCoverage, foamFar);
+  float foamBlend = oceanFoam(crest, texel, foamCoverage, foamFar);
 
   // Distance fade: once the foam noise shrinks below the pixel footprint it can no
   // longer be resolved and full-white foam reads as harsh bright noise, so far

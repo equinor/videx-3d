@@ -1,8 +1,12 @@
 import {
+  type Camera,
   Color,
   DoubleSide,
   IUniform,
+  MathUtils,
   Matrix3,
+  type OrthographicCamera,
+  type PerspectiveCamera,
   ShaderMaterial,
   ShaderMaterialParameters,
   Texture,
@@ -12,13 +16,20 @@ import {
   Vector2,
   Vector3,
   Vector4,
+  type WebGLRenderer,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
 import {
   applyFenceField,
   FenceFieldUniforms,
 } from '../../sdk/materials/fence-field';
-import { oceanSlopeVariance, sampleOceanWaves } from './ocean-waves';
+import {
+  SEA_QUALITY,
+  SeaState,
+  type SeaQuality,
+} from '../../sdk/weather/sea-state';
+import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
+import { SeaWaveBake } from './sea-wave-bake';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
 
@@ -49,12 +60,49 @@ export const DEFAULT_OCEAN_SHORE_BREAK_DEPTH = 1.3;
 /** Default feature size of the shore foam's ragged edge, in metres. */
 export const DEFAULT_OCEAN_SHORE_NOISE_SCALE = 200;
 
+/**
+ * How many times a sea layer's tile a pixel straight below the camera must span before
+ * {@link OceanMaterial.renderWaves} stops baking it. A pixel off the view's axis spans less
+ * of the sea in front of it (down to ~0.6× in a corner), as one rendered supersampled does.
+ */
+export const SEA_BAKE_PIXEL_MARGIN = 2;
+
+const drawingBuffer = new Vector2();
+
+/** The world size of a pixel at `distance` along `camera`'s view, as `renderer` draws. */
+function pixelSpan(
+  renderer: WebGLRenderer,
+  camera: Camera,
+  distance: number,
+): number {
+  const rows = renderer.getDrawingBufferSize(drawingBuffer).y;
+  if (rows <= 0) return 0;
+  const perspective = camera as PerspectiveCamera;
+  if (perspective.isPerspectiveCamera)
+    return (
+      (distance * 2 * Math.tan(MathUtils.degToRad(perspective.fov) / 2)) /
+      perspective.zoom /
+      rows
+    );
+  const orthographic = camera as OrthographicCamera;
+  if (orthographic.isOrthographicCamera)
+    return (orthographic.top - orthographic.bottom) / orthographic.zoom / rows;
+  return 0;
+}
+
 /** Default strength of the shore foam, and the fraction of it lost at distance. */
 export const DEFAULT_OCEAN_SHORE_FOAM_STRENGTH = 0.65;
 export const DEFAULT_OCEAN_SHORE_FOAM_FADE = 0.3;
 
 export type OceanMaterialParameters = ShaderMaterialParameters & {
+  /**
+   * How much of the sea's waves it draws ({@link SeaQuality}). Default `'medium'`.
+   * ⚠️ Read at construction: another quality is another material.
+   */
+  quality?: SeaQuality;
+  /** @deprecated the waves are a sea state's layers (`quality`); ignored */
   waveCount?: number;
+  /** octaves of the shore's ragged edge noise. Default 4 */
   detailOctaves?: number;
   contactCount?: number;
   /**
@@ -139,6 +187,24 @@ export const DEFAULT_OCEAN_DEEP_COLOR = '#0a2540';
 export const DEFAULT_OCEAN_WATER_OPACITY = 0.7;
 
 /**
+ * The uniforms the sea's layers are read with (`shaders/sea-layers.glsl`, and the detail
+ * octave in `shaders/ocean-surface.glsl`: the finest layer's tile read again, smaller). A
+ * material displaced with the surface (the water body's walls) points these at the same
+ * uniform objects.
+ */
+export const SEA_LAYER_UNIFORMS = [
+  'uSeaSurface0',
+  'uSeaSurface1',
+  'uSeaSurface2',
+  'uSeaSurface3',
+  'uSeaLayers',
+  'uSeaLayerStats',
+  'uSeaResidual',
+  'uSeaDetailLayer',
+  'uSeaDetail',
+] as const;
+
+/**
  * The uniforms `shaders/ocean-surface.glsl` reads, wave tables included. Another
  * material that includes it shares an {@link OceanMaterial}'s water by pointing
  * these entries at the same uniform objects.
@@ -153,10 +219,6 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uDeepColor',
   'uShallowColor',
   'uOpacity',
-  'uTonalVariation',
-  'uTonalScale',
-  'uTonalSharpness',
-  'uTonalColor',
   'uReflectionIntensity',
   'uSunDirection',
   'uSunColor',
@@ -166,11 +228,8 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uFoamAmount',
   'uFresnelPower',
   'uDetailScale',
-  'uDetailStrength',
   'uDetailFade',
-  'uSlopeVariance',
-  'uWaveA',
-  'uWaveB',
+  ...SEA_LAYER_UNIFORMS,
   'uContactCount',
   'uContactA',
   'uContactB',
@@ -180,31 +239,47 @@ export const OCEAN_SURFACE_UNIFORMS = [
 /**
  * Stylized, OIT-compatible ocean surface material.
  *
- * The wave field is a discrete set of directional components sampled from a
- * JONSWAP spectrum tuned for the North Sea (gamma = 3.3), driven by a single
- * physical input: the wind speed (m/s, U10). Peak frequency, wavelength and
- * significant wave height follow the standard Pierson-Moskowitz/JONSWAP
- * relations, so the wave sizes and spacing are physically plausible (e.g.
- * U = 10 m/s gives Hs ~ 2.1 m and a peak wavelength ~ 88 m). The spectrum is
- * sampled on the CPU whenever the wind changes and uploaded as uniform arrays;
- * the shaders just sum the components.
+ * Its waves are a {@link SeaState}'s: the spectrum the wind (m/s, U10) and swells ask for
+ * (North Sea JONSWAP, so U = 10 m/s gives Hs ≈ 2.1 m and a peak wavelength ≈ 88 m), drawn as
+ * a few hundred waves on each of a few layers' fixed grids. A new wind eases the sea toward
+ * its spectrum over a minute or two rather than rewriting it. Each frame
+ * {@link OceanMaterial.renderWaves} bakes the layers into tiling textures (`SeaWaveBake`),
+ * which the surface reads hex-tiled, so they never repeat, and filtered to the pixel, what the
+ * filtering leaves out roughening the sun's glint. Floating objects ride
+ * {@link OceanMaterial.seaState}'s heights, the same waves.
  *
- * All wave/foam animation is evaluated in world X/Z space so it tiles
- * seamlessly across patched geometry. The material is wired for the
- * OITRenderPass via {@link attachOitVariants}; because its OIT variants share
- * this material's `uniforms` object by reference, animated uniforms (time,
- * wind, colours) stay live through every transparency pass.
+ * Everything is evaluated in world X/Z so patched geometry is seamless. The material is wired
+ * for the OITRenderPass via {@link attachOitVariants}; because its OIT variants share this
+ * material's `uniforms` object by reference, animated uniforms (time, wind, colours, the
+ * layers) stay live through every transparency pass.
  */
+/** The most layers a sea draws (`SEA_QUALITY`): the uniforms for them are always there. */
+const OCEAN_MAX_SEA_LAYERS = 4;
+
 export class OceanMaterial extends ShaderMaterial {
   isOceanMaterial = true;
 
+  /** the sea's waves, which floating objects ride ({@link SeaState.heightAt}) */
+  readonly seaState: SeaState;
+  /** the sea's layers as textures, baked each frame by {@link OceanMaterial.renderWaves} */
+  readonly waveBake: SeaWaveBake;
+  /** how much of the sea's waves it draws */
+  readonly quality: SeaQuality;
+
   private _waveHeightScale!: number;
   private _directionalSpread!: number;
+  private _swells: SeaSwell[] = [];
   private _contactCount!: number;
+  // Whether the clock has run: until it does, a new wind is the sea's at once (settled).
+  private _running = false;
+  // The sea state's input last set, to set it only as it changes.
+  private _inputKey = '';
 
   constructor(parameters: OceanMaterialParameters = {}) {
     const {
-      waveCount = 16,
+      quality = 'medium',
+      // Deprecated: the waves are the sea state's layers.
+      waveCount: _waveCount,
       detailOctaves = 4,
       contactCount = 8,
       sectionPlane,
@@ -213,13 +288,17 @@ export class OceanMaterial extends ShaderMaterial {
       ...rest
     } = parameters;
 
-    // Preallocated wave-component tables (filled by updateWaves()).
-    const waveA: Vector4[] = [];
-    const waveB: Vector4[] = [];
-    for (let i = 0; i < waveCount; i++) {
-      waveA.push(new Vector4());
-      waveB.push(new Vector4());
-    }
+    // The sea and its layers' textures, before `this` is there to hold them.
+    const sea = new SeaState(
+      { windSpeed: 10, windDirection: [1, 0] },
+      { layers: SEA_QUALITY[quality] ?? SEA_QUALITY.medium },
+    );
+    const bake = new SeaWaveBake(sea.layers);
+    const layerUniforms: Record<string, IUniform> = {};
+    for (let i = 0; i < OCEAN_MAX_SEA_LAYERS; i++)
+      layerUniforms[`uSeaSurface${i}`] = new Uniform<Texture | null>(
+        bake.layers[i]?.surface ?? null,
+      );
 
     // Preallocated contact-footprint tables (filled by setContacts()).
     const contactA: Vector4[] = [];
@@ -239,7 +318,7 @@ export class OceanMaterial extends ShaderMaterial {
       // underwater / inside the ocean box.
       side: DoubleSide,
       defines: {
-        OCEAN_WAVE_COUNT: waveCount,
+        SEA_LAYERS: sea.layers.length,
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
@@ -255,18 +334,40 @@ export class OceanMaterial extends ShaderMaterial {
         uOceanDetailOctaves: new Uniform(detailOctaves),
         uWindDirection: new Uniform(new Vector2(1, 0).normalize()),
         uWindSpeed: new Uniform(10),
-        uSteepness: new Uniform(0.7),
+        uSteepness: new Uniform(1),
         uDisplacement: new Uniform(0),
 
-        // Spectral wave table + derived significant wave height.
-        uWaveA: new Uniform(waveA),
-        uWaveB: new Uniform(waveB),
+        // The sea's layers (sea-layers.glsl), and its significant wave height.
+        ...layerUniforms,
+        uSeaLayers: new Uniform(
+          sea.layers.map(
+            layer =>
+              new Vector4(
+                1 / layer.size,
+                Math.cos(layer.angle),
+                Math.sin(layer.angle),
+                layer.texels,
+              ),
+          ),
+        ),
+        uSeaLayerStats: new Uniform(sea.layers.map(() => new Vector2())),
+        uSeaResidual: new Uniform(0),
+        uSeaDetailLayer: new Uniform(
+          new Vector4(
+            1 / sea.detail.size,
+            Math.cos(sea.detail.angle),
+            Math.sin(sea.detail.angle),
+            sea.detail.texels,
+          ),
+        ),
+        uSeaDetail: new Uniform(new Vector3()),
         uSignificantHeight: new Uniform(1),
 
         uDeepColor: new Uniform(new Color(DEFAULT_OCEAN_DEEP_COLOR)),
         uShallowColor: new Uniform(new Color('#1b6f8a')),
         uOpacity: new Uniform(DEFAULT_OCEAN_WATER_OPACITY),
 
+        // Deprecated (no longer drawn): kept so their accessors still answer.
         uTonalVariation: new Uniform(0.4),
         // Stored as cycles per meter; the public `tonalScale` property exposes
         // it as a patch size in kilometers (default ~4 km => 1 / 4000).
@@ -294,14 +395,17 @@ export class OceanMaterial extends ShaderMaterial {
 
         uFresnelPower: new Uniform(4),
         uDetailScale: new Uniform(0.05),
+        // Deprecated (no longer drawn).
         uDetailStrength: new Uniform(0.2),
         uDetailFade: new Uniform(new Vector2(15000, 60000)),
-        uSlopeVariance: new Uniform(0),
 
         uMasterOpacity: new Uniform(1),
       },
     });
 
+    this.seaState = sea;
+    this.waveBake = bake;
+    this.quality = quality;
     this._waveHeightScale = 1;
     this._directionalSpread = 1.2;
     this._contactCount = contactCount;
@@ -360,29 +464,91 @@ export class OceanMaterial extends ShaderMaterial {
   }
 
   /**
-   * (Re)sample the JONSWAP spectrum into the wave-component uniform arrays from
-   * the current wind speed/direction. Cheap (a few iterations) and only called
-   * when the wind/height inputs change, never per frame.
+   * The sea state's input from the wind, the swells and the height scale: eased toward as the
+   * clock runs, or the sea's at once while it has not run yet. Cheap enough per change, but
+   * not per frame (some milliseconds).
    */
   private updateWaves(): void {
-    const waveA = this.uniforms.uWaveA.value as Vector4[];
-    const waveB = this.uniforms.uWaveB.value as Vector4[];
-    this.uniforms.uSignificantHeight.value = sampleOceanWaves(
-      waveA,
-      waveB,
-      this.uniforms.uWindSpeed.value as number,
-      this.uniforms.uWindDirection.value as Vector2,
-      this._waveHeightScale,
-      this._directionalSpread,
-    );
-    this.uniforms.uSlopeVariance.value = oceanSlopeVariance(waveA, waveB);
+    const direction = this.uniforms.uWindDirection.value as Vector2;
+    const input = {
+      windSpeed: this.uniforms.uWindSpeed.value as number,
+      windDirection: [direction.x, direction.y] as [number, number],
+      swells: this._swells,
+      heightScale: this._waveHeightScale,
+    };
+    // Props are often new objects each render, with the same values.
+    const key = JSON.stringify(input);
+    if (key === this._inputKey) return;
+    this._inputKey = key;
+    this.seaState.setInput(input);
+    if (!this._running) this.seaState.settle();
+    this.uniforms.uSignificantHeight.value = this.seaState.stats().targetHeight;
   }
 
+  /**
+   * The sea's clock, seconds. Run on (a step under an hour) it eases the sea toward its
+   * input; set back or far on, the waves just move to it.
+   */
   get time(): number {
     return this.uniforms.uTime.value;
   }
   set time(value: number) {
+    const dt = value - (this.uniforms.uTime.value as number);
     this.uniforms.uTime.value = value;
+    if (dt > 0 && dt < 3600) {
+      this.seaState.update(dt);
+      this._running = true;
+    } else {
+      this.seaState.time = value;
+    }
+  }
+
+  /**
+   * Bake the sea's layers as they are now into their textures, for this frame: call once a
+   * frame, after the clock has run, before the surface is drawn (and before any material
+   * sharing its uniforms is, a `Scenery`'s).
+   *
+   * Given the `camera` and its `distance` to the nearest of the sea (its height over it, the
+   * nearest a pixel is finest), a layer whose whole tile a pixel there spans (with a margin,
+   * {@link SEA_BAKE_PIXEL_MARGIN}) is left as it was: the surface reads none of it, only its
+   * variance. From high up that is all but the longest layers, or all of them.
+   */
+  renderWaves(
+    renderer: WebGLRenderer,
+    camera?: Camera,
+    distance?: number,
+  ): void {
+    const pixel =
+      camera && distance !== undefined
+        ? pixelSpan(renderer, camera, Math.abs(distance)) *
+          SEA_BAKE_PIXEL_MARGIN
+        : 0;
+    const layers = this.seaState.layers;
+    this.waveBake.update(
+      renderer,
+      this.seaState.layerTables(),
+      pixel > 0 ? i => layers[i].size > pixel : undefined,
+    );
+    const stats = this.seaState.stats();
+    const layerStats = this.uniforms.uSeaLayerStats.value as Vector2[];
+    stats.layers.forEach((layer, i) =>
+      layerStats[i].set(layer.slopeVariance, layer.variance),
+    );
+    this.uniforms.uSeaResidual.value = stats.residualSlopeVariance;
+    (this.uniforms.uSeaDetail.value as Vector3).set(
+      stats.detail.gain,
+      stats.detail.offset[0],
+      stats.detail.offset[1],
+    );
+  }
+
+  /** Swells from weather far away, running on regardless of the wind here. */
+  get swells(): readonly SeaSwell[] {
+    return this._swells;
+  }
+  set swells(value: readonly SeaSwell[]) {
+    this._swells = [...value];
+    this.updateWaves();
   }
 
   get windDirection(): Vector2 {
@@ -410,13 +576,14 @@ export class OceanMaterial extends ShaderMaterial {
     this.updateWaves();
   }
 
-  /** Angular spread (radians) of the wave directions around the wind. */
+  /**
+   * @deprecated the waves spread about the wind as the spectrum has them (Mitsuyasu); ignored
+   */
   get directionalSpread(): number {
     return this._directionalSpread;
   }
   set directionalSpread(value: number) {
     this._directionalSpread = value;
-    this.updateWaves();
   }
 
   /** Significant wave height (m) derived from the current wind/height scale. */
@@ -424,6 +591,7 @@ export class OceanMaterial extends ShaderMaterial {
     return this.uniforms.uSignificantHeight.value;
   }
 
+  /** The waves' slopes scaled for show: 1 as the spectrum gives them. Default 1 */
   get steepness(): number {
     return this.uniforms.uSteepness.value;
   }
@@ -435,9 +603,7 @@ export class OceanMaterial extends ShaderMaterial {
     return this.uniforms.uDisplacement.value;
   }
   set displacement(value: number) {
-    // Clamped to [0, 1]: above 1 the horizontal Gerstner term over-steepens and
-    // folds the mesh (visible as side artifacts), so displacement is treated as
-    // off (0) / on (1).
+    // Clamped to [0, 1]: displacement is off (0) or the sea's own heights (1).
     this.uniforms.uDisplacement.value = Math.min(Math.max(value, 0), 1);
   }
 
@@ -609,7 +775,7 @@ export class OceanMaterial extends ShaderMaterial {
     if (this.uniforms.uShoreFade) this.uniforms.uShoreFade.value.y = value;
   }
 
-  /** Strength of the large-scale tonal variation (currents / slicks). */
+  /** @deprecated no longer drawn (their repeating, cloud-like patches are gone) */
   get tonalVariation(): number {
     return this.uniforms.uTonalVariation.value;
   }
@@ -617,11 +783,7 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uTonalVariation.value = value;
   }
 
-  /**
-   * Approximate size of the large-scale tonal variation patches, in kilometers.
-   * Larger values give broader, slower-changing current/slick fields; smaller
-   * values break the water up into finer patches.
-   */
+  /** @deprecated no longer drawn */
   get tonalScale(): number {
     const freq = this.uniforms.uTonalScale.value;
     return freq > 0 ? 1 / (freq * 1000) : 0;
@@ -630,11 +792,7 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uTonalScale.value = value > 0 ? 1 / (value * 1000) : 0;
   }
 
-  /**
-   * Crispness of the tonal variation patch boundaries. 0 keeps the soft FBM
-   * gradient; higher values (up to 1) narrow the transition band so the
-   * currents/slicks read as distinct, well-defined regions.
-   */
+  /** @deprecated no longer drawn */
   get tonalSharpness(): number {
     return this.uniforms.uTonalSharpness.value;
   }
@@ -642,7 +800,7 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uTonalSharpness.value = value;
   }
 
-  /** Colour the water drifts toward in the tonal variation (current / algae / pollution tint). */
+  /** @deprecated no longer drawn */
   get tonalColor(): Color {
     return this.uniforms.uTonalColor.value;
   }
@@ -721,6 +879,7 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uFresnelPower.value = value;
   }
 
+  /** The foam's feature frequency, per metre. Default 0.05 */
   get detailScale(): number {
     return this.uniforms.uDetailScale.value;
   }
@@ -728,6 +887,7 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uDetailScale.value = value;
   }
 
+  /** @deprecated the fine ripples are the sea state's finest layer; ignored */
   get detailStrength(): number {
     return this.uniforms.uDetailStrength.value;
   }
@@ -736,8 +896,8 @@ export class OceanMaterial extends ShaderMaterial {
   }
 
   /**
-   * Distances from the camera, `[start, end]`, over which the waves, foam and tonal
-   * variation fade out, leaving a flat mirror whose sun glint keeps the waves' spread.
+   * Distances from the camera, `[start, end]`, over which the waves and foam fade out,
+   * leaving a flat mirror whose sun glint keeps the waves' spread.
    */
   get detailFadeDistance(): [number, number] {
     const fade = this.uniforms.uDetailFade.value as Vector2;
@@ -778,5 +938,10 @@ export class OceanMaterial extends ShaderMaterial {
   /** Clear all contact footprints (no contact foam). */
   clearContacts(): void {
     this.uniforms.uContactCount.value = 0;
+  }
+
+  dispose(): void {
+    super.dispose();
+    this.waveBake.dispose();
   }
 }

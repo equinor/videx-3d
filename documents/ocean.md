@@ -1,11 +1,13 @@
 # Ocean
 
 The `<Ocean>` component renders a stylized, animated water surface tuned for
-oil-field scale (tens of km). Waves are sampled from a North-Sea JONSWAP
-spectrum driven by a single physical input — wind speed (m/s) — and
-reconstructed per-pixel, so the surface stays detailed when zoomed in and
-artifact-free when zoomed out. It composites correctly with subsurface geometry
-through the `OITRenderPass`.
+oil-field scale (tens of km). Its waves are a sea state's
+([ocean-waves.md](./ocean-waves.md)): the spectrum a wind (m/s) and swells ask for, drawn as a
+few hundred waves on each of a few layers, baked each frame into tiling textures read
+hex-tiled (so they never repeat) and filtered to the pixel, so the surface stays detailed
+when zoomed in and artifact-free when zoomed out. A new wind eases the sea toward its spectrum
+rather than rewriting it, and floating objects ride the same waves as are drawn. It composites
+correctly with subsurface geometry through the `OITRenderPass`.
 
 For an endless sea that is part of the sky — with a seabed, seen from above, in and
 below the water — see `<SceneryOcean>` in [Scenery](./scenery.md).
@@ -23,8 +25,19 @@ const surface = createOceanPlane({ size: 100000 })
 ```
 
 `windSpeed` (U10) is the primary knob — wave height, wavelength and foam all
-follow from it (≈ 10 m/s ⇒ ~2 m significant wave height). Colours, foam,
-reflection and opacity are all tunable via props.
+follow from it (≈ 10 m/s ⇒ ~2 m significant wave height). `swells` add waves from weather far
+away (height, period, direction), running on in a calm. Colours, foam, reflection and opacity
+are all tunable via props.
+
+`quality` (`'low' | 'medium' | 'high' | 'ultra'`, default `'medium'`, `SEA_QUALITY`) is how
+much of the sea state is drawn: `medium`, sized for a mid-range laptop's integrated GPU, three
+layers (tiles of 2011, 307 and 47 m) and, below them, the finest layer's texture read again
+6.4× smaller for the ripples; `high` bakes a fourth layer (7.3 m); `low` and `ultra` coarser
+and finer tiles. `steepness` (default 1) scales the slopes for show; 1 is as the spectrum
+gives them. Whitecaps (`foamAmount`, default 0.5) cover the share of the sea measured at sea
+for the wind (about 1 % at 10 m/s, 10 % at 20 m/s) on the wind sea's highest crests.
+`waveCount`, `directionalSpread`, `detailStrength` and the `tonal*` props are deprecated and
+ignored.
 
 Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed` and
 `windDirection` left out are the weather's wind: its speed, and the way it blows toward. The
@@ -34,14 +47,14 @@ frame as it ran (`useWeatherStep`): a timelapse races them, a paused weather hol
 Its jumps (a `time` set) do not move them.
 
 Far from the camera the detail fades out: between the two distances of
-`detailFadeDistance` (default `[15000, 60000]` m) the waves, foam and tonal
-patches give way to a flat mirror of the sky. The sun's glint widens by every slope a pixel
-cannot show rather than shrinking to a point: the waves too small for its footprint or faded
-out with distance, and the small ones no wave stands for once the fine ripples fade, as much
-as the wind gives (Cox and Munk's mean square slope, `0.003 + 0.00512 × windSpeed`). So far
-off, and from high up, it spreads into a broad soft patch, as seen from aircraft. The `<Scenery>`'s endless
-sea takes the same prop. `OceanMaterial.sunGlintSpread` (default 0) widens the
-glint further at the same peak, so its path broadens and brightens; the `<Scenery>`
+`detailFadeDistance` (default `[15000, 60000]` m) the waves and foam give way to a flat mirror
+of the sky, and past it no layer is read. The sun's glint widens by every slope a pixel
+cannot show rather than shrinking to a point: the waves too small for its footprint (what the
+layers' mips filter out) or faded out with distance, and the small ones no layer draws, as
+much as the wind gives (Cox and Munk's mean square slope, `0.003 + 0.00512 × windSpeed`). So
+far off, and from high up, it spreads into a broad soft patch, as seen from aircraft. The
+`<Scenery>`'s endless sea takes the same prop. `OceanMaterial.sunGlintSpread` (default 0)
+widens the glint further at the same peak, so its path broadens and brightens; the `<Scenery>`
 raises it about sunrise and sunset for a broad glitter path.
 
 ## Geometry builders
@@ -235,3 +248,25 @@ NVIDIA RTX A1000 (ANGLE D3D11):
   more low down (overcast stratocumulus at 30 m and 300 m).
 - What its draw spends, stand-alone at 300 m (`ab`): detail noise 4 → 1 octaves 0.47–0.49 of it;
   tonal patches off 0.81 (0.78–0.83 in the Scenery's stage); waves 16 → 8 or 32 within ±15 %.
+
+**The sea state's waves** ([ocean-waves.md](./ocean-waves.md), 2026-11-12): the baseline's
+build (its static Storybook) and the new in two tabs of one Chrome on the A1000, 1920 × 1080 at
+1, rounds interleaved; the new frame over the baseline's, the frame holding the wave bake:
+
+| pose | Scenery | stand-alone `Ocean` |
+|--|--|--|
+| 2 m | 0.62 | 0.32 |
+| 30 m | 0.51 | 0.33 |
+| 300 m | 0.62–0.66 | 0.31–0.34 |
+| 2 km | 0.65–0.69 | 0.43 |
+| 20 km | 0.76 | 0.57 |
+| 100 km | 0.90 | – |
+| 1000 km | 0.82 | – |
+| down, 2 km | 0.62 | 0.39 |
+
+- The stage's surface draw is 0.9–1.9 ms (was 2.3–3.8), the stand-alone sea's 0.5–0.8 ms (was
+  3.0–3.6). The tonal patches and the ripple and foam noise are gone; the waves are three
+  layers' textures and the ripples one more read.
+- From high up the bake would be most of the sea's cost: layers no pixel resolves from the
+  camera's height are not baked (`renderWaves`' camera), and past the detail fade no layer is
+  read. Without either, 1000 km read 1.13 and 100 km 1.0.

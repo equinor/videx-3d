@@ -167,8 +167,6 @@ const named = (object: Object3D, name: string) =>
  */
 export const SEA_GROUPS = {
   ocean: (o: Object3D) => flagged(o, 'isOceanMaterial'),
-  // The wave core's prototype surface (debug/Ocean/Sea Bench, `waves: 'core'`).
-  seaCore: (o: Object3D) => flagged(o, 'isSeaCoreMaterial'),
   oceanBody: (o: Object3D) => flagged(o, 'isOceanVolumeMaterial'),
   oceanBed: (o: Object3D) => flagged(o, 'isOceanBedMaterial'),
   stageSurface: (o: Object3D) => defined(o, 'STAGE_SURFACE'),

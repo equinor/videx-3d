@@ -653,13 +653,8 @@ const Example = (args: ExampleProps) => {
             windDirection={oceanWind}
             windSpeed={10}
             amplitude={1}
-            directionalSpread={1.2}
-            steepness={0.7}
             displacement={false}
             waterOpacity={0.7}
-            tonalVariation={0.4}
-            tonalScale={4}
-            tonalColor="#cfe3f2"
             reflectionIntensity={1}
             foamAmount={0.5}
             deepColor="#0a2540"

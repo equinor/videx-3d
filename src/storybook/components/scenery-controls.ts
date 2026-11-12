@@ -132,9 +132,6 @@ export type SceneryArgs = {
   skySeabedColor: string;
   seaFogDensity: number;
   seaDetailScale: number;
-  seaDetailStrength: number;
-  seaTonalVariation: number;
-  seaTonalScale: number;
   seaFresnelPower: number;
   seaDetailFadeStart: number;
   seaDetailFadeEnd: number;
@@ -259,15 +256,12 @@ export const sceneryArgs: SceneryArgs = {
   windSpeed: 10,
   foamAmount: 0.5,
   windDirection: 90,
-  seaSteepness: 0.7,
+  seaSteepness: 1,
   seaDeepColor: '#0a2540',
   seaShallowColor: '#1b6f8a',
   skySeabedColor: sceneryDefaults.ocean.seabed.color,
   seaFogDensity: DEFAULT_OCEAN_BODY_FOG_DENSITY,
   seaDetailScale: 0.05,
-  seaDetailStrength: 0.2,
-  seaTonalVariation: 0.4,
-  seaTonalScale: 4,
   seaFresnelPower: 4,
   seaDetailFadeStart: 15000,
   seaDetailFadeEnd: 60000,
@@ -513,9 +507,6 @@ export const sceneryOceanFromArgs = (args: SceneryArgs): SceneryOceanProps => ({
   shallowColor: args.seaShallowColor,
   bodyFogDensity: args.seaFogDensity,
   detailScale: args.seaDetailScale,
-  detailStrength: args.seaDetailStrength,
-  tonalVariation: args.seaTonalVariation,
-  tonalScale: args.seaTonalScale,
   fresnelPower: args.seaFresnelPower,
   detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
 });
@@ -656,9 +647,6 @@ const ADVANCED = new Set<string>([
   'skySeabedColor',
   'seaFogDensity',
   'seaDetailScale',
-  'seaDetailStrength',
-  'seaTonalVariation',
-  'seaTonalScale',
   'seaFresnelPower',
   'seaDetailFadeStart',
   'seaDetailFadeEnd',
@@ -1000,7 +988,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SEA,
     'Compass bearing the wind blows toward.',
   ),
-  seaSteepness: range(0, 2, 0.05, SEA, 'Choppiness of the waves.'),
+  seaSteepness: range(
+    0,
+    2,
+    0.05,
+    SEA,
+    'The waves\u2019 slopes scaled for show: 1 as the spectrum gives them.',
+  ),
   seaDeepColor: color(SEA, 'The water seen straight down.'),
   seaShallowColor: color(SEA, 'The water seen at grazing angles.'),
   skySeabedColor: color(SEA, 'The seabed\u2019s colour.'),
@@ -1011,16 +1005,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SEA,
     'How quickly the water tints what is seen through it, per metre.',
   ),
-  seaDetailScale: range(0.005, 0.5, 0.005, SEA, 'Micro-ripple frequency.'),
-  seaDetailStrength: range(0, 1, 0.01, SEA, 'Micro-ripple strength.'),
-  seaTonalVariation: range(
-    0,
-    1,
-    0.01,
+  seaDetailScale: range(
+    0.005,
+    0.5,
+    0.005,
     SEA,
-    'Strength of the large patches of currents and slicks.',
+    'The foam\u2019s feature frequency.',
   ),
-  seaTonalScale: range(0.5, 20, 0.5, SEA, 'Size of those patches, in km.'),
   seaFresnelPower: range(
     1,
     8,

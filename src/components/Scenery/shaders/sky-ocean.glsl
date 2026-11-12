@@ -374,24 +374,24 @@ float skyOceanBedPathLight(vec3 origin, float bedDepth) {
   return skyOceanLight(0.5 * (bedDepth + skyOceanViewDepth(origin)));
 }
 
-// The waves at a point of the sea, `dist` along the view ray. Each wave sum compiles to a
-// full copy of it and its detail, so a shader shading both sides takes it once.
+// The waves at a point of the sea, `dist` along the view ray. Each read of the waves
+// compiles to a full copy of it, so a shader shading both sides takes it once.
 struct SkyOceanWave {
   vec3 normal;
   vec2 slope;
   float height;
-  vec2 np;
+  vec2 crest; // the foam's texture (oceanWaves)
   float flatness;
   float rough;
   vec3 up; // the sea's own up there, which the globe tilts
-  vec2 p; // where it lies in its chart, for the tonal patches
+  vec2 p; // where it lies in its chart
   float keep; // how much of the waves its chart keeps there (OceanChart): 0 where two meet
 };
 
 // The waves at the sea point `delta` from the camera, where the sea's up is `up` (globeUpAt),
 // `texel` world units a pixel there: in its chart (ocean-charts.glsl), turned onto the globe
-// there, calm on the strip where two charts meet. Once: a second wave sum, to cross-fade
-// two charts, cost the stage 1.4–2 ms at the field (D3D), even where no pixel ran it.
+// there, calm on the strip where two charts meet. Once: a second read of the waves, to
+// cross-fade two charts, cost the stage 1.4–2 ms at the field (D3D), even where no pixel ran it.
 SkyOceanWave skyOceanWave(vec3 delta, vec3 up, float texel, float dist) {
   SkyOceanWave wave;
   OceanChart chart = oceanChartAt(delta);
@@ -399,7 +399,7 @@ SkyOceanWave skyOceanWave(vec3 delta, vec3 up, float texel, float dist) {
   wave.keep = chart.keep;
   wave.up = up;
   wave.p = oceanChartCoords(chart.index, delta);
-  vec3 n = oceanWaveNormal(wave.p, texel, 1.0 - (1.0 - wave.flatness) * chart.keep, wave.slope, wave.height, wave.np, wave.rough);
+  vec3 n = oceanWaves(wave.p, 1.0 - (1.0 - wave.flatness) * chart.keep, wave.slope, wave.height, wave.crest, wave.rough);
   wave.normal = oceanChartNormal(chart.index, n, up);
   return wave;
 }
@@ -471,10 +471,6 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   float ndvAA;
   float fresnel = oceanFresnel(normal, V, ndvAA);
   vec3 waterColor = mix(uShallowColor, uDeepColor, clamp(ndvAA, 0.0, 1.0)) * night * mix(1.0 - SKY_OCEAN_SUN_SHARE * uSkyDaylight, 1.0, through);
-  float tonalReflect;
-  float tonalSpec;
-  // In the wave's chart, and calm with it where two charts meet.
-  oceanTonal(wave.p, 1.0 - (1.0 - flatness) * wave.keep, waterColor, tonalReflect, tonalSpec);
 
   vec3 r = reflect(dir, normal);
   // Steep waves can tip a reflection below the sea's horizon; mirror it back up. Then the sky
@@ -491,11 +487,11 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // The glint is the scene's light's, which is the field's: far round the Earth only while it
   // stands over the sea's horizon there (skyLightFrom).
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
-  vec3 surface = oceanShade(normal, V, waterColor, reflected, fresnel, tonalReflect, tonalSpec * glint, wave.rough);
+  vec3 surface = oceanShade(normal, V, waterColor, reflected, fresnel, glint, wave.rough);
 
   float foamFar;
-  float coverage = max(oceanWindFoam(wave.slope, wave.height), oceanContactFoam(p, uTime));
-  float foamBlend = oceanFoam(wave.np, texel, coverage, foamFar);
+  float coverage = max(oceanWindFoam(), oceanContactFoam(p, uTime));
+  float foamBlend = oceanFoam(wave.crest, texel, coverage, foamFar);
   float foamOpacity = foamBlend * (1.0 - clamp(foamFar * OCEAN_FOAM_FAR_FADE, 0.0, 1.0));
   surface = mix(surface, uFoamColor * night, foamOpacity);
   // Lit as the sky the camera sees is (its daylight, its reflection): far round the Earth,

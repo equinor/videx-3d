@@ -5,8 +5,6 @@ import type { CloudBench } from './cloud-bench';
 import type { Videx3dGlobe } from './globe';
 import type { ProfileOptions, ProfileResult } from './profile';
 import type { SeaBench } from './sea-bench';
-import type { SeaState } from '../../sdk/weather/sea-state';
-import type { seaHexTiles } from '../../sdk/weather/sea-hex';
 
 /**
  * What an agent (or a curious human) can reach from the browser console.
@@ -38,24 +36,6 @@ export type Videx3dHandle = {
   cloudBench: CloudBench;
   /** the sea's GPU timings, in a story rendering `SeaBenchBridge` (see `sea-bench.ts`) */
   seaBench: SeaBench;
-  /** the wave core's prototype in the sea bench (`waves: 'core'` or `'both'`): its sea state, and its bake held or run */
-  seaCore: {
-    sea: SeaState;
-    setBaking: (on: boolean) => void;
-    /** the bake's GPU ms, the median over `frames` frames as they run */
-    timeBake: (frames?: number) => Promise<number>;
-    /** the sea and its bake held (false) or running */
-    setRunning: (on: boolean) => void;
-    /** the hex tiling the surface reads its layers by (`sea-hex.ts`) */
-    hexTiles: typeof seaHexTiles;
-    /** layer `index`'s baked heights, row by row from its tile's corner */
-    readLayer: (index: number) => {
-      size: number;
-      angle: number;
-      texels: number;
-      heights: Float32Array;
-    };
-  };
 };
 
 declare global {

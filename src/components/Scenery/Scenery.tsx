@@ -1398,6 +1398,13 @@ export const Scenery = ({
     const waveStep = step(delta);
     if (water) {
       water.time += waveStep;
+      // Before the sky draws the sea: its layers for this frame, but those too fine to show
+      // from the camera's altitude over it.
+      water.renderWaves(
+        gl,
+        camera,
+        material.heightOf(camera.position) - material.oceanLevel,
+      );
       contacts.upload(water, { plane: wavePlane, from: camera.position });
     }
     // What draws itself in the sky (the 3D clouds): in the air's bakes, which are due again

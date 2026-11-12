@@ -25,13 +25,12 @@ describe('OceanMaterial spectrum', () => {
     m.dispose();
   });
 
-  it('renormalises the component amplitudes so the field Hs matches the target', () => {
-    const m = new OceanMaterial({ waveCount: 16 });
+  it('draws the significant wave height it derives', () => {
+    const m = new OceanMaterial();
     m.windSpeed = 10;
-    const waveB = m.uniforms.uWaveB.value as { x: number }[];
-    let m0 = 0;
-    for (const c of waveB) m0 += 0.5 * c.x * c.x;
-    expect(4 * Math.sqrt(m0)).toBeCloseTo(m.significantHeight, 3);
+    const stats = m.seaState.stats();
+    expect(stats.significantHeight / m.significantHeight).toBeGreaterThan(0.9);
+    expect(stats.significantHeight / m.significantHeight).toBeLessThan(1.1);
     m.dispose();
   });
 });
@@ -45,15 +44,16 @@ describe('createOceanSampler', () => {
     m.dispose();
   });
 
-  it('returns a finite, bounded height that matches the shader sum', () => {
+  it('returns a finite, bounded height: the sea state the surface draws', () => {
     const m = new OceanMaterial();
     m.windSpeed = 10;
     m.time = 3.2;
     const sampler = createOceanSampler(m);
     const h = sampler.getHeightAt(120, -340);
     expect(Number.isFinite(h)).toBe(true);
-    // The sum of |amplitudes| is the hard ceiling; ~3x Hs is plenty of margin.
+    // ~3x Hs is plenty of margin for a sea of that height.
     expect(Math.abs(h)).toBeLessThan(m.significantHeight * 3);
+    expect(h).toBe(m.seaState.heightAt(120, -340));
     m.dispose();
   });
 

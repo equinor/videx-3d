@@ -1,6 +1,6 @@
 import { useFrame } from '@react-three/fiber';
 import { createContext, RefObject, useContext } from 'react';
-import { Object3D, Vector3, Vector4 } from 'three';
+import { Object3D, Vector3 } from 'three';
 import { OceanMaterial } from './ocean-material';
 
 /**
@@ -8,12 +8,10 @@ import { OceanMaterial } from './ocean-material';
  * floating objects) query the water height at any world X/Z, in sync with the
  * animated wave field shown on screen.
  *
- * The height is summed from the same spectral wave components the shader uses
- * (`uWaveA`/`uWaveB` + `uTime`, read by reference from the material), so it
- * always matches the current sea state, wind and animation time. The optional
- * Gerstner horizontal displacement and the render-time footprint LOD fade are
- * intentionally ignored — they are visual-only refinements, not needed for a
- * plausible floating response, and skipping them keeps sampling cheap.
+ * The height is the material's sea state's (`SeaState.heightAt`): the same
+ * waves the surface draws, hex tiling included, at the material's clock, so it
+ * follows the wind as the drawn sea does. Only what texture filtering smooths
+ * away differs (millimetres).
  *
  * Coordinates are in the Ocean group's local frame (sea level = local y 0),
  * which equals world space for the typical flat, unrotated planar ocean. Under a
@@ -56,8 +54,8 @@ export function toOceanPlane(
 
 /**
  * Create an {@link OceanSampler} bound to an {@link OceanMaterial}. The sampler
- * reads the material's wave uniforms by reference, so it reflects sea-state and
- * time changes without any extra wiring.
+ * reads the material's sea state, so it reflects sea-state and time changes
+ * without any extra wiring.
  *
  * @param level scene Y of the still water surface. The `Ocean` component leaves
  *   this at 0 because its own group IS sea level; a `ChunkStack` passes the sea's
@@ -80,22 +78,7 @@ export function createOceanSampler(
         x = at.x;
         z = at.z;
       }
-      const waveA = material.uniforms.uWaveA.value as Vector4[];
-      const waveB = material.uniforms.uWaveB.value as Vector4[];
-      const t = material.uniforms.uTime.value as number;
-      let height = level;
-      for (let i = 0; i < waveA.length; i++) {
-        const a = waveA[i];
-        const dirX = a.x;
-        const dirZ = a.y;
-        const k = a.z;
-        const omega = a.w;
-        const amp = waveB[i].x;
-        const phase = waveB[i].y;
-        const ph = k * (dirX * x + dirZ * z) - omega * t + phase;
-        height += amp * Math.sin(ph);
-      }
-      return height;
+      return level + material.seaState.heightAt(x, z);
     },
     get significantHeight(): number {
       return material.significantHeight;

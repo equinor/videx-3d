@@ -20,6 +20,7 @@ import storyArgs from '../../storybook/story-args.json';
 import { useOceanContact } from './ocean-contact';
 import { OceanContact } from './ocean-material';
 import { BuoyancyPoint, useBuoyancy } from './ocean-sampler';
+import type { SeaQuality } from '../../sdk/weather/sea-state';
 
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
@@ -155,21 +156,15 @@ type ExampleProps = {
 
   // Placement / appearance
   oceanLevel: number;
-  waveCount: number;
+  quality: SeaQuality;
   detailOctaves: number;
   detailScale: number;
-  detailStrength: number;
   windDirection: number;
   windSpeed: number;
   amplitude: number;
-  directionalSpread: number;
   steepness: number;
   displacement: boolean;
   waterOpacity: number;
-  tonalVariation: number;
-  tonalScale: number;
-  tonalSharpness: number;
-  tonalColor: string;
   reflectionIntensity: number;
   foamAmount: number;
   foamColor: string;
@@ -379,10 +374,9 @@ const OceanDemo = (props: ExampleProps) => {
 
   return (
     <Ocean
-      waveCount={props.waveCount}
+      quality={props.quality}
       detailOctaves={props.detailOctaves}
       detailScale={props.detailScale}
-      detailStrength={props.detailStrength}
       sunColor="#d6d39f"
       skyColor="#465a6a"
       name="Ocean"
@@ -393,14 +387,9 @@ const OceanDemo = (props: ExampleProps) => {
       windDirection={wind}
       windSpeed={props.windSpeed}
       amplitude={props.amplitude}
-      directionalSpread={props.directionalSpread}
       steepness={props.steepness}
       displacement={props.displacement}
       waterOpacity={props.waterOpacity}
-      tonalVariation={props.tonalVariation}
-      tonalScale={props.tonalScale}
-      tonalSharpness={props.tonalSharpness}
-      tonalColor={props.tonalColor}
       reflectionIntensity={props.reflectionIntensity}
       foamAmount={props.foamAmount}
       foamColor={props.foamColor}
@@ -489,27 +478,24 @@ const meta = {
     edgeSmoothing: { ...range(0, 5, 1), table: { category: 'Geometry' } },
 
     oceanLevel: { ...range(-500, 500, 10), table: { category: 'Surface' } },
-    waveCount: { ...range(1, 64, 1), table: { category: 'Surface' } },
+    quality: {
+      control: { type: 'select' },
+      options: ['low', 'medium', 'high', 'ultra'],
+      description:
+        'How much of the sea state’s waves it draws (`SEA_QUALITY`); `medium` for a mid-range laptop.',
+      table: { category: 'Surface' },
+    },
     detailOctaves: { ...range(1, 8, 1), table: { category: 'Surface' } },
     detailScale: { ...range(0, 0.5, 0.01), table: { category: 'Surface' } },
-    detailStrength: { ...range(0, 1, 0.01), table: { category: 'Surface' } },
     windDirection: { ...range(0, 360, 1), table: { category: 'Surface' } },
     windSpeed: { ...range(0, 25, 0.5), table: { category: 'Surface' } },
     amplitude: { ...range(0, 3, 0.05), table: { category: 'Surface' } },
-    directionalSpread: { ...range(0, 3, 0.05), table: { category: 'Surface' } },
     steepness: { ...range(0, 2, 0.05), table: { category: 'Surface' } },
     displacement: {
       control: { type: 'boolean' },
       table: { category: 'Surface' },
     },
     waterOpacity: { ...range(0, 1, 0.01), table: { category: 'Surface' } },
-    tonalVariation: { ...range(0, 1, 0.01), table: { category: 'Surface' } },
-    tonalScale: {
-      ...range(0, 20, 1),
-      table: { category: 'Surface' },
-    },
-    tonalSharpness: { ...range(0, 1, 0.01), table: { category: 'Surface' } },
-    tonalColor: { control: { type: 'color' }, table: { category: 'Surface' } },
     reflectionIntensity: {
       ...range(0, 2, 0.05),
       table: { category: 'Surface' },
@@ -613,21 +599,15 @@ const commonArgs = {
   polygonId: Object.keys(polygonOptions)[0],
 
   oceanLevel: 0,
-  waveCount: 16,
+  quality: 'medium' as SeaQuality,
   detailOctaves: 4,
   detailScale: 0.05,
-  detailStrength: 0.2,
   windDirection: 45,
   windSpeed: 10,
   amplitude: 1,
-  directionalSpread: 1.2,
-  steepness: 0.7,
+  steepness: 1,
   displacement: false,
   waterOpacity: 0.7,
-  tonalVariation: 0.4,
-  tonalScale: 4,
-  tonalSharpness: 0.5,
-  tonalColor: '#cfe3f2',
   reflectionIntensity: 1,
   foamAmount: 0.5,
   foamColor: '#ffffff',

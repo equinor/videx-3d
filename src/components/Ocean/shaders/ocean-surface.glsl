@@ -1,14 +1,10 @@
-// Shared ocean surface shading: the wave normal with its micro ripples, Fresnel, the
-// large-scale tonal variation, reflection and sun glint, and wind-driven and contact
-// foam. The Ocean surface and the Sky's endless sea both include it, so they read the
-// same uniforms and look the same.
+// Shared ocean surface shading: the waves from a sea state's layers (sea-layers.glsl),
+// Fresnel, reflection and sun glint, and wind-driven and contact foam. The Ocean surface and the
+// Sky's endless sea both include it, so they read the same uniforms and look the same.
 //
-// ⚠️ oceanFresnel, oceanTonal and oceanFoam take screen-space derivatives: call them
-// under uniform control flow.
+// ⚠️ oceanWaves, oceanFresnel and oceanFoam take screen-space derivatives: call them under
+// uniform control flow.
 
-#ifndef OCEAN_WAVE_COUNT
-#define OCEAN_WAVE_COUNT 16
-#endif
 // Maximum number of floating-object contact footprints that can spread foam on
 // the surface (see uContactCount / uContactA / uContactB).
 #ifndef OCEAN_CONTACT_COUNT
@@ -16,28 +12,24 @@
 #endif
 // Share of the foam lost once its detail goes sub-pixel.
 #define OCEAN_FOAM_FAR_FADE 0.85
-// The foam noise's spread about its mean, which stands in for it once sub-pixel.
-#define OCEAN_FOAM_SPREAD 0.2
-// The sea's mean square slope for a wind (m/s), the small waves included (Cox and Munk).
-#define OCEAN_COX_MUNK(wind) (0.003 + 0.00512 * (wind))
+// The foam's texture (oceanWaves' `crest`): standard deviations each side of its middle, and
+// how much the finest layer breaks up the wind sea's crests.
+#define OCEAN_CREST_SPAN 3.0
+#define OCEAN_CREST_FINE 0.6
+#define OCEAN_CREST_RIPPLES 0.4
 
 uniform float uTime;
-// Octaves of the fine detail's noise (oceanFbm). A uniform, not a define: Direct3D then
+// Octaves of the shore's ragged edge noise (oceanFbm). A uniform, not a define: Direct3D then
 // keeps its loop a loop rather than a copy per octave, at every one of its calls.
 uniform int uOceanDetailOctaves;
 uniform vec2 uWindDirection;
 uniform float uWindSpeed; // m/s (drives foam coverage)
 uniform float uSignificantHeight; // Hs (m) for foam crest normalisation
-uniform float uSteepness; // apparent choppiness (normal exaggeration)
+uniform float uSteepness; // apparent choppiness: the waves' slopes scaled, 1 as the spectrum gives them
 
 uniform vec3 uDeepColor;
 uniform vec3 uShallowColor;
 uniform float uOpacity; // base body opacity (looking straight down)
-
-uniform float uTonalVariation; // strength of large-scale tonal variation
-uniform float uTonalScale;     // frequency of the tonal variation (per world unit)
-uniform float uTonalSharpness; // 0 = soft gradient, 1 = hard-edged patches
-uniform vec3 uTonalColor;      // tint waters drift toward (currents / algae / pollution)
 
 uniform float uReflectionIntensity;
 
@@ -50,10 +42,8 @@ uniform vec3 uFoamColor;
 uniform float uFoamAmount;
 
 uniform float uFresnelPower;
-uniform float uDetailScale;    // micro-ripple frequency (waves per world unit)
-uniform float uDetailStrength; // micro-ripple normal strength
-uniform vec2 uDetailFade;      // distances from the camera over which the detail fades to a flat mirror
-uniform float uSlopeVariance;  // mean square slope of the wave field
+uniform float uDetailScale;    // the foam's feature frequency (per world unit)
+uniform vec2 uDetailFade;      // distances from the camera over which the waves fade to a flat mirror
 
 // Contact foam from floating objects (e.g. a vessel hull). Each active contact
 // is an oriented ellipse footprint: uContactA = vec4(centerX, centerZ, forwardX,
@@ -67,7 +57,21 @@ uniform vec4 uContactA[OCEAN_CONTACT_COUNT];
 uniform vec4 uContactB[OCEAN_CONTACT_COUNT];
 uniform vec4 uContactC[OCEAN_CONTACT_COUNT];
 
-#include ./waves.glsl
+#include ./sea-layers.glsl
+
+// The detail octave (SeaState.detail): the finest layer's tile read again, smaller, for the
+// ripples below its band. As uSeaLayers is for a layer: 1 / its size, its turn, its texels;
+// and x the gain on the finest layer's slopes, y, z its tile point's shift, the ripples' drift.
+uniform vec4 uSeaDetailLayer;
+uniform vec3 uSeaDetail;
+
+#if SEA_LAYERS > 3
+#define uSeaFinest uSeaSurface3
+#define SEA_FINEST 3
+#else
+#define uSeaFinest uSeaSurface2
+#define SEA_FINEST 2
+#endif
 
 // 0 up close, 1 where the sea has faded to a flat mirror, `dist` from the camera.
 float oceanFlatness(float dist) {
@@ -114,75 +118,83 @@ float oceanFbm(vec2 p) {
   return sum / max(norm, 1e-4);
 }
 
-// The surface normal at `worldXZ` (+Y up, in the X/Z wave plane), with the spectral
-// `slope` and `height` for the foam and `np`, the wind-drifted coordinates the fine
-// detail is drawn in. `texel` is world units per pixel; `flatness` (oceanFlatness)
-// fades the waves out. `rough` is the slope variance the pixel cannot show (oceanShade).
-vec3 oceanWaveNormal(vec2 worldXZ, float texel, float flatness, out vec2 slope, out float height, out vec2 np, out float rough) {
-  float detail = 1.0 - flatness;
-  slope = vec2(0.0);
-  height = 0.0;
-  float kept = 0.0;
-  if(detail > 0.001) {
-    // --- Break the periodicity of the finite spectral sum -------------------
-    // The wave field is a finite sum of sinusoids, so it tiles *exactly* in
-    // world space; from very far away (where the micro-ripple FBM that normally
-    // masks it has faded below the pixel footprint) that exact period reads as a
-    // repeating diagonal "corduroy". A large-scale, slowly varying domain warp
-    // meanders the sample position by a kilometre-scale wander so the wave train
-    // never lines up into a visible tile — much like real swell refracting. The
-    // warp frequency is very low, so it adds no high-frequency distortion (the
-    // local wavelengths/slope are essentially unchanged); the unwarped `texel`
-    // remains valid for AA. Sampled only for the fragment normals; the optional
-    // vertex displacement (off by default, for floating-object support) is a
-    // separate low-frequency path and does not need it.
-    vec2 warp = vec2(oceanFbm(worldXZ * 0.0009 + 31.7), oceanFbm(worldXZ * 0.0009 + 67.3)) - 0.5;
-    vec2 waveXZ = worldXZ + warp * 240.0;
+// The squared size on the wave plane of the pixel at `p`, its longer side. ⚠️ Derivatives.
+float seaPixel2(vec2 p) {
+  vec2 dx = dFdx(p);
+  vec2 dy = dFdy(p);
+  return max(dot(dx, dx), dot(dy, dy));
+}
 
-    // --- Spectral wave surface: per-pixel slope + height --------------------
-    oceanSurface(waveXZ, uTime, texel, slope, height, kept);
-    slope *= detail;
-    height *= detail;
-  }
+// A layer's mip for a pixel `pixel2` (seaPixel2) across: from the texels it spans. The turn
+// into the tile keeps lengths, so this is the mip the tile point's own derivatives give.
+float seaLayerLod(vec4 layer, float pixel2) {
+  float texels = layer.x * layer.w;
+  return 0.5 * log2(max(pixel2 * texels * texels, 1e-8));
+}
 
-  // Surface normal from the slope; uSteepness exaggerates apparent choppiness.
-  vec3 N = normalize(vec3(-slope.x * uSteepness, 1.0, -slope.y * uSteepness));
+// One layer at `p`, filtered to a pixel `pixel2` (seaPixel2) across.
+vec4 seaLayerAt(sampler2D map, int index, vec2 p, float pixel2) {
+  vec4 layer = uSeaLayers[index];
+  return seaLayerRead(map, layer, uSeaLayerStats[index], index, seaLayerUv(layer, p), seaLayerLod(layer, pixel2));
+}
 
-  // --- Near-field micro ripples (fine FBM), footprint-faded -----------------
-  // Drift with the wind in world space (seamless across tiles). Fades in only
-  // where the fine ripples are large enough on screen to resolve (i.e. close),
-  // which keeps crisp detail up close without shimmer at distance — and, being
-  // footprint-based, adds no LOD ring.
-  vec2 flow = uWindDirection * uTime * (0.5 + uWindSpeed * 0.1);
-  np = (worldXZ + flow) * uDetailScale;
-  // Calm-water response: as the wind drops toward still, fade out the fine
-  // surface ripples so the ocean settles to a near-glassy sheet. A small floor
-  // keeps a faint texture so calm water never reads as a dead mirror.
-  float windDetail = mix(0.05, 1.0, smoothstep(0.5, 6.0, uWindSpeed));
-  float microK = uDetailScale * 4.0 * 6.2831853;
-  // Gradual footprint falloff: ramp down over a wide range so the micro detail
-  // is never at full strength right at the camera (which read as too dominant)
-  // and instead stays faintly visible much farther out before vanishing near
-  // the Nyquist limit. `1.0 - smoothstep` over a wide band gives a long, gentle
-  // tail rather than a hard near plateau + sudden cutoff.
-  float microAA = 1.0 - smoothstep(0.25, 4.0, microK * texel);
-  microAA *= microAA; // bias toward lower blend, softer near the camera
-  microAA *= detail;
-  // Too small for the pixel or faded out with distance, the slopes still roughen the glint: the
-  // waves left out, and the small ones no wave stands for once the ripples fade.
+// The waves at `p` of the wave plane (+Y up), from the sea state's layers, each filtered to
+// the pixel: the normal, with the slope and height for the foam; `crest` the finer layers'
+// heights over their spread, as [0, 1] (x all but the longest, y the finest), the foam's
+// texture; and `rough` the slope variance (both axes) the pixel cannot show: what the mips
+// filter out, and the waves no layer draws. `flatness` (oceanFlatness) fades the slopes
+// drawn into that roughness, far off and where two of a Scenery's charts meet; all faded,
+// no layer is read.
+// ⚠️ Derivatives.
+vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out vec2 crest, out float rough) {
+  float pixel2 = seaPixel2(p);
   float s2 = uSteepness * uSteepness;
-  float small = max(OCEAN_COX_MUNK(uWindSpeed) - uSlopeVariance * s2, 0.0);
-  rough = max(uSlopeVariance - kept * detail * detail, 0.0) * s2 + small * (1.0 - microAA);
-  if(microAA > 0.001) {
-    float e = 0.5;
-    vec2 mp = np * 4.0;
-    float mL = oceanFbm(mp - vec2(e, 0.0));
-    float mR = oceanFbm(mp + vec2(e, 0.0));
-    float mD = oceanFbm(mp - vec2(0.0, e));
-    float mU = oceanFbm(mp + vec2(0.0, e));
-    N = normalize(N + vec3((mL - mR), 0.0, (mD - mU)) * uDetailStrength * microAA * windDetail);
+  float detailGain2 = uSeaDetail.x * uSeaDetail.x;
+  float total = uSeaLayerStats[0].x + uSeaLayerStats[1].x + uSeaLayerStats[2].x;
+  #if SEA_LAYERS > 3
+  total += uSeaLayerStats[3].x;
+  #endif
+  total += detailGain2 * uSeaLayerStats[SEA_FINEST].x;
+  float detail = 1.0 - flatness;
+  if(detail <= 0.001) {
+    slope = vec2(0.0);
+    height = 0.0;
+    crest = vec2(0.5);
+    rough = total * s2 + uSeaResidual;
+    return vec3(0.0, 1.0, 0.0);
   }
-  return N;
+  vec4 l0 = seaLayerAt(uSeaSurface0, 0, p, pixel2);
+  vec4 l1 = seaLayerAt(uSeaSurface1, 1, p, pixel2);
+  vec4 l2 = seaLayerAt(uSeaSurface2, 2, p, pixel2);
+  vec4 fine = l2;
+  float fineVariance = uSeaLayerStats[2].y;
+  vec4 sum = l0 + l1 + l2;
+  float crestHeight = l1.z + l2.z;
+  float crestVariance = uSeaLayerStats[1].y + uSeaLayerStats[2].y;
+  #if SEA_LAYERS > 3
+  vec4 l3 = seaLayerAt(uSeaSurface3, 3, p, pixel2);
+  fine = l3;
+  fineVariance = uSeaLayerStats[3].y;
+  sum += l3;
+  crestHeight += l3.z;
+  crestVariance += uSeaLayerStats[3].y;
+  #endif
+  // The ripples: the finest layer again, smaller, its slopes by the gain (heights by the gain
+  // over the scale), on its own hex cells, sliding under them downwind.
+  vec4 ripples = seaLayerReadShifted(uSeaFinest, uSeaDetailLayer, uSeaLayerStats[SEA_FINEST], SEA_LAYERS, seaLayerUv(uSeaDetailLayer, p), uSeaDetail.yz, seaLayerLod(uSeaDetailLayer, pixel2));
+  float zDetail = ripples.z * inversesqrt(max(fineVariance, 1e-8));
+  sum += ripples * vec4(uSeaDetail.x, uSeaDetail.x, uSeaDetail.x * uSeaLayers[SEA_FINEST].x / uSeaDetailLayer.x, detailGain2);
+  // What the pixel resolves of the layers' slopes: all of them less what its mips filter out.
+  float resolved = max(total - sum.w, 0.0);
+  slope = sum.xy * detail * uSteepness;
+  height = sum.z * detail;
+  rough = (sum.w + (1.0 - detail * detail) * resolved) * s2 + uSeaResidual;
+  // The wind sea's crests (all but the longest layer), broken up by the finest layer's and the
+  // ripples', in standard deviations: ±3 over [0, 1] (OCEAN_CREST_SPAN). `crest.y` the ripples.
+  float zFine = fine.z * inversesqrt(max(fineVariance, 1e-8));
+  float zCrest = (crestHeight * inversesqrt(max(crestVariance, 1e-8)) + OCEAN_CREST_FINE * zFine + OCEAN_CREST_RIPPLES * zDetail) * inversesqrt(1.0 + OCEAN_CREST_FINE * OCEAN_CREST_FINE + OCEAN_CREST_RIPPLES * OCEAN_CREST_RIPPLES);
+  crest = clamp(0.5 + vec2(zCrest, zDetail) / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);
+  return normalize(vec3(-slope.x, 1.0, -slope.y));
 }
 
 // Fresnel, analytically widened to avoid grazing-angle shading aliasing. `ndvAA` is the
@@ -194,56 +206,12 @@ float oceanFresnel(vec3 N, vec3 V, out float ndvAA) {
   return pow(1.0 - ndvAA, uFresnelPower);
 }
 
-// --- Large-scale tonal variation (currents / slicks) ------------------------
-// A very low-frequency, world-space variation so the open water is not a flat
-// uniform colour when viewed from far away. Two decorrelated noise fields give
-// a one-sided brightness lift (currents catch the light) and a subtle hue
-// shift toward uTonalColor (slick / algae / pollution). Low frequency, so no
-// footprint fade; it fades with distance instead (`flatness`), since many small
-// patches on screen read as noise. `tonalReflect` scales the reflection and
-// `tonalSpec` the sun glint.
-// ⚠️ The branch is per pixel: its derivatives are only unreliable where the
-// variation has faded to nothing.
-void oceanTonal(vec2 worldXZ, float flatness, inout vec3 waterColor, out float tonalReflect, out float tonalSpec) {
-  tonalReflect = 1.0;
-  tonalSpec = 1.0;
-  float variation = uTonalVariation * (1.0 - flatness);
-  if(variation > 0.001) {
-    vec2 tonalP = worldXZ * uTonalScale;
-    float tonal = oceanFbm(tonalP + 5.7);
-    float tonal2 = oceanFbm(tonalP * 1.7 + 21.3);
-    // Optionally crispen the patch boundaries. uTonalSharpness narrows the
-    // transition band around the noise mid-point so currents/slicks read as
-    // distinct, well-defined regions instead of a soft drift. The band is
-    // floored at the per-pixel footprint (fwidth) so the edges stay anti-aliased
-    // even at distance. 0 keeps the original smooth FBM gradient.
-    if(uTonalSharpness > 0.0) {
-      float s = clamp(uTonalSharpness, 0.0, 1.0);
-      float w1 = max(mix(0.5, 0.015, s), fwidth(tonal));
-      float w2 = max(mix(0.5, 0.015, s), fwidth(tonal2));
-      tonal = smoothstep(0.5 - w1, 0.5 + w1, tonal);
-      tonal2 = smoothstep(0.5 - w2, 0.5 + w2, tonal2);
-    }
-    waterColor *= mix(1.0, 1.0 + variation * 0.5, tonal);
-    waterColor = mix(waterColor, waterColor * uTonalColor, tonal2 * variation);
-    // The tinted patches are also slightly less reflective, so the tonal
-    // variation reads as a change in water surface, not just colour.
-    tonalReflect = 1.0 - tonal2 * variation * 0.5;
-    // The specular sun glint is modulated much more strongly than the diffuse
-    // reflection so the patches read as distinctly calmer/glossier water: the
-    // brighter (tonal) patches sparkle more, the tinted (tonal2) patches less.
-    tonalSpec = clamp(1.0 + (tonal - tonal2) * variation * 2.0, 0.0, 3.0);
-  }
-}
-
 // The lit surface: the body colour against the reflection by Fresnel, plus the sun's
 // glint. `sky` is the sky's colour in the reflected direction, reflect(-V, N); `rough` the
-// slope variance the pixel cannot show (oceanWaveNormal).
-vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float tonalReflect, float tonalSpec, float rough) {
-  vec3 reflection = sky * uReflectionIntensity * tonalReflect;
+// slope variance the pixel cannot show (oceanWaves); `glint` scales the sun's.
+vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float glint, float rough) {
+  vec3 reflection = sky * uReflectionIntensity;
 
-  // Modulated more strongly than the reflection (tonalSpec) so the tonal
-  // patches show a pronounced difference in sun glint.
   vec3 H = normalize(V + normalize(uSunDirection));
   float ndh = max(dot(N, H), 0.0);
   // The slopes the pixel cannot show still scatter the sun: their variance widens the glint
@@ -259,19 +227,24 @@ vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float 
     energy = base / roughness;
   }
   float spec = pow(ndh, shininess) * energy;
-  vec3 specular = uSunColor * spec * tonalSpec;
+  vec3 specular = uSunColor * spec * glint;
 
   return mix(waterColor, reflection, fresnel) + specular;
 }
 
-// --- Foam: whitecaps where the spectral surface is steep / cresting ----------
-// Wind drives coverage (uWindSpeed is the average wind in m/s); little/no foam
-// in calm conditions, white caps once the wind picks up.
-float oceanWindFoam(vec2 slope, float height) {
-  float windFoam = smoothstep(4.0, 14.0, uWindSpeed);
-  float crest = smoothstep(0.45, 0.9, height / max(uSignificantHeight, 1e-3));
-  float steep = smoothstep(0.7, 1.4, length(slope) * uSteepness);
-  return clamp((crest * 0.7 + steep * 0.7) * uFoamAmount * windFoam, 0.0, 1.0);
+// --- Foam: whitecaps on the wind sea's highest crests -------------------------
+// The share of the sea whitecaps cover (Monahan and O'Muircheartaigh 1980: 3.84e-6·U^3.41, about
+// 1 % at 10 m/s and 10 % at 20 m/s; uFoamAmount 0.5 as measured), as the coverage that leaves
+// that share of the crests' texture (oceanWaves' `crest`) over oceanFoam's threshold.
+float oceanWindFoam() {
+  float share = min(3.84e-6 * pow(max(uWindSpeed, 0.0), 3.41) * 2.0 * uFoamAmount, 0.5);
+  if(share <= 1e-5)
+    return 0.0;
+  // How many standard deviations up only that share of the crests stands: the normal's
+  // upper tail inverted (Abramowitz and Stegun 26.2.23).
+  float t = sqrt(-2.0 * log(share));
+  float z = t - (2.515517 + 0.802853 * t + 0.010328 * t * t) / (1.0 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
+  return clamp(0.5 - z / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);
 }
 
 // Foam coverage [0,1] spread around floating-object contact footprints. For
@@ -313,52 +286,37 @@ float oceanContactFoam(vec2 p, float t) {
   return foam;
 }
 
-// How much foam a `coverage` draws, before its distance fade. The coverage is
-// thresholded against a noise texture, with the threshold's transition width
-// tracking the pixel footprint: edges stay crisp (and get crisper as the camera
-// approaches) yet remain anti-aliased at distance. A finer foam octave fades in up
-// close for sharp filaments. `foamFar` -> 1 once the foam detail is sub-pixel, where
-// the share of foam a pixel holds is drawn instead: an even tint, none without coverage.
-float oceanFoam(vec2 np, float texel, float coverage, out float foamFar) {
-  float foamNoise = oceanFbm(np * 2.0 + 3.7);
-  float fineK = uDetailScale * 8.0 * 6.2831853;
-  float fineAA = 1.0 - smoothstep(0.5, 3.0, fineK * texel);
-  // Skipped where its weight is 0; the fwidth below stays outside the branch.
-  float foamTex = foamNoise;
-  if(fineAA > 0.0)
-    foamTex = mix(foamNoise, foamNoise * oceanFbm(np * 8.0 + 11.1) * 2.0, fineAA);
-  foamTex = clamp(foamTex, 0.0, 1.0);
+// How much foam a `coverage` draws, before its distance fade. The coverage is thresholded
+// against the foam's texture, the wind sea's crests (oceanWaves' `crest`), with the
+// threshold's transition width tracking the pixel footprint: edges stay crisp (and get crisper
+// as the camera approaches) yet remain anti-aliased at distance. The finest waves break it up
+// further up close. `foamFar` -> 1 once the foam's detail is sub-pixel, where the share of
+// the texture over the threshold is drawn instead: an even tint, none without coverage.
+float oceanFoam(vec2 crest, float texel, float coverage, out float foamFar) {
+  float foamTex = crest.x;
 
-  // Foam feature footprint vs. pixel size: foamFar -> 1 when crests shrink below
-  // a pixel (far away); closeness -> 1 when the camera is near and the foam is
-  // well resolved.
+  // Foam feature footprint vs. pixel size: foamFar -> 1 when crests shrink below a pixel (far
+  // away); closeness -> 1 when the camera is near and the foam is well resolved.
   float foamK = uDetailScale * 2.0 * 6.2831853;
   foamFar = smoothstep(0.5, 4.0, foamK * texel);
   float closeness = 1.0 - foamFar;
 
-  // Higher coverage lowers the threshold => more of the noise becomes foam.
+  // Higher coverage lowers the threshold => more of the texture becomes foam.
   float foamT = 1.0 - coverage;
 
-  // Edge softness: stay crisp + AA at distance, but WIDEN the transition band up
-  // close so the foam fringe feathers into the water (frothy) rather than a hard,
-  // high-contrast white cutout.
-  float foamAaw = clamp(fwidth(foamTex) + 0.015, 0.01, 0.5);
-  float edge = foamAaw + closeness * 0.2;
-  // ⚠️ Sub-pixel, fwidth measures the aliasing: the edge it widens let foam through at no coverage.
-  float spread = mix(edge, OCEAN_FOAM_SPREAD, foamFar);
-  float foam = smoothstep(foamT - spread, foamT + spread, mix(foamTex, 0.5, foamFar));
+  // Edge softness: crisp and anti-aliased at distance, a little wider up close so the foam's
+  // fringe feathers into the water rather than a hard cut-out.
+  float edge = clamp(fwidth(foamTex) + 0.01, 0.01, 0.5) + closeness * 0.03;
+  float near = smoothstep(foamT - edge, foamT + edge, foamTex);
+  // Sub-pixel: the share of the texture (a standard normal over ±OCEAN_CREST_SPAN) over the
+  // threshold, its tail as a logistic.
+  float far = smoothstep(0.0, 0.05, coverage) / (1.0 + exp(-3.4 * OCEAN_CREST_SPAN * (coverage - 0.5)));
+  float foam = mix(near, far, foamFar);
 
-  // Up close, modulate the foam fill with a finer bubble noise so it reads as
-  // clumpy froth instead of a flat sheet of white — this breaks up the uniform
-  // brightness that makes the foam look hard.
-  float bubble = 0.5;
-  if(closeness > 0.0)
-    bubble = oceanFbm(np * 12.0 + 5.3);
-  float froth = mix(1.0, 0.55 + 0.45 * bubble, closeness);
+  // Up close the finest waves modulate the fill, so it reads as clumpy froth, not a sheet.
+  float froth = mix(1.0, 0.55 + 0.45 * crest.y, closeness);
   foam *= froth;
 
-  // Thin foam blends in gently as soft froth; only the densest foam reaches full
-  // bright white. This ramps down the foam/water contrast up close while leaving
-  // the crisp far look untouched.
+  // Thin foam blends in gently; only the densest reaches full white.
   return foam * mix(1.0, smoothstep(0.05, 0.6, foam), closeness);
 }

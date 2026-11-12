@@ -18,26 +18,18 @@ export type SeaHexTiles = {
   weights: [number, number, number];
 };
 
-// A 32-bit integer hash (lowbias32), as the shader's.
-function hash32(x: number): number {
-  x ^= x >>> 16;
-  x = Math.imul(x, 0x7feb352d);
-  x ^= x >>> 15;
-  x = Math.imul(x, 0x846ca68b);
-  x ^= x >>> 16;
-  return x >>> 0;
-}
-
-// A cell's offset in tile units, for layer `layer`.
+// A cell's offset in tile units, for layer `layer`: one hash, its halves the two 16-bit
+// offsets, as the shader's.
 function cellOffset(i: number, j: number, layer: number): [number, number] {
-  const seed =
-    (Math.imul(i, 73856093) ^
-      Math.imul(j, 19349663) ^
-      Math.imul(layer, 83492791)) >>>
+  let h =
+    (Math.imul(i, 0x8da6b343) ^
+      Math.imul(j, 0xd8163841) ^
+      Math.imul(layer, 0xcb1ab31f)) >>>
     0;
-  const a = hash32(seed);
-  const b = hash32(a);
-  return [a / 4294967296, b / 4294967296];
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d) >>> 0;
+  h ^= h >>> 15;
+  return [(h & 0xffff) / 65536, (h >>> 16) / 65536];
 }
 
 /** The copies of layer `layer`'s tile blended at (u, v), in tile units. */
