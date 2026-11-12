@@ -4,6 +4,7 @@ import { Vec3 } from '../../sdk';
 import type { CloudBench } from './cloud-bench';
 import type { Videx3dGlobe } from './globe';
 import type { ProfileOptions, ProfileResult } from './profile';
+import type { SeaBench } from './sea-bench';
 
 /**
  * What an agent (or a curious human) can reach from the browser console.
@@ -33,6 +34,8 @@ export type Videx3dHandle = {
   globe: Videx3dGlobe;
   /** the 3D clouds' GPU timings, in a story rendering `CloudBenchBridge` (see `cloud-bench.ts`) */
   cloudBench: CloudBench;
+  /** the sea's GPU timings, in a story rendering `SeaBenchBridge` (see `sea-bench.ts`) */
+  seaBench: SeaBench;
 };
 
 declare global {

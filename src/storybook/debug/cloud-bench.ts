@@ -22,6 +22,16 @@ import {
 import { CloudsRenderer } from '../../components/Scenery/scenery-clouds';
 import type { CameraManager } from '../../sdk/managers/CameraManager';
 import { showAb, type AbImage, type AbStats } from './ab-viewer';
+import {
+  hookedWebGL,
+  indicate,
+  median,
+  nextFrame,
+  round2,
+  sleep,
+  stat,
+  type Stat,
+} from './bench-common';
 import { registerVidex3d } from './videx3d';
 
 /**
@@ -86,7 +96,7 @@ export type BenchConditions = {
   hookedWebGL: string[];
 };
 
-export type Stat = { median: number; p90: number; max: number; mean: number };
+export type { Stat };
 
 export type PassOptions = {
   /** timed draws per pass in a round (their median kept) */
@@ -207,84 +217,6 @@ export type CountResult = {
 };
 
 type TimerExt = { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number };
-
-const median = (values: number[]) => {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[sorted.length >> 1];
-};
-
-const round2 = (x: number) => Math.round(x * 100) / 100;
-
-function stat(values: number[]): Stat {
-  if (values.length === 0) return { median: 0, p90: 0, max: 0, mean: 0 };
-  const sorted = [...values].sort((a, b) => a - b);
-  const at = (p: number) =>
-    sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
-  return {
-    median: round2(at(0.5)),
-    p90: round2(at(0.9)),
-    max: round2(sorted[sorted.length - 1]),
-    mean: round2(values.reduce((a, b) => a + b, 0) / values.length),
-  };
-}
-
-const nextFrame = () =>
-  new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-const sleep = (ms: number) =>
-  new Promise<void>(resolve => setTimeout(resolve, ms));
-
-// The methods a debugging hook was seen wrapping (a getError per draw: two synchronous round
-// trips to the GPU process each, 88 % of the main thread, 2026-11-10).
-const WATCHED = [
-  'drawArrays',
-  'drawElements',
-  'drawArraysInstanced',
-  'drawElementsInstanced',
-  'useProgram',
-  'getError',
-  'readPixels',
-  'texImage2D',
-  'texSubImage2D',
-  'texSubImage3D',
-  'bufferData',
-  'bufferSubData',
-];
-
-function hookedWebGL(): string[] {
-  const proto = WebGL2RenderingContext.prototype as unknown as Record<
-    string,
-    unknown
-  >;
-  return WATCHED.filter(name => {
-    const method = proto[name];
-    return (
-      typeof method === 'function' &&
-      !/\[native code\]/.test(Function.prototype.toString.call(method))
-    );
-  });
-}
-
-// A fixed dot in the page's top left while a measurement runs (red: hands off), green after.
-function indicate(busy: boolean) {
-  let dot = document.getElementById('cloud-bench-dot');
-  if (!dot) {
-    dot = document.createElement('div');
-    dot.id = 'cloud-bench-dot';
-    Object.assign(dot.style, {
-      position: 'fixed',
-      left: '6px',
-      top: '6px',
-      width: '16px',
-      height: '16px',
-      borderRadius: '50%',
-      zIndex: '100000',
-      pointerEvents: 'none',
-    });
-    document.body.appendChild(dot);
-  }
-  dot.style.background = busy ? 'red' : 'limegreen';
-}
 
 /**
  * GPU time of a frame's stretches, back to back: one TIME_ELAPSED query open at a time, each

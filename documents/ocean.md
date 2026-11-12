@@ -164,3 +164,73 @@ lid can stay at its minimum.
 See the **Components / Misc / Ocean** stories for an interactive demo of every
 variant plus the buoyancy boxes, and **Spikes / Chunks / SyntheticColumn** for
 water over a chunk stack.
+
+## Measuring
+
+Time the sea on **debug / Ocean / Sea Bench**
+(`src/components/Ocean/debug/SeaBench.stories.tsx`): the stand-alone `Ocean` (a 50 km plane,
+story `StandAloneOcean`) or a `Scenery`'s endless sea with a stage over the field as in its
+Timelapse (`Default`), with the same sun (10:00 on the scenery stories' date and place), wind
+and poses, in a canvas of a fixed size at a fixed pixel ratio (1920 × 1080 at 1 by default).
+`clouds` adds a sky preset's clouds (`SceneryClouds`, medium).
+
+The poses (`SEA_POSES`) look south about the origin from 2 m, 30 m, 300 m, 2 km, 20 km, 100 km
+and 1000 km up, and straight down from 2 km. The stand-alone plane's edge shows from 20 km, so
+it is toured only up to there.
+
+Its panel and `window.videx3d.seaBench` (`src/storybook/debug/sea-bench.ts`) time each draw of
+the sea apart in the frame as it runs (`SEA_GROUPS`, by timer query): the `Ocean`'s surface,
+body and bed; the stage's surface and seabed; the background's surface, seabed (`bgSea`) and
+in-water layers; their sum is `sea`. The background's sky is timed too, to tell the GPU's clock
+by.
+
+- `frames()`: the frame and each draw, from the pose as it is.
+- `tour({ rounds })`: every pose in turn, the rounds interleaved; each pose's `spread` is its
+  highest round over its lowest.
+- `ab({ name: { arg: value } }, { pose, rounds })`: story args against the current ones, in
+  interleaved rounds, with the median of each round's own ratio; the args are put back after.
+- `hold(seconds)`: the render loop stopped, so the GPU cools.
+
+Every result carries its conditions (canvas, pixel ratio, drawing buffer, pose, args, GPU).
+Compare only results whose conditions match.
+
+- ⭐ **Trust `ab`'s ratios, and absolute times only with a `spread` under about 1.05.** A
+  laptop's GPU changes its clock with the load. On the Iris Xe the same draw read 7–14 ms from
+  one run to the next. On the NVIDIA A1000 at 60 fps, the light stand-alone sea dropped between
+  two clock states (2.9 and 4.6 ms), while the Scenery held within 3 %. Without the frame cap
+  (`--disable-gpu-vsync --disable-frame-rate-limit`) it was the other way round: the stand-alone
+  sea held, and the Scenery hit the power limit and varied up to 2×. The ratios read the same
+  both ways (tonal patches off 0.81, detail octaves 4→1 0.47–0.49).
+- **Steadier timings on a laptop with two GPUs:** drive a Chrome set to "High performance" in
+  Windows' graphics settings from a script (`--remote-debugging-port`, then Playwright's
+  `connectOverCDP`), with `--disable-backgrounding-occluded-windows`,
+  `--disable-renderer-backgrounding` and `--disable-background-timer-throttling`, so it keeps
+  drawing behind the editor. Check `conditions().gpu` before trusting it.
+- The `medium` quality is sized for a mid-range laptop's integrated GPU (the Iris Xe class),
+  some 6–7× slower than the A1000 at the sea: judge changes on the steadier GPU, the budget on
+  the slower one.
+
+**Baseline** (HEAD `058d8fea`, 2026-11-12, 1920 × 1080 at 1, wind 10 m/s, no clouds). GPU ms,
+NVIDIA RTX A1000 (ANGLE D3D11):
+
+| pose | Scenery: sea | stage surface | stage seabed | background | stand-alone `Ocean`* |
+|--|--|--|--|--|--|
+| 2 m | 4.35 | 2.75 | 0.69 | 0.91 | 2.93 |
+| 30 m | 4.49 | 2.95 | 0.78 | 0.76 | 3.14 |
+| 300 m | 4.76 | 3.38 | 0.94 | 0.44 | 3.41 |
+| 2 km | 5.08 | 3.83 | 1.22 | 0.03 | 3.03 |
+| 20 km | 4.96 | 3.46 | 1.43 | 0.07 | 1.56 |
+| 100 km | 4.84 | 2.97 | 1.85 | 0.02 | – |
+| 1000 km | 4.92 | 2.92 | 1.82 | 0.18 | – |
+| down, 2 km | 5.01 | 3.80 | 1.21 | 0 | 3.77 |
+
+\* Without the frame cap, `spread` ≤ 1.11; the Scenery's at 60 fps, `spread` ≤ 1.03.
+
+- The seabed is drawn under the surface at every height, 1.2–1.9 ms from 2 km up, where the
+  water over it is opaque.
+- On the Iris Xe (a 300 m pose of the Scenery's Timelapse, 1920 × 1080): stage surface 24.9 ms,
+  stage seabed 7.4 ms, frame 27.8 ms; the stand-alone sea 12–16 ms across the screen.
+- Under clouds (`Components/Misc/Clouds`, medium) the stage's surface costs up to about 25 %
+  more low down (overcast stratocumulus at 30 m and 300 m).
+- What its draw spends, stand-alone at 300 m (`ab`): detail noise 4 → 1 octaves 0.47–0.49 of it;
+  tonal patches off 0.81 (0.78–0.83 in the Scenery's stage); waves 16 → 8 or 32 within ±15 %.

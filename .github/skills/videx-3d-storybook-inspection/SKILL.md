@@ -103,7 +103,9 @@ coordinates yourself.
   `spikes-scenery-stagedebug--default`, `spikes-scenery-relieftiles--default`,
   `debug-scenery-cloud-bench--default` (the 3D clouds alone, fixed 1280 × 720 at 1; time them
   with `window.videx3d.cloudBench`: `pass`, `frames`, `count`, `ab` — documents/clouds.md,
-  "Measuring").
+  "Measuring"), `debug-ocean-sea-bench--default` / `--stand-alone-ocean` (the Scenery's sea or
+  the stand-alone `Ocean`, fixed 1920 × 1080 at 1; time each sea draw with
+  `window.videx3d.seaBench`: `frames`, `tour`, `ab` — documents/ocean.md, "Measuring").
 - ⚠️ GPU A/B on the Iris Xe: the clock jumps between plateaus (one march 11→52 ms) and a program
   just compiled runs ~2× slow for seconds. Judge only interleaved per-round ratios with a no-op
   control, new programs drawn untimed ~3 s first (`cloudBench.ab` does both).
