@@ -416,6 +416,14 @@ float skyOceanSurfaceOpacity(float flatness) {
   return mix(uOpacity, 1.0, max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, above)));
 }
 
+// Whether the surface, met `t` along a view from above the water, hides all that lies under it:
+// its opacity there before Fresnel and foam (skyOceanSurfaceOpacity) is whole, which they, the
+// air and the view from space only raise; and no cutaway takes the water. From 5 km up
+// (SKY_OCEAN_OPAQUE), everywhere.
+bool skyOceanSurfaceHides(float t) {
+  return uSkyOceanWater > 0.5 && uSkyOceanBuried < 0.5 && uSkyOceanCutawayShape.y <= 0.0 && skyOceanCameraAltitude() > 0.0 && skyOceanSurfaceOpacity(oceanFlatness(t)) >= 1.0;
+}
+
 // The film's (uSkyOceanClouds) coarsest level: its side, CUBE_SIZE in scenery-clouds.ts, is 128.
 #define SKY_OCEAN_CLOUD_LODS 7.0
 // The least cloud base its blur is reckoned from (world units).

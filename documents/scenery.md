@@ -908,6 +908,13 @@ fill-bound: they scale with the pixels drawn, about double at 1080p.
   ms) 1.47 → 0.51 from 2 km, 1.44 → 0.85 from 40 m, 2.33 → 1.73 in the water (the
   stage's sea seen from below writes no depth, so the background is still shaded behind
   it) and 1.6 → 0.1 below the seabed; the frame 0.5–1.2 ms less.
+- Under a surface that hides it whole (`skyOceanSurfaceHides`: from 5 km up, or past the
+  detail fade, with the water on and no cutaway) the stage's seabed skips its shading and
+  only writes its depth, so what lies under it stays hidden as before. The pixels are the
+  same within 1/255; on the sea bench (2026-11-12, NVIDIA A1000, 1920 × 1080) the seabed draw
+  went 1.55 → 0.66 ms at 20 km, 2.09 → 0.79 at 100 km and 1.95 → 0.61 at 1000 km, and was
+  unchanged at 300 m and 2 km. What is left is its reach and the stage's tests. A stage whose
+  surface is hidden (`debug.hide`) compiles its seabed without the skip.
 
 ### The void
 

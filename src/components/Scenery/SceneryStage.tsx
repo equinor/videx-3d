@@ -264,6 +264,7 @@ export const SceneryStage = ({
   const hasBed = ocean?.seabed ?? true;
   const seabedOpacity = ocean?.seabedOpacity ?? 1;
   const seeThrough = seabedOpacity < 1;
+  const surfaceShown = !debug?.hide?.includes('surface');
   const definesKey = ocean?.definesKey;
 
   const extent: SceneryStageBounds = useMemo(
@@ -290,11 +291,15 @@ export const SceneryStage = ({
         surface: createSceneryStageMaterial(sky, 'surface', {
           curvedDepth: reliefDrawn,
         }),
-        bed: createSceneryStageMaterial(sky, 'bed', { seeThrough }),
+        bed: createSceneryStageMaterial(sky, 'bed', {
+          seeThrough,
+          // Hidden for debugging, the surface hides nothing.
+          underSurface: surfaceShown,
+        }),
       },
     // The sky's defines are compiled in (the seabed's detail): new ones need new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, definesKey, seeThrough, reliefDrawn],
+    [sky, definesKey, seeThrough, reliefDrawn, surfaceShown],
   );
 
   // The occupants' outlines, for the relief: over them the cutaway takes
@@ -411,7 +416,6 @@ export const SceneryStage = ({
   }, [sky, radiusOutline]);
 
   const surface = useRef<Mesh>(null);
-  const surfaceShown = !debug?.hide?.includes('surface');
   // Each occupant's group, placed about the middle of its outline, or of the stage's disc.
   const anchors = useStableList(claims.map(claim => claim.anchor ?? null));
   const discX = disc?.centre[0] ?? 0;

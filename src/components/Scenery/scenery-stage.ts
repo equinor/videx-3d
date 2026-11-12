@@ -240,6 +240,11 @@ export type SceneryStageMaterialOptions = {
    * rather than of the flat geometry, so a relief beyond the scene meets it there
    */
   curvedDepth?: boolean;
+  /**
+   * the bed's: the stage draws its surface over it, so where that surface hides it whole
+   * (skyOceanSurfaceHides) its shading is skipped, its depth still written
+   */
+  underSurface?: boolean;
 };
 
 /** The defines a material drawing the sky's sea needs, from the sky's switches. */
@@ -265,7 +270,11 @@ export function sceneryOceanDefines(sky: SceneryMaterial) {
 export function createSceneryStageMaterial(
   sky: SceneryMaterial,
   part: SceneryStagePart,
-  { seeThrough = false, curvedDepth = false }: SceneryStageMaterialOptions = {},
+  {
+    seeThrough = false,
+    curvedDepth = false,
+    underSurface = false,
+  }: SceneryStageMaterialOptions = {},
 ) {
   const defines = sceneryOceanDefines(sky);
   const surface = part === 'surface';
@@ -273,6 +282,7 @@ export function createSceneryStageMaterial(
   else defines.STAGE_BED = '';
   if (surface && curvedDepth) defines.STAGE_CURVED_DEPTH = '';
   if (!surface && seeThrough) defines.STAGE_SEE_THROUGH = '';
+  if (!surface && underSurface) defines.STAGE_BED_UNDER_SURFACE = '';
 
   const transparent = surface || seeThrough;
   const material = new ShaderMaterial({

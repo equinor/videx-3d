@@ -138,27 +138,39 @@ void main() {
   vec3 up = globeUpAt(world);
   float bedDepth = uSkyOceanDepth;
   bool fromAbove = altitude + bedDepth > 0.0;
+  // Under the stage's surface where it hides the seabed whole (skyOceanSurfaceHides), its
+  // shading is never seen: skipped, its depth and discards kept, so what lies under it stays
+  // hidden as before. Tested two pixels nearer: a pixel that still shades has the quad's
+  // others shading too, or lies under the whole surface itself, so the derivatives its
+  // detail takes are sound wherever it shows.
+  #ifdef STAGE_BED_UNDER_SURFACE
+  bool hidden = skyOceanSurfaceHides(surfaceReach.x - 2.0 * fwidth(surfaceReach.x));
+  #else
+  bool hidden = false;
+  #endif
   // Shaded on the side the camera is on: from below only its lid is shaded.
   vec3 color = vec3(0.0);
-  if(fromAbove)
+  if(fromAbove && !hidden)
     color = skyOceanBed(world, up, bedDepth);
   float cutaway = skyOceanCutawayAlong(cameraPosition, world);
   float seabed = skyOceanCutawaySeabed(cutaway);
   if(fromAbove) {
-    // Dry, the fog's density is 0.
-    float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
-    float below = skyOceanPathBelowSurface(cameraPosition, world);
-    // Beyond the scene both fall away with the curve: the water lies between them, not under the level.
-    if(altitude > 0.0 && uSkyCurvature > 0.0)
-      below = max(reach.x - surfaceReach.x, 0.0);
-    float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-    color = skyOceanFog(color, path, light);
-      #ifndef STAGE_SEE_THROUGH
-        // Bitten through: the void, as the background draws it through the gap. Without its
-        // rock: it cannot show in the edge's fade under the rim, and would cost a copy.
-    if(seabed < 1.0)
-      color = mix(skyOceanThroughCutaway(skyAbyssGradient(y), dir, cameraPosition), color, seabed);
-      #endif
+    if(!hidden) {
+      // Dry, the fog's density is 0.
+      float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
+      float below = skyOceanPathBelowSurface(cameraPosition, world);
+      // Beyond the scene both fall away with the curve: the water lies between them, not under the level.
+      if(altitude > 0.0 && uSkyCurvature > 0.0)
+        below = max(reach.x - surfaceReach.x, 0.0);
+      float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
+      color = skyOceanFog(color, path, light);
+        #ifndef STAGE_SEE_THROUGH
+          // Bitten through: the void, as the background draws it through the gap. Without its
+          // rock: it cannot show in the edge's fade under the rim, and would cost a copy.
+      if(seabed < 1.0)
+        color = mix(skyOceanThroughCutaway(skyAbyssGradient(y), dir, cameraPosition), color, seabed);
+        #endif
+    }
   } else {
     // From the void: the lid, as the background draws it.
     color = skyAbyssCeiling(world, distance(cameraPosition, world));

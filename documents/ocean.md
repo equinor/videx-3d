@@ -226,8 +226,9 @@ NVIDIA RTX A1000 (ANGLE D3D11):
 
 \* Without the frame cap, `spread` ≤ 1.11; the Scenery's at 60 fps, `spread` ≤ 1.03.
 
-- The seabed is drawn under the surface at every height, 1.2–1.9 ms from 2 km up, where the
-  water over it is opaque.
+- The seabed was drawn under the surface at every height, 1.2–1.9 ms from 2 km up, where the
+  water over it is opaque. Since skipped where the surface hides it whole: 0.6–0.8 ms from
+  20 km up (see scenery.md, "Performance").
 - On the Iris Xe (a 300 m pose of the Scenery's Timelapse, 1920 × 1080): stage surface 24.9 ms,
   stage seabed 7.4 ms, frame 27.8 ms; the stand-alone sea 12–16 ms across the screen.
 - Under clouds (`Components/Misc/Clouds`, medium) the stage's surface costs up to about 25 %
