@@ -1,5 +1,19 @@
-// Fog through a body of water, as the Sky's sea draws it. Heights are along the world's
-// up, from the water surface.
+// Fog through a body of water: one model for every sea the library draws (water-optics.ts,
+// documents/water.md). A water is its colour (of water too deep to see through, linear) and its
+// extinction per metre per channel (waterExtinctionOf). Heights are along the world's up, from
+// the water surface.
+#ifndef WATER_FOG_GLSL
+#define WATER_FOG_GLSL
+
+// The most optical depth the water's light, and what lies in the water, are dimmed by (the
+// light falls to e^(−0.8) of the surface's): deeper, they keep that much, so however deep the
+// ground goes it stays dark blue but seen, rather than black.
+#define WATER_DARKEST 1.6
+
+// `depth` below the surface, no deeper than the water's light is taken (WATER_DARKEST).
+float waterLitDepth(float depth, vec3 extinction) {
+  return min(max(depth, 0.0), WATER_DARKEST / max(dot(extinction, vec3(1.0 / 3.0)), 1e-6));
+}
 
 // How much of a segment `len` long, from height `ha` to height `hb`, lies between `bottom`
 // and `top`.
@@ -11,27 +25,51 @@ float waterFogPath(float ha, float hb, float len, float bottom, float top) {
   return max(min(hi, top) - max(lo, bottom), 0.0) / (hi - lo) * len;
 }
 
-// Daylight left `depth` below the surface.
-float waterFogDim(float depth, float density) {
-  return exp(-max(depth, 0.0) * density * 0.5);
+// How much of what lies `dist` away through the water shows, per channel.
+vec3 waterTransmittance(float dist, vec3 extinction) {
+  return exp(-max(dist, 0.0) * extinction);
+}
+
+// Daylight left `depth` below the surface: the diffuse light falls at about half the
+// extinction (waterDaylight).
+vec3 waterFogDim(float depth, vec3 extinction) {
+  return exp(-max(depth, 0.0) * 0.5 * extinction);
 }
 
 // The light the water itself carries `depth` down; night keeps a little, as the sky does.
-float waterFogLight(float depth, float density, float daylight) {
-  return waterFogDim(depth, density) * mix(0.15, 1.0, daylight);
+vec3 waterFogLight(float depth, vec3 extinction, float daylight) {
+  return waterFogDim(depth, extinction) * mix(0.15, 1.0, daylight);
 }
 
-// `color` seen through `dist` of water, tinted toward the water's colour lit by `light`.
-vec3 waterFog(vec3 color, float dist, float density, vec3 shallowColor, vec3 deepColor, float light) {
-  float fog = 1.0 - exp(-dist * density);
-  return mix(color, mix(shallowColor, deepColor, fog) * light, fog);
+// How bright the water's own light is, seen along a ray `facing` up (its cosine): the light
+// from above, scattered toward the eye, is dimmest looking down (the water's colour, as seen
+// from above), about three times as bright looking level and nine looking up.
+#define WATER_GLOW 3.0
+float waterGlow(float facing) {
+  return pow(WATER_GLOW, 1.0 + clamp(facing, -1.0, 1.0));
+}
+
+// How far up (cosine) a sight line `facing` up runs on in the water: as it is from inside it;
+// from the air bent down as it enters (Snell, n = 1.333), so it never runs flatter than
+// about 41° below level.
+float waterFacing(float facing, bool fromAir) {
+  return fromAir ? -sqrt(1.0 - (1.0 - facing * facing) * 0.5628) : facing;
+}
+
+// `color` seen through `dist` of water along a ray `facing` up, fading toward the water's
+// colour lit by `light` (waterGlow).
+vec3 waterFog(vec3 color, float dist, vec3 extinction, vec3 waterColor, vec3 light, float facing) {
+  vec3 shown = waterTransmittance(dist, extinction);
+  return color * shown + waterColor * light * waterGlow(facing) * (1.0 - shown);
 }
 
 // waterFog as a layer: `layer` premultiplied, its alpha how much it hides of what lies behind
-// it, so waterFog of what then shows is the result over that.
-vec4 waterFogOver(vec4 layer, float dist, float density, vec3 shallowColor, vec3 deepColor, float light) {
-  float fog = 1.0 - exp(-dist * density);
-  return mix(layer, vec4(mix(shallowColor, deepColor, fog) * light, 1.0), fog);
+// it, so waterFog of what then shows is the result over that. What lies behind shows by the
+// channels' mean.
+vec4 waterFogOver(vec4 layer, float dist, vec3 extinction, vec3 waterColor, vec3 light, float facing) {
+  vec3 shown = waterTransmittance(dist, extinction);
+  float through = dot(shown, vec3(1.0 / 3.0));
+  return vec4(layer.rgb * shown + waterColor * light * waterGlow(facing) * (1.0 - shown), 1.0 - (1.0 - layer.a) * through);
 }
 
 // The cutaway through the water in front of the view:
@@ -108,3 +146,5 @@ float waterFogCutawayWall(WaterFogCutaway cutaway, vec3 origin, vec3 dir, vec3 u
   }
   return hi;
 }
+
+#endif

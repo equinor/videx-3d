@@ -140,9 +140,11 @@ export * from './utils/vector-operations';
 export * from './weather/weather';
 export * from './weather/weather-clock';
 export * from './weather/weather-systems';
+export * from './weather/water-optics';
 export * from './weather/wind-field';
 
 export * from './materials/apply-globe';
+export * from './materials/water-body';
 export * from './materials/bake-texture';
 export * from './materials/blue-noise';
 export * from './materials/cliff-texture';

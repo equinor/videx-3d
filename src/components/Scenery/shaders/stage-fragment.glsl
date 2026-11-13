@@ -128,7 +128,7 @@ void main() {
     float kept = wall >= dist ? 1.0 - uSkyOceanCutawayCuts.x : 1.0;
     cutThrough = kept < 1e-3;
     float path = skyOceanCutawayPath(skyOceanWaterPath(cameraPosition, world), wall, 1.0);
-    vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude));
+    vec3 seen = skyOceanFog(underside, path, skyOceanLight(-0.5 * altitude), dir);
     gl_FragColor = vec4(seen, kept);
   }
   if(skyDraws || underLid || cutThrough || overCurve || fromBehind)
@@ -157,13 +157,13 @@ void main() {
   if(fromAbove) {
     if(!hidden) {
       // Dry, the fog's density is 0.
-      float light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
+      vec3 light = skyOceanLight(0.5 * (bedDepth + max(-altitude, 0.0)));
       float below = skyOceanPathBelowSurface(cameraPosition, world);
       // Beyond the scene both fall away with the curve: the water lies between them, not under the level.
       if(altitude > 0.0 && uSkyCurvature > 0.0)
         below = max(reach.x - surfaceReach.x, 0.0);
       float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-      color = skyOceanFog(color, path, light);
+      color = skyOceanFog(color, path, light, dir);
         #ifndef STAGE_SEE_THROUGH
           // Bitten through: the void, as the background draws it through the gap. Without its
           // rock: it cannot show in the edge's fade under the rim, and would cost a copy.

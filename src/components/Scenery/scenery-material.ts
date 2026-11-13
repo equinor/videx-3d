@@ -35,6 +35,12 @@ import { Globe } from '../../sdk/projection/globe';
 import { OceanCharts } from '../../sdk/projection/ocean-charts';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import {
+  type WaterOptics,
+  waterColorOf,
+  waterExtinctionOf,
+  waterOpticsOf,
+} from '../../sdk/weather/water-optics';
+import {
   compassBasis,
   CompassFrame,
   directionFromCompass,
@@ -150,6 +156,7 @@ export class SceneryMaterial extends ShaderMaterial {
    */
   constructor(parameters: ShaderMaterialParameters = {}, globe?: Globe) {
     const { sun, colors, abyss, ocean } = sceneryDefaults;
+    const oceanOptics = waterOpticsOf(undefined, ocean);
     super({
       vertexShader,
       fragmentShader,
@@ -277,7 +284,12 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyOceanBedSpecular: new Uniform(new Color(ocean.seabed.specular)),
         uSkyOceanBedShininess: new Uniform(ocean.seabed.shininess),
         uSkyOceanBedAmbient: new Uniform(new Vector2(...ocean.seabed.ambient)),
-        uSkyOceanFogDensity: new Uniform(ocean.bodyFogDensity),
+        uSkyOceanExtinction: new Uniform(
+          new Vector3(...waterExtinctionOf(oceanOptics)),
+        ),
+        uSkyOceanWaterColor: new Uniform(
+          new Color().fromArray(waterColorOf(oceanOptics)),
+        ),
         uSkyOceanBuried: new Uniform(0),
         uSkyOceanTrench: new Uniform(0),
         uSkyOceanStageOpen: new Uniform(0),
@@ -1101,12 +1113,24 @@ export class SceneryMaterial extends ShaderMaterial {
     this.switchesVersion++;
   }
 
-  /** how quickly the water tints what is seen through it, per world unit */
-  get oceanFogDensity(): number {
-    return this.uniforms.uSkyOceanFogDensity.value;
+  /**
+   * the water's look (`waterOpticsOf`), or `null` where the seabed lies dry: lit as if no water
+   * lay over it
+   */
+  set oceanOptics(value: Required<WaterOptics> | null) {
+    const extinction = this.uniforms.uSkyOceanExtinction.value as Vector3;
+    if (value) {
+      extinction.fromArray(waterExtinctionOf(value));
+      (this.uniforms.uSkyOceanWaterColor.value as Color).fromArray(
+        waterColorOf(value),
+      );
+    } else extinction.set(0, 0, 0);
   }
-  set oceanFogDensity(value: number) {
-    this.uniforms.uSkyOceanFogDensity.value = Math.max(value, 0);
+
+  /** how quickly the water tints what is seen through it, per world unit: its mean extinction */
+  get oceanFogDensity(): number {
+    const e = this.uniforms.uSkyOceanExtinction.value as Vector3;
+    return (e.x + e.y + e.z) / 3;
   }
 
   /** the camera is under the ground a stage draws, above the sea's own seabed (see {@link oceanGround}) */

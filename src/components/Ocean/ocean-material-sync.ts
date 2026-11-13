@@ -1,6 +1,10 @@
 import { Vector2, Vector3 } from 'three';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
+import type {
+  WaterOptics,
+  WaterOpticsPreset,
+} from '../../sdk/weather/water-optics';
 import type { WeatherGusts } from '../../sdk/weather/wind-field';
 import { OceanBedMaterial } from './ocean-bed-material';
 import {
@@ -65,6 +69,12 @@ export type OceanWaterProps = {
    * height.
    */
   displacement?: boolean;
+  /**
+   * How the water looks, one model for every sea ({@link WaterOptics}, documents/water.md):
+   * a preset's name (`'realistic'`, `'clear'`) or the colour of deep water and how far one
+   * sees through it. Default as `deepColor` and `bodyFogDensity` give it, else `'realistic'`.
+   */
+  optics?: WaterOptics | WaterOpticsPreset;
   /** Deep water colour (seen looking straight down). */
   deepColor?: string;
   /** Shallow/scatter water colour (seen at grazing angles). */

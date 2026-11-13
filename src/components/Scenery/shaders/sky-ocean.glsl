@@ -31,7 +31,10 @@ uniform vec3 uSkyOceanBedColor;
 uniform vec3 uSkyOceanBedSpecular;
 uniform float uSkyOceanBedShininess;
 uniform vec2 uSkyOceanBedAmbient; // x: facing up, y: facing down
-uniform float uSkyOceanFogDensity; // per world unit
+// The water's optics (water-optics.ts): its extinction per world unit per channel, nil where
+// the seabed lies dry (waterExtinctionOf), and its colour (linear).
+uniform vec3 uSkyOceanExtinction;
+uniform vec3 uSkyOceanWaterColor;
 uniform float uSkyOceanWater; // 0: no water, the seabed lies dry (SceneryMaterial.oceanWater)
 uniform float uSkyOceanSeabed; // 0: no seabed, the void lies below the water; from the void its lid still hides it (SceneryMaterial.oceanSeabed)
 uniform float uSkyOceanSeabedOpacity; // how much of the void beyond the seabed it hides (SceneryMaterial.oceanSeabedOpacity)
@@ -213,24 +216,20 @@ vec3 skyOceanReach(vec3 origin, vec3 dir, float height) {
   return vec3(reach.x, 0.0, reach.y);
 }
 
-// The most optical depth the water's light, and what lies in the water, are dimmed by (the
-// light falls to e^(−0.8) of the surface's): deeper, they keep that much. However deep a
-// relief's trench goes, its ground stays dark blue but seen, rather than black.
-#define SKY_OCEAN_DARKEST 1.6
-
-// `depth` below the surface, no deeper than the water's light is taken (SKY_OCEAN_DARKEST).
+// `depth` below the surface, no deeper than the water's light is taken (water-fog.glsl's
+// WATER_DARKEST): however deep a relief's trench goes, its ground stays dark blue but seen.
 float skyOceanLitDepth(float depth) {
-  return min(depth, SKY_OCEAN_DARKEST / max(uSkyOceanFogDensity, 1e-6));
+  return waterLitDepth(depth, uSkyOceanExtinction);
 }
 
 // Daylight left `depth` below the surface; night keeps a little, as the sky does.
-float skyOceanLight(float depth) {
-  return waterFogLight(skyOceanLitDepth(depth), uSkyOceanFogDensity, uSkyDaylight);
+vec3 skyOceanLight(float depth) {
+  return waterFogLight(skyOceanLitDepth(depth), uSkyOceanExtinction, uSkyDaylight);
 }
 
 // How much of its light what lies `depth` below the surface keeps, by the water over it.
-float skyOceanDim(float depth) {
-  return waterFogDim(skyOceanLitDepth(max(depth, 0.0)), uSkyOceanFogDensity);
+vec3 skyOceanDim(float depth) {
+  return waterFogDim(skyOceanLitDepth(max(depth, 0.0)), uSkyOceanExtinction);
 }
 
 // How deep a view from `origin` takes the water's light at: its own depth; from a trench, the
@@ -292,9 +291,15 @@ bool skyOceanStaged(vec3 dir, vec3 origin, float inset, bool sure) {
   return skyOceanStagedAlong(dir, origin, skyOceanStagedReach(dir, origin), inset, sure);
 }
 
-// `color` seen through `dist` of water, tinted as the Ocean's water body tints it.
-vec3 skyOceanFog(vec3 color, float dist, float light) {
-  return waterFog(color, dist, uSkyOceanFogDensity, uShallowColor, uDeepColor, light);
+// How far up a view ray along `dir` runs on in the water (waterFacing): bent down as it
+// enters from a camera in the air.
+float skyOceanFacing(vec3 dir) {
+  return waterFacing(dot(dir, globeCameraUp()), skyOceanCameraAltitude() > 0.0);
+}
+
+// `color` seen through `dist` of water, faded by the water along a view ray `dir` (waterFog).
+vec3 skyOceanFog(vec3 color, float dist, vec3 light, vec3 dir) {
+  return waterFog(color, dist, uSkyOceanExtinction, uSkyOceanWaterColor, light, skyOceanFacing(dir));
 }
 
 // What lies below the seabed's level, seen by a ray going down along `dir`: the void.
@@ -327,8 +332,8 @@ vec4 skyOceanFloorOver(vec3 bed, float cutaway, vec3 bedPoint) {
 }
 
 // skyOceanFog of a layer (premultiplied) over what lies behind it (waterFogOver).
-vec4 skyOceanFogOver(vec4 layer, float dist, float light) {
-  return waterFogOver(layer, dist, uSkyOceanFogDensity, uShallowColor, uDeepColor, light);
+vec4 skyOceanFogOver(vec4 layer, float dist, vec3 light, vec3 dir) {
+  return waterFogOver(layer, dist, uSkyOceanExtinction, uSkyOceanWaterColor, light, skyOceanFacing(dir));
 }
 
 // A layer of the sea over the void beyond it (premultiplied), with that void filled in:
@@ -370,7 +375,7 @@ float skyOceanPathBelowSurface(vec3 a, vec3 b) {
 
 // The light the water between the camera and a seabed point `bedDepth` down carries:
 // taken half way down.
-float skyOceanBedPathLight(vec3 origin, float bedDepth) {
+vec3 skyOceanBedPathLight(vec3 origin, float bedDepth) {
   return skyOceanLight(0.5 * (bedDepth + skyOceanViewDepth(origin)));
 }
 
@@ -518,7 +523,7 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
 // The surface seen from below, its `normal` facing down, `depth` under it: the sky
 // through Snell's window, and beyond it the water mirrored. Not yet fogged.
 vec3 skyOceanUndersideOf(vec3 normal, vec3 dir, float blend, float depth) {
-  vec3 farWater = uDeepColor * skyOceanLight(depth);
+  vec3 farWater = uSkyOceanWaterColor * skyOceanLight(depth) * waterGlow(dot(reflect(dir, normal), globeCameraUp()));
   vec3 exitDir = refract(dir, normal, SKY_OCEAN_WATER_IOR);
   if(dot(exitDir, exitDir) <= 0.0)
     return farWater;
@@ -553,15 +558,15 @@ vec4 skyOceanInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 be
   // (skyViewOrigin), but the water up to the surface is the camera's.
   float depth = skyOceanViewDepth(origin);
   vec3 underside = skyOceanUnderside(delta, globeUpAt(origin + dir * tSurface), skyOceanTexel(delta), tSurface, dir, blend, depth);
-  vec3 above = skyOceanFog(underside, skyOceanCutawayPath(depth / ay, wall, 1.0), skyOceanLight(0.5 * depth));
+  vec3 above = skyOceanFog(underside, skyOceanCutawayPath(depth / ay, wall, 1.0), skyOceanLight(0.5 * depth), dir);
 
   // In a trench the sea's own seabed lies over the camera: below, water, down to the relief's
   // ground, which is drawn over it.
   if(uSkyOceanTrench > 0.5)
-    return y > 0.0 ? vec4(above, 1.0) : skyOceanFogOver(vec4(0.0), 1e6, skyOceanLight(depth));
+    return y > 0.0 ? vec4(above, 1.0) : skyOceanFogOver(vec4(0.0), 1e6, skyOceanLight(depth), dir);
   vec3 bedPoint = origin + dir * tBed;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, uSkyOceanDepth));
+  vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, uSkyOceanDepth), dir);
 
   return y > 0.0 ? vec4(above, 1.0) : below;
 }
@@ -618,7 +623,7 @@ vec4 skyOceanFromAir(vec3 dir, vec3 origin, float blend, vec3 reach, vec3 bed, o
   float path = wet && uSkyCurvature > 0.0 ? max(reach.x - surface.x, 0.0) : uSkyOceanDepth / ay;
   vec3 bedPoint = origin + dir * reach.x;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  vec4 seen = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth));
+  vec4 seen = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth), dir);
   // Dry, from high up: through the air and as space sees it, as the relief's ground past
   // which it shows. Eased in by the same share, so nothing changes in the air. Over an
   // opaque surface the air's light is what it adds to the share of it that it keeps.
@@ -644,7 +649,7 @@ vec4 skyOceanThroughCutawayOver(vec3 dir, vec3 origin) {
   vec3 bedPoint = origin + dir * (max(bedAltitude, 0.0) / down);
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   float path = skyOceanPathBelowSurface(origin, bedPoint) * skyOceanCutawayWater(cutaway) * cutaway;
-  return skyOceanFogOver(vec4(0.0), path, skyOceanBedPathLight(origin, uSkyOceanDepth));
+  return skyOceanFogOver(vec4(0.0), path, skyOceanBedPathLight(origin, uSkyOceanDepth), dir);
 }
 
 // `color` seen down through a gap the cutaway opened in a stage's seabed (as

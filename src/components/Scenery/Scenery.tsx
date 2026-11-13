@@ -36,6 +36,7 @@ import {
 } from '../../sdk/projection/geo-frame';
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
+import { waterOpticsOf } from '../../sdk/weather/water-optics';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
 import { useWorld } from '../World/world-context';
@@ -543,6 +544,12 @@ export const Scenery = ({
       : (seabedOptions?.detail ?? bedDefaults.detail);
   const bodyFogDensity =
     oceanOptions?.bodyFogDensity ?? oceanDefaults.bodyFogDensity;
+  const oceanOptics = waterOpticsOf(oceanOptions?.optics, {
+    deepColor: oceanOptions?.deepColor,
+    bodyFogDensity,
+  });
+  const oceanOpticsColor = oceanOptics.color;
+  const oceanClarity = oceanOptics.clarity;
 
   const environmentOptions = environment === true ? {} : environment || null;
   const hasEnvironment = environmentOptions !== null;
@@ -1200,7 +1207,9 @@ export const Scenery = ({
     material.oceanBedShininess = bedShininess;
     material.oceanBedAmbient = [bedAmbientUp, bedAmbientDown];
     // A dry seabed is lit as if no water lay over it.
-    material.oceanFogDensity = oceanWater ? bodyFogDensity : 0;
+    material.oceanOptics = oceanWater
+      ? { color: oceanOpticsColor, clarity: oceanClarity }
+      : null;
     material.oceanWater = oceanWater;
     material.oceanSeabed = oceanSeabed;
     material.oceanSeabedOpacity = oceanSeabedOpacity;
@@ -1215,7 +1224,8 @@ export const Scenery = ({
     bedShininess,
     bedAmbientUp,
     bedAmbientDown,
-    bodyFogDensity,
+    oceanOpticsColor,
+    oceanClarity,
     oceanWater,
     oceanSeabed,
     oceanSeabedOpacity,
