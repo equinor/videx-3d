@@ -25,6 +25,7 @@ import type {
   CloudType,
 } from '../../sdk/weather/weather';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
+import type { SeaQuality } from '../../sdk/weather/sea-state';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
 /**
@@ -449,8 +450,13 @@ export type SceneryOceanProps = SceneryOceanWater & {
   level?: number;
   /** depth of the seabed below the surface, in world units. Default 100 */
   depth?: number;
-  /** how quickly the water tints what is seen through it, per world unit, as on `Ocean`. Default 0.004 */
+  /** how fast the water tints what is seen through it, per world unit, as on `Ocean`. Default 0.004 */
   bodyFogDensity?: number;
+  /**
+   * How much of the sea state's waves it draws, as `Ocean`'s `quality` (`SEA_QUALITY`).
+   * Default `'medium'`, sized for a mid-range laptop's integrated GPU.
+   */
+  quality?: SeaQuality;
 };
 
 /** The colour and intensity of a {@link ScenerySubsurface}'s light panels. */

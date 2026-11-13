@@ -202,7 +202,68 @@ export const SEA_LAYER_UNIFORMS = [
   'uSeaResidual',
   'uSeaDetailLayer',
   'uSeaDetail',
+  'uSeaHex',
 ] as const;
+
+/**
+ * ⚠️ Tuning, to be settled and then removed: the wave model's open choices, to compare by eye
+ * (`OceanMaterial.waveTuning`, the `waveTuning` prop). Each left out is as drawn by default.
+ */
+export type OceanWaveTuning = {
+  /** the least spreading exponent of the short waves (`SeaSpectrumInput.spreadFloor`), 1 */
+  spreadFloor?: number;
+  /** the wind sea's waves above this many times its peak frequency fade out, none */
+  tail?: number;
+  /** the ripples' (the detail octave's) strength, 1; what is left out roughens the glint */
+  ripples?: number;
+  /** the layers read hex-tiled, true; false reads one plain copy (repeats) */
+  hex?: boolean;
+  /** the hex cells' blend sharpened by this power, 1 */
+  hexSharpness?: number;
+};
+
+/**
+ * ⚠️ Tuning, to be settled and then removed: the foam's shaping, to compare by eye
+ * (`OceanMaterial.foamTuning`, the `foamTuning` prop). Each left out is as drawn by default.
+ */
+export type OceanFoamTuning = {
+  /** the finer waves' share in the crests the foam is cut from, ×; 1 */
+  breakup?: number;
+  /** the rim's width up close, in the crests' [0, 1]; 0.03 */
+  edge?: number;
+  /** how much the ripples dim the foam's inside; 0.45 */
+  froth?: number;
+  /** where thin foam turns opaque, up close; 0.6 */
+  falloff?: number;
+  /** the share of the foam lost once below a pixel; 0.85 */
+  farFade?: number;
+  /** the most foam covers; 1 */
+  opacity?: number;
+  /** how much the foam is lit by the wave under it; 0 */
+  lit?: number;
+  /** a brighter rim; 0 */
+  lift?: number;
+  /** the grain's strength, smooth noise roughening the rim and speckling thin foam; 0 */
+  grain?: number;
+  /** the grain's cell, metres; 0.1 */
+  grainScale?: number;
+  /** how narrow the foam is drawn toward the crest lines (long along, thin across); 0 */
+  narrow?: number;
+  /**
+   * ⚠️ Debug: a view in place of the surface. `whitecaps`: grey by the crests' height, red where
+   * foam forms, blue on the crests' backs (where it trails), amber on their fronts. `crests`:
+   * the crests' height as a ramp, the foam's threshold for the wind as a white line.
+   */
+  debug?: OceanDebugView;
+};
+
+/** ⚠️ Debug views of the sea ({@link OceanFoamTuning.debug}). */
+export const OCEAN_DEBUG_VIEWS = ['none', 'whitecaps', 'crests'] as const;
+export type OceanDebugView = (typeof OCEAN_DEBUG_VIEWS)[number];
+
+// [breakup, edge, froth, falloff] and [farFade, opacity, lit, lift] as drawn by default.
+const OCEAN_FOAM_SHAPE_DEFAULT = [1, 0.03, 0.45, 0.6] as const;
+const OCEAN_FOAM_LOOK_DEFAULT = [0.85, 1, 0, 0] as const;
 
 /**
  * The uniforms `shaders/ocean-surface.glsl` reads, wave tables included. Another
@@ -226,6 +287,9 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uSunGlintSpread',
   'uFoamColor',
   'uFoamAmount',
+  'uFoamShape',
+  'uFoamLook',
+  'uFoamGrain',
   'uFresnelPower',
   'uDetailScale',
   'uDetailFade',
@@ -269,6 +333,8 @@ export class OceanMaterial extends ShaderMaterial {
   private _waveHeightScale!: number;
   private _directionalSpread!: number;
   private _swells: SeaSwell[] = [];
+  private _waveTuning: OceanWaveTuning = {};
+  private _foamTuning: OceanFoamTuning = {};
   private _contactCount!: number;
   // Whether the clock has run: until it does, a new wind is the sea's at once (settled).
   private _running = false;
@@ -289,9 +355,10 @@ export class OceanMaterial extends ShaderMaterial {
     } = parameters;
 
     // The sea and its layers' textures, before `this` is there to hold them.
+    const spec = SEA_QUALITY[quality] ?? SEA_QUALITY.medium;
     const sea = new SeaState(
       { windSpeed: 10, windDirection: [1, 0] },
-      { layers: SEA_QUALITY[quality] ?? SEA_QUALITY.medium },
+      { layers: spec.layers, detail: spec.detail },
     );
     const bake = new SeaWaveBake(sea.layers);
     const layerUniforms: Record<string, IUniform> = {};
@@ -319,6 +386,7 @@ export class OceanMaterial extends ShaderMaterial {
       side: DoubleSide,
       defines: {
         SEA_LAYERS: sea.layers.length,
+        ...(sea.detail ? { SEA_DETAIL: '' } : {}),
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
@@ -353,14 +421,17 @@ export class OceanMaterial extends ShaderMaterial {
         uSeaLayerStats: new Uniform(sea.layers.map(() => new Vector2())),
         uSeaResidual: new Uniform(0),
         uSeaDetailLayer: new Uniform(
-          new Vector4(
-            1 / sea.detail.size,
-            Math.cos(sea.detail.angle),
-            Math.sin(sea.detail.angle),
-            sea.detail.texels,
-          ),
+          sea.detail
+            ? new Vector4(
+                1 / sea.detail.size,
+                Math.cos(sea.detail.angle),
+                Math.sin(sea.detail.angle),
+                sea.detail.texels,
+              )
+            : new Vector4(1, 1, 0, 1),
         ),
         uSeaDetail: new Uniform(new Vector3()),
+        uSeaHex: new Uniform(new Vector2(1, 1)),
         uSignificantHeight: new Uniform(1),
 
         uDeepColor: new Uniform(new Color(DEFAULT_OCEAN_DEEP_COLOR)),
@@ -386,6 +457,10 @@ export class OceanMaterial extends ShaderMaterial {
 
         uFoamColor: new Uniform(new Color('#ffffff')),
         uFoamAmount: new Uniform(0.5),
+        // ⚠️ Tuning (foamTuning), as drawn by default.
+        uFoamShape: new Uniform(new Vector4(...OCEAN_FOAM_SHAPE_DEFAULT)),
+        uFoamLook: new Uniform(new Vector4(...OCEAN_FOAM_LOOK_DEFAULT)),
+        uFoamGrain: new Uniform(new Vector4(0, 0.1, 0, 0)),
 
         // Floating-object contact-foam footprints (filled by setContacts()).
         uContactCount: new Uniform(0),
@@ -468,20 +543,22 @@ export class OceanMaterial extends ShaderMaterial {
    * clock runs, or the sea's at once while it has not run yet. Cheap enough per change, but
    * not per frame (some milliseconds).
    */
-  private updateWaves(): void {
+  private updateWaves(resettle = false): void {
     const direction = this.uniforms.uWindDirection.value as Vector2;
     const input = {
       windSpeed: this.uniforms.uWindSpeed.value as number,
       windDirection: [direction.x, direction.y] as [number, number],
       swells: this._swells,
       heightScale: this._waveHeightScale,
+      spreadFloor: this._waveTuning.spreadFloor,
+      tail: this._waveTuning.tail,
     };
     // Props are often new objects each render, with the same values.
     const key = JSON.stringify(input);
     if (key === this._inputKey) return;
     this._inputKey = key;
     this.seaState.setInput(input);
-    if (!this._running) this.seaState.settle();
+    if (!this._running || resettle) this.seaState.settle();
     this.uniforms.uSignificantHeight.value = this.seaState.stats().targetHeight;
   }
 
@@ -530,15 +607,63 @@ export class OceanMaterial extends ShaderMaterial {
       pixel > 0 ? i => layers[i].size > pixel : undefined,
     );
     const stats = this.seaState.stats();
+    const ripples = Math.max(this._waveTuning.ripples ?? 1, 0);
     const layerStats = this.uniforms.uSeaLayerStats.value as Vector2[];
     stats.layers.forEach((layer, i) =>
       layerStats[i].set(layer.slopeVariance, layer.variance),
     );
-    this.uniforms.uSeaResidual.value = stats.residualSlopeVariance;
+    this.uniforms.uSeaResidual.value =
+      stats.residualSlopeVariance +
+      (1 - ripples * ripples) * stats.detail.slopeVariance;
     (this.uniforms.uSeaDetail.value as Vector3).set(
-      stats.detail.gain,
+      stats.detail.gain * ripples,
       stats.detail.offset[0],
       stats.detail.offset[1],
+    );
+  }
+
+  /**
+   * ⚠️ Tuning, to be settled and then removed: the wave model's open choices, to compare by
+   * eye ({@link OceanWaveTuning}).
+   */
+  get waveTuning(): OceanWaveTuning {
+    return this._waveTuning;
+  }
+  set waveTuning(value: OceanWaveTuning) {
+    this._waveTuning = { ...value };
+    const hex = this.uniforms.uSeaHex.value as Vector2;
+    hex.set(value.hex === false ? 0 : 1, value.hexSharpness ?? 1);
+    this.updateWaves(true);
+  }
+
+  /**
+   * ⚠️ Tuning, to be settled and then removed: the foam's shaping, to compare by eye
+   * ({@link OceanFoamTuning}).
+   */
+  get foamTuning(): OceanFoamTuning {
+    return this._foamTuning;
+  }
+  set foamTuning(value: OceanFoamTuning) {
+    this._foamTuning = { ...value };
+    const [breakup, edge, froth, falloff] = OCEAN_FOAM_SHAPE_DEFAULT;
+    const [farFade, opacity, lit, lift] = OCEAN_FOAM_LOOK_DEFAULT;
+    (this.uniforms.uFoamShape.value as Vector4).set(
+      value.breakup ?? breakup,
+      value.edge ?? edge,
+      value.froth ?? froth,
+      value.falloff ?? falloff,
+    );
+    (this.uniforms.uFoamLook.value as Vector4).set(
+      value.farFade ?? farFade,
+      value.opacity ?? opacity,
+      value.lit ?? lit,
+      value.lift ?? lift,
+    );
+    (this.uniforms.uFoamGrain.value as Vector4).set(
+      value.grain ?? 0,
+      value.grainScale ?? 0.1,
+      value.narrow ?? 0,
+      OCEAN_DEBUG_VIEWS.indexOf(value.debug ?? 'none'),
     );
   }
 

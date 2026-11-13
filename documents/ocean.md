@@ -30,14 +30,16 @@ away (height, period, direction), running on in a calm. Colours, foam, reflectio
 are all tunable via props.
 
 `quality` (`'low' | 'medium' | 'high' | 'ultra'`, default `'medium'`, `SEA_QUALITY`) is how
-much of the sea state is drawn: `medium`, sized for a mid-range laptop's integrated GPU, three
-layers (tiles of 2011, 307 and 47 m) and, below them, the finest layer's texture read again
-6.4× smaller for the ripples; `high` bakes a fourth layer (7.3 m); `low` and `ultra` coarser
-and finer tiles. `steepness` (default 1) scales the slopes for show; 1 is as the spectrum
-gives them. Whitecaps (`foamAmount`, default 0.5) cover the share of the sea measured at sea
-for the wind (about 1 % at 10 m/s, 10 % at 20 m/s) on the wind sea's highest crests.
-`waveCount`, `directionalSpread`, `detailStrength` and the `tonal*` props are deprecated and
-ignored.
+much of the sea state is drawn: `medium`, sized for a mid-range laptop's integrated GPU, four
+layers (tiles of 2011, 307, 47 and 7.3 m, waves down to 0.23 m); `high` adds the finest
+layer's texture read again 6.4× smaller below that, for close up; `low` three coarse layers
+and no ripples; `ultra` finer tiles. The `<Scenery>`'s sea (`SceneryOcean`) takes the same
+`quality`. The short waves, from about a metre down, grow with the wind (Elfouhaily et al.
+1997): a light air leaves them faint, a gale sharp. `steepness` (default 1) scales the slopes
+for show; 1 is as the spectrum gives them. Whitecaps (`foamAmount`, default 0.5) cover the
+share of the sea measured at sea for the wind (about 1 % at 10 m/s, 10 % at 20 m/s) on the
+wind sea's highest crests. `waveCount`, `directionalSpread`, `detailStrength` and the `tonal*`
+props are deprecated and ignored.
 
 Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed` and
 `windDirection` left out are the weather's wind: its speed, and the way it blows toward. The

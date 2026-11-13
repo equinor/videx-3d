@@ -12,14 +12,20 @@ GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
 
 ## The sea state (`sdk/weather/sea-state.ts`)
 
-- **The spectrum** (`sea-spectrum.ts`): the wind sea fully developed for the wind (JONSWAP,
-  γ 3.3, the `Ocean`'s Hs ≈ 0.21 U²/g), plus swells (height, period, direction), each spread
-  about its direction (cos²ˢ; Mitsuyasu's s for the wind sea). Deep water. The variance and
-  slope variance of any band of wavenumbers are worked out from it, which a global map of sea
-  states will need (see "Across the globe").
-- **The layers**: tiles of 2011, 307 and 47 m (`SEA_LAYERS_MEDIUM`), each turned by the golden
-  angle, each holding the waves on its own grid, k = R·(2π/size)·(n, m), in its band of
-  wavenumbers, up to 4 texels a wavelength of a 128² tile. A layer tiles exactly.
+- **The spectrum** (`sea-spectrum.ts`): the wind sea fully developed for the wind, Elfouhaily
+  et al. 1997's unified spectrum: its long waves scaled to the `Ocean`'s Hs ≈ 0.21 U²/g and
+  peak, its short waves (from about a metre down) set by the wind's friction velocity u*
+  (Wu's drag), absolute, so they grow with the wind; the slopes of all of it follow Cox and
+  Munk's mean square slope within about 15 %. Plus swells (height, period, direction), each
+  spread about its direction (cos²ˢ; Mitsuyasu's s for the wind sea). Deep water, the short
+  waves' speeds with capillarity. The variance and slope variance of any band of wavenumbers
+  are worked out from it, which a global map of sea states will need (see "Across the
+  globe").
+- **The layers**: `medium` tiles of 2011, 307, 47 and 7.3 m (`SEA_LAYERS_MEDIUM`), each turned
+  by the golden angle, each holding the waves on its own grid, k = R·(2π/size)·(n, m), in its
+  band of wavenumbers, up to 4 texels a wavelength of a 128² tile. A layer tiles exactly.
+  `SEA_QUALITY` (`SeaQualitySpec`): `low` the three long layers at 64², `high` `medium` and the
+  detail octave, `ultra` 256² tiles and the octave.
 - **The pool**: each layer draws at most 256 waves, the strongest its spectrum asks for; each
   has a fixed random amplitude factor (Rayleigh) and phase. A wave leaves the pool only once it
   has eased out, and joins at no amplitude, so nothing pops. Each layer's targets are scaled so
@@ -48,14 +54,15 @@ GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
   layer lies below the pixel, and only its slope variance is added, with no fetch. Past the
   detail fade (`detailFadeDistance`) no layer is read at all. The mips come from the pixel's
   size, taken once, so the reads may sit under branches.
-- **The detail octave** (`SeaState.detail`): the finest layer's texture read again,
-  `SEA_DETAIL_SCALE` (6.4) times smaller, turned apart and on its own hex cells, for the
-  ripples below the finest layer's band (1.5 m down to 0.23 m in `medium`, the band `high`
-  bakes a fourth layer for) at no bake of its own. Its gain gives it the spectrum's slope
-  variance in that band over what the finest layer draws, so it eases with that layer, and
-  what it draws leaves the glint's residual. A scaled copy's waves run too slowly for their
-  size, so it slides downwind at the band's phase speed, under cells that stay put (a whole
-  tile's slide changes nothing, so it never pops).
+- **The detail octave** (`SeaState.detail`, `high` and `ultra`): the finest layer's texture
+  read again, `SEA_DETAIL_SCALE` (6.4) times smaller, turned apart and on its own hex cells,
+  for the ripples below the finest layer's band (0.23 m down to about 4 cm) at no bake of its
+  own. Its gain gives it the spectrum's slope variance in that band over what the finest layer
+  draws, easing toward it as that band's waves would, and what it draws leaves the glint's
+  residual. A scaled copy's waves run too slowly for their size, so it slides downwind at the
+  band's phase speed, under cells that stay put (a whole tile's slide changes nothing, so it
+  never pops). `medium` drew it in place of a 7.3 m layer until 2026-11-13; up close that read
+  as a blurred, sliding overlay of the 47 m layer, the same at every wind.
 - **Bake only what shows**: given the camera and its height over the sea, `renderWaves` skips
   the layers whose whole tile a pixel there spans (`SEA_BAKE_PIXEL_MARGIN`, 2): the surface reads
   none of them. A layer of tile `size` stops once the camera is higher than
@@ -127,6 +134,48 @@ field but the shore's gone, the whitecaps and the ripples as above), the whole f
 0.51–0.90 of the baseline's in the `Scenery` and 0.31–0.57 stand-alone, at every pose
 (documents/ocean.md, "Measuring").
 
+With the wind-driven short waves and `medium`'s 7.3 m layer (2026-11-13, same method, three
+rounds, the bake in the frame): the `Scenery` 0.68–0.89 of the baseline's frame (100 km 0.99),
+stand-alone 0.41–0.55 up to 2 km (20 km 0.92, its rounds 0.59–1.02). The fourth layer's bake
+and reads cost about a tenth to a quarter of the baseline's frame more than the three layers
+did. A second sea drawn in another tab of the same Chrome ran alongside; the ratios are
+interleaved, but noisier than usual.
+
+| distribution of slope variance, `medium` (Hs, m) | 3 m/s (0.19) | 10 m/s (2.1) | 20 m/s (8.6) |
+|--|--|--|--|
+| 47 m layer | 0.0030 | 0.0042 | 0.0039 |
+| 7.3 m layer | 0.0042 | 0.0041 | 0.0052 |
+| left to the glint | 0.011 | 0.041 | 0.088 |
+| Cox and Munk, all of it | 0.018 | 0.054 | 0.105 |
+
+The waves down to a quarter of a metre still hold about as much slope at 3 m/s as at 20: the
+spectrum's short waves grow with the wind mostly below that, in the band `high`'s octave and
+the glint take.
+
+### On the Iris Xe (2026-11-13, 1920 × 1080 at 1)
+
+The baseline's build and the new in one tab of the VS Code browser, switched each round, three
+rounds, each pose's ratio the median of the rounds' (the frame holds the bake; the sea is its
+draws alone):
+
+| pose | Scenery: frame | Scenery: sea | stand-alone: frame | stand-alone: sea |
+|--|--|--|--|--|
+| 2 m | 0.63 | 0.55 | 0.77 | 0.45 |
+| 30 m | 0.64 | 0.57 | 0.42 | 0.46 |
+| 300 m | 0.66 | 0.61 | 0.58 | 0.55 |
+| 2 km | 0.82 | 0.78 | 0.81 | 0.68 |
+| 20 km | 0.85 | 0.80 | 0.71 | 0.52 |
+| 100 km | 0.87 | 0.92 | – | – |
+| 1000 km | 0.95 | 0.93 | – | – |
+| down, 2 km | 0.80 | 0.75 | 0.73 | 0.55 |
+
+- The `Scenery`'s rounds agreed within a few per cent: at 300 m the baseline's frame 17.1 ms,
+  the new 11.4; its sea 15.8 and 9.6.
+- The stand-alone sea's light frames (5–8 ms) set the clock jumping: one round's baseline ran
+  twice as slow; its ratios are the noisier.
+- So the wave core passes on the Iris Xe as the whole sea: cheaper at every pose, most where
+  the sea fills the view.
+
 ## Across the globe
 
 A sea state stands for a region's weather. Only the waves near the camera are drawn as waves;
@@ -140,12 +189,11 @@ weather the bake eases toward it as it does for the wind.
 
 ## Still to do
 
-- **The whole sea on the Iris Xe**, against the baseline (documents/ocean.md, "Measuring"),
-  and the presets tuned there: layers, texels, hex tiling per layer.
-- **Ripples with the wind**: JONSWAP's tail holds a fixed Phillips constant, so the waves well
-  below the peak, and the ripples, are the same at 3 m/s as at 10 (only the residual's Cox and
-  Munk slopes follow the wind). A short-wave range that grows with the wind (Elfouhaily et
-  al. 1997) would calm them.
+- **The presets on the Iris Xe**: `low`, `high` and `ultra` are not yet measured there.
+- **Ripples with the wind, the rest**: Elfouhaily's short waves grow with the wind mostly
+  below a quarter of a metre, so the waves `medium` draws are still much alike at 3 and 20 m/s
+  (see the table above). Gusts and cat's paws, as the short waves' strength varying across the
+  sea and in time, would carry the wind into them.
 - **Glitter**: the ripples no layer draws only widen the glint, so it is a smooth patch where
   the sea sparkles.
 - **Into the sea**: `Weather` (`swell`, one sea state shared), the `Scenery`'s far charts for

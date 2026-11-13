@@ -65,6 +65,7 @@ const NO_STAGE = [1, 1, -1, -1] as const;
 /** The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}. */
 export const SCENERY_SHARED_DEFINES = [
   'SEA_LAYERS',
+  'SEA_DETAIL',
   'OCEAN_CONTACT_COUNT',
   ...SURFACE_DETAIL_DEFINES,
 ];
@@ -1031,6 +1032,7 @@ export class SceneryMaterial extends ShaderMaterial {
       this.switches.OCEAN_CONTACT_COUNT = contacts;
       this.switchesVersion++;
     }
+    this.setSwitch('SEA_DETAIL', water.seaState.detail !== null);
   }
 
   /** height of the sea surface along {@link up} */

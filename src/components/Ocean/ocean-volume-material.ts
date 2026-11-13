@@ -94,6 +94,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
           new Vector2(),
         ]),
         uSeaResidual: new Uniform(0),
+        uSeaHex: new Uniform(new Vector2(1, 1)),
         uSteepness: new Uniform(1),
         uDisplacement: new Uniform(0),
         uDeepColor: new Uniform(new Color('#0a2540')),

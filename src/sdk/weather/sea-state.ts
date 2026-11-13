@@ -32,36 +32,60 @@ export type SeaLayerSpec = {
   waves: number;
 };
 
-/**
- * The layers of `medium`: tiles of incommensurate sizes, turned apart by the golden angle, so
- * no two lattices line up.
- */
-export const SEA_LAYERS_MEDIUM: readonly SeaLayerSpec[] = [
+// The long layers every preset draws: tiles of incommensurate sizes, turned apart by the golden
+// angle, so no two lattices line up.
+const SEA_LAYERS_LONG: readonly SeaLayerSpec[] = [
   { size: 2011, texels: 128, waves: 256 },
   { size: 307, texels: 128, waves: 256 },
   { size: 47, texels: 128, waves: 256 },
 ];
 
 /**
- * How much a sea draws of its waves: `low` its layers on coarser tiles, `high` a fourth layer
- * down to waves a quarter of a metre long, for close up, `ultra` finer tiles still. `medium`
- * is sized for a mid-range laptop's integrated GPU.
+ * The layers of `medium`: the long layers, and a 7.3 m one for the waves from 1.5 m down to a
+ * quarter of a metre, the ripples close up.
+ */
+export const SEA_LAYERS_MEDIUM: readonly SeaLayerSpec[] = [
+  ...SEA_LAYERS_LONG,
+  { size: 7.3, texels: 128, waves: 256 },
+];
+
+/**
+ * How much a sea draws of its waves: `low` its long layers on coarser tiles and no ripples,
+ * `medium` down to waves a quarter of a metre long, `high` the detail octave below that, for
+ * close up (to some 4 cm), `ultra` finer tiles still. `medium` is sized for a mid-range
+ * laptop's integrated GPU.
  *
  * @group Weather
  */
 export type SeaQuality = 'low' | 'medium' | 'high' | 'ultra';
 
-/** The layers each {@link SeaQuality} draws. */
-export const SEA_QUALITY: Readonly<
-  Record<SeaQuality, readonly SeaLayerSpec[]>
-> = {
-  low: SEA_LAYERS_MEDIUM.map(layer => ({ ...layer, texels: 64, waves: 128 })),
-  medium: SEA_LAYERS_MEDIUM,
-  high: [...SEA_LAYERS_MEDIUM, { size: 7.3, texels: 128, waves: 256 }],
-  ultra: [
-    ...SEA_LAYERS_MEDIUM.map(layer => ({ ...layer, texels: 256, waves: 384 })),
-    { size: 7.3, texels: 256, waves: 384 },
-  ],
+/** What a {@link SeaQuality} draws: its layers, and whether the detail octave below them. */
+export type SeaQualitySpec = {
+  layers: readonly SeaLayerSpec[];
+  /** the finest layer read again {@link SEA_DETAIL_SCALE} times smaller ({@link SeaState.detail}) */
+  detail: boolean;
+};
+
+/** What each {@link SeaQuality} draws. */
+export const SEA_QUALITY: Readonly<Record<SeaQuality, SeaQualitySpec>> = {
+  low: {
+    layers: SEA_LAYERS_LONG.map(({ size }) => ({
+      size,
+      texels: 64,
+      waves: 128,
+    })),
+    detail: false,
+  },
+  medium: { layers: SEA_LAYERS_MEDIUM, detail: false },
+  high: { layers: SEA_LAYERS_MEDIUM, detail: true },
+  ultra: {
+    layers: SEA_LAYERS_MEDIUM.map(({ size }) => ({
+      size,
+      texels: 256,
+      waves: 384,
+    })),
+    detail: true,
+  },
 };
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
@@ -103,6 +127,8 @@ export const SEA_RESPONSE_REALISTIC = 900;
 
 export type SeaStateOptions = {
   layers?: readonly SeaLayerSpec[];
+  /** the detail octave below the finest layer ({@link SeaState.detail}). Default false */
+  detail?: boolean;
   response?: number;
   /** another seed is another sea: other phases and amplitudes on the same grids */
   seed?: number;
@@ -165,7 +191,7 @@ export type SeaStateStats = {
   /**
    * The detail octave ({@link SeaState.detail}): the gain on the finest layer's slopes as it
    * reads them, the slope variance that gives, and its tile point's shift now, [0, 1) — its
-   * ripples drifting downwind at their own speed.
+   * ripples drifting downwind at their own speed. All 0 where it is not drawn.
    */
   detail: { gain: number; slopeVariance: number; offset: [number, number] };
   /** slope variance no wave stands for, the smallest waves' included (Cox and Munk) */
@@ -187,12 +213,13 @@ export type SeaStateStats = {
 export class SeaState {
   readonly layers: SeaLayer[];
   /**
-   * The detail octave: the finest layer's tile {@link SEA_DETAIL_SCALE} times smaller, turned
-   * apart from it, standing for the ripples in the band below it (`kMin` to `kMax`). It draws
-   * no waves of its own (`waves` 0): the surface reads the finest layer's texture again,
-   * scaled by the gain {@link SeaState.stats} gives.
+   * The detail octave, where drawn (`SeaStateOptions.detail`): the finest layer's tile
+   * {@link SEA_DETAIL_SCALE} times smaller, turned apart from it, standing for the ripples in
+   * the band below it (`kMin` to `kMax`). It draws no waves of its own (`waves` 0): the
+   * surface reads the finest layer's texture again, scaled by the gain {@link SeaState.stats}
+   * gives. Null where not drawn.
    */
-  readonly detail: SeaLayer;
+  readonly detail: SeaLayer | null;
   readonly response: number;
   readonly seed: number;
   /** each layer's tile read hex-tiled, as the surface reads it */
@@ -201,8 +228,10 @@ export class SeaState {
   time = 0;
 
   private spectrum: SeaSpectrum | null = null;
-  // the detail octave's slope variance over its finest layer's, in the spectrum
+  // the detail octave's slope variance over its finest layer's: as drawn, easing toward the
+  // spectrum's as the waves do
   private detailRatio = 0;
+  private detailTarget = 0;
   private readonly candidates: Candidates[];
   private readonly pools: Pool[];
   private readonly tables: SeaLayerTable[];
@@ -214,14 +243,16 @@ export class SeaState {
   constructor(input: SeaSpectrumInput, options: SeaStateOptions = {}) {
     this.layers = seaLayers(options.layers ?? SEA_LAYERS_MEDIUM);
     const finest = this.layers[this.layers.length - 1];
-    this.detail = {
-      size: finest.size / SEA_DETAIL_SCALE,
-      angle: (finest.angle + GOLDEN_ANGLE) % (2 * Math.PI),
-      texels: finest.texels,
-      kMin: finest.kMax,
-      kMax: finest.kMax * SEA_DETAIL_SCALE,
-      waves: 0,
-    };
+    this.detail = options.detail
+      ? {
+          size: finest.size / SEA_DETAIL_SCALE,
+          angle: (finest.angle + GOLDEN_ANGLE) % (2 * Math.PI),
+          texels: finest.texels,
+          kMin: finest.kMax,
+          kMax: finest.kMax * SEA_DETAIL_SCALE,
+          waves: 0,
+        }
+      : null;
     this.response = options.response ?? SEA_RESPONSE_ACCELERATED;
     this.seed = options.seed ?? 0;
     this.hex = options.hex ?? true;
@@ -248,6 +279,7 @@ export class SeaState {
    * drawn, or a clock set rather than run.
    */
   settle(): void {
+    this.detailRatio = this.detailTarget;
     this.layers.forEach((_, l) => {
       const cand = this.candidates[l];
       const pool = this.pools[l];
@@ -325,6 +357,11 @@ export class SeaState {
       this.select(l, spectrum);
     });
     // The detail octave's band, over the slope variance its finest layer draws once eased.
+    const detail = this.detail;
+    if (!detail) {
+      this.detailTarget = 0;
+      return;
+    }
     const l = this.layers.length - 1;
     const cand = this.candidates[l];
     let drawn = 0;
@@ -333,10 +370,10 @@ export class SeaState {
       drawn +=
         0.5 * a * a * (cand.kx[i] * cand.kx[i] + cand.kz[i] * cand.kz[i]);
     }
-    this.detailRatio =
+    this.detailTarget =
       drawn > 0
         ? Math.min(
-            spectrum.slopeVariance(this.detail.kMin, this.detail.kMax) / drawn,
+            spectrum.slopeVariance(detail.kMin, detail.kMax) / drawn,
             DETAIL_RATIO_LIMIT,
           )
         : 0;
@@ -394,6 +431,13 @@ export class SeaState {
   update(dt: number): void {
     if (!(dt > 0)) return;
     this.time += dt;
+    // The detail octave eases as its band's waves would, over `response` of their periods.
+    if (this.detail) {
+      const k = Math.sqrt(this.detail.kMin * this.detail.kMax);
+      const tau = (this.response * 2 * Math.PI) / Math.sqrt(SEA_G * k);
+      this.detailRatio +=
+        (this.detailTarget - this.detailRatio) * (1 - Math.exp(-dt / tau));
+    }
     let freed = false;
     this.layers.forEach((_, l) => {
       const cand = this.candidates[l];
@@ -558,7 +602,7 @@ export class SeaState {
   // octave's tile point shifts: back along that, in its turned tile, wrapped.
   private detailOffset(): [number, number] {
     const input = this.spectrum?.input;
-    if (!input) return [0, 0];
+    if (!input || !this.detail) return [0, 0];
     const [wx, wz] = input.windDirection;
     const length = Math.hypot(wx, wz);
     if (!(length > 0)) return [0, 0];

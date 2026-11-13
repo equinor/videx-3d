@@ -10,13 +10,14 @@
 #ifndef OCEAN_CONTACT_COUNT
 #define OCEAN_CONTACT_COUNT 8
 #endif
-// Share of the foam lost once its detail goes sub-pixel.
-#define OCEAN_FOAM_FAR_FADE 0.85
 // The foam's texture (oceanWaves' `crest`): standard deviations each side of its middle, and
 // how much the finest layer breaks up the wind sea's crests.
 #define OCEAN_CREST_SPAN 3.0
 #define OCEAN_CREST_FINE 0.6
 #define OCEAN_CREST_RIPPLES 0.4
+// The foam's albedo, lit (Dupuy and Bruneton 2012 use 0.4, after Koepke 1984; fresh foam is
+// brighter).
+#define OCEAN_FOAM_ALBEDO 0.8
 
 uniform float uTime;
 // Octaves of the shore's ragged edge noise (oceanFbm). A uniform, not a define: Direct3D then
@@ -40,6 +41,19 @@ uniform float uSunGlintSpread; // roughness added to the glint, widening its pat
 
 uniform vec3 uFoamColor;
 uniform float uFoamAmount;
+// ⚠️ Tuning (OceanFoamTuning), defaults as drawn until 2026-11: x the finer waves' share in the
+// crests (×), y the rim's width up close, z the froth, w the thin foam's falloff (where it
+// turns opaque).
+uniform vec4 uFoamShape;
+// ⚠️ Tuning: x the far fade, y the most foam covers, z how much it is lit by the wave, w the
+// lift (a brighter rim).
+uniform vec4 uFoamLook;
+// ⚠️ Tuning: x the grain's strength, y its cell (m), z how narrow the foam is drawn toward
+// the crest lines, w the debug view (oceanDebugView): 0 none.
+uniform vec4 uFoamGrain;
+// The crests' slope along the wind at the pixel, in standard deviations, as oceanWaves last
+// found it: > 0 on a crest's back (where its foam trails), < 0 on its front.
+float oceanCrestAlong;
 
 uniform float uFresnelPower;
 uniform float uDetailScale;    // the foam's feature frequency (per world unit)
@@ -147,6 +161,7 @@ vec4 seaLayerAt(sampler2D map, int index, vec2 p, float pixel2) {
 // no layer is read.
 // ⚠️ Derivatives.
 vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out vec2 crest, out float rough) {
+  oceanCrestAlong = 0.0;
   float pixel2 = seaPixel2(p);
   float s2 = uSteepness * uSteepness;
   float detailGain2 = uSeaDetail.x * uSeaDetail.x;
@@ -169,30 +184,58 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
   vec4 fine = l2;
   float fineVariance = uSeaLayerStats[2].y;
   vec4 sum = l0 + l1 + l2;
+  // The wind sea's crests: the 307 m and 47 m layers; a finer one only breaks them up.
   float crestHeight = l1.z + l2.z;
   float crestVariance = uSeaLayerStats[1].y + uSeaLayerStats[2].y;
+  float zCrestFine = l2.z * inversesqrt(max(uSeaLayerStats[2].y, 1e-8));
   #if SEA_LAYERS > 3
   vec4 l3 = seaLayerAt(uSeaSurface3, 3, p, pixel2);
   fine = l3;
   fineVariance = uSeaLayerStats[3].y;
   sum += l3;
-  crestHeight += l3.z;
-  crestVariance += uSeaLayerStats[3].y;
   #endif
-  // The ripples: the finest layer again, smaller, its slopes by the gain (heights by the gain
-  // over the scale), on its own hex cells, sliding under them downwind.
+  // The ripples, where drawn (SEA_DETAIL): the finest layer again, smaller, its slopes by the
+  // gain (heights by the gain over the scale), on its own hex cells, sliding under them
+  // downwind.
+  #ifdef SEA_DETAIL
   vec4 ripples = seaLayerReadShifted(uSeaFinest, uSeaDetailLayer, uSeaLayerStats[SEA_FINEST], SEA_LAYERS, seaLayerUv(uSeaDetailLayer, p), uSeaDetail.yz, seaLayerLod(uSeaDetailLayer, pixel2));
-  float zDetail = ripples.z * inversesqrt(max(fineVariance, 1e-8));
   sum += ripples * vec4(uSeaDetail.x, uSeaDetail.x, uSeaDetail.x * uSeaLayers[SEA_FINEST].x / uSeaDetailLayer.x, detailGain2);
+  #endif
+  // What breaks the crests up finest (and froths the foam, `crest.y`): the layer below the 47 m
+  // one, else the ripples, else the 47 m layer itself.
+  #if SEA_LAYERS > 3
+  float zDetail = l3.z * inversesqrt(max(uSeaLayerStats[3].y, 1e-8));
+  #elif defined(SEA_DETAIL)
+  float zDetail = ripples.z * inversesqrt(max(fineVariance, 1e-8));
+  #else
+  float zDetail = zCrestFine;
+  #endif
   // What the pixel resolves of the layers' slopes: all of them less what its mips filter out.
   float resolved = max(total - sum.w, 0.0);
   slope = sum.xy * detail * uSteepness;
   height = sum.z * detail;
   rough = (sum.w + (1.0 - detail * detail) * resolved) * s2 + uSeaResidual;
-  // The wind sea's crests (all but the longest layer), broken up by the finest layer's and the
-  // ripples', in standard deviations: ±3 over [0, 1] (OCEAN_CREST_SPAN). `crest.y` the ripples.
-  float zFine = fine.z * inversesqrt(max(fineVariance, 1e-8));
-  float zCrest = (crestHeight * inversesqrt(max(crestVariance, 1e-8)) + OCEAN_CREST_FINE * zFine + OCEAN_CREST_RIPPLES * zDetail) * inversesqrt(1.0 + OCEAN_CREST_FINE * OCEAN_CREST_FINE + OCEAN_CREST_RIPPLES * OCEAN_CREST_RIPPLES);
+  // The wind sea's crests (the 307 m and 47 m layers), broken up by the 47 m layer's and the
+  // finer waves', in standard deviations: ±3 over [0, 1] (OCEAN_CREST_SPAN).
+  float crestFine = OCEAN_CREST_FINE * uFoamShape.x;
+  #if SEA_LAYERS > 3 || defined(SEA_DETAIL)
+  float crestRipples = OCEAN_CREST_RIPPLES * uFoamShape.x;
+  #else
+  float crestRipples = 0.0;
+  #endif
+  float zCrest = (crestHeight * inversesqrt(max(crestVariance, 1e-8)) + crestFine * zCrestFine + crestRipples * zDetail) * inversesqrt(1.0 + crestFine * crestFine + crestRipples * crestRipples);
+  // ⚠️ Tuning (uFoamGrain.z): narrowed toward the crest lines, where the crests' slope along the
+  // wind is nil, lowered by its size there in standard deviations (a half-normal, centred and
+  // rescaled so as much of the sea stays over the threshold): long along a crest, thin across.
+  vec2 crestSlope = l1.xy + l2.xy;
+  float crestSlopeVariance = uSeaLayerStats[1].x + uSeaLayerStats[2].x;
+  vec2 wind = uWindDirection / max(length(uWindDirection), 1e-6);
+  // Along one axis, half the slope variance of both. Rising downwind (> 0) on a crest's back,
+  // the side its foam trails on as the crest runs on.
+  oceanCrestAlong = dot(crestSlope, wind) * inversesqrt(max(0.5 * crestSlopeVariance, 1e-10));
+  float narrow = uFoamGrain.z;
+  if(narrow > 0.0)
+    zCrest = (zCrest - narrow * (abs(oceanCrestAlong) - 0.7978846)) * inversesqrt(1.0 + narrow * narrow * 0.3633802);
   crest = clamp(0.5 + vec2(zCrest, zDetail) / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);
   return normalize(vec3(-slope.x, 1.0, -slope.y));
 }
@@ -292,7 +335,7 @@ float oceanContactFoam(vec2 p, float t) {
 // as the camera approaches) yet remain anti-aliased at distance. The finest waves break it up
 // further up close. `foamFar` -> 1 once the foam's detail is sub-pixel, where the share of
 // the texture over the threshold is drawn instead: an even tint, none without coverage.
-float oceanFoam(vec2 crest, float texel, float coverage, out float foamFar) {
+float oceanFoam(vec2 crest, vec2 p, float texel, float coverage, out float foamFar) {
   float foamTex = crest.x;
 
   // Foam feature footprint vs. pixel size: foamFar -> 1 when crests shrink below a pixel (far
@@ -301,12 +344,25 @@ float oceanFoam(vec2 crest, float texel, float coverage, out float foamFar) {
   foamFar = smoothstep(0.5, 4.0, foamK * texel);
   float closeness = 1.0 - foamFar;
 
+  // Grain: smooth noise in two octaves of cells uFoamGrain.y across, turned apart so their
+  // grids never line up, roughening the rim and speckling thin foam; gone once a cell is under
+  // a pixel, so it does not shimmer from afar.
+  float grainCell = max(uFoamGrain.y, 1e-4);
+  float grainAmount = uFoamGrain.x * (1.0 - smoothstep(0.5, 2.0, texel / grainCell));
+  float grain = 0.0;
+  if(grainAmount > 0.0) {
+    vec2 q = p / grainCell;
+    float n = 0.6 * oceanNoise(q) + 0.4 * oceanNoise(mat2(0.8, -0.6, 0.6, 0.8) * q * 2.3 + 17.1);
+    grain = (n - 0.5) * 1.6 * grainAmount;
+  }
+  foamTex += grain * 0.15;
+
   // Higher coverage lowers the threshold => more of the texture becomes foam.
   float foamT = 1.0 - coverage;
 
-  // Edge softness: crisp and anti-aliased at distance, a little wider up close so the foam's
-  // fringe feathers into the water rather than a hard cut-out.
-  float edge = clamp(fwidth(foamTex) + 0.01, 0.01, 0.5) + closeness * 0.03;
+  // Edge softness: crisp and anti-aliased at distance, wider up close (uFoamShape.y) so the
+  // foam's fringe feathers into the water rather than a hard cut-out.
+  float edge = clamp(fwidth(foamTex) + 0.01, 0.01, 0.5) + closeness * uFoamShape.y;
   float near = smoothstep(foamT - edge, foamT + edge, foamTex);
   // Sub-pixel: the share of the texture (a standard normal over ±OCEAN_CREST_SPAN) over the
   // threshold, its tail as a logistic.
@@ -314,9 +370,49 @@ float oceanFoam(vec2 crest, float texel, float coverage, out float foamFar) {
   float foam = mix(near, far, foamFar);
 
   // Up close the finest waves modulate the fill, so it reads as clumpy froth, not a sheet.
-  float froth = mix(1.0, 0.55 + 0.45 * crest.y, closeness);
+  float froth = mix(1.0, 1.0 - uFoamShape.z + uFoamShape.z * crest.y, closeness);
   foam *= froth;
+  // Thin foam speckled by the grain.
+  foam *= 1.0 - max(grain, 0.0) * 2.0 * (1.0 - foam);
 
-  // Thin foam blends in gently; only the densest reaches full white.
-  return foam * mix(1.0, smoothstep(0.05, 0.6, foam), closeness);
+  // Thin foam blends in gently; only the densest reaches full white (uFoamShape.w where).
+  foam *= mix(1.0, smoothstep(0.05, max(uFoamShape.w, 0.06), foam), closeness);
+  return clamp(foam, 0.0, 1.0) * uFoamLook.y;
+}
+
+// The water's `color` with foam over it at `opacity` (oceanFoam), its colour `foamColor`. Lit
+// (as much as uFoamLook.z says, else flat), it is a rough surface on the wave, in the same
+// light as the water: `sky` the sky's light toward the wave's normal `N`, `sun` the sun's
+// colour as it reaches the sea (shadowed), as the glint has them; brighter at its rim by
+// uFoamLook.w.
+vec3 oceanFoamOver(vec3 color, vec3 foamColor, vec3 N, float opacity, vec3 sky, vec3 sun) {
+  vec3 lit = foamColor * OCEAN_FOAM_ALBEDO * (sky + sun * clamp(dot(N, normalize(uSunDirection)), 0.0, 1.0));
+  vec3 foam = mix(foamColor, lit, uFoamLook.z) * (1.0 + uFoamLook.w * 4.0 * opacity * (1.0 - opacity));
+  return mix(color, foam, opacity);
+}
+
+// ⚠️ Debug (uFoamGrain.w), in place of the surface's `color`:
+// 1 whitecaps: grey by the crests' height (oceanWaves' `crest`); red where foam forms (`foam`,
+//   oceanFoam's), blue on the crests' backs, where the foam trails as they run on downwind,
+//   amber on their fronts;
+// 2 crests: the crests' height as a ramp (blue low, red high), the foam's threshold for the
+//   wind (oceanWindFoam) as a white line.
+vec3 oceanDebugView(vec3 color, vec2 crest, float foam) {
+  int view = int(uFoamGrain.w + 0.5);
+  if(view == 1) {
+    vec3 base = vec3(0.15 + 0.7 * crest.x);
+    float back = smoothstep(0.0, 1.5, oceanCrestAlong);
+    float front = smoothstep(0.0, 1.5, -oceanCrestAlong);
+    base = mix(base, base * vec3(0.35, 0.55, 1.2), back * 0.8);
+    base = mix(base, base * vec3(1.2, 0.8, 0.3), front * 0.8);
+    return mix(base, vec3(1.0, 0.1, 0.05), clamp(foam * 1.5, 0.0, 1.0));
+  }
+  if(view == 2) {
+    float x = crest.x;
+    vec3 ramp = clamp(vec3(1.5 * x - 0.25, 1.0 - 2.0 * abs(x - 0.5), 1.25 - 1.5 * x), 0.0, 1.0);
+    float threshold = 1.0 - oceanWindFoam();
+    float line = 1.0 - smoothstep(0.0, 1.5 * fwidth(x) + 1e-4, abs(x - threshold));
+    return mix(ramp, vec3(1.0), line);
+  }
+  return color;
 }

@@ -2,7 +2,12 @@ import type { ArgTypes, Decorator } from '@storybook/react-vite';
 import { useArgs, useEffect } from 'storybook/preview-api';
 import { builtInColorRamps } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
-import { DEFAULT_OCEAN_WATER_OPACITY } from '../../components/Ocean/ocean-material';
+import {
+  DEFAULT_OCEAN_WATER_OPACITY,
+  type OceanFoamTuning,
+  type OceanWaveTuning,
+} from '../../components/Ocean/ocean-material';
+import type { SeaQuality } from '../../sdk/weather/sea-state';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
 import type { GeoReliefProps } from '../../components/Layers/GeoRelief';
 import {
@@ -127,6 +132,12 @@ export type SceneryArgs = {
   /** compass bearing the wind blows toward */
   windDirection: number;
   seaSteepness: number;
+  /** ⚠️ Tuning, to be settled: the wave model's open choices (the sea bench sets them) */
+  seaWaveTuning?: OceanWaveTuning;
+  /** ⚠️ Tuning, to be settled: the foam's shaping (the sea bench sets it) */
+  seaFoamTuning?: OceanFoamTuning;
+  /** the sea's `quality` (`SEA_QUALITY`); default medium */
+  seaQuality?: SeaQuality;
   seaDeepColor: string;
   seaShallowColor: string;
   skySeabedColor: string;
@@ -502,6 +513,9 @@ export const sceneryOceanFromArgs = (args: SceneryArgs): SceneryOceanProps => ({
     -Math.cos((args.windDirection * Math.PI) / 180),
   ],
   steepness: args.seaSteepness,
+  waveTuning: args.seaWaveTuning,
+  foamTuning: args.seaFoamTuning,
+  quality: args.seaQuality,
   foamAmount: args.foamAmount,
   deepColor: args.seaDeepColor,
   shallowColor: args.seaShallowColor,

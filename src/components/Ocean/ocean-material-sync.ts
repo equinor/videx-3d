@@ -2,7 +2,11 @@ import { Vector2, Vector3 } from 'three';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
 import { OceanBedMaterial } from './ocean-bed-material';
-import { OceanMaterial } from './ocean-material';
+import {
+  OceanMaterial,
+  type OceanFoamTuning,
+  type OceanWaveTuning,
+} from './ocean-material';
 import { OceanVolumeMaterial } from './ocean-volume-material';
 
 /**
@@ -32,6 +36,16 @@ export type OceanWaterProps = {
    * significant height (m), peak period (s) and the way it travels.
    */
   swells?: SeaSwell[];
+  /**
+   * ⚠️ Tuning, to be settled and then removed: the wave model's open choices, to compare by
+   * eye ({@link OceanWaveTuning}).
+   */
+  waveTuning?: OceanWaveTuning;
+  /**
+   * ⚠️ Tuning, to be settled and then removed: the foam's shaping, to compare by eye
+   * ({@link OceanFoamTuning}).
+   */
+  foamTuning?: OceanFoamTuning;
   /** @deprecated the waves spread about the wind as the spectrum has them; ignored */
   directionalSpread?: number;
   /** The waves' slopes scaled for show: 1 (the default) as the spectrum gives them. */
@@ -237,6 +251,8 @@ export function applyOceanWaterProps(
   if (props.windSpeed !== undefined) material.windSpeed = props.windSpeed;
   if (props.amplitude !== undefined) material.amplitude = props.amplitude;
   if (props.swells) material.swells = props.swells;
+  if (props.waveTuning) material.waveTuning = props.waveTuning;
+  if (props.foamTuning) material.foamTuning = props.foamTuning;
   if (props.directionalSpread !== undefined)
     material.directionalSpread = props.directionalSpread;
   if (props.steepness !== undefined) material.steepness = props.steepness;

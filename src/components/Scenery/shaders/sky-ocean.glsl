@@ -491,15 +491,23 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
 
   float foamFar;
   float coverage = max(oceanWindFoam(), oceanContactFoam(p, uTime));
-  float foamBlend = oceanFoam(wave.crest, texel, coverage, foamFar);
-  float foamOpacity = foamBlend * (1.0 - clamp(foamFar * OCEAN_FOAM_FAR_FADE, 0.0, 1.0));
-  surface = mix(surface, uFoamColor * night, foamOpacity);
+  float foamBlend = oceanFoam(wave.crest, wave.p, texel, coverage, foamFar);
+  float foamOpacity = foamBlend * (1.0 - clamp(foamFar * uFoamLook.x, 0.0, 1.0));
+  // Lit, the foam takes the sky's light toward the wave's normal (a second look at the sky, so
+  // only where there is foam) and the sun's as the glint has it; unlit, it is dimmed by night.
+  vec3 foamSky = vec3(0.0);
+  if(foamOpacity > 0.001 && uFoamLook.z > 0.0)
+    foamSky = skySurfaceAt(globeTurnFrom(normal, wave.up, globeCameraLook()), blend, 0.0);
+  surface = oceanFoamOver(surface, uFoamColor * mix(night, 1.0, uFoamLook.z), normal, foamOpacity, foamSky, uSunColor * glint);
   // Lit as the sky the camera sees is (its daylight, its reflection): far round the Earth,
   // where the sun has set, dark as by night (skyDayFrom).
   surface *= skyDayFrom(globeCameraLook(), wave.up);
 
   // Far off, where its detail has faded, and from a few kilometres up, the water hides what lies under it.
   float opacity = skyOceanSurfaceOpacity(flatness);
+  // ⚠️ Debug views (foamTuning.debug): opaque, in place of the surface.
+  if(uFoamGrain.w > 0.5)
+    return vec4(oceanDebugView(surface, wave.crest, foamBlend), 1.0);
   return vec4(surface, max(mix(opacity, 1.0, fresnel), foamOpacity));
 }
 

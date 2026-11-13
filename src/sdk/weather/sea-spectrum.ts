@@ -32,13 +32,21 @@ export type SeaSpectrumInput = {
   swells?: SeaSwell[];
   /** every wave's height scaled by this, the spectrum's variance by its square. Default 1 */
   heightScale?: number;
+  /**
+   * ⚠️ Tuning, to be settled: the least spreading exponent s of the wind sea's short waves
+   * (cos^2s). Default 1, Mitsuyasu's as given: nearly isotropic, some running upwind.
+   */
+  spreadFloor?: number;
+  /**
+   * ⚠️ Tuning, to be settled: the wind sea's waves above this many times its peak frequency
+   * fade out (as the `Ocean` drew 0.6–3× until 2026-11). Default none.
+   */
+  tail?: number;
 };
 
 /** A long swell's default spreading exponent (cos^2s): narrow. */
 export const SEA_SWELL_SPREAD = 24;
 
-// North Sea JONSWAP peak enhancement.
-const GAMMA = 3.3;
 // The least wind the wind sea is reckoned from, so its peak stays finite.
 const MIN_WIND = 0.5;
 // The swell's frequency spread about its peak, a share of it.
@@ -57,39 +65,91 @@ export function windSeaPeak(windSpeed: number) {
   };
 }
 
-// The JONSWAP shape (unnormalised) at angular frequency `w` about the peak `wp`.
-function jonswapShape(w: number, wp: number): number {
-  if (w <= 0) return 0;
-  const sigma = w <= wp ? 0.07 : 0.09;
-  const r = Math.exp(-((w - wp) * (w - wp)) / (2 * sigma * sigma * wp * wp));
-  return (
-    Math.pow(w, -5) * Math.exp(-1.25 * Math.pow(wp / w, 4)) * Math.pow(GAMMA, r)
-  );
+// Elfouhaily et al. 1997 ("A unified directional spectrum for long and short wind-driven
+// waves", JGR 102(C7)): the wind sea's curvature spectrum B(k) = k³·S(k), long waves (B_l)
+// and short (B_h), fully developed (inverse wave age Ω about 0.84).
+// The capillary-gravity peak: its wavenumber (rad/m) and phase speed (m/s).
+const ELF_KM = 370;
+const ELF_CM = 0.23;
+
+// The phase speed of a wave `k`, gravity and capillarity.
+const phaseSpeed = (k: number) =>
+  Math.sqrt((SEA_G / k) * (1 + (k / ELF_KM) * (k / ELF_KM)));
+
+/**
+ * The friction velocity u* over the sea for a wind U10 (m/s): √Cd·U10, the drag Cd =
+ * (0.8 + 0.065·U10)·10⁻³ (Wu 1982).
+ */
+export function frictionVelocity(windSpeed: number): number {
+  const u = Math.max(windSpeed, 0);
+  return Math.sqrt((0.8 + 0.065 * u) * 1e-3) * u;
 }
 
-// ∫ shape dω, numerically, for the peak `wp` (the shape scales with it as wp^-4).
-const JONSWAP_UNIT = (() => {
-  // At wp = 1, over 0.2 … 12 in fine log steps.
+/**
+ * The short waves' strength for a friction velocity u* (Elfouhaily's α_m): none in a calm, it
+ * grows with the wind, three times as fast once u* passes the capillary-gravity waves' phase
+ * speed (0.23 m/s, about 7 m/s of wind).
+ */
+export function shortWaveStrength(uStar: number): number {
+  if (!(uStar > 0)) return 0;
+  const r = Math.log(uStar / ELF_CM);
+  return Math.max(0.01 * (1 + (uStar <= ELF_CM ? r : 3 * r)), 0);
+}
+
+// The two parts of Elfouhaily's curvature spectrum at `k`, about the peak `kp` with inverse
+// wave age `omega` and short-wave strength `alphaM`: [long, short].
+function elfouhaily(
+  k: number,
+  kp: number,
+  omega: number,
+  alphaM: number,
+): [number, number] {
+  if (!(k > 0)) return [0, 0];
+  const gamma = omega <= 1 ? 1.7 : 1.7 + 6 * Math.log10(omega);
+  const sigma = 0.08 * (1 + 4 / (omega * omega * omega));
+  const root = Math.sqrt(k / kp);
+  const lpm = Math.exp(-1.25 * (kp / k) * (kp / k));
+  const jp = Math.pow(
+    gamma,
+    Math.exp(-((root - 1) * (root - 1)) / (2 * sigma * sigma)),
+  );
+  const c = phaseSpeed(k);
+  const fp = lpm * jp * Math.exp(-(omega / Math.sqrt(10)) * (root - 1));
+  const fm = lpm * jp * Math.exp(-0.25 * (k / ELF_KM - 1) * (k / ELF_KM - 1));
+  const long = 0.5 * 0.006 * Math.sqrt(omega) * (phaseSpeed(kp) / c) * fp;
+  const short = 0.5 * alphaM * (ELF_CM / c) * fm;
+  return [long, short];
+}
+
+// ∫ B(k)/k³ dk of one of Elfouhaily's parts over [kLo, kHi), in log steps.
+function elfouhailyVariance(
+  part: 0 | 1,
+  kp: number,
+  omega: number,
+  alphaM: number,
+  kLo: number,
+  kHi: number,
+): number {
+  const steps = 600;
+  const lo = Math.log(kLo);
+  const hi = Math.log(kHi);
   let sum = 0;
-  const steps = 4000;
-  const lo = Math.log(0.2);
-  const hi = Math.log(12);
   for (let i = 0; i < steps; i++) {
-    const w = Math.exp(lo + ((i + 0.5) / steps) * (hi - lo));
-    sum += jonswapShape(w, 1) * w * ((hi - lo) / steps);
+    const k = Math.exp(lo + ((i + 0.5) / steps) * (hi - lo));
+    sum +=
+      (elfouhaily(k, kp, omega, alphaM)[part] / (k * k)) * ((hi - lo) / steps);
   }
   return sum;
-})();
-
+}
 /**
  * The directional spreading of a wind sea at `w` about its peak `wp` (Mitsuyasu): the exponent
  * s of cos^2s(θ/2), narrowest at the peak, wider for shorter waves.
  */
-export function windSeaSpread(w: number, wp: number): number {
+export function windSeaSpread(w: number, wp: number, floor = 1): number {
   const sp = 17;
   const ratio = w / wp;
   const s = ratio <= 1 ? sp * Math.pow(ratio, 5) : sp * Math.pow(ratio, -2.5);
-  return Math.min(Math.max(s, 1), 40);
+  return Math.min(Math.max(s, floor, 1), 40);
 }
 
 /**
@@ -131,9 +191,11 @@ type Part = {
 };
 
 /**
- * The spectrum of the wind sea and swells `input` describes: fully developed for the wind
- * (JONSWAP, γ 3.3), each swell a narrow peak about its period, every part spread about its
- * direction (cos^2s). Deep water: ω² = g·k.
+ * The spectrum of the wind sea and swells `input` describes: the wind sea fully developed for
+ * the wind (Elfouhaily et al. 1997: its long waves at the `Ocean`'s Hs and peak, its short
+ * waves, from about a metre down, growing with the wind's friction velocity), each swell a
+ * narrow peak about its period, every part spread about its direction (cos^2s). Deep water:
+ * ω² = g·k.
  *
  * @group Weather
  */
@@ -144,13 +206,46 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
   if (wind.height > 0 && scale2 > 0) {
     const wp = wind.omega;
     const m0 = (wind.height / 4) ** 2 * scale2;
-    // The shape at wp is the unit one scaled: ∫ = JONSWAP_UNIT · wp^-4.
-    const scale = m0 / (JONSWAP_UNIT * Math.pow(wp, -4));
+    // Elfouhaily's spectrum about the `Ocean`'s peak (its inverse wave age from that peak and
+    // the wind, ≈ 0.855), its long waves scaled to the `Ocean`'s Hs; its short waves as the
+    // wind's friction velocity gives them, absolute (heightScale² on both).
+    const kp = (wp * wp) / SEA_G;
+    const u = Math.max(input.windSpeed, MIN_WIND);
+    const omega = Math.sqrt((kp * u * u) / SEA_G);
+    const alphaM = shortWaveStrength(frictionVelocity(input.windSpeed));
+    const longVariance = elfouhailyVariance(
+      0,
+      kp,
+      omega,
+      alphaM,
+      0.2 * kp,
+      4000,
+    );
+    const shortVariance =
+      elfouhailyVariance(1, kp, omega, alphaM, 0.2 * kp, 4000) * scale2;
+    // The short waves hold some of the variance about the peak too: the long ones the rest.
+    const longScale =
+      longVariance > 0 ? Math.max(m0 - shortVariance, 0) / longVariance : 0;
+    const floor = input.spreadFloor ?? 1;
+    const tail = input.tail;
+    const cut =
+      tail && tail > 0
+        ? (w: number) => 1 / (1 + Math.pow(w / (tail * wp), 8))
+        : () => 1;
     parts.push({
-      frequency: w => scale * jonswapShape(w, wp),
-      spread: w => windSeaSpread(w, wp),
+      // S(ω) = S(k)·dk/dω, S(k) = B(k)/k³, k = ω²/g.
+      frequency: w => {
+        const k = (w * w) / SEA_G;
+        const [long, short] = elfouhaily(k, kp, omega, alphaM);
+        return (
+          ((long * longScale + short * scale2) / (k * k * k)) *
+          ((2 * w) / SEA_G) *
+          cut(w)
+        );
+      },
+      spread: w => windSeaSpread(w, wp, floor),
       angle: angleOf(input.windDirection),
-      variance: m0,
+      variance: Math.max(m0, shortVariance),
     });
   }
   for (const swell of input.swells ?? []) {

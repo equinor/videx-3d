@@ -280,7 +280,7 @@ void main() {
   #endif
 
   float foamFar;
-  float foamBlend = oceanFoam(crest, texel, foamCoverage, foamFar);
+  float foamBlend = oceanFoam(crest, worldXZ, texel, foamCoverage, foamFar);
 
   // Distance fade: once the foam noise shrinks below the pixel footprint it can no
   // longer be resolved and full-white foam reads as harsh bright noise, so far
@@ -293,7 +293,7 @@ void main() {
   // ⚠️⚠️ Guarded, not just multiplied by `shoreWeight`: without a bathymetry grid
   // there IS no shore band and `uShoreFade` is not declared, so referring to it
   // here compiles only in the variant that happens to have the define.
-  float foamFade = foamFar * OCEAN_FOAM_FAR_FADE;
+  float foamFade = foamFar * uFoamLook.x;
   #ifdef OCEAN_BATHYMETRY
   {
     float shoreFade = 1.0 - uShoreFade.x * (1.0 - foamFar * uShoreFade.y);
@@ -312,7 +312,7 @@ void main() {
   // real pixel is mostly sea bed showing through a shoal. That is a saturated teal
   // band exactly where the foam was asked to disappear.
   float foamOpacity = foamBlend * (1.0 - foamFade);
-  color = mix(color, uFoamColor, foamOpacity);
+  color = oceanFoamOver(color, uFoamColor, N, foamOpacity, oceanSkyReflection(N), uSunColor);
 
   // Seen from below (inside the water body) the surface should read as a darker
   // underside rather than the bright, sky-lit top. Dim the final colour for
@@ -336,6 +336,11 @@ void main() {
   // raw coverage here is what let faded-out foam go on forcing the water opaque.
   alpha = max(alpha, foamOpacity);
   alpha *= uMasterOpacity;
+  // ⚠️ Debug views (foamTuning.debug): opaque, in place of the surface.
+  if(uFoamGrain.w > 0.5) {
+    color = oceanDebugView(color, crest, foamBlend);
+    alpha = uMasterOpacity;
+  }
 
   gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
 

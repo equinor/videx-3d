@@ -641,9 +641,10 @@ export const Scenery = ({
   const [probe] = useState(() => new LightProbe());
   const [lightTarget] = useState(() => new Object3D());
   // The sea's water: never drawn, the sky's sea shares its uniforms.
+  const seaQuality = oceanOptions?.quality ?? 'medium';
   const water = useMemo(
-    () => (hasOcean ? new OceanMaterial() : null),
-    [hasOcean],
+    () => (hasOcean ? new OceanMaterial({ quality: seaQuality }) : null),
+    [hasOcean, seaQuality],
   );
 
   useEffect(() => () => water?.dispose(), [water]);

@@ -5,7 +5,7 @@ import {
   windSeaPeak,
   type SeaSpectrumInput,
 } from '../src/sdk/weather/sea-spectrum';
-import { SeaState } from '../src/sdk/weather/sea-state';
+import { SEA_QUALITY, SeaState } from '../src/sdk/weather/sea-state';
 
 const EAST: Vec2 = [1, 0];
 const SOUTH: Vec2 = [0, 1];
@@ -54,6 +54,26 @@ describe('seaSpectrum', () => {
     expect(spectrum.significantHeight).toBeCloseTo(2, 6);
     const kPeak = (2 * Math.PI) ** 2 / (9.81 * 144);
     expect(spectrum.variance(0.5 * kPeak, 2 * kPeak)).toBeCloseTo(0.25, 2);
+  });
+
+  it('grows its short waves with the wind, its slopes all told as Cox and Munk measured', () => {
+    let lastShort = 0;
+    for (const speed of [3, 7, 12, 20]) {
+      const spectrum = seaSpectrum(wind(speed));
+      const all = spectrum.slopeVariance(1e-4, 6000);
+      const coxMunk = 0.003 + 0.00512 * speed;
+      expect(all / coxMunk, `all slopes at ${speed} m/s`).toBeGreaterThan(0.85);
+      expect(all / coxMunk, `all slopes at ${speed} m/s`).toBeLessThan(1.2);
+      // The waves under a metre: none to speak of in light air, far more in a gale.
+      const short = spectrum.slopeVariance(2 * Math.PI, 6000);
+      expect(short, `waves under a metre at ${speed} m/s`).toBeGreaterThan(
+        lastShort,
+      );
+      lastShort = short;
+    }
+    expect(lastShort).toBeGreaterThan(
+      4 * seaSpectrum(wind(3)).slopeVariance(2 * Math.PI, 6000),
+    );
   });
 });
 
@@ -111,14 +131,12 @@ describe('SeaState', () => {
   });
 
   it('draws the ripples below its finest layer as the detail octave, out of the residual, without a jump', () => {
-    const sea = new SeaState(wind(10));
+    const sea = new SeaState(wind(10), SEA_QUALITY.high);
+    const detail = sea.detail!;
     const before = sea.stats();
     const finest = sea.layers[sea.layers.length - 1];
-    const band = seaSpectrum(wind(10)).slopeVariance(
-      sea.detail.kMin,
-      sea.detail.kMax,
-    );
-    expect(sea.detail.kMin).toBeCloseTo(finest.kMax, 9);
+    const band = seaSpectrum(wind(10)).slopeVariance(detail.kMin, detail.kMax);
+    expect(detail.kMin).toBeCloseTo(finest.kMax, 9);
     const share = before.detail.slopeVariance / band;
     expect(share, 'the band’s slope variance, as drawn').toBeGreaterThan(0.8);
     expect(share).toBeLessThan(1.2);
@@ -177,7 +195,8 @@ describe('SeaState', () => {
     expect(worstLeave / hs, 'the largest wave leaving, of Hs').toBeLessThan(
       0.002,
     );
-  });
+    // 3000 frames of the whole sea: ~2.4 s alone, more with a 3D story drawing alongside.
+  }, 20000);
 
   it('sums its tables as its tiles do', () => {
     const sea = new SeaState(wind(12, [1, 2]));
