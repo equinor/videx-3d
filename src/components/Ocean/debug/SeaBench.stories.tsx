@@ -641,64 +641,64 @@ const meta = {
     foamBreakup: {
       control: { type: 'range', min: 0, max: 2, step: 0.05 },
       description:
-        'The finer waves’ share in the crests the foam is cut from: higher, smaller and more broken patches. 1 as now.',
+        'The finer waves’ share in the crests the foam is cut from: higher, smaller and more broken patches. Default 0.8.',
       table: { category: 'Foam (tuning)' },
     },
     foamEdge: {
       control: { type: 'range', min: 0, max: 0.2, step: 0.005 },
       description:
-        'The rim’s width up close: 0 hard cut-outs, higher a soft feather. 0.03 as now.',
+        'The rim’s width up close: 0 hard cut-outs, higher a soft feather. Default 0.1.',
       table: { category: 'Foam (tuning)' },
     },
     foamFroth: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'How much the ripples dim the foam’s inside, so it is not one flat white. 0.45 as now.',
+        'How much the ripples dim the foam’s inside, so it is not one flat white. Default 0.45.',
       table: { category: 'Foam (tuning)' },
     },
     foamFalloff: {
       control: { type: 'range', min: 0.06, max: 1, step: 0.02 },
       description:
-        'Where thin foam turns opaque up close: low, thin foam is opaque too; high, it stays a translucent veil. 0.6 as now.',
+        'Where thin foam turns opaque up close: low, thin foam is opaque too; high, it stays a translucent veil. Default 0.6.',
       table: { category: 'Foam (tuning)' },
     },
     foamFarFade: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'The share of the foam lost once below a pixel (far off): 0 keeps it, the sea whitening evenly. 0.85 as now.',
+        'The share of the foam lost once below a pixel (far off): 0 keeps it, the sea whitening evenly. Default 0.85.',
       table: { category: 'Foam (tuning)' },
     },
     foamOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      description: 'The most the foam covers. 1 as now.',
+      description: 'The most the foam covers. Default 1.',
       table: { category: 'Foam (tuning)' },
     },
     foamLit: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'The foam lit as a rough surface on the wave, by the same sky and sun as the water (albedo 0.8): 0 flat white as now, 1 fully lit.',
+        'The foam lit as a rough surface on the wave, by the same sky and sun as the water (albedo 0.8): 0 flat white, 1 fully lit (default).',
       table: { category: 'Foam (tuning)' },
     },
     foamLift: {
-      control: { type: 'range', min: 0, max: 0.5, step: 0.01 },
-      description: 'A brighter rim. 0 as now.',
+      control: { type: 'range', min: 0, max: 1, step: 0.01 },
+      description: 'A brighter rim. Default 0.5.',
       table: { category: 'Foam (tuning)' },
     },
     foamGrain: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'Smooth noise in two octaves of world cells, roughening the rim and speckling thin foam; it fades out once a cell is under a pixel. 0 as now.',
+        'Smooth noise in two octaves of world cells, roughening the rim and speckling thin foam; it fades out once a cell is under a pixel. Default 0.45.',
       table: { category: 'Foam (tuning)' },
     },
     foamGrainScale: {
       control: { type: 'range', min: 0.01, max: 1, step: 0.01 },
-      description: 'The grain’s cell, metres.',
+      description: 'The grain’s cell, metres. Default 0.06.',
       table: { category: 'Foam (tuning)' },
     },
     foamNarrow: {
       control: { type: 'range', min: 0, max: 3, step: 0.05 },
       description:
-        'The foam narrowed toward the crest lines: long along a crest, thin across it. About as much of the sea stays foam. 0 as now.',
+        'The foam narrowed toward the crest lines: long along a crest, thin across it. About as much of the sea stays foam. Default 1.',
       table: { category: 'Foam (tuning)' },
     },
     gustAuto: {
@@ -787,17 +787,17 @@ const meta = {
     ripples: 1,
     hex: true,
     hexSharpness: 1,
-    foamBreakup: 1,
-    foamEdge: 0.03,
+    foamBreakup: 0.8,
+    foamEdge: 0.1,
     foamFroth: 0.45,
     foamFalloff: 0.6,
     foamFarFade: 0.85,
     foamOpacity: 1,
-    foamLit: 0,
-    foamLift: 0,
-    foamGrain: 0,
-    foamGrainScale: 0.1,
-    foamNarrow: 0,
+    foamLit: 1,
+    foamLift: 0.5,
+    foamGrain: 0.45,
+    foamGrainScale: 0.06,
+    foamNarrow: 1,
     debugView: 'none',
     gustAuto: true,
     gustStrength: 0.3,

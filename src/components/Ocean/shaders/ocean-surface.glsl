@@ -41,9 +41,9 @@ uniform float uSunGlintSpread; // roughness added to the glint, widening its pat
 
 uniform vec3 uFoamColor;
 uniform float uFoamAmount;
-// ⚠️ Tuning (OceanFoamTuning), defaults as drawn until 2026-11: x the finer waves' share in the
-// crests (×), y the rim's width up close, z the froth, w the thin foam's falloff (where it
-// turns opaque).
+// ⚠️ Tuning (OceanFoamTuning; its defaults in ocean-material.ts, OCEAN_FOAM_*_DEFAULT): x the
+// finer waves' share in the crests (×), y the rim's width up close, z the froth, w the thin
+// foam's falloff (where it turns opaque).
 uniform vec4 uFoamShape;
 // ⚠️ Tuning: x the far fade, y the most foam covers, z how much it is lit by the wave, w the
 // lift (a brighter rim).

@@ -236,9 +236,9 @@ export type OceanWaveTuning = {
  * (`OceanMaterial.foamTuning`, the `foamTuning` prop). Each left out is as drawn by default.
  */
 export type OceanFoamTuning = {
-  /** the finer waves' share in the crests the foam is cut from, ×; 1 */
+  /** the finer waves' share in the crests the foam is cut from, ×; 0.8 */
   breakup?: number;
-  /** the rim's width up close, in the crests' [0, 1]; 0.03 */
+  /** the rim's width up close, in the crests' [0, 1]; 0.1 */
   edge?: number;
   /** how much the ripples dim the foam's inside; 0.45 */
   froth?: number;
@@ -248,15 +248,15 @@ export type OceanFoamTuning = {
   farFade?: number;
   /** the most foam covers; 1 */
   opacity?: number;
-  /** how much the foam is lit by the wave under it; 0 */
+  /** how much the foam is lit by the wave under it (the sky toward its normal, the sun); 1 */
   lit?: number;
-  /** a brighter rim; 0 */
+  /** a brighter rim; 0.5 */
   lift?: number;
-  /** the grain's strength, smooth noise roughening the rim and speckling thin foam; 0 */
+  /** the grain's strength, smooth noise roughening the rim and speckling thin foam; 0.45 */
   grain?: number;
-  /** the grain's cell, metres; 0.1 */
+  /** the grain's cell, metres; 0.06 */
   grainScale?: number;
-  /** how narrow the foam is drawn toward the crest lines (long along, thin across); 0 */
+  /** how narrow the foam is drawn toward the crest lines (long along, thin across); 1 */
   narrow?: number;
   /**
    * ⚠️ Debug: a view in place of the surface. `whitecaps`: grey by the crests' height, red where
@@ -276,9 +276,11 @@ export const OCEAN_DEBUG_VIEWS = [
 ] as const;
 export type OceanDebugView = (typeof OCEAN_DEBUG_VIEWS)[number];
 
-// [breakup, edge, froth, falloff] and [farFade, opacity, lit, lift] as drawn by default.
-const OCEAN_FOAM_SHAPE_DEFAULT = [1, 0.03, 0.45, 0.6] as const;
-const OCEAN_FOAM_LOOK_DEFAULT = [0.85, 1, 0, 0] as const;
+// [breakup, edge, froth, falloff], [farFade, opacity, lit, lift] and [grain, grainScale,
+// narrow] as drawn by default (dialled in on the sea bench, 2026-11-13).
+const OCEAN_FOAM_SHAPE_DEFAULT = [0.8, 0.1, 0.45, 0.6] as const;
+const OCEAN_FOAM_LOOK_DEFAULT = [0.85, 1, 1, 0.5] as const;
+const OCEAN_FOAM_GRAIN_DEFAULT = [0.45, 0.06, 1] as const;
 
 /**
  * The uniforms `shaders/ocean-surface.glsl` reads, wave tables included. Another
@@ -483,7 +485,7 @@ export class OceanMaterial extends ShaderMaterial {
         // ⚠️ Tuning (foamTuning), as drawn by default.
         uFoamShape: new Uniform(new Vector4(...OCEAN_FOAM_SHAPE_DEFAULT)),
         uFoamLook: new Uniform(new Vector4(...OCEAN_FOAM_LOOK_DEFAULT)),
-        uFoamGrain: new Uniform(new Vector4(0, 0.1, 0, 0)),
+        uFoamGrain: new Uniform(new Vector4(...OCEAN_FOAM_GRAIN_DEFAULT, 0)),
 
         // Floating-object contact-foam footprints (filled by setContacts()).
         uContactCount: new Uniform(0),
@@ -733,10 +735,11 @@ export class OceanMaterial extends ShaderMaterial {
       value.lit ?? lit,
       value.lift ?? lift,
     );
+    const [grain, grainScale, narrow] = OCEAN_FOAM_GRAIN_DEFAULT;
     (this.uniforms.uFoamGrain.value as Vector4).set(
-      value.grain ?? 0,
-      value.grainScale ?? 0.1,
-      value.narrow ?? 0,
+      value.grain ?? grain,
+      value.grainScale ?? grainScale,
+      value.narrow ?? narrow,
       OCEAN_DEBUG_VIEWS.indexOf(value.debug ?? 'none'),
     );
   }

@@ -38,7 +38,11 @@ and no ripples; `ultra` finer tiles. The `<Scenery>`'s sea (`SceneryOcean`) take
 1997): a light air leaves them faint, a gale sharp. `steepness` (default 1) scales the slopes
 for show; 1 is as the spectrum gives them. Whitecaps (`foamAmount`, default 0.5) cover the
 share of the sea measured at sea for the wind (about 1 % at 10 m/s, 10 % at 20 m/s) on the
-wind sea's highest crests. `waveCount`, `directionalSpread`, `detailStrength` and the `tonal*`
+wind sea's highest crests: narrowed toward the crest lines into streaks, a soft grained rim,
+lit by the sky toward the wave's normal and the sun (albedo 0.8). Its shaping is still open
+to tuning (`foamTuning`, ⚠️ to be settled and removed; defaults dialled in on the sea bench
+2026-11-13, at 0–3 % of the `Scenery`'s sea on the A1000 over the flat foam before).
+`waveCount`, `directionalSpread`, `detailStrength` and the `tonal*`
 props are deprecated and ignored.
 
 Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed`, `windDirection`
