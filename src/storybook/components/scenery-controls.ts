@@ -8,6 +8,7 @@ import {
   type OceanWaveTuning,
 } from '../../components/Ocean/ocean-material';
 import type { SeaQuality } from '../../sdk/weather/sea-state';
+import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
 import type { GeoReliefProps } from '../../components/Layers/GeoRelief';
 import {
@@ -138,6 +139,8 @@ export type SceneryArgs = {
   seaFoamTuning?: OceanFoamTuning;
   /** the sea's `quality` (`SEA_QUALITY`); default medium */
   seaQuality?: SeaQuality;
+  /** the sea's look by name (`WATER_OPTICS_PRESETS`); given, it wins over `seaDeepColor` and `seaFogDensity` */
+  seaOptics?: WaterOpticsPreset;
   seaDeepColor: string;
   seaShallowColor: string;
   skySeabedColor: string;
@@ -517,6 +520,7 @@ export const sceneryOceanFromArgs = (args: SceneryArgs): SceneryOceanProps => ({
   foamTuning: args.seaFoamTuning,
   quality: args.seaQuality,
   foamAmount: args.foamAmount,
+  optics: args.seaOptics,
   deepColor: args.seaDeepColor,
   shallowColor: args.seaShallowColor,
   bodyFogDensity: args.seaFogDensity,

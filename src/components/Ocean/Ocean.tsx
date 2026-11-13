@@ -5,6 +5,7 @@ import {
   ReactNode,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -31,7 +32,6 @@ import {
 import { OceanMaterial } from './ocean-material';
 import { createOceanSampler, OceanSamplerContext } from './ocean-sampler';
 import { OceanVolumeMaterial } from './ocean-volume-material';
-import { WaterBodyContext } from './water-body-context';
 
 /**
  * Ocean props
@@ -194,10 +194,19 @@ export const Ocean = forwardRef(
       return new OceanMaterial({ quality, detailOctaves });
     }, [customMaterial, quality, detailOctaves]);
 
-    // Optional water-body (side walls) material — a separate mesh so it routes
-    // through OIT independently of the surface and sea bed.
-    const volumeMaterial = useMemo(
-      () => (bodyGeometry ? new OceanVolumeMaterial() : null),
+    // Optional water-body (side walls) materials — separate meshes so they route
+    // through OIT independently of the surface and sea bed. Two parts (OceanVolumeMaterial's
+    // `wall`): the water on the inner faces, and the glass's light play on the outer faces,
+    // drawn last. Drawn both sides at once without depth writes, a far wall's inner face
+    // would paint over the near glass wherever it is drawn later.
+    const volumeMaterials = useMemo(
+      () =>
+        bodyGeometry
+          ? [
+              new OceanVolumeMaterial({ wall: 'water' }),
+              new OceanVolumeMaterial({ wall: 'glass' }),
+            ]
+          : null,
       [bodyGeometry],
     );
 
@@ -236,7 +245,9 @@ export const Ocean = forwardRef(
     // deepest of its bed's or its body's; none, endless.
     const water = material instanceof OceanMaterial ? material.water : null;
     const floor = bedGeometry ?? bodyGeometry;
-    useEffect(() => {
+    // Layout effects, as the syncs below: R3F may draw a frame between React's commit and its
+    // passive effects, which would show the parts unlinked and on their defaults.
+    useLayoutEffect(() => {
       if (!water) return;
       if (!floor) {
         water.depth = Infinity;
@@ -251,10 +262,9 @@ export const Ocean = forwardRef(
       [water],
     );
     useEffect(() => () => deepMaterial?.dispose(), [deepMaterial]);
-    const [levelAt] = useState(() => new Vector3());
 
     // Sync prop-driven uniforms onto the material.
-    useEffect(() => {
+    useLayoutEffect(() => {
       if (!(material instanceof OceanMaterial)) {
         onMaterialPropertiesChange?.(
           {
@@ -360,8 +370,8 @@ export const Ocean = forwardRef(
     ]);
 
     // Sync prop-driven uniforms onto the grouped (water-body + sea-bed) materials.
-    useEffect(() => {
-      if (volumeMaterial) {
+    useLayoutEffect(() => {
+      for (const volumeMaterial of volumeMaterials ?? []) {
         applyOceanBodyProps(
           volumeMaterial,
           {
@@ -395,7 +405,7 @@ export const Ocean = forwardRef(
         });
       }
     }, [
-      volumeMaterial,
+      volumeMaterials,
       seaBedMaterial,
       material,
       deepColor,
@@ -430,11 +440,6 @@ export const Ocean = forwardRef(
           : camera.position;
         // Layers too fine to show from the camera's height are not baked.
         material.renderWaves(gl, camera, view.y - surfaceY);
-        // The water's level in the world, for what lies in it.
-        if (group)
-          material.water.level = group.localToWorld(
-            levelAt.set(0, surfaceY, 0),
-          ).y;
 
         // Collect the registered floating-object footprints and upload them as
         // contact foam, the nearest the camera when there are more than it draws.
@@ -442,20 +447,19 @@ export const Ocean = forwardRef(
         // cost on an ocean with no floating children.
         contactRegistry.upload(material, { from: view });
       }
-      if (volumeMaterial) {
+      for (const volumeMaterial of volumeMaterials ?? [])
         volumeMaterial.time += waveStep;
-      }
     });
 
     // Debug: toggle wireframe on every material used by the ocean.
     useEffect(() => {
-      const materials = [material, volumeMaterial, seaBedMaterial];
+      const materials = [material, ...(volumeMaterials ?? []), seaBedMaterial];
       for (const m of materials) {
         if (m && 'wireframe' in m) {
           (m as { wireframe: boolean }).wireframe = wireframe;
         }
       }
-    }, [material, volumeMaterial, seaBedMaterial, wireframe]);
+    }, [material, volumeMaterials, seaBedMaterial, wireframe]);
 
     // Dispose the library-created material on unmount.
     useEffect(() => {
@@ -467,10 +471,10 @@ export const Ocean = forwardRef(
     // Dispose the library-created grouped materials on unmount.
     useEffect(() => {
       return () => {
-        volumeMaterial?.dispose();
+        volumeMaterials?.forEach(m => m.dispose());
         seaBedMaterial?.dispose();
       };
-    }, [volumeMaterial, seaBedMaterial]);
+    }, [volumeMaterials, seaBedMaterial]);
 
     return (
       <group
@@ -501,10 +505,10 @@ export const Ocean = forwardRef(
             layers={layers}
           />
         )}
-        {bodyGeometry && volumeMaterial && (
+        {bodyGeometry && volumeMaterials && (
           <mesh
             geometry={bodyGeometry}
-            material={volumeMaterial}
+            material={volumeMaterials[0]}
             visible={bodyVisible}
             renderOrder={(renderOrder ?? 0) + 1}
             layers={layers}
@@ -529,11 +533,22 @@ export const Ocean = forwardRef(
           renderOrder={(renderOrder ?? 0) + 2}
           layers={layers}
         />
+        {bodyGeometry && volumeMaterials && (
+          // The glass's light play, over all that shows through it.
+          <mesh
+            geometry={bodyGeometry}
+            material={volumeMaterials[1]}
+            // Unset, the material keeps its own (on).
+            visible={
+              bodyVisible && (bodyShimmer === undefined || bodyShimmer > 0)
+            }
+            renderOrder={(renderOrder ?? 0) + 3}
+            layers={layers}
+          />
+        )}
         <OceanSamplerContext.Provider value={sampler}>
           <OceanContactContext.Provider value={contactRegistry}>
-            <WaterBodyContext.Provider value={water}>
-              {children}
-            </WaterBodyContext.Provider>
+            {children}
           </OceanContactContext.Provider>
         </OceanSamplerContext.Provider>
       </group>

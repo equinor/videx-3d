@@ -60,6 +60,11 @@ varying vec3 vObjectPos;
 #include ../../../sdk/materials/shaderLib/height-field-clip.glsl
 #endif
 
+#ifdef CHUNK_WATER
+// The scene's water (WaterBody): what lies in it fades by its path through it.
+#include ../../../sdk/materials/shaderLib/water-body.glsl
+#endif
+
 #if defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS)
 uniform mat3 tileToGrid;      // object XZ -> reference grid (column, row)
 uniform vec3 tileLayout;      // x: cells per tile, yz: the first tile
@@ -350,13 +355,6 @@ void main() {
     float wetT = depth * waterTintShore.x;
     float wet = smoothstep(-0.25, 0.0, wetT) * (1.0 - smoothstep(0.0, 1.0, wetT));
     outgoingLight *= 1.0 - wet * waterTintShore.y * facing * waterTintShown;
-
-    // Absorption through that column: nothing at the waterline, saturating with
-    // depth. Being depth-dependent is what lets a sea bed rise THROUGH the water
-    // - a coast, an island - without anything here having to know where the
-    // shoreline runs.
-    float absorb = 1.0 - exp(-max(depth, 0.0) * waterTintParams.z);
-    outgoingLight = mix(outgoingLight, waterTintColor, clamp(absorb * waterTintParams.y * facing * waterTintShown, 0.0, 1.0));
   }
   #endif
 
@@ -417,6 +415,13 @@ void main() {
     vec2 edge = min(fract(cell), 1.0 - fract(cell)) / max(fwidth(cell), vec2(1e-6));
     outgoingLight = mix(outgoingLight, vec3(0.02), 0.9 * (1.0 - smoothstep(0.5, 1.5, min(edge.x, edge.y))));
   }
+  #endif
+
+  #ifdef CHUNK_WATER
+  // What lies in the water fades by its path through it, as under any sea (water-body.glsl):
+  // the bed through the column over it, so a coast or an island rises through the water
+  // without anything here knowing where the shoreline runs.
+  outgoingLight = waterBodyFog(outgoingLight, waterBodyWorldOf(vViewPosition));
   #endif
 
   #include <opaque_fragment>

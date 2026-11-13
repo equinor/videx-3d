@@ -1,12 +1,15 @@
 import {
+  type BufferGeometry,
   type Camera,
   Color,
   DoubleSide,
   IUniform,
   MathUtils,
   Matrix3,
+  type Object3D,
   type OrthographicCamera,
   type PerspectiveCamera,
+  type Scene,
   ShaderMaterial,
   ShaderMaterialParameters,
   Texture,
@@ -33,7 +36,7 @@ import {
   type WaterOptics,
   waterOpticsOf,
 } from '../../sdk/weather/water-optics';
-import { WaterBody } from '../../sdk/materials/water-body';
+import { sceneWaterBody, WaterBody } from '../../sdk/materials/water-body';
 import {
   type WeatherGusts,
   weatherGustsOf,
@@ -1168,8 +1171,66 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uContactCount.value = 0;
   }
 
+  /**
+   * The water's place in the world as the surface is drawn: its level, its extent (the
+   * surface geometry's box) and its seabed's map, from the drawn object's frame (Y up, turned
+   * about it at most); and the scene's water (`sceneWaterBody`) taken from it, so what lies in
+   * it fades by it wherever it is in the tree. Runs for the OIT variants too.
+   */
+  onBeforeRender(
+    _renderer: WebGLRenderer,
+    scene: Scene,
+    _camera: Camera,
+    geometry: BufferGeometry,
+    object: Object3D,
+  ): void {
+    const water = this.water;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
+    const e = object.matrixWorld.elements;
+    const shoal = this.uniforms.uShoal?.value as Vector3 | undefined;
+    const levelY = shoal ? shoal.x : (box.min.y + box.max.y) / 2;
+    water.level = e[5] * levelY + e[13];
+    let minX = Infinity;
+    let minZ = Infinity;
+    let maxX = -Infinity;
+    let maxZ = -Infinity;
+    for (const x of [box.min.x, box.max.x])
+      for (const z of [box.min.z, box.max.z]) {
+        const wx = e[0] * x + e[8] * z + e[12];
+        const wz = e[2] * x + e[10] * z + e[14];
+        minX = Math.min(minX, wx);
+        maxX = Math.max(maxX, wx);
+        minZ = Math.min(minZ, wz);
+        maxZ = Math.max(maxZ, wz);
+      }
+    water.extent = [minX, minZ, maxX, maxZ];
+    const map = this.uniforms.uBathyMap?.value as Texture | undefined;
+    if (map) {
+      // World X/Z into the object's, then into the map's uv.
+      const toObject = this._bedToObject
+        .set(e[0], e[8], e[12], e[2], e[10], e[14], 0, 0, 1)
+        .invert();
+      water.setBed({
+        texture: map,
+        toUv: this._bedToUv
+          .copy(this.uniforms.uBathyToUv.value as Matrix3)
+          .multiply(toObject),
+        yScale: e[5],
+        yOffset: e[13],
+      });
+    }
+    sceneWaterBody(scene).copyFrom(water, this);
+    this._scene = scene;
+  }
+  private readonly _bedToObject = new Matrix3();
+  private readonly _bedToUv = new Matrix3();
+  // The scene whose water this last wrote, let go of on dispose.
+  private _scene: Scene | null = null;
+
   dispose(): void {
     super.dispose();
     this.waveBake.dispose();
+    if (this._scene) sceneWaterBody(this._scene).release(this);
   }
 }

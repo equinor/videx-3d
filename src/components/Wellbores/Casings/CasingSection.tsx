@@ -11,6 +11,7 @@ import { CasingEmitterMaterial } from './CasingEmitterMaterial';
 import { CasingEffects, CasingMaterial } from './CasingMaterial';
 import { CasingSectionMaterialOptions } from './Casings';
 import { CasingSectionType } from './casings-defs';
+import { useWaterFog } from '../../Ocean/useSceneWater';
 
 /** Merge a per-face {@link CasingEffects} override on top of the global default so a
  * section can, e.g., carry the silhouette on its bore only or weather its faces
@@ -87,6 +88,8 @@ export const CasingSection = ({
         : primaryMaterial,
     ];
   }, [materialOptions]);
+  // What lies in the water fades by it, as under any sea (useWaterFog).
+  useWaterFog(...materials);
 
   const emitterMaterial = useMemo(() => {
     if (onPointerClick || onPointerEnter || onPointerLeave || onPointerMove) {

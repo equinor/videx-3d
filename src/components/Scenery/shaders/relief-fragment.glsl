@@ -345,7 +345,7 @@ void main() {
     color *= skyOceanDim(-height);
     float below = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, world);
     float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-    color = skyOceanFog(color, path, skyOceanLight(0.5 * (max(-height, 0.0) + max(-altitude, 0.0))), dir);
+    color = skyOceanFog(color, path, skyOceanLightAlong(max(-altitude, 0.0), max(-height, 0.0), path), dir);
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {

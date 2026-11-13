@@ -11,6 +11,7 @@ import {
 } from '../../sdk';
 import { surfaceTextures, SurfaceTexturesResponse } from './surface-defs';
 import { SurfaceMaterial } from './SurfaceMaterial';
+import { useWaterFog } from '../Ocean/useSceneWater';
 
 /** Appearance options for {@link useSurfaceMaterial}. */
 export type SurfaceMaterialOptions = {
@@ -135,6 +136,8 @@ export function useSurfaceMaterial(
       depthWrite: false,
     });
   }, []);
+  // What lies in the water fades by it, as under any sea (useWaterFog).
+  useWaterFog(material);
 
   // --- grid uniforms (from the meta) + the reactive appearance ---------------
   useEffect(() => {

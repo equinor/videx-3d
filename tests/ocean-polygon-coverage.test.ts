@@ -145,4 +145,44 @@ describe('createOceanBoxFromPolygon multi-hole footprint', () => {
     expect(countUncovered(pos, idx, 120)).toBe(0);
     expect(surf.count).toBeGreaterThan(0);
   });
+
+  // Ocean draws the water on the walls' inner faces and the glass on the outer ones, so
+  // every wall must face away from the water whichever way its ring runs, holes included.
+  it('faces every wall away from the water, whichever way the rings run', () => {
+    const reversed = coords.map(component =>
+      component.map(ring => [...ring].reverse()),
+    );
+    for (const footprint of [coords, reversed]) {
+      const box = createOceanBoxFromPolygon(
+        new PlanarPolygonGeometry(footprint),
+      );
+      const pos = box.body.getAttribute('position') as BufferAttribute;
+      const idx = box.body.getIndex() as BufferAttribute;
+      let wrong = 0;
+      for (let t = 0; t < idx.count; t += 3) {
+        const [a, b, c] = [idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)];
+        const e1 = [
+          pos.getX(b) - pos.getX(a),
+          pos.getY(b) - pos.getY(a),
+          pos.getZ(b) - pos.getZ(a),
+        ];
+        const e2 = [
+          pos.getX(c) - pos.getX(a),
+          pos.getY(c) - pos.getY(a),
+          pos.getZ(c) - pos.getZ(a),
+        ];
+        const nx = e1[1] * e2[2] - e1[2] * e2[1];
+        const nz = e1[0] * e2[1] - e1[1] * e2[0];
+        const nl = Math.hypot(nx, nz);
+        if (nl < 1e-9) continue;
+        const mx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3;
+        const mz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
+        // A metre out along the front face: out of the water; a metre in: in it.
+        const out = inPolygon(mx + nx / nl, -(mz + nz / nl));
+        const inn = inPolygon(mx - nx / nl, -(mz - nz / nl));
+        if (out || !inn) wrong++;
+      }
+      expect(wrong).toBe(0);
+    }
+  });
 });

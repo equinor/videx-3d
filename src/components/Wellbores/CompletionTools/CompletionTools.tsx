@@ -18,6 +18,7 @@ import {
   CompletionToolsGeneratorResponse,
 } from './completion-tools-defs';
 import { ScreenMaterial } from './Screen/screen-material';
+import { useWaterFog } from '../../Ocean/useSceneWater';
 
 /**
  * CompletionTools props
@@ -173,6 +174,10 @@ export const CompletionTools = ({
 
     return m;
   }, [customMaterial]);
+  // What lies in the water fades by it, as under any sea (useWaterFog).
+  useWaterFog(
+    ...(customMaterial ? [] : Array.isArray(material) ? material : [material]),
+  );
 
   useEffect(() => {
     if (generator && id) {

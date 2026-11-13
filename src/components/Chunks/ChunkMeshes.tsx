@@ -22,10 +22,7 @@ import {
   StackTiling,
 } from '../../sdk';
 import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
-import {
-  DEFAULT_OCEAN_DEEP_COLOR,
-  DEFAULT_OCEAN_WATER_OPACITY,
-} from '../Ocean/ocean-material';
+import { DEFAULT_OCEAN_DEEP_COLOR } from '../Ocean/ocean-material';
 import {
   capCullingBlocked,
   capCut,
@@ -36,6 +33,7 @@ import {
 } from './cap-visibility';
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
 import { CHUNK_MATERIAL_LINGER, releaseGeometry } from './chunk-resources';
+import { useSceneWater } from '../Ocean/useSceneWater';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
 import {
@@ -385,6 +383,8 @@ export const ChunkMeshes = ({
   // to take their programs over rather than compile them again (Chunk lets the old chunk
   // go at once).
   const gl = useThree(state => state.gl);
+  // The scene's water (sceneWaterBody): what lies in it fades by it, whichever sea writes it.
+  const sceneWater = useSceneWater();
 
   const materials = useMemo(() => {
     // Every material built here is owned here and disposed on cleanup.
@@ -434,6 +434,7 @@ export const ChunkMeshes = ({
             ? fenceUniformsInverse
             : fenceUniforms,
         heightClip,
+        water: sceneWater,
       });
       owned.push(material);
       return material;
@@ -460,19 +461,15 @@ export const ChunkMeshes = ({
     const cutCapBySection = (i: number) => capCut(layers, i, seaBedBySection);
     const cutCapByFence = (i: number) => capCut(layers, i, seaBedByFence);
 
-    // The sea tints the SHALLOWEST cap toward the water colour, as if seen through
-    // the water column standing over it — the body itself only stands at the rim and
-    // the shoreline, and the surface's own alpha is reflection, not absorption.
+    // The sea's water over the SHALLOWEST cap: its wet band at the shoreline. The water
+    // column over it fades it, as everything in the water, by the scene's water (water-body.glsl).
     const waterTint = ((): ChunkWaterTintParameters | undefined => {
       if (!water) return undefined;
-      const strength =
-        water.bedTint ?? water.waterOpacity ?? DEFAULT_OCEAN_WATER_OPACITY;
-      if (strength <= 0) return undefined;
       return {
         color: water.deepColor ?? DEFAULT_OCEAN_DEEP_COLOR,
         level: -(water.depth ?? 0),
-        strength,
-        depth: water.bedTintDepth ?? DEFAULT_BED_TINT_DEPTH,
+        strength: 1,
+        depth: DEFAULT_BED_TINT_DEPTH,
         map: bathymetry ?? undefined,
         wetBand: water.wetBand,
         wetStrength: water.wetStrength,
@@ -702,6 +699,7 @@ export const ChunkMeshes = ({
     tileUniforms,
     debugTiles,
     hasLevels,
+    sceneWater,
   ]);
 
   useEffect(() => {

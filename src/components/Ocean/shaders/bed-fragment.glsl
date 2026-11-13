@@ -108,9 +108,13 @@ void main() {
     lit *= 1.0 + band * uDuneSharpness * 0.5;
   }
 
-  // Front face (normals point +Y => water-facing top): seen through the water over it, as any
-  // seabed is (water-body.glsl). Back face (underside / outside): keep the sandy base.
-  vec3 color = gl_FrontFacing ? waterBodyFog(lit, vWorldPosition) : lit;
+  // Seen through the water over it, as any seabed is (water-body.glsl): on both sides, for at a
+  // grazing look the far slope of a dune faces away and is no less under water. Its underside,
+  // seen from beneath it, has no water in front of it and keeps its sandy base: the water's
+  // flat floor (the box's bottom) would count the water between that and the dunes.
+  vec3 toEye = cameraPosition - vWorldPosition;
+  bool underside = dot(vWorldNormal, toEye) < 0.0 && dot(toEye, uWaterBody.xyz) < 0.0;
+  vec3 color = underside ? lit : waterBodyFog(lit, vWorldPosition);
 
   float alpha = uOpacity * uMasterOpacity;
 

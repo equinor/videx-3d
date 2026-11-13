@@ -21,6 +21,7 @@ import { useOceanContact } from './ocean-contact';
 import { OceanContact } from './ocean-material';
 import { BuoyancyPoint, useBuoyancy } from './ocean-sampler';
 import type { SeaQuality } from '../../sdk/weather/sea-state';
+import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
@@ -164,24 +165,21 @@ type ExampleProps = {
   amplitude: number;
   steepness: number;
   displacement: boolean;
-  waterOpacity: number;
+  /** the water's look (optics): realistic, or clear to see the bed and what lies under the sea */
+  optics: WaterOpticsPreset;
   reflectionIntensity: number;
   foamAmount: number;
   foamColor: string;
-  deepColor: string;
-  shallowColor: string;
   opacity: number;
   wireframe: boolean;
 
   // Sea bed / body (box, polygon, surface variants)
   seaBedColor: string;
   seaBedOpacity: number;
-  seaBedWaterTint: number;
   seaBedDuneStrength: number;
   seaBedDuneWavelength: number;
   seaBedDuneDirection: number;
   seaBedDuneSharpness: number;
-  bodyMaxOpacity: number;
   bodyShimmer: number;
 
   // Group visibility
@@ -377,7 +375,6 @@ const OceanDemo = (props: ExampleProps) => {
       quality={props.quality}
       detailOctaves={props.detailOctaves}
       detailScale={props.detailScale}
-      sunColor="#d6d39f"
       skyColor="#465a6a"
       name="Ocean"
       geometry={geometries.surface}
@@ -389,22 +386,18 @@ const OceanDemo = (props: ExampleProps) => {
       amplitude={props.amplitude}
       steepness={props.steepness}
       displacement={props.displacement}
-      waterOpacity={props.waterOpacity}
+      optics={props.optics}
       reflectionIntensity={props.reflectionIntensity}
       foamAmount={props.foamAmount}
       foamColor={props.foamColor}
-      deepColor={props.deepColor}
-      shallowColor={props.shallowColor}
       opacity={props.opacity}
       wireframe={props.wireframe}
       seaBedColor={props.seaBedColor}
       seaBedOpacity={props.seaBedOpacity}
-      seaBedWaterTint={props.seaBedWaterTint}
       seaBedDuneStrength={props.seaBedDuneStrength}
       seaBedDuneWavelength={props.seaBedDuneWavelength}
       seaBedDuneDirection={duneDirection}
       seaBedDuneSharpness={props.seaBedDuneSharpness}
-      bodyMaxOpacity={props.bodyMaxOpacity}
       bodyShimmer={props.bodyShimmer}
       surfaceVisible={props.surfaceVisible}
       bodyVisible={props.bodyVisible}
@@ -495,18 +488,19 @@ const meta = {
       control: { type: 'boolean' },
       table: { category: 'Surface' },
     },
-    waterOpacity: { ...range(0, 1, 0.01), table: { category: 'Surface' } },
+    optics: {
+      control: { type: 'inline-radio' },
+      options: ['realistic', 'clear'],
+      description:
+        'The water’s look (optics, WATER_OPTICS_PRESETS): REALISTIC about the North Sea’s (15 m visibility); CLEAR to see the bed and what lies under the sea (750 m).',
+      table: { category: 'Surface' },
+    },
     reflectionIntensity: {
       ...range(0, 2, 0.05),
       table: { category: 'Surface' },
     },
     foamAmount: { ...range(0, 1, 0.01), table: { category: 'Surface' } },
     foamColor: { control: { type: 'color' }, table: { category: 'Surface' } },
-    deepColor: { control: { type: 'color' }, table: { category: 'Surface' } },
-    shallowColor: {
-      control: { type: 'color' },
-      table: { category: 'Surface' },
-    },
     opacity: { ...range(0, 1, 0.01), table: { category: 'Surface' } },
     wireframe: { control: { type: 'boolean' }, table: { category: 'Surface' } },
 
@@ -515,10 +509,6 @@ const meta = {
       table: { category: 'Body & sea bed' },
     },
     seaBedOpacity: {
-      ...range(0, 1, 0.01),
-      table: { category: 'Body & sea bed' },
-    },
-    seaBedWaterTint: {
       ...range(0, 1, 0.01),
       table: { category: 'Body & sea bed' },
     },
@@ -535,10 +525,6 @@ const meta = {
       table: { category: 'Body & sea bed' },
     },
     seaBedDuneSharpness: {
-      ...range(0, 1, 0.01),
-      table: { category: 'Body & sea bed' },
-    },
-    bodyMaxOpacity: {
       ...range(0, 1, 0.01),
       table: { category: 'Body & sea bed' },
     },
@@ -607,23 +593,19 @@ const commonArgs = {
   amplitude: 1,
   steepness: 1,
   displacement: false,
-  waterOpacity: 0.7,
+  optics: 'realistic' as WaterOpticsPreset,
   reflectionIntensity: 1,
   foamAmount: 0.5,
   foamColor: '#ffffff',
-  deepColor: '#0a2540',
-  shallowColor: '#2a7fae',
   opacity: 1,
   wireframe: false,
 
   seaBedColor: '#b8a06a',
   seaBedOpacity: 1,
-  seaBedWaterTint: 0.6,
   seaBedDuneStrength: 0.15,
   seaBedDuneWavelength: 180,
   seaBedDuneDirection: 30,
   seaBedDuneSharpness: 0,
-  bodyMaxOpacity: 0.7,
   bodyShimmer: 0,
 
   surfaceVisible: true,

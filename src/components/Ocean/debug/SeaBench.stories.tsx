@@ -4,6 +4,7 @@ import { createOceanPlane } from '../../../sdk/geometries/ocean-geometry';
 import type { Vec2, Vec3 } from '../../../sdk/types/common';
 import { directionFromCompass } from '../../../sdk/utils/vector-operations';
 import type { SeaQuality } from '../../../sdk/weather/sea-state';
+import type { WaterOpticsPreset } from '../../../sdk/weather/water-optics';
 import {
   SKY_PRESETS,
   WEATHER_LOCAL_RADIUS,
@@ -81,6 +82,8 @@ type SeaBenchArgs = {
   scene: 'ocean' | 'scenery';
   /** the stand-alone sea's quality (`Ocean`'s `quality`) */
   quality: SeaQuality;
+  /** the water's look (`optics`): realistic, or clear to see the seabed and what lies under the sea */
+  optics: WaterOpticsPreset;
   pose: SeaPoseName;
   sunHour: number;
   windSpeed: number;
@@ -184,6 +187,7 @@ const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   seaWaveTuning: tuningOf(args),
   seaFoamTuning: foamTuningOf(args),
   seaQuality: args.quality,
+  seaOptics: args.optics,
 });
 
 // A compass bearing as the sea's X/Z, north −Z (as sceneryOceanFromArgs).
@@ -238,6 +242,7 @@ const StandAlone = ({
     <Ocean
       geometry={geometry}
       quality={args.quality}
+      optics={args.optics}
       displacement={args.displacement}
       windSpeed={args.windSpeed}
       windDirection={windOf(args.windDirection)}
@@ -246,8 +251,8 @@ const StandAlone = ({
       waveTuning={tuningOf(args)}
       foamTuning={foamTuningOf(args)}
       sunDirection={sunDirection}
-      // As the Ocean stories.
-      sunColor="#d6d39f"
+      // The Ocean's own default sun, a warm white; its sky as the Ocean stories'. One sky for
+      // both scenes is still to come (documents/ocean.md).
       skyColor="#465a6a"
     />
   );
@@ -562,6 +567,13 @@ const meta = {
       description:
         'The sea’s `quality` (`SEA_QUALITY`): LOW three coarse layers; MEDIUM four, down to 0.23 m waves; HIGH ripples below that, to about 4 cm; ULTRA finer tiles.',
     },
+    optics: {
+      table: { category: 'Bench' },
+      control: { type: 'inline-radio' },
+      options: ['realistic', 'clear'],
+      description:
+        'The water’s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea’s (15 m visibility); CLEAR to see the seabed and what lies under the sea (750 m).',
+    },
     displacement: {
       table: { category: 'Bench' },
       control: { type: 'boolean' },
@@ -776,6 +788,7 @@ const meta = {
     pixelRatio: 1,
     scene: 'scenery',
     quality: 'medium',
+    optics: 'realistic',
     pose: '300m',
     sunHour: 10,
     windSpeed: 10,

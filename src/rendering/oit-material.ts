@@ -355,6 +355,10 @@ function buildVariant(
 
   variant.onBeforeCompile = base.onBeforeCompile;
   variant.customProgramCacheKey = base.customProgramCacheKey;
+  // A base's own per-draw hook runs for its variants too (the copy drops it): what it keeps
+  // in step for the draw (an OceanMaterial's water) is then kept in every pass.
+  if (base.onBeforeRender !== Material.prototype.onBeforeRender)
+    variant.onBeforeRender = (...args) => base.onBeforeRender(...args);
   configureVariantBlend(variant, pass, options?.side);
   syncVariantProgram(variant, base, pass);
   return variant;

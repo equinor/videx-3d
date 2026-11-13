@@ -10,9 +10,12 @@ varying vec3 vWorldPosition;
 #include ../../../sdk/materials/shaderLib/water-body.glsl
 
 void main() {
+  // Only under the surface seen from above it: from below its height (in the water, or in the
+  // air beside a water box) what lies there is the water's own business, or the air's.
   vec3 up = uWaterBody.xyz;
-  bool fromAir = dot(cameraPosition, up) > uWaterBody.w;
-  vec3 color = waterBodyDeep(dot(normalize(vWorldPosition - cameraPosition), up), fromAir);
+  if(dot(cameraPosition, up) <= uWaterBody.w)
+    discard;
+  vec3 color = waterBodyDeep(dot(normalize(vWorldPosition - cameraPosition), up), true);
   gl_FragColor = vec4(color, uMasterOpacity);
   #include <colorspace_fragment>
 }

@@ -36,6 +36,7 @@ import {
 } from '../../sdk/projection/geo-frame';
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
+import { sceneWaterBody } from '../../sdk/materials/water-body';
 import { waterOpticsOf } from '../../sdk/weather/water-optics';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
@@ -1408,9 +1409,32 @@ export const Scenery = ({
     hollowOn,
   ]);
 
+  // The scene's water (sceneWaterBody), for what lies in the sea wherever it is in the tree:
+  // the sea's level along up, its seabed's depth, its look and the daylight. Everywhere: the
+  // sea has no edge. Let go of when the Scenery goes.
+  useEffect(() => {
+    const sceneWater = sceneWaterBody(scene);
+    return () => sceneWater.release(material);
+  }, [scene, material]);
+
   // Bakes run here so several prop changes in one frame cost one bake.
   const step = useWeatherStep();
   useFrame(({ camera }, delta) => {
+    const sceneWater = sceneWaterBody(scene);
+    const seaUp = material.up;
+    sceneWater.up = [seaUp.x, seaUp.y, seaUp.z];
+    sceneWater.level = material.oceanLevel;
+    sceneWater.depth = material.oceanDepth;
+    sceneWater.daylight = material.daylight;
+    sceneWater.extent = null;
+    sceneWater.optics =
+      water && oceanWater
+        ? { color: oceanOpticsColor, clarity: oceanClarity }
+        : null;
+    if (sceneWater.owner !== material) {
+      sceneWater.setBed(null);
+      sceneWater.owner = material;
+    }
     // The waves at the enclosing Weather's pace.
     const waveStep = step(delta);
     if (water) {

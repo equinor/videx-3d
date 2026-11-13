@@ -1190,12 +1190,31 @@ function flattenToSurface(bed: BufferGeometry): BufferGeometry {
 }
 
 /**
+ * Per wall loop (world X/Z), whether its strip must be wound the other way round for its
+ * front faces to look away from the water: the water lies inside an outer loop and outside
+ * a hole (a loop inside an odd number of others), whichever way the loop runs.
+ */
+function wallLoopFlips(loops: Vec2[][]): boolean[] {
+  return loops.map((loop, i) => {
+    if (loop.length < 3) return false;
+    const [x, z] = loop[0];
+    let nesting = 0;
+    loops.forEach((other, j) => {
+      if (j !== i && other.length > 2 && pointInRing(x, z, other)) nesting++;
+    });
+    // Unflipped, a strip's front faces look to the left of its run (+X toward +Z), where
+    // a loop of positive area has its inside.
+    return ringSignedArea(loop) > 0 !== (nesting % 2 === 1);
+  });
+}
+
+/**
  * Build vertical wall strips from rim loops given as explicit 3D vertices
  * `[x, yBottom, z]`. Each strip runs from the water surface (`y = 0`) down to the
  * supplied `yBottom`, so the wall top shares the surface rim and the wall bottom
- * shares the sea-bed rim vertex-for-vertex (watertight, no T-junctions). The
- * walls are paired with a double-sided volume material, so the per-segment normal
- * is a plain horizontal perpendicular (its sign is irrelevant for the fog tint).
+ * shares the sea-bed rim vertex-for-vertex (watertight, no T-junctions). Its front
+ * faces and normals look away from the water (wallLoopFlips): `Ocean` draws the
+ * water on the inner faces and the glass on the outer ones.
  */
 function buildWallsFromRim(
   loops: [number, number, number][][],
@@ -1204,8 +1223,12 @@ function buildWallsFromRim(
   const wn: number[] = [];
   const wuv: number[] = [];
   const wi: number[] = [];
-  for (const pts of loops) {
-    if (pts.length < 2) continue;
+  const flips = wallLoopFlips(
+    loops.map(loop => loop.map(([x, , z]) => [x, z] as Vec2)),
+  );
+  loops.forEach((pts, loop) => {
+    if (pts.length < 2) return;
+    const flip = flips[loop];
     const start = wp.length / 3;
     for (let i = 0; i < pts.length; i++) {
       const [x, yb, z] = pts[i];
@@ -1217,8 +1240,9 @@ function buildWallsFromRim(
       const tl = Math.hypot(tx, tz) || 1;
       tx /= tl;
       tz /= tl;
-      const nx = tz; // horizontal perpendicular
-      const nz = -tx;
+      // Outward: away from the water.
+      const nx = flip ? tz : -tz;
+      const nz = flip ? -tx : tx;
       wp.push(x, 0, z);
       wn.push(nx, 0, nz);
       wuv.push(t, 1);
@@ -1231,17 +1255,18 @@ function buildWallsFromRim(
       const b0 = t0 + 1;
       const t1 = start + (i + 1) * 2;
       const b1 = t1 + 1;
-      wi.push(t0, b0, t1, t1, b0, b1);
+      if (flip) wi.push(t0, t1, b0, t1, b1, b0);
+      else wi.push(t0, b0, t1, t1, b0, b1);
     }
-  }
+  });
   return createIndexedGeometry(wp, wn, wuv, wi);
 }
 
 /**
- * Build vertical wall strips for a set of polylines (in world X/Z). Each strip
- * runs from the water surface (y = 0) down to `y = -depthAt(x, z)`. The walls
- * are paired with a double-sided volume material, so the per-segment normal is
- * a plain horizontal perpendicular (its sign is irrelevant for the fog tint).
+ * Build vertical wall strips for a set of closed polylines (in world X/Z). Each
+ * strip runs from the water surface (y = 0) down to `y = -depthAt(x, z)`. Its front
+ * faces and normals look away from the water (wallLoopFlips): `Ocean` draws the
+ * water on the inner faces and the glass on the outer ones.
  */
 function buildEdgeWalls(
   edges: Vec2[][],
@@ -1251,8 +1276,10 @@ function buildEdgeWalls(
   const wn: number[] = [];
   const wuv: number[] = [];
   const wi: number[] = [];
-  for (const pts of edges) {
-    if (pts.length < 2) continue;
+  const flips = wallLoopFlips(edges);
+  edges.forEach((pts, loop) => {
+    if (pts.length < 2) return;
+    const flip = flips[loop];
     const start = wp.length / 3;
     for (let i = 0; i < pts.length; i++) {
       const [x, z] = pts[i];
@@ -1264,8 +1291,9 @@ function buildEdgeWalls(
       const tl = Math.hypot(tx, tz) || 1;
       tx /= tl;
       tz /= tl;
-      const nx = tz; // horizontal perpendicular
-      const nz = -tx;
+      // Outward: away from the water.
+      const nx = flip ? tz : -tz;
+      const nz = flip ? -tx : tx;
       wp.push(x, 0, z);
       wn.push(nx, 0, nz);
       wuv.push(t, 1);
@@ -1278,9 +1306,10 @@ function buildEdgeWalls(
       const b0 = t0 + 1;
       const t1 = start + (i + 1) * 2;
       const b1 = t1 + 1;
-      wi.push(t0, b0, t1, t1, b0, b1);
+      if (flip) wi.push(t0, t1, b0, t1, b1, b0);
+      else wi.push(t0, b0, t1, t1, b0, b1);
     }
-  }
+  });
   return createIndexedGeometry(wp, wn, wuv, wi);
 }
 

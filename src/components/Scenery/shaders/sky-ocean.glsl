@@ -222,6 +222,12 @@ vec3 skyOceanLight(float depth) {
   return waterFogLight(skyOceanLitDepth(depth), uSkyOceanExtinction, uSkyDaylight);
 }
 
+// The water's own light along a sight line `path` long from `fromDepth` to `toDepth`, taken
+// where the line gathers it (waterLitAlong).
+vec3 skyOceanLightAlong(float fromDepth, float toDepth, float path) {
+  return skyOceanLight(waterLitAlong(fromDepth, toDepth, path, uSkyOceanExtinction));
+}
+
 // How much of its light what lies `depth` below the surface keeps, by the water over it.
 vec3 skyOceanDim(float depth) {
   return waterFogDim(skyOceanLitDepth(max(depth, 0.0)), uSkyOceanExtinction);
@@ -368,10 +374,10 @@ float skyOceanPathBelowSurface(vec3 a, vec3 b) {
   return waterFogPath(ha, hb, length(b - a), -1e30, 0.0);
 }
 
-// The light the water between the camera and a seabed point `bedDepth` down carries:
-// taken half way down.
-vec3 skyOceanBedPathLight(vec3 origin, float bedDepth) {
-  return skyOceanLight(0.5 * (bedDepth + skyOceanViewDepth(origin)));
+// The light the water between the camera and a seabed point `bedDepth` down carries, along a
+// sight line `path` long through it: taken where the line gathers it (waterLitAlong).
+vec3 skyOceanBedPathLight(vec3 origin, float bedDepth, float path) {
+  return skyOceanLightAlong(skyOceanViewDepth(origin), bedDepth, path);
 }
 
 // The waves at a point of the sea, `dist` along the view ray. Each read of the waves
@@ -548,7 +554,8 @@ vec4 skyOceanInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 be
   // (skyViewOrigin), but the water up to the surface is the camera's.
   float depth = skyOceanViewDepth(origin);
   vec3 underside = skyOceanUnderside(delta, globeUpAt(origin + dir * tSurface), skyOceanTexel(delta), tSurface, dir, blend, depth);
-  vec3 above = skyOceanFog(underside, skyOceanCutawayPath(depth / ay, wall, 1.0), skyOceanLight(0.5 * depth), dir);
+  float pathUp = skyOceanCutawayPath(depth / ay, wall, 1.0);
+  vec3 above = skyOceanFog(underside, pathUp, skyOceanLightAlong(depth, 0.0, pathUp), dir);
 
   // In a trench the sea's own seabed lies over the camera: below, water, down to the relief's
   // ground, which is drawn over it.
@@ -556,7 +563,8 @@ vec4 skyOceanInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 be
     return y > 0.0 ? vec4(above, 1.0) : skyOceanFogOver(vec4(0.0), 1e6, skyOceanLight(depth), dir);
   vec3 bedPoint = origin + dir * tBed;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway)), skyOceanBedPathLight(origin, uSkyOceanDepth), dir);
+  float pathDown = skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway));
+  vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), pathDown, skyOceanBedPathLight(origin, uSkyOceanDepth, pathDown), dir);
 
   return y > 0.0 ? vec4(above, 1.0) : below;
 }
@@ -613,7 +621,7 @@ vec4 skyOceanFromAir(vec3 dir, vec3 origin, float blend, vec3 reach, vec3 bed, o
   float path = wet && uSkyCurvature > 0.0 ? max(reach.x - surface.x, 0.0) : uSkyOceanDepth / ay;
   vec3 bedPoint = origin + dir * reach.x;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  vec4 seen = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth), dir);
+  vec4 seen = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth, path), dir);
   // Dry, from high up: through the air and as space sees it, as the relief's ground past
   // which it shows. Eased in by the same share, so nothing changes in the air. Over an
   // opaque surface the air's light is what it adds to the share of it that it keeps.
@@ -639,7 +647,7 @@ vec4 skyOceanThroughCutawayOver(vec3 dir, vec3 origin) {
   vec3 bedPoint = origin + dir * (max(bedAltitude, 0.0) / down);
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
   float path = skyOceanPathBelowSurface(origin, bedPoint) * skyOceanCutawayWater(cutaway) * cutaway;
-  return skyOceanFogOver(vec4(0.0), path, skyOceanBedPathLight(origin, uSkyOceanDepth), dir);
+  return skyOceanFogOver(vec4(0.0), path, skyOceanBedPathLight(origin, uSkyOceanDepth, path), dir);
 }
 
 // `color` seen down through a gap the cutaway opened in a stage's seabed (as

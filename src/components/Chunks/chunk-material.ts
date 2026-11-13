@@ -40,6 +40,7 @@ import {
 import { ChunkContactTexture } from './chunk-contacts';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
+import type { WaterBody } from '../../sdk/materials/water-body';
 import { attachChunkPicking } from './chunk-picking-material';
 import fragmentShader from './shaders/chunk-frag.glsl';
 import vertexShader from './shaders/chunk-vert.glsl';
@@ -410,6 +411,11 @@ export type ChunkMaterialParameters = {
    * follows the clip as it is drawn. ⚠️ Read at CONSTRUCTION.
    */
   heightClip?: HeightFieldClipUniforms;
+  /**
+   * The water what is drawn lies in (`sceneWaterBody`): what lies in it fades by its path
+   * through it, as under any sea (water-body.glsl). Bound by reference.
+   */
+  water?: WaterBody;
 };
 
 const shader = {
@@ -565,6 +571,11 @@ export class ChunkMaterial extends ShaderMaterial {
     if (parameters.heightClip) {
       (this.defines as Record<string, unknown>).CHUNK_HEIGHT_CLIP = '';
       applyHeightFieldClip(this.uniforms, parameters.heightClip);
+    }
+
+    if (parameters.water) {
+      (this.defines as Record<string, unknown>).CHUNK_WATER = '';
+      parameters.water.bind(this.uniforms);
     }
 
     attachChunkPicking(this, {

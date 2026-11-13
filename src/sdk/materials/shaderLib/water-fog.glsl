@@ -6,13 +6,23 @@
 #define WATER_FOG_GLSL
 
 // The most optical depth the water's light, and what lies in the water, are dimmed by (the
-// light falls to e^(−0.8) of the surface's): deeper, they keep that much, so however deep the
-// ground goes it stays dark blue but seen, rather than black.
-#define WATER_DARKEST 1.6
+// light falls to e^(−2), 13 %, of the surface's): deeper, they keep that much, so however deep
+// the ground goes it stays dark blue but seen, rather than black. About 20 m down in a North
+// Sea's water, 1000 m in clear.
+#define WATER_DARKEST 4.0
 
 // `depth` below the surface, no deeper than the water's light is taken (WATER_DARKEST).
 float waterLitDepth(float depth, vec3 extinction) {
   return min(max(depth, 0.0), WATER_DARKEST / max(dot(extinction, vec3(1.0 / 3.0)), 1e-6));
+}
+
+// The depth the water's own light along a sight line `path` long, from `fromDepth` to `toDepth`,
+// is taken at: where the line gathers it. Half way through clear water; in murky water, the
+// first optical depth or so of it, so a long line gathers it near its start, deeper looking
+// down and shallower looking up, and a view through the level of the eye has no seam.
+float waterLitAlong(float fromDepth, float toDepth, float path, vec3 extinction) {
+  float reach = path * dot(extinction, vec3(1.0 / 3.0));
+  return mix(fromDepth, toDepth, clamp(0.5 / max(reach, 1e-6), 0.0, 0.5));
 }
 
 // How much of a segment `len` long, from height `ha` to height `hb`, lies between `bottom`

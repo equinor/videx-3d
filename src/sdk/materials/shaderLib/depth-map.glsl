@@ -14,6 +14,9 @@
 // the mapped area — undefined, and it painted a vertical tick off the end of every
 // contact line. R is filled on the CPU so it stays continuous across that edge; G
 // alone decides what is visible.
+#ifndef DEPTH_MAP_GLSL
+#define DEPTH_MAP_GLSL
+
 float sampleDepthMap(sampler2D map, mat3 toUv, vec2 size, vec2 xz, out float y) {
   vec2 texel = (toUv * vec3(xz, 1.0)).xy * size - 0.5;
   vec2 base = floor(texel);
@@ -67,3 +70,5 @@ float sampleFieldMap(sampler2D map, mat3 toUv, vec2 size, vec2 xz) {
   }
   return sum;
 }
+
+#endif
