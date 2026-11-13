@@ -13,6 +13,7 @@ import {
   applyFenceField,
   FenceFieldUniforms,
 } from '../../sdk/materials/fence-field';
+import { WaterBody } from '../../sdk/materials/water-body';
 import { SEA_LAYER_UNIFORMS, type OceanMaterial } from './ocean-material';
 import fragmentShader from './shaders/volume-fragment.glsl';
 import vertexShader from './shaders/volume-vertex.glsl';
@@ -112,16 +113,21 @@ export class OceanVolumeMaterial extends ShaderMaterial {
 
     if (fence) applyFenceField(this.uniforms, fence);
 
+    // Its own water until it is linked to a surface's (linkSea).
+    new WaterBody().bind(this.uniforms);
+
     attachOitVariants(this);
   }
 
   /**
-   * Read the surface material's sea layers (its uniform objects, by reference) so the
-   * displaced wall top ring tracks the surface's waves with no extra per-frame work.
+   * Read the surface material's sea layers and its water (its uniform objects, by reference)
+   * so the displaced wall top ring tracks the surface's waves, and the walls its water's look,
+   * with no extra per-frame work.
    */
   linkSea(surface: OceanMaterial): void {
     for (const name of SEA_LAYER_UNIFORMS)
       this.uniforms[name] = surface.uniforms[name];
+    surface.water.bind(this.uniforms);
     const layers = surface.seaState.layers.length;
     if (this.defines.SEA_LAYERS !== layers) {
       this.defines.SEA_LAYERS = layers;

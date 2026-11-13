@@ -26,7 +26,6 @@ import type {
 } from '../../sdk/weather/weather';
 import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
 import type { SeaQuality } from '../../sdk/weather/sea-state';
-import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 
 /**
  * The sun of a {@link Scenery}.
@@ -450,7 +449,11 @@ export type SceneryOceanProps = SceneryOceanWater & {
   level?: number;
   /** depth of the seabed below the surface, in world units. Default 100 */
   depth?: number;
-  /** how fast the water tints what is seen through it, per world unit, as on `Ocean`. Default 0.004 */
+  /**
+   * @deprecated the water's look is its `optics` (`'realistic'` by default, `'clear'` to see
+   * the seabed and what lies under the sea); still honoured where no `optics` is given, as a
+   * clarity of `WATER_FADE` over it
+   */
   bodyFogDensity?: number;
   /**
    * How much of the sea state's waves it draws, as `Ocean`'s `quality` (`SEA_QUALITY`).
@@ -755,7 +758,6 @@ export const sceneryDefaults = {
       ambient: [1.35, 0.5],
       detail: 'seabed',
     },
-    bodyFogDensity: DEFAULT_OCEAN_BODY_FOG_DENSITY,
     seabedOpacity: 1,
   },
   subsurface: {

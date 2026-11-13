@@ -334,20 +334,18 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
 }
 
 // Fresnel, analytically widened to avoid grazing-angle shading aliasing. `ndvAA` is the
-// widened cosine, which also stands in for depth in the body colour. Clamped to 1: looking
-// straight down on a flat normal it rounds a hair over, and pow() of the negative base is NaN.
+// widened cosine. Clamped to 1: looking straight down on a flat normal it rounds a hair over,
+// and pow() of the negative base is NaN. Water reflects 2 % straight on (OCEAN_F0).
+#define OCEAN_F0 0.02
 float oceanFresnel(vec3 N, vec3 V, out float ndvAA) {
   float ndv = clamp(dot(N, V), 0.0, 1.0);
   ndvAA = min(max(ndv, fwidth(ndv)), 1.0);
-  return pow(1.0 - ndvAA, uFresnelPower);
+  return mix(OCEAN_F0, 1.0, pow(1.0 - ndvAA, uFresnelPower));
 }
 
-// The lit surface: the body colour against the reflection by Fresnel, plus the sun's
-// glint. `sky` is the sky's colour in the reflected direction, reflect(-V, N); `rough` the
-// slope variance the pixel cannot show (oceanWaves); `glint` scales the sun's.
-vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float glint, float rough) {
-  vec3 reflection = sky * uReflectionIntensity;
-
+// The sun's glint off the waves: `rough` the slope variance the pixel cannot show
+// (oceanWaves); `glint` scales it.
+vec3 oceanGlint(vec3 N, vec3 V, float glint, float rough) {
   vec3 H = normalize(V + normalize(uSunDirection));
   float ndh = max(dot(N, H), 0.0);
   // The slopes the pixel cannot show still scatter the sun: their variance widens the glint
@@ -362,10 +360,24 @@ vec3 oceanShade(vec3 N, vec3 V, vec3 waterColor, vec3 sky, float fresnel, float 
     shininess = 2.0 / (roughness + uSunGlintSpread) - 2.0;
     energy = base / roughness;
   }
-  float spec = pow(ndh, shininess) * energy;
-  vec3 specular = uSunColor * spec * glint;
+  return uSunColor * pow(ndh, shininess) * energy * glint;
+}
 
-  return mix(waterColor, reflection, fresnel) + specular;
+// The surface as a layer over what lies under it, premultiplied: the sky it reflects by
+// `fresnel` and the sun's glint, covering `fresnel` of what lies under it. The water's own
+// colour is not the surface's: it is what lies under it, each faded by its own path through
+// the water (water-fog.glsl), the seabed, the void, the data, or the deep water.
+vec4 oceanSurfaceLayer(vec3 N, vec3 V, vec3 sky, float fresnel, float glint, float rough) {
+  return vec4(sky * uReflectionIntensity * fresnel + oceanGlint(N, V, glint, rough), fresnel);
+}
+
+// A premultiplied layer as colour and opacity, for blending. Its colour is kept no brighter
+// than 1 where it can be, its opacity raised instead: a target may clamp a straight colour
+// before it blends (the glint over Fresnel's 2 % is fifty times the glint), and where the glint
+// or the sky outshines that, it outshines what lies under it too.
+vec4 oceanStraight(vec4 layer) {
+  float a = clamp(max(layer.a, max(layer.r, max(layer.g, layer.b))), 1e-3, 1.0);
+  return vec4(layer.rgb / a, a);
 }
 
 // --- Foam: whitecaps on the wind sea's highest crests -------------------------
@@ -473,15 +485,15 @@ float oceanFoam(vec2 crest, vec2 p, float texel, float coverage, out float foamF
   return clamp(foam, 0.0, 1.0) * uFoamLook.y;
 }
 
-// The water's `color` with foam over it at `opacity` (oceanFoam), its colour `foamColor`. Lit
-// (as much as uFoamLook.z says, else flat), it is a rough surface on the wave, in the same
+// Foam over a premultiplied surface `layer` at `opacity` (oceanFoam), its colour `foamColor`.
+// Lit (as much as uFoamLook.z says, else flat), it is a rough surface on the wave, in the same
 // light as the water: `sky` the sky's light toward the wave's normal `N`, `sun` the sun's
 // colour as it reaches the sea (shadowed), as the glint has them; brighter at its rim by
 // uFoamLook.w.
-vec3 oceanFoamOver(vec3 color, vec3 foamColor, vec3 N, float opacity, vec3 sky, vec3 sun) {
+vec4 oceanFoamOver(vec4 layer, vec3 foamColor, vec3 N, float opacity, vec3 sky, vec3 sun) {
   vec3 lit = foamColor * OCEAN_FOAM_ALBEDO * (sky + sun * clamp(dot(N, normalize(uSunDirection)), 0.0, 1.0));
   vec3 foam = mix(foamColor, lit, uFoamLook.z) * (1.0 + uFoamLook.w * 4.0 * opacity * (1.0 - opacity));
-  return mix(color, foam, opacity);
+  return vec4(foam * opacity + layer.rgb * (1.0 - opacity), opacity + layer.a * (1.0 - opacity));
 }
 
 // ⚠️ Debug (uFoamGrain.w), in place of the surface's `color`:

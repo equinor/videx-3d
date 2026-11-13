@@ -12,6 +12,29 @@ uniform vec2 uWaterBodyFloor;
 uniform vec3 uWaterBodyExtinction;
 uniform vec3 uWaterBodyColor;
 
+// The water along the sight line from the camera to `world`, as a layer over what lies beyond
+// it (premultiplied): the part of the line below the surface (and above the seabed), its own
+// light lit half way down. What a wall of the water body stands for.
+vec4 waterBodyLayer(vec3 world) {
+  vec3 extinction = uWaterBodyExtinction;
+  vec3 up = uWaterBody.xyz;
+  float hCamera = dot(cameraPosition, up) - uWaterBody.w;
+  float hPoint = dot(world, up) - uWaterBody.w;
+  float path = waterFogPath(hCamera, hPoint, distance(cameraPosition, world), -uWaterBodyFloor.x, 0.0);
+  float lit = 0.5 * (min(max(-hPoint, 0.0), uWaterBodyFloor.x) + min(max(-hCamera, 0.0), uWaterBodyFloor.x));
+  vec3 light = waterFogLight(waterLitDepth(lit, extinction), extinction, uWaterBodyFloor.y);
+  float facing = waterFacing(dot(normalize(world - cameraPosition), up), hCamera > 0.0);
+  return waterFogOver(vec4(0.0), path, extinction, uWaterBodyColor, light, facing);
+}
+
+// The water's own colour, as deep water seen along a sight line `facing` up (its cosine) from
+// a camera `fromAir` or in the water: lit as the column of it is on average.
+vec3 waterBodyDeep(float facing, bool fromAir) {
+  vec3 extinction = uWaterBodyExtinction;
+  vec3 light = waterFogLight(0.5 * waterLitDepth(1e30, extinction), extinction, uWaterBodyFloor.y);
+  return uWaterBodyColor * light * waterGlow(waterFacing(facing, fromAir));
+}
+
 // `color` of what lies at `world`, seen from the camera through the water between: dimmed by
 // the daylight its depth leaves it, then faded along the part of the sight line in the water
 // (between the surface and the seabed), toward the water's colour lit half way down.

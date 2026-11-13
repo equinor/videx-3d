@@ -18,11 +18,6 @@
 #include ../../../sdk/materials/shaderLib/surface-detail.glsl
 
 #define SKY_OCEAN_WATER_IOR 1.333
-// Over the sea, the camera's heights over which the water turns opaque (world units).
-#define SKY_OCEAN_OPAQUE vec2(2000.0, 5000.0)
-// The share of the water's own colour that is the sun's light, by day: what a cloud's shadow
-// takes of it (skyCloudLightAt).
-#define SKY_OCEAN_SUN_SHARE 0.5
 
 // uSkyOceanLevel, uSkyOceanDepth and uSkyOceanBuried: sky.glsl, which every layer reads.
 // So are water-fog.glsl and the cutaway's shape and cuts (uSkyOceanCutaway{Anchor, Heading,
@@ -414,19 +409,17 @@ float skyOceanTexel(vec3 delta) {
   return max(length(fwidth(delta)), 1e-3);
 }
 
-// How much of what lies under the surface it covers, before its Fresnel and foam, where its
-// detail has faded by `flatness` (oceanFlatness): far off, and from a few kilometres up, all.
-float skyOceanSurfaceOpacity(float flatness) {
-  float above = skyOceanCameraAltitude();
-  return mix(uOpacity, 1.0, max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, above)));
-}
+// The optical depth, straight down to the seabed, past which the water lets through too little
+// of it to show (e^-6, a quarter of a per cent, in its clearest channel).
+#define SKY_OCEAN_HIDDEN 6.0
 
-// Whether the surface, met `t` along a view from above the water, hides all that lies under it:
-// its opacity there before Fresnel and foam (skyOceanSurfaceOpacity) is whole, which they, the
-// air and the view from space only raise; and no cutaway takes the water. From 5 km up
-// (SKY_OCEAN_OPAQUE), everywhere.
-bool skyOceanSurfaceHides(float t) {
-  return uSkyOceanWater > 0.5 && uSkyOceanBuried < 0.5 && uSkyOceanCutawayShape.y <= 0.0 && skyOceanCameraAltitude() > 0.0 && skyOceanSurfaceOpacity(oceanFlatness(t)) >= 1.0;
+// Whether the surface, seen from above the water, hides all that lies under it: the water
+// down to the seabed lets almost nothing through even straight down, the shortest way (it
+// bends steeper as it enters); and no cutaway takes the water. The water's own light then
+// stands for the seabed, which needs no shading.
+bool skyOceanSurfaceHides() {
+  vec3 e = uSkyOceanExtinction;
+  return uSkyOceanWater > 0.5 && uSkyOceanBuried < 0.5 && uSkyOceanCutawayShape.y <= 0.0 && skyOceanCameraAltitude() > 0.0 && uSkyOceanDepth * min(e.x, min(e.y, e.z)) >= SKY_OCEAN_HIDDEN;
 }
 
 // The film's (uSkyOceanClouds) coarsest level: its side, CUBE_SIZE in scenery-clouds.ts, is 128.
@@ -462,24 +455,23 @@ vec4 skyOceanReflectedClouds(vec3 r, vec3 sky, vec3 world, vec3 up, float texel)
 
 // The surface seen from above at plane point `p` (the field's wave plane: the stage, the
 // contacts), with its `wave` there, at `world`: its colour, and how much of what lies under it
-// that covers. `texel` is world units per pixel. ⚠️ Derivatives.
+// that covers: the sky it reflects by Fresnel, the sun's glint and the foam. The water's own
+// colour is what lies under it, faded by its path through the water (the seabed's layer, the
+// void's, a stage's seabed, what lies in the sea). `texel` is world units per pixel.
+// ⚠️ Derivatives.
 vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float blend, vec3 world) {
-  float flatness = wave.flatness;
   vec3 normal = wave.normal;
   float night = mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
-  // Under the clouds' shadow (cloud-shadow.glsl): the glint goes, and the water darkens by
-  // the share of its light that is the sun's.
-  float through = skyCloudLightAt(world);
+  // Under the clouds' shadow (cloud-shadow.glsl) the glint goes.
   float shade = skyCloudShadow(world);
 
   vec3 V = -dir;
   float ndvAA;
   float fresnel = oceanFresnel(normal, V, ndvAA);
-  vec3 waterColor = mix(uShallowColor, uDeepColor, clamp(ndvAA, 0.0, 1.0)) * night * mix(1.0 - SKY_OCEAN_SUN_SHARE * uSkyDaylight, 1.0, through);
 
   vec3 r = reflect(dir, normal);
   // Gusts and slicks (oceanWaves) turn the reflection and how much there is of it, in the
-  // colour only: the water's opacity stays the mean's.
+  // colour only: what the surface covers stays the mean's.
   r = oceanRoughReflect(r, wave.up, wave.rough);
   float roughFresnel = oceanRoughFresnel(fresnel, ndvAA, wave.rough);
   // Steep waves can tip a reflection below the sea's horizon; mirror it back up. Then the sky
@@ -496,7 +488,7 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // The glint is the scene's light's, which is the field's: far round the Earth only while it
   // stands over the sea's horizon there (skyLightFrom).
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
-  vec3 surface = oceanShade(normal, V, waterColor, reflected, roughFresnel, glint, wave.rough);
+  vec4 surface = vec4(reflected * uReflectionIntensity * roughFresnel + oceanGlint(normal, V, glint, wave.rough), fresnel);
 
   float foamFar;
   float coverage = max(oceanWindFoam(), oceanContactFoam(p, uTime));
@@ -510,14 +502,12 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   surface = oceanFoamOver(surface, uFoamColor * mix(night, 1.0, uFoamLook.z), normal, foamOpacity, foamSky, uSunColor * glint);
   // Lit as the sky the camera sees is (its daylight, its reflection): far round the Earth,
   // where the sun has set, dark as by night (skyDayFrom).
-  surface *= skyDayFrom(globeCameraLook(), wave.up);
+  surface.rgb *= skyDayFrom(globeCameraLook(), wave.up);
 
-  // Far off, where its detail has faded, and from a few kilometres up, the water hides what lies under it.
-  float opacity = skyOceanSurfaceOpacity(flatness);
   // ⚠️ Debug views (foamTuning.debug): opaque, in place of the surface.
   if(uFoamGrain.w > 0.5)
-    return vec4(oceanDebugView(surface, wave.crest, foamBlend), 1.0);
-  return vec4(surface, max(mix(opacity, 1.0, fresnel), foamOpacity));
+    return vec4(oceanDebugView(oceanStraight(surface).rgb, wave.crest, foamBlend), 1.0);
+  return oceanStraight(surface);
 }
 
 // The surface seen from below, its `normal` facing down, `depth` under it: the sky
@@ -783,9 +773,9 @@ float skyOceanCover(vec3 world, float height) {
   if(fromAir) {
     vec3 reach = skyOceanReach(cameraPosition, dir, altitude);
     if(height < -margin || (reach.z < 0.5 && reach.x < pastCurve)) {
-      // As the surface layer covers it (skyOceanSurfaceOf), on a calm sea.
+      // As the surface layer covers it (skyOceanSurfaceOf), on a calm sea: by its reflection.
       float facing = clamp(dot(globeUpAt(cameraPosition + dir * reach.x), -dir), 0.0, 1.0);
-      float opacity = mix(skyOceanSurfaceOpacity(oceanFlatness(reach.x)), 1.0, pow(1.0 - facing, uFresnelPower));
+      float opacity = mix(OCEAN_F0, 1.0, pow(1.0 - facing, uFresnelPower));
       surface = opacity * skyOceanCutawayWater(cutaway);
     }
   }

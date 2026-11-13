@@ -1,12 +1,11 @@
 // Ocean water-body (volume) fragment shader.
 //
-// Shades the box side walls (rendered back-face) as a depth-tinted water body:
-// the further a wall fragment is from the camera, the denser the water tint
-// between the camera and that fragment, like an exponential fog. This gives the
-// "inside a water body" feel when the camera is within the box, and a tinted
-// body seen through the (transparent) surface from outside — without a separate
-// fullscreen pass. Animated caustic light play near the surface breaks up the
-// flat tint.
+// Shades the box side walls (rendered back-face) as the water behind them along the sight line
+// (water-body.glsl's waterBodyLayer, one model with the sea's): the longer the line runs below
+// the surface, the more of the water's own light it shows. This gives the "inside a water body"
+// feel when the camera is within the box, and the body seen through the (transparent) surface
+// from outside, without a separate fullscreen pass. Animated caustic light play near the
+// surface breaks up the flat tint.
 //
 // OIT-compatible: includes the shared oit.glsl chunk and routes its final colour
 // through oitProcess() so it composites with the surface and subsurface geometry.
@@ -41,6 +40,7 @@ varying vec2 vObjectXZ;
 #include <common>
 #include <logdepthbuf_pars_fragment>
 #include ./ocean-body.glsl
+#include ../../../sdk/materials/shaderLib/water-body.glsl
 
 #ifdef USE_OIT
 #include ../../../sdk/materials/shaderLib/oit.glsl
@@ -59,13 +59,9 @@ void main() {
 
   #include <logdepthbuf_fragment>
 
-  float dist = length(vViewPosition);
-
-  // Exponential fog build-up with view distance through the water.
-  float fog = 1.0 - exp(-dist * uFogDensity);
-
-  // Tint shifts from the shallow toward the deep colour as the body deepens.
-  vec3 color = mix(uShallowColor, uDeepColor, clamp(fog, 0.0, 1.0));
+  // The water behind the wall along the sight line (waterBodyLayer): one model with the sea's.
+  vec4 layer = waterBodyLayer(vWorldPosition);
+  vec3 color = layer.rgb / max(layer.a, 1e-3);
 
   // Animated underwater light play (see ocean-body.glsl). Replaces the old axis-aligned
   // product-of-sines, which read as a flat, blocky pulsing grid.
@@ -74,10 +70,10 @@ void main() {
   // play painted on it reads as a texture on a pane of glass. Doing this properly
   // means marching the volume, which is a long way past what this material is.
   if(uShimmer > 0.0 && gl_FrontFacing) {
-    color = oceanBodyLight(color, vWorldPosition, vWallV, uTime, uShimmer, uShallowColor);
+    color = oceanBodyLight(color, vWorldPosition, vWallV, uTime, uShimmer, uWaterBodyColor * WATER_GLOW);
   }
 
-  float alpha = clamp(fog * uMaxOpacity, 0.0, 1.0) * uMasterOpacity;
+  float alpha = clamp(layer.a, 0.0, 1.0) * uMasterOpacity;
 
   gl_FragColor = vec4(color, alpha);
 

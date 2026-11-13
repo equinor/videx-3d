@@ -542,11 +542,9 @@ export const Scenery = ({
     seabedOptions?.detail === false
       ? undefined
       : (seabedOptions?.detail ?? bedDefaults.detail);
-  const bodyFogDensity =
-    oceanOptions?.bodyFogDensity ?? oceanDefaults.bodyFogDensity;
   const oceanOptics = waterOpticsOf(oceanOptions?.optics, {
     deepColor: oceanOptions?.deepColor,
-    bodyFogDensity,
+    bodyFogDensity: oceanOptions?.bodyFogDensity,
   });
   const oceanOpticsColor = oceanOptics.color;
   const oceanClarity = oceanOptics.clarity;

@@ -15,6 +15,7 @@ import type { SeaQuality } from '../../sdk/weather/sea-state';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import { OceanBedMaterial } from './ocean-bed-material';
+import { OceanDeepMaterial } from './ocean-deep-material';
 import {
   applyOceanBedProps,
   applyOceanBodyProps,
@@ -30,6 +31,7 @@ import {
 import { OceanMaterial } from './ocean-material';
 import { createOceanSampler, OceanSamplerContext } from './ocean-sampler';
 import { OceanVolumeMaterial } from './ocean-volume-material';
+import { WaterBodyContext } from './water-body-context';
 
 /**
  * Ocean props
@@ -129,6 +131,7 @@ export const Ocean = forwardRef(
       displacement,
       quality = 'medium',
       detailOctaves = 4,
+      optics,
       deepColor,
       shallowColor,
       waterOpacity,
@@ -229,6 +232,27 @@ export const Ocean = forwardRef(
       return (box.min.y + box.max.y) / 2;
     }, [geometry]);
 
+    // The water under the surface (OceanMaterial.water): how far down its seabed lies, the
+    // deepest of its bed's or its body's; none, endless.
+    const water = material instanceof OceanMaterial ? material.water : null;
+    const floor = bedGeometry ?? bodyGeometry;
+    useEffect(() => {
+      if (!water) return;
+      if (!floor) {
+        water.depth = Infinity;
+        return;
+      }
+      if (!floor.boundingBox) floor.computeBoundingBox();
+      water.depth = Math.max(surfaceY - floor.boundingBox!.min.y, 0);
+    }, [water, floor, surfaceY]);
+    // The deep water where nothing else lies under the surface: on the far plane, under all.
+    const deepMaterial = useMemo(
+      () => (water ? new OceanDeepMaterial(water) : null),
+      [water],
+    );
+    useEffect(() => () => deepMaterial?.dispose(), [deepMaterial]);
+    const [levelAt] = useState(() => new Vector3());
+
     // Sync prop-driven uniforms onto the material.
     useEffect(() => {
       if (!(material instanceof OceanMaterial)) {
@@ -277,6 +301,8 @@ export const Ocean = forwardRef(
         directionalSpread,
         steepness,
         displacement,
+        optics,
+        bodyFogDensity,
         deepColor,
         shallowColor,
         waterOpacity,
@@ -309,6 +335,8 @@ export const Ocean = forwardRef(
       directionalSpread,
       steepness,
       displacement,
+      optics,
+      bodyFogDensity,
       deepColor,
       shallowColor,
       waterOpacity,
@@ -349,6 +377,8 @@ export const Ocean = forwardRef(
         );
       }
       if (seaBedMaterial) {
+        if (material instanceof OceanMaterial)
+          seaBedMaterial.linkWater(material);
         applyOceanBedProps(seaBedMaterial, {
           deepColor,
           waterOpacity,
@@ -400,6 +430,11 @@ export const Ocean = forwardRef(
           : camera.position;
         // Layers too fine to show from the camera's height are not baked.
         material.renderWaves(gl, camera, view.y - surfaceY);
+        // The water's level in the world, for what lies in it.
+        if (group)
+          material.water.level = group.localToWorld(
+            levelAt.set(0, surfaceY, 0),
+          ).y;
 
         // Collect the registered floating-object footprints and upload them as
         // contact foam, the nearest the camera when there are more than it draws.
@@ -475,6 +510,16 @@ export const Ocean = forwardRef(
             layers={layers}
           />
         )}
+        {deepMaterial && (
+          <mesh
+            geometry={geometry}
+            material={deepMaterial}
+            // Opaque: drawn only while the Ocean is whole, so a faded one shows what is behind.
+            visible={surfaceVisible && (opacity ?? 1) >= 1}
+            renderOrder={(renderOrder ?? 0) - 1}
+            layers={layers}
+          />
+        )}
         <mesh
           geometry={geometry}
           material={material}
@@ -486,7 +531,9 @@ export const Ocean = forwardRef(
         />
         <OceanSamplerContext.Provider value={sampler}>
           <OceanContactContext.Provider value={contactRegistry}>
-            {children}
+            <WaterBodyContext.Provider value={water}>
+              {children}
+            </WaterBodyContext.Provider>
           </OceanContactContext.Provider>
         </OceanSamplerContext.Provider>
       </group>

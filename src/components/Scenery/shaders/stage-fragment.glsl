@@ -144,7 +144,7 @@ void main() {
   // others shading too, or lies under the whole surface itself, so the derivatives its
   // detail takes are sound wherever it shows.
   #ifdef STAGE_BED_UNDER_SURFACE
-  bool hidden = skyOceanSurfaceHides(surfaceReach.x - 2.0 * fwidth(surfaceReach.x));
+  bool hidden = skyOceanSurfaceHides();
   #else
   bool hidden = false;
   #endif

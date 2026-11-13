@@ -1,9 +1,9 @@
 // Ocean sea-bed fragment shader.
 //
 // Shades the displaced sea bed with simple sun-direction diffuse lighting so the
-// procedural slope reads as relief. The water-facing (top) side is tinted toward
-// the water colour, as if seen through the water column; the underside (seen from
-// outside / below the box) keeps its light, sandy/yellowish base colour.
+// procedural slope reads as relief. The water-facing (top) side is seen through the
+// water over it (water-body.glsl, one model with every sea's seabed); the underside
+// (seen from outside / below the box) keeps its light, sandy/yellowish base colour.
 //
 // OIT-compatible: includes the shared oit.glsl chunk and routes its final colour
 // through oitProcess(). With opacity 1 the OITRenderPass routes it through the
@@ -29,6 +29,7 @@ varying vec3 vViewPosition;
 #include <common>
 #include <logdepthbuf_pars_fragment>
 #include ../../../sdk/materials/shaderLib/procedural-normal.glsl
+#include ../../../sdk/materials/shaderLib/water-body.glsl
 
 #ifdef USE_OIT
 #include ../../../sdk/materials/shaderLib/oit.glsl
@@ -107,9 +108,9 @@ void main() {
     lit *= 1.0 + band * uDuneSharpness * 0.5;
   }
 
-  // Front face (normals point +Y => water-facing top): tint toward the water
-  // colour. Back face (underside / outside): keep the sandy base.
-  vec3 color = gl_FrontFacing ? mix(lit, uWaterColor, uWaterTint) : lit;
+  // Front face (normals point +Y => water-facing top): seen through the water over it, as any
+  // seabed is (water-body.glsl). Back face (underside / outside): keep the sandy base.
+  vec3 color = gl_FrontFacing ? waterBodyFog(lit, vWorldPosition) : lit;
 
   float alpha = uOpacity * uMasterOpacity;
 

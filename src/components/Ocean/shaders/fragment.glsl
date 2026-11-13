@@ -5,17 +5,12 @@
 // Each layer is filtered to the pixel by its mips, and what they filter out roughens the sun's
 // glint, so there is no LOD ring and the horizon does not shimmer.
 //
-// Reflections use a procedural analytic sky gradient, Fresnel-weighted against
-// a tunable see-through water body. The material is OIT-compatible: it includes
+// Reflections use a procedural analytic sky gradient, by Fresnel over what lies under the
+// surface, which fades by its own path through the water (water-body.glsl): one water model
+// with every sea's (documents/water.md). The material is OIT-compatible: it includes
 // the shared oit.glsl chunk and routes its final colour through oitProcess() so
 // it composites correctly with the other transparent subsurface geometry.
 
-// Brightness multiplier applied when the surface is viewed from below (the
-// underside, inside the water body) so looking up through the water reads
-// darker than looking down onto the sky-lit top. 1.0 disables the effect.
-#ifndef OCEAN_UNDERSIDE_DARKNESS
-#define OCEAN_UNDERSIDE_DARKNESS 0.25
-#endif
 // Surf zone shape. These are the parts nobody has information to tune, so they are
 // constants rather than knobs.
 // A floor on the wave height standing in for background swell: an open coast
@@ -85,6 +80,7 @@ uniform vec2 fenceSize;   // grid size in texels
 #include <fog_pars_fragment>
 #include <logdepthbuf_pars_fragment>
 #include ./ocean-surface.glsl
+#include ../../../sdk/materials/shaderLib/water-body.glsl
 
 #ifdef OCEAN_BATHYMETRY
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
@@ -144,12 +140,10 @@ void main() {
   float ndvAA;
   float fresnel = oceanFresnel(N, V, ndvAA);
 
-  // --- Shoaling: how much water actually stands here ------------------------
-  // 1 = deep (the water reads as its own body), 0 = the bed is at the surface.
-  // ⚠️ `bathy` is the map's coverage: everything below blends back to the
-  // angle-driven behaviour where the bed is unmapped, so no bathymetry is
-  // bit-for-bit the original look rather than a hole.
-  float shoal = 1.0;
+  // --- The bed under the surface, for the surf ------------------------------
+  // ⚠️ `bathy` is the map's coverage: where the bed is unmapped there is no shore.
+  // The water's colour over the bed is the bed's own, seen through the water
+  // (water-body.glsl), not the surface's.
   float bathy = 0.0;
   float waterDepth = 0.0;
   // How squarely the waves meet the shore here. Drives both the swash and, as
@@ -181,38 +175,32 @@ void main() {
     // fragment's own wave height makes the shore advance and retreat, varied
     // along the coast, with no clock of its own and no second field to tune.
     waterDepth = uShoal.x + height * uShore.z * shoreAlign - bedY;
-    // ⭐ Where the map has no bed, the honest reading is DEEP water — not the
-    // angle stand-in. Blending back to that made a partly mapped bed disagree
-    // with itself across its own survey edge, printing the grid's outline onto
-    // the sea surface: inside it the water is fully body-coloured (`shoal`
-    // saturates by a few hundred metres), outside it the colour follows the view
-    // angle instead. The stand-in still stands where there is NO map at all,
-    // which is what it was for.
-    shoal = mix(1.0, 1.0 - exp(-max(waterDepth, 0.0) * uShoal.y), bathy);
   }
   #endif
 
-  // --- Water body colour ----------------------------------------------------
-  // ⭐ The angle term is a STAND-IN for depth, from before there was a depth
-  // input: without it, open sea and a metre of water over a bank look identical
-  // from the same viewpoint. With a bed it is not needed at all — `shoal` already
-  // reads deep wherever the bed is unknown.
-  #ifdef OCEAN_BATHYMETRY
-  float bodyMix = shoal;
-  #else
-  float bodyMix = clamp(ndvAA, 0.0, 1.0);
-  #endif
-  vec3 waterColor = mix(uShallowColor, uDeepColor, bodyMix);
-
-  // Gusts and slicks (oceanWaves) turn the reflection and how much there is of it, in the
-  // colour only: the water's opacity stays the mean's.
-  vec3 reflected = reflect(-V, N);
-  float roughFresnel = fresnel;
+  // --- The surface ----------------------------------------------------------
+  // From above, the sky it reflects and the sun's glint, covering Fresnel of what lies under
+  // it (oceanSurfaceLayer). The water's own colour is what lies under it, each faded by its own
+  // path through the water (water-body.glsl): the bed, the walls, the data, and where there is
+  // nothing, the deep water behind (the Ocean's backdrop). Gusts and slicks (oceanWaves) turn
+  // the reflection and how much there is of it, in the colour only.
+  vec4 layer;
   if(!underside) {
-    reflected = oceanRoughReflect(reflected, vec3(0.0, 1.0, 0.0), rough);
-    roughFresnel = oceanRoughFresnel(fresnel, ndvAA, rough);
+    vec3 reflected = oceanRoughReflect(reflect(-V, N), vec3(0.0, 1.0, 0.0), rough);
+    float roughFresnel = oceanRoughFresnel(fresnel, ndvAA, rough);
+    layer = vec4(oceanSkyReflection(reflected) * uReflectionIntensity * roughFresnel + oceanGlint(N, V, 1.0, rough), fresnel);
+  } else {
+    // From below: the sky through Snell's window, beyond it the deep water mirrored, seen
+    // through the water between (as the Scenery's sea's underside).
+    vec3 exitDir = refract(-V, N, 1.333);
+    vec3 deep = waterBodyDeep(reflect(-V, N).y, false);
+    vec3 under = deep;
+    if(dot(exitDir, exitDir) > 0.0) {
+      float mirrored = pow(1.0 - clamp(dot(exitDir, -N), 0.0, 1.0), uFresnelPower);
+      under = mix(oceanSkyReflection(normalize(exitDir)), deep, mirrored);
+    }
+    layer = vec4(waterBodyFog(under, vWorldPosition), 1.0);
   }
-  vec3 color = oceanShade(N, V, waterColor, oceanSkyReflection(reflected), roughFresnel, 1.0, rough);
 
   // Foam: wind-driven whitecaps, then the foam the contacts and the shore add.
   float foamCoverage = oceanWindFoam();
@@ -320,30 +308,13 @@ void main() {
   // real pixel is mostly sea bed showing through a shoal. That is a saturated teal
   // band exactly where the foam was asked to disappear.
   float foamOpacity = foamBlend * (1.0 - foamFade);
-  color = oceanFoamOver(color, uFoamColor, N, foamOpacity, oceanSkyReflection(N), uSunColor);
+  // From below, the foam is the underside's own light, already in the water's.
+  if(!underside)
+    layer = oceanFoamOver(layer, uFoamColor, N, foamOpacity, oceanSkyReflection(N), uSunColor);
 
-  // Seen from below (inside the water body) the surface should read as a darker
-  // underside rather than the bright, sky-lit top. Dim the final colour for
-  // back-facing fragments so looking up through the water is visibly darker
-  // than looking down onto it.
-  if(underside)
-    color *= OCEAN_UNDERSIDE_DARKNESS;
-
-  // --- Transparency: see-through looking down, reflective at grazing angles --
-  // Shallow water is clearer: the body's own opacity is scaled toward uShoal.z as
-  // the bed comes up, so you see the bed through a shoal. The Fresnel term is
-  // untouched — a reflection at a grazing angle does not care how deep it is.
-  float bodyOpacity = uOpacity;
-  #ifdef OCEAN_BATHYMETRY
-  // `shoal` is already 1 where the bed is unmapped, so this leaves those
-  // fragments at the body's own opacity without a second coverage blend.
-  bodyOpacity *= mix(uShoal.z, 1.0, shoal);
-  #endif
-  float alpha = mix(bodyOpacity, 1.0, fresnel);
-  // Foam reads as opaque — but only as much of it as was actually drawn. Using the
-  // raw coverage here is what let faded-out foam go on forcing the water opaque.
-  alpha = max(alpha, foamOpacity);
-  alpha *= uMasterOpacity;
+  vec4 straight = oceanStraight(layer);
+  vec3 color = straight.rgb;
+  float alpha = straight.a * uMasterOpacity;
   // ⚠️ Debug views (foamTuning.debug): opaque, in place of the surface.
   if(uFoamGrain.w > 0.5) {
     color = oceanDebugView(color, crest, foamBlend);

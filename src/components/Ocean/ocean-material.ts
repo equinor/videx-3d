@@ -30,6 +30,11 @@ import {
 } from '../../sdk/weather/sea-state';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
 import {
+  type WaterOptics,
+  waterOpticsOf,
+} from '../../sdk/weather/water-optics';
+import { WaterBody } from '../../sdk/materials/water-body';
+import {
   type WeatherGusts,
   weatherGustsOf,
 } from '../../sdk/weather/wind-field';
@@ -353,6 +358,12 @@ export class OceanMaterial extends ShaderMaterial {
   readonly waveBake: SeaWaveBake;
   /** how much of the sea's waves it draws */
   readonly quality: SeaQuality;
+  /**
+   * the water under the surface, as what lies in it reads it: its level, its seabed's depth,
+   * its look ({@link OceanMaterial.optics}). Bound into this material's uniforms, and handed
+   * down by the sea that draws it, so its seabed, its walls and the data in it fade alike.
+   */
+  readonly water = new WaterBody();
 
   private _waveHeightScale!: number;
   private _directionalSpread!: number;
@@ -360,6 +371,7 @@ export class OceanMaterial extends ShaderMaterial {
   private _waveTuning: OceanWaveTuning = {};
   private _foamTuning: OceanFoamTuning = {};
   private _gusts: WeatherGusts | null = null;
+  private _optics!: Required<WaterOptics>;
   private _contactCount!: number;
   // Whether the clock has run: until it does, a new wind is the sea's at once (settled).
   private _running = false;
@@ -513,6 +525,8 @@ export class OceanMaterial extends ShaderMaterial {
     this.seaState = sea;
     this.waveBake = bake;
     this.quality = quality;
+    this.water.bind(this.uniforms);
+    this.optics = waterOpticsOf();
     this._waveHeightScale = 1;
     this._directionalSpread = 1.2;
     this._contactCount = contactCount;
@@ -742,6 +756,18 @@ export class OceanMaterial extends ShaderMaterial {
       value.narrow ?? narrow,
       OCEAN_DEBUG_VIEWS.indexOf(value.debug ?? 'none'),
     );
+  }
+
+  /**
+   * How the water looks (`waterOpticsOf`): the colour of water too deep to see through, and how
+   * far one sees through it. Kept by {@link OceanMaterial.water}.
+   */
+  get optics(): Required<WaterOptics> {
+    return this._optics;
+  }
+  set optics(value: Required<WaterOptics>) {
+    this._optics = { ...value };
+    this.water.optics = this._optics;
   }
 
   /** Swells from weather far away, running on regardless of the wind here. */

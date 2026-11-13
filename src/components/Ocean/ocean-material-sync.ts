@@ -1,9 +1,10 @@
 import { Vector2, Vector3 } from 'three';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
-import type {
-  WaterOptics,
-  WaterOpticsPreset,
+import {
+  type WaterOptics,
+  type WaterOpticsPreset,
+  waterOpticsOf,
 } from '../../sdk/weather/water-optics';
 import type { WeatherGusts } from '../../sdk/weather/wind-field';
 import { OceanBedMaterial } from './ocean-bed-material';
@@ -256,9 +257,16 @@ type WithOpacity = { opacity?: number };
  */
 export function applyOceanWaterProps(
   material: OceanMaterial,
-  props: OceanWaterProps & WithOpacity,
+  props: OceanWaterProps & Pick<OceanBodyProps, 'bodyFogDensity'> & WithOpacity,
 ): void {
   const opacity = props.opacity ?? 1;
+
+  // One look for the water (water-optics.ts): the deprecated deep colour and body fog where
+  // no `optics` is given.
+  const optics = waterOpticsOf(props.optics, props);
+  const current = material.optics;
+  if (optics.color !== current.color || optics.clarity !== current.clarity)
+    material.optics = optics;
 
   if (props.windDirection)
     material.windDirection = new Vector2(

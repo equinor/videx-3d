@@ -8,6 +8,7 @@ import {
   Vector3,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
+import { WaterBody } from '../../sdk/materials/water-body';
 import fragmentShader from './shaders/bed-fragment.glsl';
 import vertexShader from './shaders/bed-vertex.glsl';
 
@@ -57,7 +58,18 @@ export class OceanBedMaterial extends ShaderMaterial {
 
     if (Object.keys(parameters).length) this.setValues(parameters);
 
+    // Its own water until it is linked to a surface's (linkWater).
+    new WaterBody().bind(this.uniforms);
+
     attachOitVariants(this);
+  }
+
+  /**
+   * Read the surface material's water (its uniform objects, by reference): the bed fades by
+   * its own path through it, as the seabed under any sea does.
+   */
+  linkWater(surface: { water: WaterBody }): void {
+    surface.water.bind(this.uniforms);
   }
 
   get color(): Color {

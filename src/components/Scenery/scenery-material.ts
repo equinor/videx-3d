@@ -156,7 +156,7 @@ export class SceneryMaterial extends ShaderMaterial {
    */
   constructor(parameters: ShaderMaterialParameters = {}, globe?: Globe) {
     const { sun, colors, abyss, ocean } = sceneryDefaults;
-    const oceanOptics = waterOpticsOf(undefined, ocean);
+    const oceanOptics = waterOpticsOf();
     super({
       vertexShader,
       fragmentShader,
