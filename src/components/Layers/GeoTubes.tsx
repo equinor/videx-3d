@@ -34,6 +34,7 @@ import {
 } from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useCameraSite } from '../../hooks/useCameraSite';
 import { useWorldRelief } from '../World/world-relief';
 import { GeoTileStyles } from './geo-tile-layer';
 import {
@@ -166,6 +167,7 @@ export const GeoTubes = <P,>({
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
   const ocean = useSceneryOcean();
+  const cameraSite = useCameraSite();
   const sky = water === 'fog' && ocean ? ocean.material : null;
   // The relief's tiles drawn: the World's, else the sky's.
   const hub = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
@@ -361,9 +363,8 @@ export const GeoTubes = <P,>({
     }
     const altitude = globe.altitude(camera.position);
     const shown = layerShownAt(
-      camera.position,
+      cameraSite.get(camera),
       globe,
-      ocean,
       visibility.current,
       'ground',
     );
@@ -474,11 +475,7 @@ export const GeoTubes = <P,>({
     // Again as tiles come in or the relief chooses again, no more often than every half
     // second; after the spans, which ground the near nodes over the whole of their parts.
     const groundKey = relief ? `${relief.resident}|${relief.keysVersion}` : '';
-    if (
-      relief &&
-      groundKey !== state.ground &&
-      now - state.groundTime > 500
-    ) {
+    if (relief && groundKey !== state.ground && now - state.groundTime > 500) {
       state.ground = groundKey;
       state.groundTime = now;
       ground();

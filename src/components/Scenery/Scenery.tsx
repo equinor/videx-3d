@@ -121,7 +121,15 @@ import {
   sceneryWaterDimming,
   SceneryZone,
   sceneryZone,
+  sceneryLidOverCamera,
 } from './scenery-model';
+import { useCameraProbe } from '../../hooks/useCameraSite';
+import {
+  CAMERA_PROBE_ORDER,
+  type CameraProbe,
+  type CameraSite,
+  reportCameraWater,
+} from '../../sdk/utils/camera-site';
 import { SceneryCubeView } from './SceneryCubeView';
 
 export type SceneryEnvironmentOptions = {
@@ -1417,6 +1425,69 @@ export const Scenery = ({
     return () => sceneWater.release(material);
   }, [scene, material]);
 
+  // Where the camera is under this sky (the camera site's, `CAMERA_PROBE_ORDER.sky`): its
+  // height and altitude over the sea; the ground of the relief this sky shades under it, and
+  // from that whether it is in the ground (the void's lid over it) or in a trench; how far
+  // inside the hollow's rim; and its sea's water. The latest closure, as the hollow's radius
+  // is read through refs.
+  const skyProbeLatest = useRef<CameraProbe | null>(null);
+  useLayoutEffect(() => {
+    skyProbeLatest.current = site => {
+      const height = material.heightOf(site.position);
+      const level = material.oceanLevel;
+      site.height = height;
+      site.seaLevel = level;
+      site.altitude = height - level;
+      const under = skyGroundOf(site);
+      const bed = level - material.oceanDepth;
+      // Under the relief's ground above the sea's own seabed, as from inside rock: below the
+      // sea or in land above it.
+      site.buried =
+        material.ocean && under !== null && height <= under && height > bed;
+      // Over the relief's ground below the sea's own seabed, as in a trench: in the water, or
+      // over a dry sea's bed in the air.
+      site.trench =
+        material.ocean && under !== null && height > under && height <= bed;
+      site.lid = sceneryLidOverCamera(height, {
+        ocean: material.ocean,
+        oceanLevel: level,
+        oceanDepth: material.oceanDepth,
+        oceanGround: under,
+      });
+      // How far inside the hollow's rim: its walls about the camera and its lid over it, at
+      // any depth; under its floor, seen through the rock.
+      site.hollow =
+        hollowLook && hollowOn
+          ? sceneryHollowInside(
+              material.globe,
+              hollowRadius(),
+              site.position,
+              // The simple style's rim is round.
+              hollowLook.style === 'simple' ? 1 : undefined,
+            )
+          : -Infinity;
+      // Its sea has no edge: under it, over the ground (or the seabed) under it, is in it.
+      if (material.ocean && material.oceanWater) {
+        const floor = under ?? bed;
+        reportCameraWater(site, {
+          depth: level - height,
+          over: true,
+          inside: height < level && height > floor,
+          owner: material,
+          endless: true,
+        });
+      }
+    };
+  });
+  // The relief's ground under the camera, while the relief this sky shades is drawn.
+  const skyGroundOf = (site: CameraSite) =>
+    worldRelief?.present && worldRelief.sky === oceanState ? site.ground : null;
+  const skyProbe = useCallback<CameraProbe>(
+    (site, probeCamera) => skyProbeLatest.current?.(site, probeCamera),
+    [],
+  );
+  const cameraSite = useCameraProbe(skyProbe, CAMERA_PROBE_ORDER.sky);
+
   // Bakes run here so several prop changes in one frame cost one bake.
   const step = useWeatherStep();
   useFrame(({ camera }, delta) => {
@@ -1472,42 +1543,18 @@ export const Scenery = ({
     material.sunRadiance =
       (hdr ?? gl.toneMapping !== NoToneMapping) ? SKY_HDR_SUN_RADIANCE : 1;
 
-    // Along up as it is measured over the field: the camera's altitude over the globe.
-    const height = material.heightOf(camera.position);
+    // Where the camera is (the camera site's, worked out once a frame): its altitude over the
+    // globe along up as it is measured over the field, the relief's ground under it (the void
+    // starts under it, at whatever depth), in it or in a trench, and inside the hollow.
+    const site = cameraSite.get(camera);
+    const height = site.height ?? material.heightOf(camera.position);
     // Camera controls move the camera before this runs but leave its matrices to the render:
     // read with this frame's position, last frame's would swing the cutaway as it moves.
     if (cutaway) camera.updateMatrixWorld();
-    // The relief's ground under the camera: the void starts under it, at whatever depth.
-    material.oceanGround =
-      worldRelief?.present && worldRelief.sky === oceanState
-        ? worldRelief.ground.current
-        : null;
-    // Under the relief's ground above the sea's own seabed, as from inside rock: below the sea
-    // or in land above it.
-    material.oceanBuried =
-      material.ocean &&
-      material.oceanGround !== null &&
-      height <= material.oceanGround &&
-      height > material.oceanLevel - material.oceanDepth;
-    // Over the relief's ground below the sea's own seabed, as in a trench: in the water, or
-    // over a dry sea's bed in the air.
-    material.oceanTrench =
-      material.ocean &&
-      material.oceanGround !== null &&
-      height > material.oceanGround &&
-      height <= material.oceanLevel - material.oceanDepth;
-    // How far inside the hollow's rim the camera is, and whether inside it: its walls about
-    // the camera and its lid over it, at any depth; under its floor, seen through the rock.
-    const cameraInside =
-      hollowLook && hollowOn
-        ? sceneryHollowInside(
-            material.globe,
-            hollowRadius(),
-            camera.position,
-            // The simple style's rim is round.
-            hollowLook.style === 'simple' ? 1 : undefined,
-          )
-        : -Infinity;
+    material.oceanGround = skyGroundOf(site);
+    material.oceanBuried = site.buried;
+    material.oceanTrench = site.trench;
+    const cameraInside = site.hollow;
     const inHollow = !!hollowLook && cameraInside > 0;
     // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer), and
     // in rock there is no sea to see.

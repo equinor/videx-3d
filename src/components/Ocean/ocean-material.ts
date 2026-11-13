@@ -37,6 +37,8 @@ import {
   waterOpticsOf,
 } from '../../sdk/weather/water-optics';
 import { sceneWaterBody, WaterBody } from '../../sdk/materials/water-body';
+import { geometryFootprint } from '../../sdk/geometries/geometry-footprint';
+import type { CameraWater } from '../../sdk/utils/camera-site';
 import {
   type WeatherGusts,
   weatherGustsOf,
@@ -1173,17 +1175,20 @@ export class OceanMaterial extends ShaderMaterial {
 
   /**
    * The water's place in the world as the surface is drawn: its level, its extent (the
-   * surface geometry's box) and its seabed's map, from the drawn object's frame (Y up, turned
-   * about it at most); and the scene's water (`sceneWaterBody`) taken from it, so what lies in
-   * it fades by it wherever it is in the tree. Runs for the OIT variants too.
+   * surface geometry's box), where in it the water lies (its footprint, for an outline that
+   * does not fill the box) and its seabed's map, from the drawn object's frame (Y up, turned
+   * about it at most); whether `camera` is over it, exactly; and the scene's water
+   * (`sceneWaterBody`) taken from it, so what lies in it fades by it wherever it is in the
+   * tree. Runs as the surface renders (the OIT variants too), and from the camera site's probe
+   * (`Ocean`) before the frame, so what draws before the surface has it. Returns where the
+   * camera is at this water.
    */
-  onBeforeRender(
-    _renderer: WebGLRenderer,
+  syncWater(
     scene: Scene,
-    _camera: Camera,
+    camera: Camera,
     geometry: BufferGeometry,
     object: Object3D,
-  ): void {
+  ): CameraWater {
     const water = this.water;
     if (!geometry.boundingBox) geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
@@ -1205,12 +1210,21 @@ export class OceanMaterial extends ShaderMaterial {
         maxZ = Math.max(maxZ, wz);
       }
     water.extent = [minX, minZ, maxX, maxZ];
+    // World X/Z into the object's.
+    const toObject = this._toObject
+      .set(e[0], e[8], e[12], e[2], e[10], e[14], 0, 0, 1)
+      .invert();
+    const footprint = geometryFootprint(geometry);
+    water.setFootprint(
+      footprint.texture
+        ? {
+            texture: footprint.texture,
+            toUv: this._footprintToUv.copy(footprint.toUv).multiply(toObject),
+          }
+        : null,
+    );
     const map = this.uniforms.uBathyMap?.value as Texture | undefined;
     if (map) {
-      // World X/Z into the object's, then into the map's uv.
-      const toObject = this._bedToObject
-        .set(e[0], e[8], e[12], e[2], e[10], e[14], 0, 0, 1)
-        .invert();
       water.setBed({
         texture: map,
         toUv: this._bedToUv
@@ -1220,11 +1234,37 @@ export class OceanMaterial extends ShaderMaterial {
         yOffset: e[13],
       });
     }
+    // The camera over the footprint, on its triangles; how deep, and over the seabed.
+    camera.updateWorldMatrix(true, false);
+    const eye = this._eye.setFromMatrixPosition(camera.matrixWorld);
+    const at = this._eyeXZ.set(eye.x, eye.z, 1).applyMatrix3(toObject);
+    const over = footprint.contains(at.x, at.y);
+    water.cameraOver = over;
+    const depth = water.level - eye.y;
     sceneWaterBody(scene).copyFrom(water, this);
     this._scene = scene;
+    return {
+      depth,
+      over,
+      inside: over && depth > 0 && depth < water.depth,
+      owner: this,
+    };
   }
-  private readonly _bedToObject = new Matrix3();
+
+  onBeforeRender(
+    _renderer: WebGLRenderer,
+    scene: Scene,
+    camera: Camera,
+    geometry: BufferGeometry,
+    object: Object3D,
+  ): void {
+    this.syncWater(scene, camera, geometry, object);
+  }
+  private readonly _toObject = new Matrix3();
+  private readonly _footprintToUv = new Matrix3();
   private readonly _bedToUv = new Matrix3();
+  private readonly _eye = new Vector3();
+  private readonly _eyeXZ = new Vector3();
   // The scene whose water this last wrote, let go of on dispose.
   private _scene: Scene | null = null;
 

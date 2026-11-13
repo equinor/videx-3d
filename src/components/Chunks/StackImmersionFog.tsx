@@ -1,5 +1,10 @@
-import { RefObject, useMemo } from 'react';
-import { Group, Plane } from 'three';
+import { RefObject, useCallback, useMemo } from 'react';
+import { Group, Matrix4, Plane, Vector3 } from 'three';
+import { useCameraProbe } from '../../hooks/useCameraSite';
+import {
+  CAMERA_PROBE_ORDER,
+  type CameraProbe,
+} from '../../sdk/utils/camera-site';
 import { fenceSideAt } from '../../sdk';
 import { DEFAULT_OCEAN_DEEP_COLOR } from '../Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
@@ -31,7 +36,7 @@ export type StackImmersionFogProps = {
 };
 
 /**
- * Decide what the camera is standing in and hand it to {@link useImmersionFog}.
+ * Decide what the camera is standing in, as the camera site's medium (CameraSite.medium,\n * a probe of CAMERA_PROBE_ORDER.medium), and fade by it with {@link useImmersionFog}.
  *
  * ⚠️ Rendered ONLY when `ChunkStackProps.immersion` is declared. Installing
  * `scene.fog` at all changes every material's program cache key, so this cannot be
@@ -143,9 +148,25 @@ export const StackImmersionFog = ({
     rockDensity,
   ]);
 
+  // In the stack's own frame: a vertical exaggeration moves everything in world space.
+  const eye = useMemo(() => new Vector3(), []);
+  const inverse = useMemo(() => new Matrix4(), []);
+  const probe = useCallback<CameraProbe>(
+    site => {
+      if (site.medium) return;
+      eye.copy(site.position);
+      const root = frame.current;
+      if (root) {
+        root.updateWorldMatrix(true, false);
+        eye.applyMatrix4(inverse.copy(root.matrixWorld).invert());
+      }
+      site.medium = medium(eye.x, eye.y, eye.z);
+    },
+    [medium, frame, eye, inverse],
+  );
+  useCameraProbe(probe, CAMERA_PROBE_ORDER.medium);
+
   useImmersionFog({
-    medium,
-    frame,
     background: immersion.background !== false,
     settle: immersion.settle,
   });

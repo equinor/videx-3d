@@ -152,6 +152,17 @@ a pane of glass. Shimmer seen from INSIDE the water would have to be volumetric,
 i.e. marched through the body, which is a long way past what a wall material is;
 deliberately not attempted.
 
+An `<Ocean>` draws its walls in two parts (`OceanVolumeMaterial`'s `wall`): the
+water on their inner faces, and the shimmer on the outer glass, drawn last. Drawn
+both sides at once without depth writes, a far wall's inner face would paint over
+the near glass wherever its triangles come later. So the wall builders face every
+wall away from the water, whichever way an outline runs.
+
+The water lies where the surface geometry lies, in plan (`geometryFootprint`): beside
+it — in a notch or a hole of a polygon's outline, not just beyond its box — the camera
+is in air, tested exactly each frame, and what lies there is not faded as if under
+water. See [camera.md](./camera.md#over-the-water-exactly).
+
 The sea takes no part in the depth order, which is what stops it truncating the
 ground beneath it: a sea bed above the plane comes THROUGH it rather than being
 flattened onto it, and the water body ends at the shoreline. See

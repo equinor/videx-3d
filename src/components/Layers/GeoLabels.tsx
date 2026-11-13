@@ -29,7 +29,7 @@ import {
   type LabelSizePreset,
   type LabelStyle,
 } from '../Labels/types';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useCameraSite } from '../../hooks/useCameraSite';
 import { layerShownAt, useGeoFeatures, useLayerGlobe } from './layer-globe';
 import { useReliefCeiling } from './relief-ceiling';
 
@@ -339,7 +339,7 @@ export const GeoLabels = <P,>({
 }: GeoLabelsProps<P>) => {
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
-  const ocean = useSceneryOcean();
+  const cameraSite = useCameraSite();
   const features = useGeoFeatures(data);
   const ceiling = useReliefCeiling();
 
@@ -540,7 +540,7 @@ export const GeoLabels = <P,>({
     if (placedAt.globe !== globe || placedAt.location !== globe.location)
       setPlacedAt({ globe, location: globe.location });
     const on =
-      layerShownAt(camera.position, globe, ocean, options.current, height) > 0;
+      layerShownAt(cameraSite.get(camera), globe, options.current, height) > 0;
     if (on !== shown) setShown(on);
   });
 

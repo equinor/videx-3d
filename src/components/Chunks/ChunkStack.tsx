@@ -9,7 +9,21 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BufferGeometry, Group, Matrix4, Plane, Vector3, Vector4 } from 'three';
+import {
+  BufferGeometry,
+  Group,
+  Matrix4,
+  Mesh,
+  Plane,
+  Vector3,
+  Vector4,
+} from 'three';
+import { useCameraProbe } from '../../hooks/useCameraSite';
+import {
+  CAMERA_PROBE_ORDER,
+  type CameraProbe,
+  reportCameraWater,
+} from '../../sdk/utils/camera-site';
 import { useData } from '../../hooks/useData';
 import { precompile } from '../../rendering/precompile';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -1291,6 +1305,26 @@ export const ChunkStack = ({
       void precompile(gl, seaRoot.current, camera, scene);
   }, [gl, camera, scene, seaSurface, seaVolume, seaGeometry]);
 
+  // Where the camera is at the stack's water (the camera site's), and the water synced to it
+  // before the frame, so its walls and what lies in it have this frame's (as `Ocean`).
+  const seaLid = useRef<Mesh>(null);
+  const seaProbe = useCallback<CameraProbe>(
+    (site, probeCamera) => {
+      const mesh = seaLid.current;
+      if (!seaSurface || !mesh || !mesh.visible) return;
+      mesh.updateWorldMatrix(true, false);
+      reportCameraWater(
+        site,
+        seaSurface.syncWater(scene, probeCamera, mesh.geometry, mesh),
+      );
+    },
+    [seaSurface, scene],
+  );
+  const cameraSite = useCameraProbe(seaProbe, CAMERA_PROBE_ORDER.water);
+  useFrame(({ camera: frameCamera }) => {
+    if (seaSurface) cameraSite.get(frameCamera);
+  });
+
   // ⭐ The face that CLOSES the water body at a cut, off the sea's own channels —
   // so it meets the block's face on the same curve, over the same bed, rather than
   // leaving an open body to look into. Same two builders the chunks use; the sea is
@@ -1362,6 +1396,7 @@ export const ChunkStack = ({
                 <group ref={seaRoot}>
                   {sea && seaGeometry?.lid && (
                     <mesh
+                      ref={seaLid}
                       geometry={seaGeometry.lid}
                       material={sea.surface}
                       visible={drawWater}

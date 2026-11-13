@@ -18,7 +18,7 @@ import {
 import type { Vec2 } from '../../sdk/types/common';
 import type { AnnotationProps } from '../Annotations/types';
 import { useAnnotations } from '../Annotations/annotations-state';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useCameraSite } from '../../hooks/useCameraSite';
 import { useWorld } from '../World/world-context';
 import { layerShownAt, useLayerGlobe } from './layer-globe';
 import { placeTrackOnGlobe, type TrackPlacement } from './track-placement';
@@ -124,7 +124,7 @@ export const TrackLayer = <T extends Track>({
   fade,
 }: TrackLayerProps<T>) => {
   const placed = useLayerGlobe(frame);
-  const ocean = useSceneryOcean();
+  const cameraSite = useCameraSite();
   const world = useWorld();
   const flatFrame = frame ?? world?.frame ?? null;
   const flatKey = flatFrame ? JSON.stringify(flatFrame) : '';
@@ -185,9 +185,8 @@ export const TrackLayer = <T extends Track>({
     const shown =
       (placed
         ? layerShownAt(
-            camera.position,
+            cameraSite.get(camera),
             placed.globe,
-            ocean,
             options.current,
             height,
           )

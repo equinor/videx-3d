@@ -101,3 +101,54 @@ Two things the host has to get right:
 The demo is `Spikes/Chunks/FieldColumn` with `fence` on: its **Fly to** controls cover
 the pull-back factor, the arrival padding (how much of the fence to take in), the
 arrival polar angle and the easing.
+
+## Where the camera is
+
+Much of the scene changes with where the camera is: in the water or in air, in the ground
+under the void's lid, inside a hollow's rim, its height over the sea. Each part used to work
+its part of that out on its own, every frame. The **camera site** (`sdk/utils/camera-site.ts`)
+works it out once a frame for everything that asks:
+
+- `sceneCameraSite(scene)` (or `useCameraSite()` in a component) is the scene's one
+  `CameraSiteStore`; `get(camera)` is where that camera is this frame, a `CameraSite`.
+- What knows part of it registers a **probe** (`useCameraProbe(probe, order)`): a function
+  writing what it knows into the site. The first to ask in a frame has every probe run, in
+  their order (`CAMERA_PROBE_ORDER`), and all that ask after it read the same answer.
+  The hook starts the site's frame after the camera's controls have moved the camera (at
+  priority -0.5: drei's controls run at -1), so nothing reads last frame's camera.
+
+| Field | Written by | Read by |
+| --- | --- | --- |
+| `ground` | the relief's tiles (`ground`): the relief's ground under the camera, on its triangles | the `Scenery`, a `SceneryStage` |
+| `height`, `seaLevel`, `altitude` | a `Scenery` (`sky`) | the geographic layers (`layerShownAt`), a `SceneryStage` |
+| `lid`, `buried`, `trench`, `hollow` | a `Scenery`: the void's lid over the camera in the ground, in rock above the seabed, in a trench, how far inside the hollow's rim | the `Scenery`'s own frame, the layers, a `SceneryStage` |
+| `water` | each sea (`water`): an `Ocean`, a `ChunkStack`'s water, a `Scenery`'s sea (`reportCameraWater`: the one the camera is in, one with an edge over an endless one) | the seas' own water bodies (`WaterBody.cameraOver`) |
+| `medium` | a `ChunkStack`'s `immersion` (`medium`): water or rock, to fade by | `useImmersionFog` |
+
+Without a probe for a field it stays `null` and its readers fall back to working it out
+(a layer with no `Scenery` takes its altitude from its own globe). A site is the store's
+own: read it within the frame, do not keep it.
+
+⚠️ A probe runs when something first asks, which may be inside another component's frame
+callback or as a material renders: keep it cheap (a few lookups) and free of side effects
+other than its own state, as an `Ocean` syncing its water to the camera.
+
+### Over the water, exactly
+
+An `Ocean`'s water is where its surface geometry lies in plan, whatever its outline:
+`geometryFootprint(geometry)` (`sdk/geometries/geometry-footprint.ts`) keeps, per geometry,
+an exact point test (`contains`, a grid of the triangles: a few tested per lookup) and the
+signed distance to its outline over its box (one half-float channel, up to 512 cells along
+its longer side; none where the geometry fills its box). The camera is tested exactly on the
+CPU (`CameraWater.over`, to the shaders as `WaterBody.cameraOver`), and what lies in the
+water by the distance's side in the shader (`waterBodyOver`, one texture read): beside the
+water, in a notch or a hole of the outline, it is in air.
+
+⚠️ The part of a sight line in the water, and where it goes in, are still taken over the
+box (`waterBodyPath`, `waterBodyLight`): on an outline that is not a box, what is seen from
+outside through a wall is lit as if the line went in where it crosses the box. Marching the
+outline per pixel was tried and dropped: a march over an arbitrary outline trades
+exactness against its steps (lines running along the outline crawl; a share-of-the-line
+step skips narrow strips), and it went into every material that fades by the water. The
+robust way, if wanted, is geometric: draw the walls' outer faces into a buffer of where each
+pixel goes into the water, and read it there.

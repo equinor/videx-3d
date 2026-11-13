@@ -38,6 +38,7 @@ import {
 } from '../../sdk/tiles/tile-transitions';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useCameraSite } from '../../hooks/useCameraSite';
 import { useWorldRelief } from '../World/world-relief';
 import {
   createGeoTileMaterial,
@@ -303,6 +304,7 @@ export const GeoTileLayer = ({
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
   const ocean = useSceneryOcean();
+  const cameraSite = useCameraSite();
   const sky = water === 'fog' && ocean ? ocean.material : null;
   // The relief's tiles drawn: the World's, else the sky's.
   const reliefTiles = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
@@ -638,9 +640,8 @@ export const GeoTileLayer = ({
     const laid = Math.max(revealed > 0 ? Math.max(height, 0) : height, floorAt);
     const shown =
       layerShownAt(
-        camera.position,
+        cameraSite.get(camera),
         globe,
-        ocean,
         visibility.current,
         hub ? 'ground' : laid,
       ) * opacity;

@@ -1,31 +1,20 @@
 import { RefObject, useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import {
-  Color,
-  ColorRepresentation,
-  FogExp2,
-  Group,
-  Matrix4,
-  Vector3,
-} from 'three';
+import { Color, FogExp2, Group, Matrix4, Vector3 } from 'three';
+import { useCameraSite } from '../../hooks/useCameraSite';
+import type { CameraMedium } from '../../sdk/utils/camera-site';
 
 /** What the camera is standing in, as {@link useImmersionFog} needs it. */
-export type ImmersionMedium = {
-  /** what everything fades toward */
-  color: ColorRepresentation;
-  /** per-metre build-up */
-  density: number;
-  /** 0..1, how far inside the medium the camera is — ramps it in at a boundary */
-  amount: number;
-};
+export type ImmersionMedium = CameraMedium;
 
 /** {@link useImmersionFog} options. */
 export type ImmersionFogOptions = {
   /**
    * What the camera is inside of, in `frame`'s space, or `null` for open air.
-   * Called once per frame.
+   * Called once per frame. Omit to take the camera site's (`CameraSite.medium`), which
+   * the owners of the scene's media (a `ChunkStack`'s `immersion`) work out.
    */
-  medium: (x: number, y: number, z: number) => ImmersionMedium | null;
+  medium?: (x: number, y: number, z: number) => ImmersionMedium | null;
   /**
    * The frame `medium` takes its coordinates in. Omit when that is world space.
    *
@@ -80,6 +69,7 @@ export function useImmersionFog({
 }: ImmersionFogOptions) {
   const scene = useThree(state => state.scene);
   const gl = useThree(state => state.gl);
+  const cameraSite = useCameraSite();
   const fog = useMemo(() => new FogExp2(0x000000, 0), []);
   const eye = useMemo(() => new Vector3(), []);
   const inverse = useMemo(() => new Matrix4(), []);
@@ -119,14 +109,16 @@ export function useImmersionFog({
   useFrame(({ camera }, delta) => {
     if (!host.current) return;
 
-    camera.getWorldPosition(eye);
-    const root = frame?.current;
-    if (root) {
-      root.updateWorldMatrix(true, false);
-      eye.applyMatrix4(inverse.copy(root.matrixWorld).invert());
-    }
-
-    const inside = medium(eye.x, eye.y, eye.z);
+    let inside: ImmersionMedium | null;
+    if (medium) {
+      camera.getWorldPosition(eye);
+      const root = frame?.current;
+      if (root) {
+        root.updateWorldMatrix(true, false);
+        eye.applyMatrix4(inverse.copy(root.matrixWorld).invert());
+      }
+      inside = medium(eye.x, eye.y, eye.z);
+    } else inside = cameraSite.get(camera).medium;
 
     // ⚠️ Damped rather than applied directly. A medium's own boundaries give smooth
     // ramps, but leaving one sideways — past the edge of the drawn footprint, or

@@ -54,6 +54,7 @@ export * from './events/interaction-events';
 export * from './events/wellbore-events';
 
 export * from './hooks/useControllable';
+export * from './hooks/useCameraSite';
 export * from './hooks/useData';
 export * from './hooks/useGenerator';
 export * from './hooks/useWellboreContext';

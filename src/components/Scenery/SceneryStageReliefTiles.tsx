@@ -1,5 +1,10 @@
 import { useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCameraProbe } from '../../hooks/useCameraSite';
+import {
+  CAMERA_PROBE_ORDER,
+  type CameraProbe,
+} from '../../sdk/utils/camera-site';
 import {
   Frustum,
   InstancedBufferAttribute,
@@ -556,6 +561,22 @@ export const SceneryStageReliefTiles = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pinnedSquares reads refs
   }, [generate, sourceKey, textures, slots, pins]);
   useEffect(() => () => streaming.streamer.dispose(), [streaming]);
+  // The relief's ground under the camera, for the camera site (`CameraSite.ground`): while it
+  // is wanted (`cameraGround`, while the relief is shown).
+  const groundAt = useMemo(() => ({ latitude: 0, longitude: 0 }), []);
+  const groundProbe = useCallback<CameraProbe>(
+    site => {
+      if (!globe.frame) return;
+      const at = globe.geographic(site.position, groundAt);
+      const height = streaming.heightAt(at.longitude, at.latitude);
+      if (height !== null) site.ground = level + height;
+    },
+    [globe, streaming, level, groundAt],
+  );
+  const cameraSite = useCameraProbe(
+    cameraGround ? groundProbe : null,
+    CAMERA_PROBE_ORDER.ground,
+  );
   // Who tells the hub: once gone, what lay on these tiles lies flat again.
   const hubOwner = useMemo(() => ({}), []);
   useEffect(() => () => hub?.publish(hubOwner, null), [hub, hubOwner]);
@@ -789,16 +810,13 @@ export const SceneryStageReliefTiles = ({
 
     // The ground under the camera, from the finest tile in there, whether drawn or not:
     // the one under a camera looking level is out of view. On its triangles, so a camera
-    // just over the ground drawn is never taken to be in it.
-    let ground: number | null = null;
-    for (let depth = MAX_DEPTH; depth >= 0 && ground === null; depth--) {
-      const tile = streamer.get(
-        geoTileKeyAt(depth, eye.longitude, eye.latitude),
-      );
-      if (tile)
-        ground =
-          level +
-          geoReliefTileHeightAt(tile, eye.longitude, eye.latitude, true);
+    // just over the ground drawn is never taken to be in it. The camera site's while it is
+    // wanted (`cameraGround`): worked out once a frame for all that asks.
+    let ground: number | null;
+    if (cameraGround) ground = cameraSite.get(camera).ground;
+    else {
+      const height = streaming.heightAt(eye.longitude, eye.latitude);
+      ground = height === null ? null : level + height;
     }
     if (cameraGround) cameraGround.current = ground;
     // Under it — in the void, or in rock above the sea's own seabed — the relief is the

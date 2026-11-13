@@ -12,6 +12,7 @@ import {
 } from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { Globe } from '../../sdk/projection/globe';
+import type { CameraSite } from '../../sdk/utils/camera-site';
 import {
   useSceneryOcean,
   type SceneryOceanState,
@@ -28,20 +29,33 @@ import { useWorld } from '../World/world-context';
 export type LayerLies = 'ground' | number;
 
 /**
- * How much of a geographic layer shows to a camera at `position` (0 to 1), the one test
- * every scene layer makes before it draws or does any work for the frame:
+ * How much of a geographic layer shows to the camera (0 to 1), the one test every scene layer
+ * makes before it draws or does any work for the frame, from where the camera is (the scene's
+ * camera site, `useCameraSite().get(camera)`):
  *
- * - its band of camera heights over the sea (`layerVisibilityAt`);
+ * - its band of camera heights over the sea (`layerVisibilityAt`): the site's altitude, else
+ *   `globe`'s (a layer with no `Scenery` over it);
  * - inside a `Scenery` with a sea, nothing while the camera is in the ground and the layer
- *   lies above it: the void's lid hides all above it (`sceneryLidOverCamera`), and where
- *   the lid leaves pixels to the background — toward the horizon, or to the hollow's walls —
- *   what is drawn above it would show through. On the ground (`lies` `'ground'`) is always
- *   above the lid; at a height, where that is the lid's height over the camera or more. A
- *   layer laid deeper than the ground, at a reservoir's depth say, is seen from the void.
+ *   lies above it: the void's lid hides all above it (the site's `lid`,
+ *   `sceneryLidOverCamera`), and where the lid leaves pixels to the background — toward the
+ *   horizon, or to the hollow's walls — what is drawn above it would show through. On the
+ *   ground (`lies` `'ground'`) is always above the lid; at a height, where that is the lid's
+ *   height over the camera or more. A layer laid deeper than the ground, at a reservoir's
+ *   depth say, is seen from the void.
  *
  * Zero means not drawn at all: a layer hides its mesh, and skips its frame's work.
  *
  * @group Layers
+ */
+export function layerShownAt(
+  site: CameraSite,
+  globe: Globe,
+  visibility: LayerVisibility,
+  lies: LayerLies,
+): number;
+/**
+ * @deprecated Pass the camera site (`useCameraSite().get(camera)`): it is worked out once a
+ * frame for every layer.
  */
 export function layerShownAt(
   position: Vector3,
@@ -49,14 +63,33 @@ export function layerShownAt(
   ocean: SceneryOceanState | null,
   visibility: LayerVisibility,
   lies: LayerLies,
+): number;
+export function layerShownAt(
+  at: CameraSite | Vector3,
+  globe: Globe,
+  ...rest:
+    | [LayerVisibility, LayerLies]
+    | [SceneryOceanState | null, LayerVisibility, LayerLies]
 ): number {
-  const altitude = globe.altitude(position);
+  if ('isVector3' in at) {
+    const [ocean, visibility, lies] = rest as [
+      SceneryOceanState | null,
+      LayerVisibility,
+      LayerLies,
+    ];
+    const altitude = globe.altitude(at);
+    const shown = layerVisibilityAt(altitude, visibility);
+    if (shown <= 0 || !ocean) return shown;
+    const sky = ocean.material;
+    const lid = sceneryLidOverCamera(sky.oceanLevel + altitude, sky);
+    if (lid === null) return shown;
+    return lies === 'ground' || sky.oceanLevel + lies >= lid ? 0 : shown;
+  }
+  const [visibility, lies] = rest as [LayerVisibility, LayerLies];
+  const altitude = at.altitude ?? globe.altitude(at.position);
   const shown = layerVisibilityAt(altitude, visibility);
-  if (shown <= 0 || !ocean) return shown;
-  const sky = ocean.material;
-  const lid = sceneryLidOverCamera(sky.oceanLevel + altitude, sky);
-  if (lid === null) return shown;
-  return lies === 'ground' || sky.oceanLevel + lies >= lid ? 0 : shown;
+  if (shown <= 0 || at.lid === null || at.seaLevel === null) return shown;
+  return lies === 'ground' || at.seaLevel + lies >= at.lid ? 0 : shown;
 }
 
 /** The `renderOrder` of what is drawn over the sea without an `OITRenderPass`: after everything see-through. */

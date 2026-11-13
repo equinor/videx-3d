@@ -94,7 +94,7 @@ Five ideas carry the whole design:
 | `chunk-contacts.ts`, `chunk-depth-map.ts` | Fluid contacts as lines, and depth grids (a surface's, or the bed's channel) as textures. |
 | `useChunkSection.ts`, `useChunkFenceFace.ts` | Cut-face geometry per interval. |
 | `useStackFence.ts`, `useStackWater.ts` | Stack-level fence and sea (the bed tint's grid comes back with the sea's geometry). |
-| `useImmersionFog.ts`, `StackImmersionFog.tsx` | Fog when the camera is inside the sea or the block. |
+| `useImmersionFog.ts`, `StackImmersionFog.tsx` | Fog when the camera is inside the sea or the block: the stack's medium as the camera site's (`CameraSite.medium`, see [camera.md](../camera.md#where-the-camera-is)). |
 | `surface-sampler.ts`, `LevelledBase.tsx` | Sampling what was drawn, and standing things on it. |
 | `chunk-resources.ts` | GPU/heap accounting and leak detection. |
 | `ChunkSectionDebug.tsx` | Draws where the section plane is. |

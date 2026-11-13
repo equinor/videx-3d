@@ -1,8 +1,9 @@
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import {
   ForwardedRef,
   forwardRef,
   ReactNode,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -10,8 +11,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BufferGeometry, Group, Vector3 } from 'three';
+import { BufferGeometry, Group, Mesh, Vector3 } from 'three';
 import { CommonComponentProps, CustomMaterialProps } from '../../common/types';
+import { useCameraProbe } from '../../hooks/useCameraSite';
+import {
+  CAMERA_PROBE_ORDER,
+  type CameraProbe,
+  reportCameraWater,
+} from '../../sdk/utils/camera-site';
 import type { SeaQuality } from '../../sdk/weather/sea-state';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import { useWeatherStep } from '../Weather/useWeatherStep';
@@ -263,6 +270,25 @@ export const Ocean = forwardRef(
     );
     useEffect(() => () => deepMaterial?.dispose(), [deepMaterial]);
 
+    // Where the camera is at this water (the camera site's): over its footprint, how deep,
+    // whether in it; and the water synced to it before the frame, so what draws before the
+    // surface (its bed and walls, data in it) has this frame's.
+    const surfaceMesh = useRef<Mesh>(null);
+    const scene = useThree(state => state.scene);
+    const waterProbe = useCallback<CameraProbe>(
+      (site, camera) => {
+        const mesh = surfaceMesh.current;
+        if (!(material instanceof OceanMaterial) || !mesh) return;
+        mesh.updateWorldMatrix(true, false);
+        reportCameraWater(
+          site,
+          material.syncWater(scene, camera, mesh.geometry, mesh),
+        );
+      },
+      [material, scene],
+    );
+    const cameraSite = useCameraProbe(waterProbe, CAMERA_PROBE_ORDER.water);
+
     // Sync prop-driven uniforms onto the material.
     useLayoutEffect(() => {
       if (!(material instanceof OceanMaterial)) {
@@ -433,6 +459,7 @@ export const Ocean = forwardRef(
     useFrame(({ camera, gl }, delta) => {
       const waveStep = step(delta);
       if (material instanceof OceanMaterial) {
+        cameraSite.get(camera);
         material.time += waveStep;
         const group = ref.current;
         const view = group
@@ -525,6 +552,7 @@ export const Ocean = forwardRef(
           />
         )}
         <mesh
+          ref={surfaceMesh}
           geometry={geometry}
           material={material}
           visible={surfaceVisible}

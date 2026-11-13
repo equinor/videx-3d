@@ -30,6 +30,7 @@ export * from './geometries/fence-path';
 export * from './geometries/fence-segments';
 export * from './geometries/fence-view';
 export * from './geometries/geometry';
+export * from './geometries/geometry-footprint';
 export * from './geometries/geometry-attributes';
 export * from './geometries/grid-sampling';
 export * from './geometries/levelled-base';
@@ -110,6 +111,7 @@ export * from './tiles/tile-transitions';
 export * from './types/common';
 
 export * from './utils/camera';
+export * from './utils/camera-site';
 export * from './utils/clip-2d';
 export * from './utils/colors';
 export * from './utils/conversions';

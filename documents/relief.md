@@ -145,7 +145,8 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   beyond the disc stands off it unless placed on the globe (`SceneryAnchor`, `applyGlobe`; see
   [scenery.md](./scenery.md#the-globe)).
 - The ground under the camera is the sky's (`oceanGround`, which the `Scenery` takes from the
-  `World`'s relief each frame), sampled on the triangles drawn:
+  camera site each frame: the relief's probe, `CameraSite.ground`, see
+  [camera.md](./camera.md#where-the-camera-is)), sampled on the triangles drawn:
   under the relief the camera is in the ground, for the lighting and the void — below the
   sea, and in land above it too — and over it in the water, however deep (a trench below
   the sea's `depth`: `SceneryMaterial.oceanTrench`). Under it the relief is the void's lid:

@@ -15,7 +15,7 @@ import { blendTileEdgeHeights } from '../../sdk/tiles/tile-edges';
 import { tileParent } from '../../sdk/tiles/tile-keys';
 import { LabelLayer } from '../Labels/LabelLayer';
 import type { Label } from '../Labels/types';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useCameraSite } from '../../hooks/useCameraSite';
 import type { SceneryReliefHub } from '../Scenery/scenery-relief-hub';
 import type { ResolvedReliefContourLabels } from '../Scenery/scenery-relief-look';
 import { layerShownAt } from './layer-globe';
@@ -192,7 +192,7 @@ export const GeoReliefContourLabels = ({
   visible,
   cellPixels,
 }: GeoReliefContourLabelsProps) => {
-  const ocean = useSceneryOcean();
+  const cameraSite = useCameraSite();
   // Each look's labels in a layer of their style, looks of one style in one: with how far
   // apart its rank-0 labels are in rows, and its finest rank.
   const groups = useMemo(() => {
@@ -328,9 +328,8 @@ export const GeoReliefContourLabels = ({
       style =>
         visible &&
         layerShownAt(
-          camera.position,
+          cameraSite.get(camera),
           globe,
-          ocean,
           { maxHeight: style.maxHeight },
           'ground',
         ) > 0,

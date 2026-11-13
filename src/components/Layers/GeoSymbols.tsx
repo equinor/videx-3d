@@ -33,6 +33,7 @@ import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useCameraSite } from '../../hooks/useCameraSite';
 import { useWorldRelief } from '../World/world-relief';
 import type { SceneryMaterial } from '../Scenery/scenery-material';
 import { sceneryOceanDefines } from '../Scenery/scenery-stage';
@@ -173,6 +174,7 @@ export const GeoSymbols = <P,>({
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
   const ocean = useSceneryOcean();
+  const cameraSite = useCameraSite();
   // The relief's tiles drawn: the World's, else the sky's.
   const reliefTiles = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
   const hub = onGround ? reliefTiles : null;
@@ -254,9 +256,8 @@ export const GeoSymbols = <P,>({
       : 0;
     const lifted = revealed > 0;
     const shown = layerShownAt(
-      camera.position,
+      cameraSite.get(camera),
       globe,
-      ocean,
       visibility.current,
       hub ? 'ground' : lifted ? Math.max(height, 0) : height,
     );

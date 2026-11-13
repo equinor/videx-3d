@@ -5,7 +5,6 @@ import {
   Matrix3,
   type Texture,
   Uniform,
-  Vector2,
   Vector3,
   Vector4,
 } from 'three';
@@ -30,22 +29,26 @@ import waterBodyShader from './shaderLib/water-body.glsl';
 export class WaterBody {
   readonly uniforms: {
     uWaterBody: IUniform<Vector4>;
-    uWaterBodyFloor: IUniform<Vector2>;
+    uWaterBodyFloor: IUniform<Vector4>;
     uWaterBodyExtinction: IUniform<Vector3>;
     uWaterBodyColor: IUniform<Color>;
     uWaterBodyExtent: IUniform<Vector4>;
     uWaterBodyBed: IUniform<Texture | null>;
     uWaterBodyBedToUv: IUniform<Matrix3>;
     uWaterBodyBedInfo: IUniform<Vector4>;
+    uWaterBodyFootprint: IUniform<Texture | null>;
+    uWaterBodyFootprintToUv: IUniform<Matrix3>;
   } = {
     uWaterBody: new Uniform(new Vector4(0, 1, 0, 0)),
-    uWaterBodyFloor: new Uniform(new Vector2(1e30, 1)),
+    uWaterBodyFloor: new Uniform(new Vector4(1e30, 1, 1, 0)),
     uWaterBodyExtinction: new Uniform(new Vector3()),
     uWaterBodyColor: new Uniform(new Color()),
     uWaterBodyExtent: new Uniform(new Vector4(-1e30, -1e30, 1e30, 1e30)),
     uWaterBodyBed: new Uniform<Texture | null>(null),
     uWaterBodyBedToUv: new Uniform(new Matrix3()),
     uWaterBodyBedInfo: new Uniform(new Vector4()),
+    uWaterBodyFootprint: new Uniform<Texture | null>(null),
+    uWaterBodyFootprintToUv: new Uniform(new Matrix3()),
   };
 
   /** what last wrote this body ({@link copyFrom}), so it alone lets go of it */
@@ -114,6 +117,32 @@ export class WaterBody {
   }
 
   /**
+   * Where in its {@link extent} the water lies, for an outline that does not fill it (holes,
+   * notches, parts apart): the signed distance to its outline (`geometryFootprint`'s texture,
+   * positive over the water) and world X/Z (as `(x, z, 1)`) to its uv. Read at a point: what
+   * lies in the water column. A sight line's part in the water is taken over the extent.
+   * `null`, all of the extent. Default none
+   */
+  setFootprint(footprint: { texture: Texture; toUv: Matrix3 } | null): void {
+    this.uniforms.uWaterBodyFootprint.value = footprint?.texture ?? null;
+    if (footprint)
+      this.uniforms.uWaterBodyFootprintToUv.value.copy(footprint.toUv);
+    this.uniforms.uWaterBodyFloor.value.w = footprint ? 1 : 0;
+  }
+
+  /**
+   * Whether the camera is over the water's footprint, as its sea works it out on the CPU (the
+   * camera site's `CameraWater.over`): with its depth, whether the camera is in the water.
+   * Default true, as over an endless sea
+   */
+  get cameraOver(): boolean {
+    return this.uniforms.uWaterBodyFloor.value.z > 0.5;
+  }
+  set cameraOver(value: boolean) {
+    this.uniforms.uWaterBodyFloor.value.z = value ? 1 : 0;
+  }
+
+  /**
    * The seabed's heights (`buildSurfaceDepthMap`'s packing: R the height, G the validity):
    * `toUv` takes world X/Z to its uv, and a height `h` is `yScale·h + yOffset` in the world.
    * Where it covers, the water ends at it; elsewhere at {@link depth}. `null`, none.
@@ -150,6 +179,8 @@ export class WaterBody {
     a.uWaterBodyBed.value = b.uWaterBodyBed.value;
     a.uWaterBodyBedToUv.value.copy(b.uWaterBodyBedToUv.value);
     a.uWaterBodyBedInfo.value.copy(b.uWaterBodyBedInfo.value);
+    a.uWaterBodyFootprint.value = b.uWaterBodyFootprint.value;
+    a.uWaterBodyFootprintToUv.value.copy(b.uWaterBodyFootprintToUv.value);
     this.owner = owner;
   }
 
@@ -159,6 +190,9 @@ export class WaterBody {
     this.owner = null;
     this.optics = null;
     this.setBed(null);
+    this.setFootprint(null);
+    this.extent = null;
+    this.cameraOver = true;
   }
 }
 

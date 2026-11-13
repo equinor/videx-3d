@@ -21,6 +21,7 @@ import {
 } from 'three';
 import { createLayers, LAYERS } from '../../layers/layers';
 import { useStableBoundary } from '../../hooks/useStableBoundary';
+import { useCameraSite } from '../../hooks/useCameraSite';
 import { releaseMaterial } from '../../rendering/precompile';
 import {
   Boundary,
@@ -281,6 +282,7 @@ export const SceneryStage = ({
   // The World's relief covers everything, the stage's own area included, and the stage draws
   // no seabed of its own; only where the sea has one.
   const worldRelief = useWorldRelief();
+  const cameraSite = useCameraSite();
   const tiled = !!worldRelief?.present && hasBed;
   // Drawn at all: with the seabed peeled too while the void is a hollow, around its opening.
   const reliefDrawn = !!worldRelief?.present && (hasBed || !!ocean?.hollow);
@@ -455,12 +457,10 @@ export const SceneryStage = ({
     placed.current = now;
     // Under the seabed's level the void's lid hides the water, seabed or not: the surface
     // would discard every pixel. In the relief's ground above it the camera is in rock
-    // (SceneryMaterial.oceanBuried), where none of the sea shows either.
-    const altitude = sky.globe.altitude(camera.position);
-    const underRelief = tiled ? (worldRelief?.ground.current ?? null) : null;
-    const bed = sky.oceanLevel - sky.oceanDepth;
-    const y = sky.oceanLevel + altitude;
-    const buried = underRelief !== null && y <= underRelief && y > bed;
+    // (the camera site's `buried`), where none of the sea shows either.
+    const site = cameraSite.get(camera);
+    const altitude = site.altitude ?? sky.globe.altitude(camera.position);
+    const buried = tiled && site.buried;
     if (surface.current)
       surface.current.visible =
         surfaceShown && altitude + sky.oceanDepth >= 0 && !buried;

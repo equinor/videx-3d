@@ -85,7 +85,8 @@ two agree to centimetres over a field and drift to metres 100 km out.
 Every layer takes `LayerVisibility`: `visible`, `minHeight`, `maxHeight` — the camera's
 height over the sea, in metres — and `fade`, a ratio of the bound (a layer up to 50 km with
 `fade` 0.2 is gone at 60 km), so it fades alike at 1 km and at 1000 km
-(`layerVisibilityAt`). The height is `globe.altitude(camera)`: under a `Scenery` far from the
+(`layerVisibilityAt`). The height is the camera site's `altitude` (see
+[camera.md](./camera.md#where-the-camera-is)), else `globe.altitude(camera)`: under a `Scenery` far from the
 field, scene Y is not the height (see [scenery.md](./scenery.md#the-globe)). Outside its
 heights a layer draws nothing and loads nothing. On a map, its twin takes the same band to the
 extents the map shows from those heights (`layerExtentVisibilityAt`), or a band of extents of
@@ -95,7 +96,8 @@ its own (`minExtent`, `maxExtent`).
 
 One test, made by every scene layer — `GeoTileLayer` (so `GeoPolygons` and `GeoGraticule`), `GeoTubes`,
 `GeoSymbols`, `GeoLabels`, `TrackLayer` — before it draws or does any work for the frame:
-`layerShownAt(camera.position, globe, ocean, visibility, lies)`. Not shown, its mesh is
+`layerShownAt(site, globe, visibility, lies)`, with where the camera is worked out once a frame
+for all of them (`useCameraSite().get(camera)`, see [camera.md](./camera.md#where-the-camera-is)). Not shown, its mesh is
 hidden: no draw call, no vertex work, and none of its CPU work (laying nodes, choosing
 tiles). Hiding what cannot be seen this way is cheaper, and surer, than leaving it to the
 depth buffer or a shader to discard. It holds:

@@ -7,8 +7,10 @@
 // xyz the world's up, w the surface's height along it.
 uniform vec4 uWaterBody;
 // x how far down the seabed lies under the surface where no bed map says (1e30 none),
-// y the daylight (0 night, 1 day).
-uniform vec2 uWaterBodyFloor;
+// y the daylight (0 night, 1 day), z whether the camera is over the water's footprint (as its
+// sea works it out: WaterBody.cameraOver), w whether a footprint texture says where in the
+// extent the water lies.
+uniform vec4 uWaterBodyFloor;
 // Per channel per world unit; nil, no water.
 uniform vec3 uWaterBodyExtinction;
 uniform vec3 uWaterBodyColor;
@@ -19,6 +21,12 @@ uniform vec4 uWaterBodyExtent;
 uniform sampler2D uWaterBodyBed;
 uniform mat3 uWaterBodyBedToUv;
 uniform vec4 uWaterBodyBedInfo;
+// Where in the extent the water lies (WaterBody.setFootprint), while uWaterBodyFloor.w: the
+// signed distance to its outline (positive over the water), from world X/Z through
+// uWaterBodyFootprintToUv. Read at a point only: what lies in the water column
+// (waterBodyOver). A sight line's part in the water is taken over the extent's box.
+uniform sampler2D uWaterBodyFootprint;
+uniform mat3 uWaterBodyFootprintToUv;
 
 // How far down the seabed lies under the surface at `world`: the bed's map where it covers
 // it, else the flat floor.
@@ -67,12 +75,24 @@ float waterBodyPath(vec3 world, float floorDepth) {
   return waterFogPath(dot(a, up) - uWaterBody.w, dot(b, up) - uWaterBody.w, distance(a, b), -floorDepth, 0.0);
 }
 
-// Whether the camera is in the water: under the surface, over its extent, above the seabed.
-// Beside a water box, below its surface's height, it is in air.
+// Whether the camera is in the water: under the surface, over its footprint (as its sea works
+// it out on the CPU, exactly: uWaterBodyFloor.z), above the seabed. Beside a water box, below
+// its surface's height, it is in air.
 bool waterBodyCameraIn() {
   float depth = uWaterBody.w - dot(cameraPosition, uWaterBody.xyz);
-  vec2 inside = waterBodyInExtent(cameraPosition, cameraPosition);
-  return depth > 0.0 && inside.y >= inside.x && depth < waterBodyFloorAt(cameraPosition);
+  return depth > 0.0 && uWaterBodyFloor.z > 0.5 && depth < waterBodyFloorAt(cameraPosition);
+}
+
+// Whether `world` lies over the water: in its extent, and where a footprint says so (the side
+// of its outline it lies on).
+bool waterBodyOver(vec3 world) {
+  vec2 inside = waterBodyInExtent(world, world);
+  if(inside.y < inside.x)
+    return false;
+  if(uWaterBodyFloor.w < 0.5)
+    return true;
+  vec2 uv = (uWaterBodyFootprintToUv * vec3(world.xz, 1.0)).xy;
+  return texture2D(uWaterBodyFootprint, uv).r > 0.0;
 }
 
 // The light the water carries along a sight line `path` long to `world`, a point `depth` down:
@@ -126,8 +146,7 @@ vec3 waterBodyFog(vec3 color, vec3 world) {
     return color;
   float floorDepth = waterBodyFloorAt(world);
   float depth = uWaterBody.w - dot(world, uWaterBody.xyz);
-  vec2 inside = waterBodyInExtent(world, world);
-  bool inColumn = inside.y >= inside.x && depth <= floorDepth + 0.5;
+  bool inColumn = waterBodyOver(world) && depth <= floorDepth + 0.5;
   depth = clamp(depth, 0.0, floorDepth);
   if(inColumn)
     color *= waterFogDim(waterLitDepth(depth, extinction), extinction);
