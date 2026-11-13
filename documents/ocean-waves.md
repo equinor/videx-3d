@@ -207,7 +207,10 @@ field, and the sea reads it per pixel (`oceanWaves`):
   colour: the water's opacity stays the mean's.
 - Faded with the waves, far off and where two of the `Scenery`'s charts meet (their planes
   differ). From orbit, a field fixed to the globe would be needed.
-- The cost: four value noises a pixel, arithmetic only.
+- The cost: four value noises a pixel, arithmetic only. On the A1000 (2026-11-13, 1920 × 1080
+  at 1, on against off interleaved in one tab, four rounds): the `Scenery`'s sea 3–9 % (2 m
+  to 20 km 1.03–1.06, straight down 1.09, 100 km nothing, faded out there), the stand-alone
+  sea 0–1 %. The frame's own ratios swing more than that between rounds.
 - The bench's `wind` debug view shows the field: blue a lull, red a gust, green a slick.
 
 ## Across the globe

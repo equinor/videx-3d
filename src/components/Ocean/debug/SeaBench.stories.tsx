@@ -286,7 +286,8 @@ const useBenchWeather = (args: SeaBenchArgs): WeatherState => {
       slicks,
       slickScale,
     } as SeaBenchArgs);
-    if (clouds === 'none')
+    // Hidden for the stand-alone sea, the `clouds` arg is not passed at all.
+    if (!clouds || clouds === 'none')
       return calmOf({ windSpeed, windDirection } as SeaBenchArgs, gusts);
     const weather = weatherOf(clouds);
     const wind = weather.wind ?? {
@@ -322,7 +323,9 @@ const SceneryScene = ({
         abyss={{}}
       />
       {args.stage && <SceneryStage boundary={STAGE} />}
-      {args.clouds !== 'none' && <SceneryClouds quality="medium" />}
+      {args.clouds && args.clouds !== 'none' && (
+        <SceneryClouds quality="medium" />
+      )}
     </Scenery>
   );
   return (
