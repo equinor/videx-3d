@@ -119,6 +119,7 @@ export const Ocean = forwardRef(
       bedGeometry,
       windDirection,
       windSpeed,
+      gusts,
       amplitude,
       swells,
       waveTuning,
@@ -180,9 +181,10 @@ export const Ocean = forwardRef(
     useImperativeHandle(fref, () => ref.current!);
 
     // Its own wind where given, the enclosing Weather's for what it leaves out.
-    const wind = useWeatherOceanWind(windSpeed, windDirection);
+    const wind = useWeatherOceanWind(windSpeed, windDirection, gusts);
     const seaWindSpeed = wind.windSpeed;
     const seaWindDirection = wind.windDirection;
+    const seaGusts = wind.gusts;
 
     const material = useMemo(() => {
       if (customMaterial) return customMaterial;
@@ -267,6 +269,7 @@ export const Ocean = forwardRef(
       applyOceanWaterProps(material, {
         windDirection: seaWindDirection,
         windSpeed: seaWindSpeed,
+        gusts: seaGusts,
         amplitude,
         swells,
         waveTuning,
@@ -298,6 +301,7 @@ export const Ocean = forwardRef(
       material,
       seaWindDirection,
       seaWindSpeed,
+      seaGusts,
       amplitude,
       swells,
       waveTuning,

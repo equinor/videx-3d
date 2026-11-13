@@ -41,12 +41,19 @@ share of the sea measured at sea for the wind (about 1 % at 10 m/s, 10 % at 20 m
 wind sea's highest crests. `waveCount`, `directionalSpread`, `detailStrength` and the `tonal*`
 props are deprecated and ignored.
 
-Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed` and
-`windDirection` left out are the weather's wind: its speed, and the way it blows toward. The
-`<Scenery>`'s endless sea and a `ChunkStack`'s water take it the same way. Given, the sea's own
+Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed`, `windDirection`
+and `gusts` left out are the weather's wind: its speed, the way it blows toward, and its gusts.
+The `<Scenery>`'s endless sea and a `ChunkStack`'s water take it the same way. Given, the sea's own
 win. The waves also run at the weather's clock's pace (`timeScale`, `paused`), as many seconds a
 frame as it ran (`useWeatherStep`): a timelapse races them, a paused weather holds them still.
 Its jumps (a `time` set) do not move them.
+
+`gusts` (`WeatherGusts`, default as the wind gives them) is how the wind varies over the sea:
+gusts from cat's paws of some tens of metres to gust fronts of kilometres run downwind with it,
+roughening the short waves and calming them in the lulls; slicks, calm streaks along the wind,
+lie in light air and are gone by about 10 m/s. Seen as darker, rougher patches against a sea
+mirroring the horizon, and in the glint. `{ strength: 0, slicks: 0 }` turns them off. How it
+is drawn: [ocean-waves.md](./ocean-waves.md#gusts-and-slicks).
 
 Far from the camera the detail fades out: between the two distances of
 `detailFadeDistance` (default `[15000, 60000]` m) the waves and foam give way to a flat mirror

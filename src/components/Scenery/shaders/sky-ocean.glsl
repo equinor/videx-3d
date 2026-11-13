@@ -473,6 +473,10 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   vec3 waterColor = mix(uShallowColor, uDeepColor, clamp(ndvAA, 0.0, 1.0)) * night * mix(1.0 - SKY_OCEAN_SUN_SHARE * uSkyDaylight, 1.0, through);
 
   vec3 r = reflect(dir, normal);
+  // Gusts and slicks (oceanWaves) turn the reflection and how much there is of it, in the
+  // colour only: the water's opacity stays the mean's.
+  r = oceanRoughReflect(r, wave.up, wave.rough);
+  float roughFresnel = oceanRoughFresnel(fresnel, ndvAA, wave.rough);
   // Steep waves can tip a reflection below the sea's horizon; mirror it back up. Then the sky
   // it sees is the one over that sea's own horizon, turned onto the up the sky is seen by
   // (globeCameraLook): far off, into the field's frame, it fell below the camera's horizon.
@@ -487,7 +491,7 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // The glint is the scene's light's, which is the field's: far round the Earth only while it
   // stands over the sea's horizon there (skyLightFrom).
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
-  vec3 surface = oceanShade(normal, V, waterColor, reflected, fresnel, glint, wave.rough);
+  vec3 surface = oceanShade(normal, V, waterColor, reflected, roughFresnel, glint, wave.rough);
 
   float foamFar;
   float coverage = max(oceanWindFoam(), oceanContactFoam(p, uTime));

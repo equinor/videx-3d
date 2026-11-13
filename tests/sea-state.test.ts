@@ -154,6 +154,23 @@ describe('SeaState', () => {
     ).toBeGreaterThan(0.9);
   });
 
+  it('roughens its short waves in a gust and calms them in a lull, as the spectrum has them', () => {
+    const factors = [0.25, 0.5, 1, 1.5, 2];
+    const sea = new SeaState(wind(10), SEA_QUALITY.medium);
+    const ratios = sea.shortWaveRatios(factors, sea.layers[3].kMin);
+    expect(ratios[2]).toBeCloseTo(1, 9);
+    for (let i = 1; i < ratios.length; i++)
+      expect(ratios[i], `at ${factors[i]}`).toBeGreaterThan(ratios[i - 1]);
+    // Half the wind leaves the ripples a third or so; the long waves' tail stays.
+    expect(ratios[1]).toBeGreaterThan(0.2);
+    expect(ratios[1]).toBeLessThan(0.5);
+    expect(ratios[3]).toBeGreaterThan(1.3);
+    // No wind, no answer.
+    expect(new SeaState(wind(0)).shortWaveRatios(factors, 4)).toEqual(
+      factors.map(() => 1),
+    );
+  });
+
   it('lets waves join and leave only at no amplitude', () => {
     const sea = new SeaState(wind(8, EAST));
     const amplitudes = () => {

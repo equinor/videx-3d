@@ -3,6 +3,7 @@ import {
   type CompassFrame,
   directionFromCompass,
 } from '../utils/vector-operations';
+import type { WeatherGusts } from './wind-field';
 
 /**
  * What a {@link CloudLayer} is made of, by the cloud atlas's genera, at its
@@ -162,6 +163,11 @@ export type WeatherWind = {
   speed: number;
   /** compass bearing it blows from, in degrees (0 north, 90 east), as weather reports give it */
   from: number;
+  /**
+   * how it varies over the sea: gusts and slicks ({@link WeatherGusts}). Left out, as the
+   * wind's speed gives them
+   */
+  gusts?: WeatherGusts;
 };
 
 /**
@@ -594,14 +600,15 @@ export function windToward(wind: WeatherWind, frame?: CompassFrame): Vec2 {
  */
 export function weatherOceanWind(
   weather: WeatherState | null | undefined,
-  own: { windSpeed?: number; windDirection?: Vec2 },
+  own: { windSpeed?: number; windDirection?: Vec2; gusts?: WeatherGusts },
   frame?: CompassFrame,
-): { windSpeed?: number; windDirection?: Vec2 } {
+): { windSpeed?: number; windDirection?: Vec2; gusts?: WeatherGusts } {
   const wind = weather?.wind;
   return {
     windSpeed: own.windSpeed ?? wind?.speed,
     windDirection:
       own.windDirection ?? (wind ? windToward(wind, frame) : undefined),
+    gusts: own.gusts ?? wind?.gusts,
   };
 }
 

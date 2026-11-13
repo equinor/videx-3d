@@ -204,7 +204,15 @@ void main() {
   #endif
   vec3 waterColor = mix(uShallowColor, uDeepColor, bodyMix);
 
-  vec3 color = oceanShade(N, V, waterColor, oceanSkyReflection(reflect(-V, N)), fresnel, 1.0, rough);
+  // Gusts and slicks (oceanWaves) turn the reflection and how much there is of it, in the
+  // colour only: the water's opacity stays the mean's.
+  vec3 reflected = reflect(-V, N);
+  float roughFresnel = fresnel;
+  if(!underside) {
+    reflected = oceanRoughReflect(reflected, vec3(0.0, 1.0, 0.0), rough);
+    roughFresnel = oceanRoughFresnel(fresnel, ndvAA, rough);
+  }
+  vec3 color = oceanShade(N, V, waterColor, oceanSkyReflection(reflected), roughFresnel, 1.0, rough);
 
   // Foam: wind-driven whitecaps, then the foam the contacts and the shore add.
   float foamCoverage = oceanWindFoam();

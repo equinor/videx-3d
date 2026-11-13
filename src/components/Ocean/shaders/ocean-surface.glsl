@@ -87,6 +87,67 @@ uniform vec3 uSeaDetail;
 #define SEA_FINEST 2
 #endif
 
+#include ../../../sdk/materials/shaderLib/weather-wind.glsl
+
+// The weather's gusts and slicks over the sea (weatherWindAt): x their strength, y the largest
+// gusts across (m), z the slicks the wind allows, w the slicks across (m); x and z nil, none.
+uniform vec4 uWeatherGusts;
+// x how far the mean wind has run (m), y the field's seed.
+uniform vec2 uWeatherGustTravel;
+// The short waves' slope variance in a local wind 0.25, 0.5, 1.5 and 2 times the mean, over
+// the mean's (SeaState.shortWaveRatios): none in no wind, 1 in the mean.
+uniform vec4 uWeatherGustRough;
+// ⚠️ Tuning (OceanWaveTuning.roughReflect): how much rougher water turns the reflection, 1.
+uniform float uRoughReflect;
+// As oceanWaves last found them: the local wind over the mean, the slick there (0 to 1), and
+// the slope variance the pixel cannot show as it would be without either.
+float oceanGust = 1.0;
+float oceanSlick = 0.0;
+float oceanRoughMean = 0.0;
+// How much a slick damps the short waves the gusts move (Cox and Munk's slicks keep about 40 %
+// of the whole slope variance at 10 m/s).
+#define OCEAN_SLICK_DAMPING 0.8
+
+// The short waves' slope variance in a local wind `g` times the mean, over the mean's: through
+// uWeatherGustRough, linear between.
+float oceanGustRough(float g) {
+  vec4 r = uWeatherGustRough;
+  if(g < 0.25)
+    return r.x * g * 4.0;
+  if(g < 0.5)
+    return mix(r.x, r.y, (g - 0.25) * 4.0);
+  if(g < 1.0)
+    return mix(r.y, 1.0, (g - 0.5) * 2.0);
+  if(g < 1.5)
+    return mix(1.0, r.z, (g - 1.0) * 2.0);
+  return max(mix(r.z, r.w, (g - 1.5) * 2.0), 0.0);
+}
+
+// The reflection off water rougher (or smoother) than the sea's mean, `rough` the slope
+// variance the pixel cannot show (oceanWaves): its facets tilted every way see higher up the
+// sky, as cat's paws darken against the bright horizon a glassy sea mirrors. `r` the mirror
+// direction, `up` the sea's up; nothing changes at the mean.
+vec3 oceanRoughReflect(vec3 r, vec3 up, float rough) {
+  return normalize(r + up * (uRoughReflect * (sqrt(rough) - sqrt(oceanRoughMean))));
+}
+
+// Smith's masking of a Beckmann surface of slope variance `rough` (both axes) seen at `ndv`.
+// ⚠️ Kept off 0 (a facet turned from the camera, ndv 0): the ratio of two is 0/0 there, NaN,
+// which draws black.
+float oceanMasking(float ndv, float rough) {
+  float a = max(ndv, 1e-3) * inversesqrt(max(0.5 * rough * (1.0 - ndv * ndv), 1e-8));
+  if(a >= 1.6)
+    return 1.0;
+  return 1.0 / (1.0 + (1.0 - 1.259 * a + 0.396 * a * a) / (3.535 * a + 2.181 * a * a));
+}
+
+// The reflection's `fresnel` at `ndv` for water rougher (or smoother) than the mean: its facets
+// hide each other more as it roughens, toward grazing. Nothing changes at the mean.
+float oceanRoughFresnel(float fresnel, float ndv, float rough) {
+  float ratio = oceanMasking(ndv, rough) / max(oceanMasking(ndv, oceanRoughMean), 1e-4);
+  return clamp(fresnel * mix(1.0, ratio, uRoughReflect), 0.0, 1.0);
+}
+
 // 0 up close, 1 where the sea has faded to a flat mirror, `dist` from the camera.
 float oceanFlatness(float dist) {
   return smoothstep(uDetailFade.x, uDetailFade.y, dist);
@@ -162,6 +223,8 @@ vec4 seaLayerAt(sampler2D map, int index, vec2 p, float pixel2) {
 // ⚠️ Derivatives.
 vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out vec2 crest, out float rough) {
   oceanCrestAlong = 0.0;
+  oceanGust = 1.0;
+  oceanSlick = 0.0;
   float pixel2 = seaPixel2(p);
   float s2 = uSteepness * uSteepness;
   float detailGain2 = uSeaDetail.x * uSeaDetail.x;
@@ -176,8 +239,25 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
     height = 0.0;
     crest = vec2(0.5);
     rough = total * s2 + uSeaResidual;
+    oceanRoughMean = rough;
     return vec3(0.0, 1.0, 0.0);
   }
+  vec2 wind = uWindDirection / max(length(uWindDirection), 1e-6);
+  // The weather's gusts and slicks roughen and calm the short waves: what no layer draws by
+  // the spectrum's answer to the local wind, the ripples and the finest layer a share of it.
+  // Faded with the waves (far off, and where two of a Scenery's charts meet); the slicks'
+  // damping over its mean, so a sea too far off to show them is as rough as without.
+  float gustRough = 1.0;
+  if(uWeatherGusts.x > 0.0 || uWeatherGusts.z > 0.0) {
+    float slick;
+    float g = weatherWindAt(p, wind, uWeatherGustTravel, uWeatherGusts, sqrt(pixel2), slick);
+    oceanGust = mix(1.0, g, detail);
+    oceanSlick = slick * detail;
+    gustRough = oceanGustRough(oceanGust) * (1.0 - OCEAN_SLICK_DAMPING * oceanSlick) / (1.0 - OCEAN_SLICK_DAMPING * WEATHER_SLICK_MEAN * uWeatherGusts.z);
+  }
+  // What that adds to the slopes drawn, and to all of them: the mean less these is the mean.
+  float gustSlope = 0.0;
+  float gustTotal = 0.0;
   vec4 l0 = seaLayerAt(uSeaSurface0, 0, p, pixel2);
   vec4 l1 = seaLayerAt(uSeaSurface1, 1, p, pixel2);
   vec4 l2 = seaLayerAt(uSeaSurface2, 2, p, pixel2);
@@ -190,17 +270,29 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
   float zCrestFine = l2.z * inversesqrt(max(uSeaLayerStats[2].y, 1e-8));
   #if SEA_LAYERS > 3
   vec4 l3 = seaLayerAt(uSeaSurface3, 3, p, pixel2);
+  // The finest layer (7.3 m on medium) answers the local wind by half (it lies mostly above
+  // the short waves).
+  float gustLayer = mix(1.0, sqrt(gustRough), 0.5);
+  float gustLayer2 = gustLayer * gustLayer - 1.0;
+  gustSlope += gustLayer2 * l3.w;
+  gustTotal += gustLayer2 * uSeaLayerStats[3].x;
+  l3 *= vec4(gustLayer, gustLayer, gustLayer, gustLayer * gustLayer);
   fine = l3;
   fineVariance = uSeaLayerStats[3].y;
   sum += l3;
   #endif
   // The ripples, where drawn (SEA_DETAIL): the finest layer again, smaller, its slopes by the
   // gain (heights by the gain over the scale), on its own hex cells, sliding under them
-  // downwind.
+  // downwind; by the local wind.
   #ifdef SEA_DETAIL
   vec4 ripples = seaLayerReadShifted(uSeaFinest, uSeaDetailLayer, uSeaLayerStats[SEA_FINEST], SEA_LAYERS, seaLayerUv(uSeaDetailLayer, p), uSeaDetail.yz, seaLayerLod(uSeaDetailLayer, pixel2));
-  sum += ripples * vec4(uSeaDetail.x, uSeaDetail.x, uSeaDetail.x * uSeaLayers[SEA_FINEST].x / uSeaDetailLayer.x, detailGain2);
+  float rippleGain = uSeaDetail.x * sqrt(gustRough);
+  float rippleGain2 = rippleGain * rippleGain;
+  sum += ripples * vec4(rippleGain, rippleGain, rippleGain * uSeaLayers[SEA_FINEST].x / uSeaDetailLayer.x, rippleGain2);
+  gustSlope += (rippleGain2 - detailGain2) * ripples.w;
+  gustTotal += (rippleGain2 - detailGain2) * uSeaLayerStats[SEA_FINEST].x;
   #endif
+  total += gustTotal;
   // What breaks the crests up finest (and froths the foam, `crest.y`): the layer below the 47 m
   // one, else the ripples, else the 47 m layer itself.
   #if SEA_LAYERS > 3
@@ -214,7 +306,9 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
   float resolved = max(total - sum.w, 0.0);
   slope = sum.xy * detail * uSteepness;
   height = sum.z * detail;
-  rough = (sum.w + (1.0 - detail * detail) * resolved) * s2 + uSeaResidual;
+  float unresolved = 1.0 - detail * detail;
+  rough = (sum.w + unresolved * resolved) * s2 + uSeaResidual * gustRough;
+  oceanRoughMean = (sum.w - gustSlope + unresolved * max(total - gustTotal - sum.w + gustSlope, 0.0)) * s2 + uSeaResidual;
   // The wind sea's crests (the 307 m and 47 m layers), broken up by the 47 m layer's and the
   // finer waves', in standard deviations: ±3 over [0, 1] (OCEAN_CREST_SPAN).
   float crestFine = OCEAN_CREST_FINE * uFoamShape.x;
@@ -229,7 +323,6 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
   // rescaled so as much of the sea stays over the threshold): long along a crest, thin across.
   vec2 crestSlope = l1.xy + l2.xy;
   float crestSlopeVariance = uSeaLayerStats[1].x + uSeaLayerStats[2].x;
-  vec2 wind = uWindDirection / max(length(uWindDirection), 1e-6);
   // Along one axis, half the slope variance of both. Rising downwind (> 0) on a crest's back,
   // the side its foam trails on as the crest runs on.
   oceanCrestAlong = dot(crestSlope, wind) * inversesqrt(max(0.5 * crestSlopeVariance, 1e-10));
@@ -396,7 +489,9 @@ vec3 oceanFoamOver(vec3 color, vec3 foamColor, vec3 N, float opacity, vec3 sky, 
 //   oceanFoam's), blue on the crests' backs, where the foam trails as they run on downwind,
 //   amber on their fronts;
 // 2 crests: the crests' height as a ramp (blue low, red high), the foam's threshold for the
-//   wind (oceanWindFoam) as a white line.
+//   wind (oceanWindFoam) as a white line;
+// 3 wind: the local wind over the mean (oceanGust; blue a lull, white the mean, red a gust,
+//   full at ±50 %), green where a slick lies.
 vec3 oceanDebugView(vec3 color, vec2 crest, float foam) {
   int view = int(uFoamGrain.w + 0.5);
   if(view == 1) {
@@ -413,6 +508,11 @@ vec3 oceanDebugView(vec3 color, vec2 crest, float foam) {
     float threshold = 1.0 - oceanWindFoam();
     float line = 1.0 - smoothstep(0.0, 1.5 * fwidth(x) + 1e-4, abs(x - threshold));
     return mix(ramp, vec3(1.0), line);
+  }
+  if(view == 3) {
+    float g = clamp((oceanGust - 1.0) * 2.0, -1.0, 1.0);
+    vec3 base = g > 0.0 ? mix(vec3(1.0), vec3(0.85, 0.1, 0.05), g) : mix(vec3(1.0), vec3(0.05, 0.25, 0.9), -g);
+    return mix(base, vec3(0.1, 0.7, 0.3), oceanSlick * 0.8);
   }
   return color;
 }

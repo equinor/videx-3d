@@ -140,6 +140,7 @@ export * from './utils/vector-operations';
 export * from './weather/weather';
 export * from './weather/weather-clock';
 export * from './weather/weather-systems';
+export * from './weather/wind-field';
 
 export * from './materials/apply-globe';
 export * from './materials/bake-texture';

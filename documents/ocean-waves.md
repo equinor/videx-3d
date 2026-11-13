@@ -176,6 +176,40 @@ draws alone):
 - So the wave core passes on the Iris Xe as the whole sea: cheaper at every pose, most where
   the sea fills the view.
 
+## Gusts and slicks
+
+The wind over the sea is not the same everywhere, and its short waves show it: cat's paws, the
+patches a gust roughens, darker against a sea mirroring the bright horizon; lulls and slicks,
+glassy. The weather's `WeatherGusts` (`sdk/weather/wind-field.ts`, `weather-wind.glsl`) is that
+field, and the sea reads it per pixel (`oceanWaves`):
+
+- **The field.** Three octaves of value noise, 1, 1/5 and 1/25 of `scale` (3 km) across,
+  stretched along the wind, each running downwind at its own share of the wind's speed (0.85,
+  1, 1.15), so the field changes shape as it goes rather than sliding. Its spread about the
+  mean wind is `strength` (one standard deviation; by default 0.38 in light air to 0.24 in a
+  gale, `gustStrengthFor`). Slicks: one octave, `slickScale` (400 m) across and five times as
+  long, drifting with a slow current, over about 23 % of the sea in light air and none from
+  10 m/s (`slickShareFor`). Each octave gives way to its mean below two pixels, so far off the
+  field is the mean, with no shimmer.
+- **What it does to the waves.** A gust changes the wind's friction velocity, and with it only
+  the short waves' strength α_m (Elfouhaily); the long waves stay as the mean wind raised them.
+  `SeaState.shortWaveRatios` gives, from the spectrum, the slope variance of the waves finer
+  than the finest layer's band at 0.25, 0.5, 1.5 and 2 times the wind over the mean's: at
+  10 m/s 0.06, 0.32, 1.57 and 1.99, and below about 2.7 m/s none (α_m is nil there), so a
+  lull goes glassy. The shader takes that curve: what no layer draws (the residual) and the
+  ripples by all of it, the finest layer (7.3 m on `medium`) by half. A slick damps them by
+  0.8 more. Normalised by the slicks' mean, so a sea too far off to show them is as rough as
+  without.
+- **What it does to the light.** Rougher water reflects higher up the sky, and its facets hide
+  each other toward grazing (Smith's masking for a Beckmann surface); smoother water mirrors the
+  horizon. Both are taken against the mean wind's roughness, so nothing changes where the wind
+  is the mean (`oceanRoughReflect`, `oceanRoughFresnel`; ⚠️ tuning `roughReflect`). Only the
+  colour: the water's opacity stays the mean's.
+- Faded with the waves, far off and where two of the `Scenery`'s charts meet (their planes
+  differ). From orbit, a field fixed to the globe would be needed.
+- The cost: four value noises a pixel, arithmetic only.
+- The bench's `wind` debug view shows the field: blue a lull, red a gust, green a slick.
+
 ## Across the globe
 
 A sea state stands for a region's weather. Only the waves near the camera are drawn as waves;
@@ -192,10 +226,10 @@ weather the bake eases toward it as it does for the wind.
 - **The presets on the Iris Xe**: `low`, `high` and `ultra` are not yet measured there.
 - **Ripples with the wind, the rest**: Elfouhaily's short waves grow with the wind mostly
   below a quarter of a metre, so the waves `medium` draws are still much alike at 3 and 20 m/s
-  (see the table above). Gusts and cat's paws, as the short waves' strength varying across the
-  sea and in time, would carry the wind into them.
+  (see the table above); the gusts and slicks now carry the local wind into them.
 - **Glitter**: the ripples no layer draws only widen the glint, so it is a smooth patch where
   the sea sparkles.
 - **Into the sea**: `Weather` (`swell`, one sea state shared), the `Scenery`'s far charts for
-  floating objects, gusts and slicks as roughness (where the tonal patches were), the whitecaps'
-  life (streaks downwind, decay), the water's optics.
+  floating objects, the whitecaps' life (streaks downwind, decay), the water's optics.
+- **The gusts elsewhere**: the clouds (gust fronts under showers), and a field fixed to the
+  globe for the sea seen from orbit.

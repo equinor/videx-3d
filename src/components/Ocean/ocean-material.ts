@@ -29,6 +29,10 @@ import {
   type SeaQuality,
 } from '../../sdk/weather/sea-state';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
+import {
+  type WeatherGusts,
+  weatherGustsOf,
+} from '../../sdk/weather/wind-field';
 import { SeaWaveBake } from './sea-wave-bake';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
@@ -220,6 +224,11 @@ export type OceanWaveTuning = {
   hex?: boolean;
   /** the hex cells' blend sharpened by this power, 1 */
   hexSharpness?: number;
+  /**
+   * how much rougher water (a gust's) turns the reflection up the sky and hides more of it
+   * toward grazing, and smoother (a lull's, a slick's) mirrors the horizon; 1
+   */
+  roughReflect?: number;
 };
 
 /**
@@ -252,13 +261,19 @@ export type OceanFoamTuning = {
   /**
    * ⚠️ Debug: a view in place of the surface. `whitecaps`: grey by the crests' height, red where
    * foam forms, blue on the crests' backs (where it trails), amber on their fronts. `crests`:
-   * the crests' height as a ramp, the foam's threshold for the wind as a white line.
+   * the crests' height as a ramp, the foam's threshold for the wind as a white line. `wind`:
+   * the local wind over the mean (blue a lull, red a gust), green where a slick lies.
    */
   debug?: OceanDebugView;
 };
 
 /** ⚠️ Debug views of the sea ({@link OceanFoamTuning.debug}). */
-export const OCEAN_DEBUG_VIEWS = ['none', 'whitecaps', 'crests'] as const;
+export const OCEAN_DEBUG_VIEWS = [
+  'none',
+  'whitecaps',
+  'crests',
+  'wind',
+] as const;
 export type OceanDebugView = (typeof OCEAN_DEBUG_VIEWS)[number];
 
 // [breakup, edge, froth, falloff] and [farFade, opacity, lit, lift] as drawn by default.
@@ -293,6 +308,10 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uFresnelPower',
   'uDetailScale',
   'uDetailFade',
+  'uWeatherGusts',
+  'uWeatherGustTravel',
+  'uWeatherGustRough',
+  'uRoughReflect',
   ...SEA_LAYER_UNIFORMS,
   'uContactCount',
   'uContactA',
@@ -319,6 +338,9 @@ export const OCEAN_SURFACE_UNIFORMS = [
  */
 /** The most layers a sea draws (`SEA_QUALITY`): the uniforms for them are always there. */
 const OCEAN_MAX_SEA_LAYERS = 4;
+// The local winds over the mean the short waves' answer is worked out at (uWeatherGustRough):
+// linear between, none at 0, 1 at the mean.
+const OCEAN_GUST_FACTORS = [0.25, 0.5, 1.5, 2] as const;
 
 export class OceanMaterial extends ShaderMaterial {
   isOceanMaterial = true;
@@ -335,6 +357,7 @@ export class OceanMaterial extends ShaderMaterial {
   private _swells: SeaSwell[] = [];
   private _waveTuning: OceanWaveTuning = {};
   private _foamTuning: OceanFoamTuning = {};
+  private _gusts: WeatherGusts | null = null;
   private _contactCount!: number;
   // Whether the clock has run: until it does, a new wind is the sea's at once (settled).
   private _running = false;
@@ -474,6 +497,13 @@ export class OceanMaterial extends ShaderMaterial {
         uDetailStrength: new Uniform(0.2),
         uDetailFade: new Uniform(new Vector2(15000, 60000)),
 
+        // The weather's gusts and slicks (updateGusts), none until given a wind.
+        uWeatherGusts: new Uniform(new Vector4()),
+        uWeatherGustTravel: new Uniform(new Vector2()),
+        uWeatherGustRough: new Uniform(new Vector4(1, 1, 1, 1)),
+        // ⚠️ Tuning (waveTuning.roughReflect).
+        uRoughReflect: new Uniform(1),
+
         uMasterOpacity: new Uniform(1),
       },
     });
@@ -544,6 +574,7 @@ export class OceanMaterial extends ShaderMaterial {
    * not per frame (some milliseconds).
    */
   private updateWaves(resettle = false): void {
+    this.updateGusts();
     const direction = this.uniforms.uWindDirection.value as Vector2;
     const input = {
       windSpeed: this.uniforms.uWindSpeed.value as number,
@@ -560,6 +591,43 @@ export class OceanMaterial extends ShaderMaterial {
     this.seaState.setInput(input);
     if (!this._running || resettle) this.seaState.settle();
     this.uniforms.uSignificantHeight.value = this.seaState.stats().targetHeight;
+    // How the short waves answer the gusts, from the finest layer's band up on medium and
+    // finer (it answers by half, the ripples and what no layer draws in full), else from
+    // what no layer draws.
+    const layers = this.seaState.layers;
+    const kMin =
+      layers.length > 3 ? layers[3].kMin : layers[layers.length - 1].kMax;
+    (this.uniforms.uWeatherGustRough.value as Vector4).fromArray(
+      this.seaState.shortWaveRatios(OCEAN_GUST_FACTORS, kMin),
+    );
+  }
+
+  // The gust field for the wind and the gusts given (weatherGustsOf).
+  private updateGusts(): void {
+    const field = weatherGustsOf(
+      this.uniforms.uWindSpeed.value as number,
+      this._gusts,
+    );
+    (this.uniforms.uWeatherGusts.value as Vector4).set(
+      Math.max(field.strength, 0),
+      Math.max(field.scale, 1),
+      Math.min(Math.max(field.slicks, 0), 1),
+      Math.max(field.slickScale, 1),
+    );
+    (this.uniforms.uWeatherGustTravel.value as Vector2).y = field.seed;
+  }
+
+  /**
+   * The weather's gusts and slicks over the sea ({@link WeatherGusts}): the short waves
+   * roughen in a gust and calm in a lull and a slick. `null`, as the wind gives them; with
+   * `strength` and `slicks` 0, none.
+   */
+  get gusts(): WeatherGusts | null {
+    return this._gusts;
+  }
+  set gusts(value: WeatherGusts | null) {
+    this._gusts = value ? { ...value } : null;
+    this.updateGusts();
   }
 
   /**
@@ -572,11 +640,16 @@ export class OceanMaterial extends ShaderMaterial {
   set time(value: number) {
     const dt = value - (this.uniforms.uTime.value as number);
     this.uniforms.uTime.value = value;
+    // The gusts run with the mean wind.
+    const travel = this.uniforms.uWeatherGustTravel.value as Vector2;
+    const speed = this.uniforms.uWindSpeed.value as number;
     if (dt > 0 && dt < 3600) {
       this.seaState.update(dt);
       this._running = true;
+      travel.x += speed * dt;
     } else {
       this.seaState.time = value;
+      travel.x = speed * value;
     }
   }
 
@@ -633,6 +706,7 @@ export class OceanMaterial extends ShaderMaterial {
     this._waveTuning = { ...value };
     const hex = this.uniforms.uSeaHex.value as Vector2;
     hex.set(value.hex === false ? 0 : 1, value.hexSharpness ?? 1);
+    this.uniforms.uRoughReflect.value = value.roughReflect ?? 1;
     this.updateWaves(true);
   }
 

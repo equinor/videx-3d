@@ -10,6 +10,7 @@ import {
   type SkyPreset,
   type WeatherState,
 } from '../../../sdk/weather/weather';
+import type { WeatherGusts } from '../../../sdk/weather/wind-field';
 import { SceneryArgsFeatures } from '../../../storybook/components/scenery-features';
 import {
   sceneryArgs,
@@ -112,6 +113,18 @@ type SeaBenchArgs = {
   foamNarrow: number;
   /** ⚠️ Debug: a view of the sea in place of its surface (`OceanFoamTuning.debug`) */
   debugView: OceanDebugView;
+  /** the gusts' strength as the wind gives it (`gustStrengthFor`) */
+  gustAuto: boolean;
+  /** the gusts' strength, where not as the wind gives it (`WeatherGusts.strength`) */
+  gustStrength: number;
+  /** the largest gusts across, metres (`WeatherGusts.scale`) */
+  gustScale: number;
+  /** the share of the slicks the wind allows (`WeatherGusts.slicks`) */
+  slicks: number;
+  /** the slicks across, metres (`WeatherGusts.slickScale`) */
+  slickScale: number;
+  /** ⚠️ Tuning (`OceanWaveTuning.roughReflect`) */
+  roughReflect: number;
   /** the stand-alone sea's vertices moved by its long waves (`Ocean`'s `displacement`) */
   displacement: boolean;
   stage: boolean;
@@ -131,6 +144,15 @@ const tuningOf = (args: SeaBenchArgs): OceanWaveTuning => ({
   ripples: args.ripples,
   hex: args.hex,
   hexSharpness: args.hexSharpness,
+  roughReflect: args.roughReflect,
+});
+
+// The weather's gusts and slicks, as the args have them.
+const gustsOf = (args: SeaBenchArgs): WeatherGusts => ({
+  strength: args.gustAuto ? undefined : args.gustStrength,
+  scale: args.gustScale,
+  slicks: args.slicks,
+  slickScale: args.slickScale,
 });
 
 // The foam's shaping, as the args have it.
@@ -240,10 +262,48 @@ const weatherOf = (preset: SkyPreset): WeatherState => {
   };
 };
 
-// No clouds and no wind of its own: only its clock, which `paused` and `timeScale` set.
-const CALM: WeatherState = {
+// No clouds: the args' wind, its gusts, and the clock, which `paused` and `timeScale` set.
+const calmOf = (args: SeaBenchArgs, gusts: WeatherGusts): WeatherState => ({
   clouds: [],
+  wind: {
+    speed: args.windSpeed,
+    from: (args.windDirection + 180) % 360,
+    gusts,
+  },
   local: { radius: WEATHER_LOCAL_RADIUS },
+});
+
+// The bench's weather: a preset's sky and wind, or calm; the gusts the args'. The seas take
+// their own wind, so from the weather only its gusts.
+const useBenchWeather = (args: SeaBenchArgs): WeatherState => {
+  const { clouds, windSpeed, windDirection } = args;
+  const { gustAuto, gustStrength, gustScale, slicks, slickScale } = args;
+  return useMemo(() => {
+    const gusts = gustsOf({
+      gustAuto,
+      gustStrength,
+      gustScale,
+      slicks,
+      slickScale,
+    } as SeaBenchArgs);
+    if (clouds === 'none')
+      return calmOf({ windSpeed, windDirection } as SeaBenchArgs, gusts);
+    const weather = weatherOf(clouds);
+    const wind = weather.wind ?? {
+      speed: windSpeed,
+      from: (windDirection + 180) % 360,
+    };
+    return { ...weather, wind: { ...wind, gusts } };
+  }, [
+    clouds,
+    windSpeed,
+    windDirection,
+    gustAuto,
+    gustStrength,
+    gustScale,
+    slicks,
+    slickScale,
+  ]);
 };
 
 const SceneryScene = ({
@@ -253,10 +313,7 @@ const SceneryScene = ({
   args: SeaBenchArgs;
   sky: SceneryArgs;
 }) => {
-  const weather = useMemo(
-    () => (args.clouds === 'none' ? null : weatherOf(args.clouds)),
-    [args.clouds],
-  );
+  const weather = useBenchWeather(args);
   const scenery = (
     <Scenery {...sceneryPropsFromArgs(sky)}>
       <SceneryArgsFeatures
@@ -265,14 +322,14 @@ const SceneryScene = ({
         abyss={{}}
       />
       {args.stage && <SceneryStage boundary={STAGE} />}
-      {weather && <SceneryClouds quality="medium" />}
+      {args.clouds !== 'none' && <SceneryClouds quality="medium" />}
     </Scenery>
   );
   return (
     <World frame={sceneryReliefFrame(sky)} globe={sky.globe}>
       <SceneryStoryRendering args={sky} />
       <Weather
-        weather={weather ?? CALM}
+        weather={weather}
         paused={args.paused}
         timeScale={args.timeScale}
       >
@@ -285,10 +342,15 @@ const SceneryScene = ({
 const SeaBenchStory = (args: SeaBenchArgs) => {
   const sky = skyArgs(args);
   const ocean = args.scene === 'ocean';
+  const weather = useBenchWeather(args);
   return (
     <>
       {ocean ? (
-        <Weather weather={CALM} paused={args.paused} timeScale={args.timeScale}>
+        <Weather
+          weather={weather}
+          paused={args.paused}
+          timeScale={args.timeScale}
+        >
           <StandAlone args={args} sky={sky} />
         </Weather>
       ) : (
@@ -509,7 +571,7 @@ const meta = {
       control: { type: 'inline-radio' },
       options: OCEAN_DEBUG_VIEWS,
       description:
-        'WHITECAPS: grey by the crests’ height, red where foam forms, blue on the crests’ backs (the side the foam trails on as they run on downwind), amber on their fronts. CRESTS: the crests’ height as a ramp (blue low, red high), the foam’s threshold for the wind as a white line.',
+        'WHITECAPS: grey by the crests’ height, red where foam forms, blue on the crests’ backs (the side the foam trails on as they run on downwind), amber on their fronts. CRESTS: the crests’ height as a ramp (blue low, red high), the foam’s threshold for the wind as a white line. WIND: the local wind over the mean (blue a lull, white the mean, red a gust, full at ±50 %), green where a slick lies.',
     },
     pose: {
       table: { category: 'Bench' },
@@ -636,6 +698,43 @@ const meta = {
         'The foam narrowed toward the crest lines: long along a crest, thin across it. About as much of the sea stays foam. 0 as now.',
       table: { category: 'Foam (tuning)' },
     },
+    gustAuto: {
+      control: { type: 'boolean' },
+      description:
+        'The gusts’ strength as the wind gives it (`gustStrengthFor`: about 0.38 in light air, 0.24 in a gale).',
+      table: { category: 'Gusts (weather)' },
+    },
+    gustStrength: {
+      control: { type: 'range', min: 0, max: 0.6, step: 0.01 },
+      description:
+        'The local wind’s spread about the mean, a share of it (one standard deviation). 0: no gusts.',
+      table: { category: 'Gusts (weather)' },
+      if: { arg: 'gustAuto', truthy: false },
+    },
+    gustScale: {
+      control: { type: 'range', min: 200, max: 10000, step: 100 },
+      description:
+        'The largest gusts across, metres, running downwind; cat’s paws are a 25th of it.',
+      table: { category: 'Gusts (weather)' },
+    },
+    slicks: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description:
+        'The share of the slicks the wind allows (all in light air, none from about 10 m/s): calm streaks along the wind.',
+      table: { category: 'Gusts (weather)' },
+    },
+    slickScale: {
+      control: { type: 'range', min: 50, max: 2000, step: 10 },
+      description:
+        'The slicks across, metres; five times as long along the wind.',
+      table: { category: 'Gusts (weather)' },
+    },
+    roughReflect: {
+      control: { type: 'range', min: 0, max: 3, step: 0.05 },
+      description:
+        '⚠️ Tuning: how much rougher water (a gust) turns the reflection up the sky and hides more of it toward grazing, smoother (a lull, a slick) mirroring the horizon. 0: the gusts only change the glint. 1 as drawn.',
+      table: { category: 'Gusts (weather)' },
+    },
     stage: {
       table: { category: 'Bench' },
       control: { type: 'boolean' },
@@ -697,6 +796,12 @@ const meta = {
     foamGrainScale: 0.1,
     foamNarrow: 0,
     debugView: 'none',
+    gustAuto: true,
+    gustStrength: 0.3,
+    gustScale: 3000,
+    slicks: 1,
+    slickScale: 400,
+    roughReflect: 1,
     displacement: false,
     stage: true,
     paused: false,

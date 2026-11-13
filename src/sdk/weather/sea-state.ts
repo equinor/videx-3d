@@ -1,10 +1,12 @@
 import { seaHexTiles } from './sea-hex';
 import {
   coxMunkSlopeVariance,
+  frictionVelocity,
   SEA_G,
   seaSpectrum,
   type SeaSpectrum,
   type SeaSpectrumInput,
+  shortWaveStrength,
 } from './sea-spectrum';
 
 /**
@@ -97,6 +99,8 @@ const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 export const SEA_DETAIL_SCALE = 6.4;
 // The detail octave's slope variance over its finest layer's, at most.
 const DETAIL_RATIO_LIMIT = 4;
+// The shortest waves reckoned with (rad/m): about a millimetre.
+const SHORT_WAVE_K_MAX = 6000;
 
 /** The layers `specs` make: each one's band from the last's top to its own 4-texel limit. */
 export function seaLayers(specs: readonly SeaLayerSpec[]): SeaLayer[] {
@@ -554,6 +558,26 @@ export class SeaState {
         );
     }
     return h;
+  }
+
+  /**
+   * How the short waves answer a local wind (a gust, a lull): per wind `factors` on the mean,
+   * the slope variance of the waves from `kMin` (rad/m) up over the mean wind's. Only the short
+   * waves' strength follows the local wind's friction velocity; the long waves stay as the
+   * mean wind raised them. All 1 in a calm.
+   */
+  shortWaveRatios(factors: readonly number[], kMin: number): number[] {
+    const spectrum = this.spectrum;
+    const windSpeed = spectrum?.input.windSpeed ?? 0;
+    const total = spectrum?.slopeVariance(kMin, SHORT_WAVE_K_MAX) ?? 0;
+    if (!spectrum || !(windSpeed > 0) || !(total > 0))
+      return factors.map(() => 1);
+    const short = spectrum.shortSlopeVariance(kMin, SHORT_WAVE_K_MAX);
+    const alpha = shortWaveStrength(frictionVelocity(windSpeed));
+    return factors.map(g => {
+      const local = shortWaveStrength(frictionVelocity(windSpeed * g));
+      return Math.max(total + short * (local - alpha), 0) / total;
+    });
   }
 
   /** The waves' statistics now: what is drawn, and what no wave stands for. */

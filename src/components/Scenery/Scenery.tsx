@@ -1223,8 +1223,15 @@ export const Scenery = ({
 
   // Its own wind where given, the enclosing Weather's for what it leaves out: in the wave
   // plane, true east and south, as the default compass frame's X and Z.
-  const { windSpeed: seaWindSpeed, windDirection: seaWindDirection } =
-    useWeatherOceanWind(oceanOptions?.windSpeed, oceanOptions?.windDirection);
+  const {
+    windSpeed: seaWindSpeed,
+    windDirection: seaWindDirection,
+    gusts: seaGusts,
+  } = useWeatherOceanWind(
+    oceanOptions?.windSpeed,
+    oceanOptions?.windDirection,
+    oceanOptions?.gusts,
+  );
 
   // Every render: the props are an inline object, and applying them is cheap.
   useLayoutEffect(() => {
@@ -1233,6 +1240,7 @@ export const Scenery = ({
       ...oceanOptions,
       windSpeed: seaWindSpeed,
       windDirection: seaWindDirection,
+      gusts: seaGusts,
     });
   });
 

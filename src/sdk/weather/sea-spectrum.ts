@@ -176,6 +176,11 @@ export type SeaSpectrum = {
   variance: (kLo: number, kHi: number) => number;
   /** slope variance (both axes summed) of the waves with wavenumbers in [kLo, kHi) */
   slopeVariance: (kLo: number, kHi: number) => number;
+  /**
+   * the wind sea's short waves' share of {@link slopeVariance} per unit of their strength α_m
+   * ({@link shortWaveStrength}), which alone follows the wind as it gusts
+   */
+  shortSlopeVariance: (kLo: number, kHi: number) => number;
   /** significant wave height of all of it, metres */
   significantHeight: number;
   input: SeaSpectrumInput;
@@ -184,6 +189,8 @@ export type SeaSpectrum = {
 type Part = {
   // frequency density S(ω), m²·s
   frequency: (w: number) => number;
+  // the short waves' share of it per unit of their strength α_m (the wind sea's), m²·s
+  short?: (w: number) => number;
   // directional exponent s at ω
   spread: (w: number) => number;
   angle: number;
@@ -243,6 +250,14 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
           cut(w)
         );
       },
+      short: w => {
+        const k = (w * w) / SEA_G;
+        return (
+          ((elfouhaily(k, kp, omega, 1)[1] * scale2) / (k * k * k)) *
+          ((2 * w) / SEA_G) *
+          cut(w)
+        );
+      },
       spread: w => windSeaSpread(w, wp, floor),
       angle: angleOf(input.windDirection),
       variance: Math.max(m0, shortVariance),
@@ -280,8 +295,9 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
     return sum * jacobian;
   };
 
-  // ∫ S(ω) k^p dω over the band, in log steps (directions integrate to 1).
-  const moment = (kLo: number, kHi: number, p: number) => {
+  // ∫ S(ω) k^p dω over the band, in log steps (directions integrate to 1); `short`, the short
+  // waves' per unit of their strength alone.
+  const moment = (kLo: number, kHi: number, p: number, short = false) => {
     if (!(kHi > kLo) || parts.length === 0) return 0;
     const wLo = Math.sqrt(SEA_G * Math.max(kLo, 1e-6));
     const wHi = Math.sqrt(SEA_G * kHi);
@@ -293,7 +309,8 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
       const w = Math.exp(lo + ((i + 0.5) / steps) * (hi - lo));
       const k = (w * w) / SEA_G;
       let f = 0;
-      for (const part of parts) f += part.frequency(w);
+      for (const part of parts)
+        f += short ? (part.short?.(w) ?? 0) : part.frequency(w);
       sum += f * Math.pow(k, p) * w * ((hi - lo) / steps);
     }
     return sum;
@@ -304,6 +321,7 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
     density,
     variance: (kLo, kHi) => moment(kLo, kHi, 0),
     slopeVariance: (kLo, kHi) => moment(kLo, kHi, 2),
+    shortSlopeVariance: (kLo, kHi) => moment(kLo, kHi, 2, true),
     significantHeight: 4 * Math.sqrt(total),
     input,
   };

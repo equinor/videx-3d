@@ -1,6 +1,7 @@
 import { Vector2, Vector3 } from 'three';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
+import type { WeatherGusts } from '../../sdk/weather/wind-field';
 import { OceanBedMaterial } from './ocean-bed-material';
 import {
   OceanMaterial,
@@ -29,6 +30,12 @@ export type OceanWaterProps = {
    * relations (e.g. ~10 m/s ⇒ Hs ~ 2.1 m, peak wavelength ~ 88 m).
    */
   windSpeed?: number;
+  /**
+   * How the wind varies over the sea: gusts that roughen the short waves as they run downwind
+   * (cat's paws to gust fronts), and slicks, calm streaks in light winds. Left out, the
+   * enclosing `Weather`'s, else as the wind gives them; `{ strength: 0, slicks: 0 }`, none.
+   */
+  gusts?: WeatherGusts;
   /** Wave height multiplier on top of the spectrum's physical Hs. */
   amplitude?: number;
   /**
@@ -249,6 +256,8 @@ export function applyOceanWaterProps(
       props.windDirection[1],
     );
   if (props.windSpeed !== undefined) material.windSpeed = props.windSpeed;
+  // Left out is as the wind gives them, so only where the caller speaks of them at all.
+  if ('gusts' in props) material.gusts = props.gusts ?? null;
   if (props.amplitude !== undefined) material.amplitude = props.amplitude;
   if (props.swells) material.swells = props.swells;
   if (props.waveTuning) material.waveTuning = props.waveTuning;

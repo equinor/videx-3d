@@ -71,8 +71,11 @@ export function useStackWater(
 
   const contacts = useMemo(createOceanContactRegistry, []);
   // Its own wind where given, the enclosing Weather's for what it leaves out.
-  const { windSpeed: seaWindSpeed, windDirection: seaWindDirection } =
-    useWeatherOceanWind(water?.windSpeed, water?.windDirection);
+  const {
+    windSpeed: seaWindSpeed,
+    windDirection: seaWindDirection,
+    gusts: seaGusts,
+  } = useWeatherOceanWind(water?.windSpeed, water?.windDirection, water?.gusts);
 
   // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
   // materials. That is a discrete choice, unlike the sea state, which is swept.
@@ -117,6 +120,7 @@ export function useStackWater(
       ...water,
       windSpeed: seaWindSpeed,
       windDirection: seaWindDirection,
+      gusts: seaGusts,
       opacity,
     };
     applyOceanWaterProps(materials.surface, props);
@@ -131,7 +135,15 @@ export function useStackWater(
     materials.surface.wireframe = wireframe;
     materials.volume.wireframe = wireframe;
     if (materials.face) materials.face.wireframe = wireframe;
-  }, [materials, water, seaWindSpeed, seaWindDirection, wireframe, level]);
+  }, [
+    materials,
+    water,
+    seaWindSpeed,
+    seaWindDirection,
+    seaGusts,
+    wireframe,
+    level,
+  ]);
 
   // The waves at the enclosing Weather's pace.
   const step = useWeatherStep();

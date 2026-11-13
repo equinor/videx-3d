@@ -114,11 +114,17 @@ and `'scattered cumulus'` the cumulus alone.
 `<Weather weather={…}>` hands it down; `useWeather()` reads it (`null` without one).
 
 - **The waves:** `<Ocean>`, `<SceneryOcean>` and a `ChunkStack`'s water take the weather's wind
-  for whichever of `windSpeed` and `windDirection` they leave out (`weatherOceanWind`,
+  for whichever of `windSpeed`, `windDirection` and `gusts` they leave out (`weatherOceanWind`,
   `useWeatherOceanWind`). The direction is the way the wind blows toward, in the default
   compass frame (`windToward`): world X/Z, and a `Scenery`'s wave plane, east and south. A
   value once applied stays on the material when the weather goes away, as a removed prop's
   does.
+- **The wind near the surface:** `WeatherWind.gusts` (`WeatherGusts`) is the weather's gust and
+  slick field, one field for whatever reads it: `weatherWindAt` (`sdk/weather/wind-field.ts`)
+  on the CPU and its twin `weather-wind.glsl` give the local wind over the mean and where a
+  slick lies, at a point of the plane, as the wind has run (`speed × time`). The sea roughens
+  with it ([ocean-waves.md](./ocean-waves.md#gusts-and-slicks)). The clouds do not read it
+  yet: they drift with the wind aloft.
 - **The clouds:** `<SceneryClouds>` draws the weather as it is: a local one's layers (or
   `layers` of its own, by name too, `CloudLayersPreset`: given, the weather is local about the
   weather's `local` or its defaults), a global one's systems (their `seed`, else the clouds'),
