@@ -137,18 +137,16 @@ other than its own state, as an `Ocean` syncing its water to the camera.
 
 An `Ocean`'s water is where its surface geometry lies in plan, whatever its outline:
 `geometryFootprint(geometry)` (`sdk/geometries/geometry-footprint.ts`) keeps, per geometry,
-an exact point test (`contains`, a grid of the triangles: a few tested per lookup) and the
-signed distance to its outline over its box (one half-float channel, up to 512 cells along
-its longer side; none where the geometry fills its box). The camera is tested exactly on the
-CPU (`CameraWater.over`, to the shaders as `WaterBody.cameraOver`), and what lies in the
-water by the distance's side in the shader (`waterBodyOver`, one texture read): beside the
-water, in a notch or a hole of the outline, it is in air.
+an exact point test (`contains`, a grid of the triangles: a few tested per lookup). The camera
+is tested with it on the CPU (`CameraWater.over`, to the shaders as `WaterBody.cameraOver`):
+beside the water, in a notch or a hole of the outline, it is in air. What lies in the water is
+told by the water's box alone (`waterBodyOver`): beside the water but in its box, it fades as
+if in it. (A signed-distance texture of the outline told them apart until 2026-11; one cell off
+on the outline, it left the seabed's rim unfaded, and nothing else needed it.)
 
-⚠️ The part of a sight line in the water, and where it goes in, are still taken over the
-box (`waterBodyPath`, `waterBodyLight`): on an outline that is not a box, what is seen from
-outside through a wall is lit as if the line went in where it crosses the box. Marching the
-outline per pixel was tried and dropped: a march over an arbitrary outline trades
-exactness against its steps (lines running along the outline crawl; a share-of-the-line
-step skips narrow strips), and it went into every material that fades by the water. The
-robust way, if wanted, is geometric: draw the walls' outer faces into a buffer of where each
-pixel goes into the water, and read it there.
+Seen from the air, nothing here works out a sight line's part in the water: the sea's surface
+and its walls carry the water in front of what lies in it, which is only dimmed. From in the
+water, what is seen fades by the part of the line in the water, taken over the box
+(`waterBodyPath`, `waterBodyLight`). Marching the outline per pixel was tried and dropped: a march over
+an arbitrary outline trades exactness against its steps (lines running along the outline crawl;
+a share-of-the-line step skips narrow strips).

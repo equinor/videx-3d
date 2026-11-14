@@ -14,11 +14,13 @@ import {
   waterColorOf,
   waterExtinctionOf,
 } from '../weather/water-optics';
+import { GroundMap } from './ground-map';
 import waterBodyShader from './shaderLib/water-body.glsl';
 
 /**
- * A body of water, as what lies in it reads it: its surface's height along up, how far down
- * its seabed lies, its look ({@link WaterOptics}) and the daylight. The sea that draws it (an
+ * A body of water, as its surface, its walls and what lies in it read it: its surface's height
+ * along up, how far down its seabed lies (a bed's map, the scene's ground, a flat floor), its
+ * look ({@link WaterOptics}) and the daylight. The sea that draws it (an
  * `Ocean`, a `Scenery`'s sea, a `ChunkStack`'s water) keeps it in step; what lies in the water
  * fades by it (`water-body.glsl`'s `waterBodyFog`, or {@link applyWaterFog} for a stock
  * material), so data under the sea fades as the sea's own seabed does. Its uniforms are bound
@@ -36,8 +38,7 @@ export class WaterBody {
     uWaterBodyBed: IUniform<Texture | null>;
     uWaterBodyBedToUv: IUniform<Matrix3>;
     uWaterBodyBedInfo: IUniform<Vector4>;
-    uWaterBodyFootprint: IUniform<Texture | null>;
-    uWaterBodyFootprintToUv: IUniform<Matrix3>;
+    uWaterBodyGround: IUniform<Vector4>;
   } = {
     uWaterBody: new Uniform(new Vector4(0, 1, 0, 0)),
     uWaterBodyFloor: new Uniform(new Vector4(1e30, 1, 1, 0)),
@@ -47,9 +48,10 @@ export class WaterBody {
     uWaterBodyBed: new Uniform<Texture | null>(null),
     uWaterBodyBedToUv: new Uniform(new Matrix3()),
     uWaterBodyBedInfo: new Uniform(new Vector4()),
-    uWaterBodyFootprint: new Uniform<Texture | null>(null),
-    uWaterBodyFootprintToUv: new Uniform(new Matrix3()),
+    uWaterBodyGround: new Uniform(new Vector4(0, 1, 0, 0)),
   };
+  /** the scene's ground, where the bed's map does not cover ({@link setGround}); bound with the rest */
+  readonly ground = new GroundMap();
 
   /** what last wrote this body ({@link copyFrom}), so it alone lets go of it */
   owner: unknown = null;
@@ -104,6 +106,7 @@ export class WaterBody {
   /** Bind these uniforms, by reference, into a material's `uniforms`. */
   bind(uniforms: Record<string, IUniform>): void {
     Object.assign(uniforms, this.uniforms);
+    this.ground.bind(uniforms);
   }
 
   /**
@@ -117,23 +120,10 @@ export class WaterBody {
   }
 
   /**
-   * Where in its {@link extent} the water lies, for an outline that does not fill it (holes,
-   * notches, parts apart): the signed distance to its outline (`geometryFootprint`'s texture,
-   * positive over the water) and world X/Z (as `(x, z, 1)`) to its uv. Read at a point: what
-   * lies in the water column. A sight line's part in the water is taken over the extent.
-   * `null`, all of the extent. Default none
-   */
-  setFootprint(footprint: { texture: Texture; toUv: Matrix3 } | null): void {
-    this.uniforms.uWaterBodyFootprint.value = footprint?.texture ?? null;
-    if (footprint)
-      this.uniforms.uWaterBodyFootprintToUv.value.copy(footprint.toUv);
-    this.uniforms.uWaterBodyFloor.value.w = footprint ? 1 : 0;
-  }
-
-  /**
-   * Whether the camera is over the water's footprint, as its sea works it out on the CPU (the
-   * camera site's `CameraWater.over`): with its depth, whether the camera is in the water.
-   * Default true, as over an endless sea
+   * Whether the camera is over the water's footprint and above its seabed, as its sea works it
+   * out on the CPU (the camera site's `CameraWater.over`, and the seabed under the camera where
+   * the sea knows it): with its depth, whether the camera is in the water. Default true, as over
+   * an endless sea
    */
   get cameraOver(): boolean {
     return this.uniforms.uWaterBodyFloor.value.z > 0.5;
@@ -167,6 +157,21 @@ export class WaterBody {
     info.set(image.width, image.height, bed.yScale ?? 1, bed.yOffset ?? 0);
   }
 
+  /**
+   * The ground as the seabed where the bed's map does not cover (`sceneGroundMap`), a height
+   * `h` on it (metres over the sea) `yScale·h + yOffset` in the world; `null`, none. Its maps
+   * are taken as they are now: again as they change (each frame).
+   */
+  setGround(ground: GroundMap | null, yScale = 1, yOffset = 0): void {
+    this.ground.copyFrom(ground);
+    this.uniforms.uWaterBodyGround.value.set(
+      ground?.drawn ? 1 : 0,
+      yScale,
+      yOffset,
+      0,
+    );
+  }
+
   /** Take `from`'s water, every value, as `owner`'s. */
   copyFrom(from: WaterBody, owner: unknown = from): void {
     const a = this.uniforms;
@@ -179,8 +184,8 @@ export class WaterBody {
     a.uWaterBodyBed.value = b.uWaterBodyBed.value;
     a.uWaterBodyBedToUv.value.copy(b.uWaterBodyBedToUv.value);
     a.uWaterBodyBedInfo.value.copy(b.uWaterBodyBedInfo.value);
-    a.uWaterBodyFootprint.value = b.uWaterBodyFootprint.value;
-    a.uWaterBodyFootprintToUv.value.copy(b.uWaterBodyFootprintToUv.value);
+    a.uWaterBodyGround.value.copy(b.uWaterBodyGround.value);
+    this.ground.copyFrom(from.ground);
     this.owner = owner;
   }
 
@@ -190,7 +195,7 @@ export class WaterBody {
     this.owner = null;
     this.optics = null;
     this.setBed(null);
-    this.setFootprint(null);
+    this.setGround(null);
     this.extent = null;
     this.cameraOver = true;
   }
@@ -223,8 +228,9 @@ const PATCHED = new WeakSet<Material>();
 
 /**
  * Fade what `material` draws by `body`'s water, as the library's own materials fade
- * (`water-body.glsl`): what lies in the water column fades by its path through it, as under
- * any sea. For a stock material, or a `ShaderMaterial` built the same way: it needs
+ * (`water-body.glsl`'s `waterBodyFog`): what lies in the water column is dimmed by the daylight
+ * its depth leaves it, and fades by its path through the water where its sea's surface does not
+ * carry that (from in the water, or through a wall). For a stock material, or a `ShaderMaterial` built the same way: it needs
  * `#include <common>` in both shaders, and `#include <fog_fragment>` (else
  * `#include <opaque_fragment>`) in its fragment `main`; the point is taken from
  * `#include <project_vertex>`, else from the `vViewPosition` varying the OIT chunk reads.
@@ -244,7 +250,7 @@ export function applyWaterFog<T extends Material>(
   const key = material.customProgramCacheKey();
   material.onBeforeCompile = function (shader, renderer) {
     before.call(this, shader, renderer);
-    Object.assign(shader.uniforms, body.uniforms);
+    body.bind(shader.uniforms);
     const varying = shader.vertexShader.includes('#include <project_vertex>');
     if (varying)
       shader.vertexShader = shader.vertexShader

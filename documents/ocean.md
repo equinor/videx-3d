@@ -152,16 +152,29 @@ a pane of glass. Shimmer seen from INSIDE the water would have to be volumetric,
 i.e. marched through the body, which is a long way past what a wall material is;
 deliberately not attempted.
 
-An `<Ocean>` draws its walls in two parts (`OceanVolumeMaterial`'s `wall`): the
-water on their inner faces, and the shimmer on the outer glass, drawn last. Drawn
-both sides at once without depth writes, a far wall's inner face would paint over
-the near glass wherever its triangles come later. So the wall builders face every
-wall away from the water, whichever way an outline runs.
+The walls are one double-sided draw (`OceanVolumeMaterial`), a stack's too, both
+faces tinted as fog of the camera's distance to them: `bodyFogDensity` per metre
+(default 0.004), up to `bodyMaxOpacity` (else `waterOpacity`, else 0.9). Their
+colour is the water's own (its `optics`), lit at the wall's depth, so they match
+the surface. Not a path through the water: no outline logic, so they hold for any
+shape. From in the water they show the water from the camera to them by its
+`optics` instead, as what lies in the water fades: the line to the wall the camera
+sees runs all in the water, so that is exact for any outline (⚠️ but for a wall seen
+past a notch of a concave outline, which counts the notch's air too). (Walls that show the water along the sight line, by the `optics`, were tried
+in 2026-11 and dropped: without the outline's edges in the shader, the line's part
+in the water is taken over the outline's box, which shades a polygon's walls by
+the angle and counts a concave outline's water twice.)
+
+Seen from the air, the water in front of what lies in it is drawn by what the
+sight line enters it by: the surface (the water down to the seabed under it) or a
+wall. What lies in the water (the bed, a stack's top cap) is only dimmed by the
+daylight its depth leaves it; from in the water, faded by its own path.
 
 The water lies where the surface geometry lies, in plan (`geometryFootprint`): beside
 it — in a notch or a hole of a polygon's outline, not just beyond its box — the camera
-is in air, tested exactly each frame, and what lies there is not faded as if under
-water. See [camera.md](./camera.md#over-the-water-exactly).
+is in air, tested exactly each frame. What lies in the water is told by its box: beside
+the water but in its box, a material given its fog (`applyWaterFog`) fades as if in
+it. See [camera.md](./camera.md#over-the-water-exactly).
 
 The sea takes no part in the depth order, which is what stops it truncating the
 ground beneath it: a sea bed above the plane comes THROUGH it rather than being
@@ -170,10 +183,10 @@ flattened onto it, and the water body ends at the shoreline. See
 
 `seaBedWaterTint` is the one thing that does NOT carry over: it belongs to the bed
 material the component draws, and a chunk's sea bed is ordinary geology. The
-equivalent is `bedTint`, set on the stack's water and applied to the shallowest
-cap. It is depth-dependent rather than flat, because that bed can rise through the
-water, and the depth comes from the BED's own grid as a texture — see
-`documents/chunks.md` §6.4.1.
+shallowest cap is dimmed instead by the daylight its depth leaves it (the stack's
+own water, `water-body.glsl`'s `waterBodyDim`), as the component's bed is; the lid
+and the walls carry the water in front of it. (`bedTint` and `bedTintDepth` are
+deprecated; see `documents/chunks.md` §6.4.1 for what they did.)
 
 ⭐ **Depth-driven appearance needs that grid, and a `ChunkStack` is the only thing
 that supplies one today.** `shoalDepth`, `shoalOpacity`, `shoreFoam`,

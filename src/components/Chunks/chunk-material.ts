@@ -412,10 +412,18 @@ export type ChunkMaterialParameters = {
    */
   heightClip?: HeightFieldClipUniforms;
   /**
-   * The water what is drawn lies in (`sceneWaterBody`): what lies in it fades by its path
-   * through it, as under any sea (water-body.glsl). Bound by reference.
+   * The water what is drawn lies in: the stack's own (its sea's `WaterBody`). Given to the
+   * sea bed's cap alone, which it dims by the daylight its depth leaves it (water-body.glsl's
+   * `waterBodyDim`): the stack's surface and walls carry the water in front of it. Bound by
+   * reference.
    */
   water?: WaterBody;
+  /**
+   * The cuts that take the {@link ChunkMaterialParameters.water}: no water stands over what
+   * they removed. The section plane and the fence as the block's own (`sectionPlane`,
+   * `fence`). ⚠️ Read at CONSTRUCTION.
+   */
+  waterCut?: { section?: IUniform<Vector4>; fence?: ChunkFenceUniforms };
 };
 
 const shader = {
@@ -574,8 +582,20 @@ export class ChunkMaterial extends ShaderMaterial {
     }
 
     if (parameters.water) {
-      (this.defines as Record<string, unknown>).CHUNK_WATER = '';
+      const defines = this.defines as Record<string, unknown>;
+      defines.CHUNK_WATER = '';
       parameters.water.bind(this.uniforms);
+      // Where a cut takes the water, none stands over what it removed.
+      const cut = parameters.waterCut;
+      if (cut?.section) {
+        defines.CHUNK_WATER_SECTION = '';
+        this.uniforms.waterSectionPlane = cut.section;
+      }
+      if (cut?.fence) {
+        defines.CHUNK_WATER_FENCE = '';
+        // The same curve as the material's own cut, when it has one.
+        if (!parameters.fence) applyFenceField(this.uniforms, cut.fence);
+      }
     }
 
     attachChunkPicking(this, {

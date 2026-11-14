@@ -2,8 +2,8 @@
 // relief-fragment.glsl): include after sky.glsl, compiled with the sky's defines.
 
 // `color` (linear, the layer's own) at `world`, `height` metres over the sea, seen from the
-// camera: from above, through the water over it; from in the water, through the water
-// between. Where the cutaway takes the seabed it takes this too: `alpha` with it. And under
+// camera: dimmed by the daylight its depth leaves it; from above, the sea's surface carries the
+// water in front of it (skyOceanWaterUnder); from in the water, through the water between. Where the cutaway takes the seabed it takes this too: `alpha` with it. And under
 // what the background draws of the sea — its surface, its seabed, or either past the Earth's
 // curve — `alpha` takes its cover (skyOceanCover): the background lies on the far plane and
 // hides nothing by depth, so past a stage, and past the far plane, it hides it here.
@@ -21,9 +21,9 @@ vec3 geoThroughWater(vec3 color, inout float alpha, vec3 world, float height) {
   // In the sky's own scale, as the relief's colour is.
   color /= max(uSkyIntensity, 1e-4);
   color *= skyOceanDim(-height);
-  float sea = altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude).x : 0.0;
-  float below = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, world);
-  float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-  color = skyOceanFog(color, path, skyOceanLightAlong(max(-altitude, 0.0), max(-height, 0.0), path), dir);
+  if(altitude <= 0.0) {
+    float path = skyOceanCutawayPath(skyOceanPathBelowSurface(cameraPosition, world), skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
+    color = skyOceanFog(color, path, skyOceanLightAlong(-altitude, max(-height, 0.0), path), dir);
+  }
   return color * uSkyIntensity;
 }

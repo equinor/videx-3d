@@ -82,6 +82,26 @@ vec4 waterFogOver(vec4 layer, float dist, vec3 extinction, vec3 waterColor, vec3
   return vec4(layer.rgb * shown + waterColor * light * waterGlow(facing) * (1.0 - shown), 1.0 - (1.0 - layer.a) * through);
 }
 
+// How far a sight line `facing` up (its cosine; from the air, < 0) runs through the water from
+// the surface down to a seabed `depth` under it, bent down as it enters (waterFacing).
+float waterPathDown(float depth, float facing) {
+  return max(depth, 0.0) / max(-waterFacing(facing, true), 1e-3);
+}
+
+// The water under a surface seen from the air, along a sight line `facing` up (its cosine)
+// running `path` through it down to the seabed, lit by `light`: a layer (premultiplied) between
+// what the surface reflects and what lies under it, its alpha how much of that it hides. The
+// surface carries the water seen from above, so what lies in it is only dimmed by the daylight
+// its depth leaves it (waterFogDim), whatever it is.
+vec4 waterUnderSurface(float path, float facing, vec3 extinction, vec3 waterColor, vec3 light) {
+  return waterFogOver(vec4(0.0), path, extinction, waterColor, light, waterFacing(facing, true));
+}
+
+// `top` (premultiplied) over `under` (premultiplied).
+vec4 waterLayerOver(vec4 top, vec4 under) {
+  return vec4(top.rgb + under.rgb * (1.0 - top.a), top.a + under.a * (1.0 - top.a));
+}
+
 // The cutaway through the water in front of the view:
 // everything nearer than a line across the view, `shape.x` ahead of `anchor` along
 // `heading`, waved across it by `waveA` and `waveB` (amplitude, angular frequency, phase).

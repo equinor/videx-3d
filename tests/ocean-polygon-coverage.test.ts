@@ -1,10 +1,7 @@
-import { BufferAttribute, DataUtils, Vector3 } from 'three';
+import { BufferAttribute } from 'three';
 import { describe, expect, it } from 'vitest';
 import { geometryFootprint } from '../src/sdk/geometries/geometry-footprint';
-import {
-  createOceanBox,
-  createOceanBoxFromPolygon,
-} from '../src/sdk/geometries/ocean-geometry';
+import { createOceanBoxFromPolygon } from '../src/sdk/geometries/ocean-geometry';
 import type { Coordinates2D } from '../src/sdk/geometries/planar-geometry';
 import { PlanarPolygonGeometry } from '../src/sdk/geometries/planar-geometry';
 import { DEMO_MULTI_POLYGON } from '../src/storybook/data/demo-polygons';
@@ -191,8 +188,8 @@ describe('createOceanBoxFromPolygon multi-hole footprint', () => {
   });
 });
 
-// Where the water lies in its box (geometryFootprint): exactly for the camera, and as a mask
-// for what lies in the water, holes and parts apart included.
+// Where the water lies in its box (geometryFootprint): exactly, for the camera, holes and parts
+// apart included.
 describe('geometryFootprint of the multi-hole footprint', () => {
   const box = createOceanBoxFromPolygon(new PlanarPolygonGeometry(coords));
   const footprint = geometryFootprint(box.surface);
@@ -233,57 +230,5 @@ describe('geometryFootprint of the multi-hole footprint', () => {
       if (footprint.contains(x, z) !== inPolygon(x, -z)) wrong ||= `${x}, ${z}`;
     }
     expect(wrong).toBe('');
-  });
-
-  // The field as the shader reads it: bilinear between the cells' centres, clamped to the box.
-  const field = () => {
-    const { data, width, height } = footprint.texture!.image as {
-      data: Uint16Array;
-      width: number;
-      height: number;
-    };
-    const at = (i: number, j: number) =>
-      DataUtils.fromHalfFloat(
-        data[
-          Math.min(Math.max(j, 0), height - 1) * width +
-            Math.min(Math.max(i, 0), width - 1)
-        ],
-      );
-    return (x: number, z: number) => {
-      const uv = new Vector3(x, z, 1).applyMatrix3(footprint.toUv);
-      const fx = uv.x * width - 0.5;
-      const fz = uv.y * height - 0.5;
-      const i = Math.floor(fx);
-      const j = Math.floor(fz);
-      const u = fx - i;
-      const v = fz - j;
-      return (
-        (at(i, j) * (1 - u) + at(i + 1, j) * u) * (1 - v) +
-        (at(i, j + 1) * (1 - u) + at(i + 1, j + 1) * u) * v
-      );
-    };
-  };
-
-  it('holds the signed distance to the outline', () => {
-    expect(footprint.texture).not.toBeNull();
-    const distanceAt = field();
-    const cell = footprint.cell;
-    let worst = 0;
-    let where = '';
-    for (const [x, z] of points) {
-      const exact = edgeDistance(x, z);
-      if (exact < 2 * cell) continue;
-      const read = distanceAt(x, z);
-      if (read > 0 !== inPolygon(x, -z)) where ||= `side at ${x}, ${z}`;
-      const off = Math.abs(Math.abs(read) - exact);
-      if (off > worst) worst = off;
-    }
-    expect(where).toBe('');
-    // Within a cell everywhere: half floats keep about a thousandth of a far distance.
-    expect(worst).toBeLessThan(cell);
-  });
-
-  it('needs no field where the water fills its box', () => {
-    expect(geometryFootprint(createOceanBox().surface).texture).toBeNull();
   });
 });

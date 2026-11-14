@@ -139,8 +139,8 @@ void main() {
   float bedDepth = uSkyOceanDepth;
   bool fromAbove = altitude + bedDepth > 0.0;
   // Under the stage's surface where the water hides the seabed whole (skyOceanSurfaceHides),
-  // its shading is never seen: skipped, the water's own light in its place, its depth and
-  // discards kept, so what lies under it stays hidden as before. The test is uniform, so the
+  // its shading is never seen: skipped, the water's own light in its place (the surface's water
+  // over it), its depth and discards kept, so what lies under it stays hidden as before. The test is uniform, so the
   // derivatives its detail takes are sound wherever it shows.
   #ifdef STAGE_BED_UNDER_SURFACE
   bool hidden = skyOceanSurfaceHides();
@@ -155,14 +155,13 @@ void main() {
   float seabed = skyOceanCutawaySeabed(cutaway);
   if(fromAbove) {
     if(!hidden) {
-      // Dry, the fog's density is 0.
-      float below = skyOceanPathBelowSurface(cameraPosition, world);
-      // Beyond the scene both fall away with the curve: the water lies between them, not under the level.
-      if(altitude > 0.0 && uSkyCurvature > 0.0)
-        below = max(reach.x - surfaceReach.x, 0.0);
-      float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-      vec3 light = skyOceanLightAlong(max(-altitude, 0.0), bedDepth, path);
-      color = skyOceanFog(color, path, light, dir);
+      // From the air the surface carries the water in front of it (skyOceanWaterUnder): the
+      // bed is only dimmed by the daylight its depth leaves it (skyOceanBed). From in the water,
+      // through the water between. Dry, the fog's density is 0.
+      if(altitude <= 0.0) {
+        float path = skyOceanCutawayPath(skyOceanPathBelowSurface(cameraPosition, world), skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
+        color = skyOceanFog(color, path, skyOceanLightAlong(-altitude, bedDepth, path), dir);
+      }
         #ifndef STAGE_SEE_THROUGH
           // Bitten through: the void, as the background draws it through the gap. Without its
           // rock: it cannot show in the edge's fade under the rim, and would cost a copy.

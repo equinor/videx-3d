@@ -44,6 +44,7 @@ import {
   Vec3,
   WellboreFence,
 } from '../../sdk';
+import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
 import { SeabedFacility } from '../../storybook/components/SeabedFacility';
 import {
@@ -513,11 +514,11 @@ type FieldColumnStoryProps = {
   sectionDebug: boolean;
   water: boolean;
   seaLevel: number;
-  waterOpacity: number;
+  /** the water's look (optics): realistic, or clear to see the bed and what lies under the sea */
+  optics: WaterOpticsPreset;
   waterLayerOpacity: number;
   windSpeed: number;
   foamAmount: number;
-  bedTint: number;
   bedOpacity: number;
   bodyShimmer: number;
   immersion: boolean;
@@ -1122,10 +1123,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         ? {
             depth: props.seaLevel,
             opacity: props.waterLayerOpacity,
-            waterOpacity: props.waterOpacity,
+            optics: props.optics,
             windSpeed: props.windSpeed,
             foamAmount: props.foamAmount,
-            bedTint: props.bedTint,
             bodyShimmer: props.bodyShimmer,
             keepBed: props.keepBed,
           }
@@ -1134,10 +1134,9 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       props.water,
       props.seaLevel,
       props.waterLayerOpacity,
-      props.waterOpacity,
+      props.optics,
       props.windSpeed,
       props.foamAmount,
-      props.bedTint,
       props.bodyShimmer,
       props.keepBed,
     ],
@@ -1828,11 +1827,10 @@ export const Default: Story = {
     // Water
     water: true,
     seaLevel: 0,
-    waterOpacity: 0.7,
+    optics: 'realistic',
     waterLayerOpacity: 1,
     windSpeed: 10,
     foamAmount: 0.5,
-    bedTint: 0.6,
     bedOpacity: 1,
     bodyShimmer: 0.5,
     // Immersion
@@ -2397,10 +2395,11 @@ export const Default: Story = {
       description: 'Depth of the sea surface, positive DOWN.',
       table: { category: 'Water' },
     },
-    waterOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+    optics: {
+      control: { type: 'inline-radio' },
+      options: ['realistic', 'clear'],
       description:
-        'The water shader’s own base opacity, before the fresnel term. Distinct from `waterLayerOpacity`, which multiplies the lot.',
+        'The water’s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea’s (15 m visibility), the bed lost to the water but where shallow; CLEAR to see the bed and what lies under the sea (750 m).',
       table: { category: 'Water' },
     },
     waterLayerOpacity: {
@@ -2413,12 +2412,6 @@ export const Default: Story = {
     },
     foamAmount: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Water' },
-    },
-    bedTint: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      description:
-        'Tint the sea bed toward the water colour by DEPTH, so the shoreline appears on its own.',
       table: { category: 'Water' },
     },
     bedOpacity: {

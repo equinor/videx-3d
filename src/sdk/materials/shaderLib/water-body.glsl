@@ -1,44 +1,50 @@
-// What lies in a body of water, faded by it (WaterBody, applyWaterFog): the library's own
-// materials and any patched by applyWaterFog read the same water as the sea over them, so
-// data under the sea fades by its own path through it. One model with the sea's (water-fog.glsl).
+// A body of water (WaterBody), as its surface, its walls and what lies in it read it. One model
+// with every sea's (water-fog.glsl): seen from the air, the water a sight line crosses is drawn
+// by what it enters the water by, the surface (waterBodySurfaceWater: the water down to the
+// seabed under it) or a wall (the Ocean's walls, ocean-volume-material.ts); what lies in the
+// water is only dimmed by the daylight its depth leaves it. From in the water, all of it fades
+// by its own path through the water (waterBodyFog).
 #include ./water-fog.glsl
 #include ./depth-map.glsl
+#include ./ground-map.glsl
 
 // xyz the world's up, w the surface's height along it.
 uniform vec4 uWaterBody;
 // x how far down the seabed lies under the surface where no bed map says (1e30 none),
-// y the daylight (0 night, 1 day), z whether the camera is over the water's footprint (as its
-// sea works it out: WaterBody.cameraOver), w whether a footprint texture says where in the
-// extent the water lies.
+// y the daylight (0 night, 1 day), z whether the camera is over the water's footprint and above
+// its seabed (as its sea works it out: WaterBody.cameraOver), w unused.
 uniform vec4 uWaterBodyFloor;
 // Per channel per world unit; nil, no water.
 uniform vec3 uWaterBodyExtinction;
 uniform vec3 uWaterBodyColor;
-// Where the water lies, world X and Z: min x, min z, max x, max z (x below -1e29: everywhere).
+// Where the water lies, world X and Z: min x, min z, max x, max z (x below -1e29: everywhere):
+// what lies in this box under the surface is in the water.
 uniform vec4 uWaterBodyExtent;
 // The seabed's heights (depth-map.glsl's packing): from world X/Z through uWaterBodyBedToUv;
 // uWaterBodyBedInfo xy its texels (0, none), z and w its height into the world's: z·h + w.
 uniform sampler2D uWaterBodyBed;
 uniform mat3 uWaterBodyBedToUv;
 uniform vec4 uWaterBodyBedInfo;
-// Where in the extent the water lies (WaterBody.setFootprint), while uWaterBodyFloor.w: the
-// signed distance to its outline (positive over the water), from world X/Z through
-// uWaterBodyFootprintToUv. Read at a point only: what lies in the water column
-// (waterBodyOver). A sight line's part in the water is taken over the extent's box.
-uniform sampler2D uWaterBodyFootprint;
-uniform mat3 uWaterBodyFootprintToUv;
+// The scene's ground (ground-map.glsl) as the seabed where the bed's map does not cover: x 1
+// while it does, y and z its height into the world's: y·h + z.
+uniform vec4 uWaterBodyGround;
 
 // How far down the seabed lies under the surface at `world`: the bed's map where it covers
-// it, else the flat floor.
+// it, else the scene's ground where it does, else the flat floor.
 float waterBodyFloorAt(vec3 world) {
-  float depth = uWaterBodyFloor.x;
   if(uWaterBodyBedInfo.x > 0.0) {
     float bedY;
     float covered = sampleDepthMap(uWaterBodyBed, uWaterBodyBedToUv, uWaterBodyBedInfo.xy, world.xz, bedY);
     if(covered > 0.5)
-      depth = uWaterBody.w - (uWaterBodyBedInfo.z * bedY + uWaterBodyBedInfo.w);
+      return uWaterBody.w - (uWaterBodyBedInfo.z * bedY + uWaterBodyBedInfo.w);
   }
-  return depth;
+  if(uWaterBodyGround.x > 0.5) {
+    float covered;
+    float height = groundMapHeight(world, covered);
+    if(covered > 0.5)
+      return max(uWaterBody.w - (uWaterBodyGround.y * height + uWaterBodyGround.z), 0.0);
+  }
+  return uWaterBodyFloor.x;
 }
 
 // The part of the segment from `a` to `b` (as shares of it) that lies over the water's extent.
@@ -83,16 +89,10 @@ bool waterBodyCameraIn() {
   return depth > 0.0 && uWaterBodyFloor.z > 0.5 && depth < waterBodyFloorAt(cameraPosition);
 }
 
-// Whether `world` lies over the water: in its extent, and where a footprint says so (the side
-// of its outline it lies on).
+// Whether `world` lies over the water: in its extent.
 bool waterBodyOver(vec3 world) {
   vec2 inside = waterBodyInExtent(world, world);
-  if(inside.y < inside.x)
-    return false;
-  if(uWaterBodyFloor.w < 0.5)
-    return true;
-  vec2 uv = (uWaterBodyFootprintToUv * vec3(world.xz, 1.0)).xy;
-  return texture2D(uWaterBodyFootprint, uv).r > 0.0;
+  return inside.y >= inside.x;
 }
 
 // The light the water carries along a sight line `path` long to `world`, a point `depth` down:
@@ -110,14 +110,18 @@ float waterBodyFacing(vec3 world) {
   return waterFacing(dot(normalize(world - cameraPosition), uWaterBody.xyz), !waterBodyCameraIn());
 }
 
-// The water along the sight line from the camera to `world`, as a layer over what lies beyond
-// it (premultiplied): the part of the line in the water, its own light lit half way down.
-// What a wall of the water body stands for.
-vec4 waterBodyLayer(vec3 world) {
-  float floorDepth = waterBodyFloorAt(world);
-  float depth = clamp(uWaterBody.w - dot(world, uWaterBody.xyz), 0.0, floorDepth);
-  float path = waterBodyPath(world, floorDepth);
-  return waterFogOver(vec4(0.0), path, uWaterBodyExtinction, uWaterBodyColor, waterBodyLight(world, depth, floorDepth, path), waterBodyFacing(world));
+// The water under the surface at `world`, seen from the air along `dir` (unit), as a layer
+// (premultiplied) between what the surface reflects and what lies under it: down to the seabed
+// under it, lit where the line gathers its light (water-fog.glsl's waterUnderSurface).
+vec4 waterBodySurfaceWater(vec3 world, vec3 dir) {
+  vec3 extinction = uWaterBodyExtinction;
+  if(dot(extinction, extinction) <= 0.0)
+    return vec4(0.0);
+  float depth = min(waterBodyFloorAt(world), 1e6);
+  float facing = dot(dir, uWaterBody.xyz);
+  float path = waterPathDown(depth, facing);
+  vec3 light = waterFogLight(waterLitDepth(waterLitAlong(0.0, depth, path, extinction), extinction), extinction, uWaterBodyFloor.y);
+  return waterUnderSurface(path, facing, extinction, uWaterBodyColor, light);
 }
 
 // The water's own colour, as deep water seen along a sight line `facing` up (its cosine) from
@@ -135,23 +139,50 @@ vec3 waterBodyWorldOf(vec3 viewPosition) {
   return cameraPosition - transpose(mat3(viewMatrix)) * viewPosition;
 }
 
-// `color` of what lies at `world`, seen from the camera through the water between. What lies
-// in the water column (over the water's extent, between the surface and the seabed under it)
-// is dimmed by the daylight its depth leaves it; below the seabed it is lit as it is drawn.
-// Either way it fades along the part of the sight line in the water (down to the seabed under
-// it), toward the water's colour lit half way down.
+// `color` of what lies at `world`, seen from the camera through the water between: only what
+// lies in the water column (in the water's extent, between the surface and the seabed
+// under it, or over the surface seen through it). It is dimmed by the daylight its depth leaves
+// it; from in the water, it fades along the part of the sight line in the water too, toward
+// the water's colour lit half way down. From the air, the surface or the walls it is seen
+// through carry the water in front of it (waterBodySurfaceWater). What lies below the seabed,
+// or beside the water, is drawn as it is: the ground hides it from the water.
 vec3 waterBodyFog(vec3 color, vec3 world) {
   vec3 extinction = uWaterBodyExtinction;
   if(dot(extinction, extinction) <= 0.0)
     return color;
   float floorDepth = waterBodyFloorAt(world);
   float depth = uWaterBody.w - dot(world, uWaterBody.xyz);
-  bool inColumn = waterBodyOver(world) && depth <= floorDepth + 0.5;
+  if(!waterBodyOver(world) || depth > floorDepth + 0.5)
+    return color;
   depth = clamp(depth, 0.0, floorDepth);
-  if(inColumn)
-    color *= waterFogDim(waterLitDepth(depth, extinction), extinction);
+  color *= waterFogDim(waterLitDepth(depth, extinction), extinction);
+  if(!waterBodyCameraIn())
+    return color;
   float path = waterBodyPath(world, floorDepth);
   if(path <= 0.0)
     return color;
   return waterFog(color, path, extinction, uWaterBodyColor, waterBodyLight(world, depth, floorDepth, path), waterBodyFacing(world));
+}
+
+// `color` of the seabed at `world`, seen through the water over it (waterBodyFog): taken at
+// the seabed under it, no deeper, so a bed whose mesh and map differ a little is all under the
+// water. For what IS the seabed (a column's top cap), not what lies below it.
+vec3 waterBodyFogBed(vec3 color, vec3 world) {
+  float floorDepth = waterBodyFloorAt(world);
+  float below = uWaterBody.w - dot(world, uWaterBody.xyz) - floorDepth;
+  return waterBodyFog(color, world + uWaterBody.xyz * max(below, 0.0));
+}
+
+// `color` of what lies at `world` in the water column, dimmed by the daylight its depth
+// leaves it, whatever the camera sees it through: what stands for the seabed under a surface
+// and walls that carry the water in front of it (a ChunkStack's top cap). Taken at the seabed
+// under it, no deeper, as waterBodyFogBed. Where no water stands (beside it, or cut away),
+// drawn as it is.
+vec3 waterBodyDim(vec3 color, vec3 world) {
+  vec3 extinction = uWaterBodyExtinction;
+  if(dot(extinction, extinction) <= 0.0 || !waterBodyOver(world))
+    return color;
+  float floorDepth = waterBodyFloorAt(world);
+  float depth = clamp(uWaterBody.w - dot(world, uWaterBody.xyz), 0.0, floorDepth);
+  return color * waterFogDim(waterLitDepth(depth, extinction), extinction);
 }

@@ -9,7 +9,6 @@ import {
 } from '../../components/Ocean/ocean-material';
 import type { SeaQuality } from '../../sdk/weather/sea-state';
 import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
-import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../../components/Ocean/ocean-volume-material';
 import type { GeoReliefProps } from '../../components/Layers/GeoRelief';
 import {
   GRATICULE_LABEL_DENSITY,
@@ -139,12 +138,9 @@ export type SceneryArgs = {
   seaFoamTuning?: OceanFoamTuning;
   /** the sea's `quality` (`SEA_QUALITY`); default medium */
   seaQuality?: SeaQuality;
-  /** the sea's look by name (`WATER_OPTICS_PRESETS`); given, it wins over `seaDeepColor` and `seaFogDensity` */
-  seaOptics?: WaterOpticsPreset;
-  seaDeepColor: string;
-  seaShallowColor: string;
+  /** the sea's look by name (`WATER_OPTICS_PRESETS`): realistic (the North Sea's), or clear */
+  seaOptics: WaterOpticsPreset;
   skySeabedColor: string;
-  seaFogDensity: number;
   seaDetailScale: number;
   seaFresnelPower: number;
   seaDetailFadeStart: number;
@@ -271,10 +267,8 @@ export const sceneryArgs: SceneryArgs = {
   foamAmount: 0.5,
   windDirection: 90,
   seaSteepness: 1,
-  seaDeepColor: '#0a2540',
-  seaShallowColor: '#1b6f8a',
+  seaOptics: 'realistic',
   skySeabedColor: sceneryDefaults.ocean.seabed.color,
-  seaFogDensity: DEFAULT_OCEAN_BODY_FOG_DENSITY,
   seaDetailScale: 0.05,
   seaFresnelPower: 4,
   seaDetailFadeStart: 15000,
@@ -521,9 +515,6 @@ export const sceneryOceanFromArgs = (args: SceneryArgs): SceneryOceanProps => ({
   quality: args.seaQuality,
   foamAmount: args.foamAmount,
   optics: args.seaOptics,
-  deepColor: args.seaDeepColor,
-  shallowColor: args.seaShallowColor,
-  bodyFogDensity: args.seaFogDensity,
   detailScale: args.seaDetailScale,
   fresnelPower: args.seaFresnelPower,
   detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
@@ -660,10 +651,7 @@ const ADVANCED = new Set<string>([
   'skyHorizonBlend',
   'windDirection',
   'seaSteepness',
-  'seaDeepColor',
-  'seaShallowColor',
   'skySeabedColor',
-  'seaFogDensity',
   'seaDetailScale',
   'seaFresnelPower',
   'seaDetailFadeStart',
@@ -1013,16 +1001,14 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SEA,
     'The waves\u2019 slopes scaled for show: 1 as the spectrum gives them.',
   ),
-  seaDeepColor: color(SEA, 'The water seen straight down.'),
-  seaShallowColor: color(SEA, 'The water seen at grazing angles.'),
+  seaOptics: {
+    control: { type: 'inline-radio' },
+    options: ['realistic', 'clear'],
+    description:
+      'The water\u2019s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea\u2019s (15 m visibility); CLEAR to see the seabed and what lies under the sea (750 m).',
+    table: { category: SEA },
+  },
   skySeabedColor: color(SEA, 'The seabed\u2019s colour.'),
-  seaFogDensity: range(
-    0,
-    0.05,
-    0.0005,
-    SEA,
-    'How quickly the water tints what is seen through it, per metre.',
-  ),
   seaDetailScale: range(
     0.005,
     0.5,

@@ -13,6 +13,7 @@ import type {
   SceneryOceanProps,
   SceneryZone,
 } from './scenery-model';
+import type { SceneryGround } from './scenery-ground';
 
 /**
  * A cutaway's work each frame, run by its scenery where the cut's place is known: after the
@@ -121,6 +122,8 @@ export type SceneryRegistry = {
   view: SceneryView;
   /** what draws itself in its sky, for the light; null for none. The same object for the scenery's life */
   overlay: { current: ScenerySkyOverlay | null };
+  /** the ground under it, from its World's relief (see `SceneryGround`): the same object for the scenery's life */
+  ground: SceneryGround;
 };
 
 export const SceneryRegistryContext = createContext<SceneryRegistry | null>(

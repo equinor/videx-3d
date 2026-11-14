@@ -11,7 +11,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import { BufferGeometry, Group, Mesh, Vector3 } from 'three';
+import {
+  BufferGeometry,
+  Group,
+  type Intersection,
+  Mesh,
+  Raycaster,
+  Vector3,
+} from 'three';
 import { CommonComponentProps, CustomMaterialProps } from '../../common/types';
 import { useCameraProbe } from '../../hooks/useCameraSite';
 import {
@@ -23,7 +30,6 @@ import type { SeaQuality } from '../../sdk/weather/sea-state';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import { OceanBedMaterial } from './ocean-bed-material';
-import { OceanDeepMaterial } from './ocean-deep-material';
 import {
   applyOceanBedProps,
   applyOceanBodyProps,
@@ -201,19 +207,10 @@ export const Ocean = forwardRef(
       return new OceanMaterial({ quality, detailOctaves });
     }, [customMaterial, quality, detailOctaves]);
 
-    // Optional water-body (side walls) materials — separate meshes so they route
-    // through OIT independently of the surface and sea bed. Two parts (OceanVolumeMaterial's
-    // `wall`): the water on the inner faces, and the glass's light play on the outer faces,
-    // drawn last. Drawn both sides at once without depth writes, a far wall's inner face
-    // would paint over the near glass wherever it is drawn later.
+    // Optional water-body (side walls) material — a separate mesh so it routes
+    // through OIT independently of the surface and sea bed.
     const volumeMaterials = useMemo(
-      () =>
-        bodyGeometry
-          ? [
-              new OceanVolumeMaterial({ wall: 'water' }),
-              new OceanVolumeMaterial({ wall: 'glass' }),
-            ]
-          : null,
+      () => (bodyGeometry ? [new OceanVolumeMaterial()] : null),
       [bodyGeometry],
     );
 
@@ -263,12 +260,6 @@ export const Ocean = forwardRef(
       if (!floor.boundingBox) floor.computeBoundingBox();
       water.depth = Math.max(surfaceY - floor.boundingBox!.min.y, 0);
     }, [water, floor, surfaceY]);
-    // The deep water where nothing else lies under the surface: on the far plane, under all.
-    const deepMaterial = useMemo(
-      () => (water ? new OceanDeepMaterial(water) : null),
-      [water],
-    );
-    useEffect(() => () => deepMaterial?.dispose(), [deepMaterial]);
 
     // Where the camera is at this water (the camera site's): over its footprint, how deep,
     // whether in it; and the water synced to it before the frame, so what draws before the
@@ -288,6 +279,32 @@ export const Ocean = forwardRef(
       [material, scene],
     );
     const cameraSite = useCameraProbe(waterProbe, CAMERA_PROBE_ORDER.water);
+
+    // The bed under the camera (OceanMaterial.cameraFloor): straight down onto it from over the
+    // water, as drawn. Under it, the camera is in the ground, not in the water.
+    const bedMesh = useRef<Mesh>(null);
+    const [bedRay] = useState(() => ({
+      raycaster: new Raycaster(),
+      hits: [] as Intersection[],
+      from: new Vector3(),
+      down: new Vector3(0, -1, 0),
+    }));
+    useLayoutEffect(() => {
+      if (!(material instanceof OceanMaterial)) return;
+      material.cameraFloor = eye => {
+        const mesh = bedMesh.current;
+        if (!mesh) return null;
+        mesh.updateWorldMatrix(true, false);
+        const { raycaster, hits, from, down } = bedRay;
+        raycaster.set(from.set(eye.x, material.water.level + 1, eye.z), down);
+        hits.length = 0;
+        raycaster.intersectObject(mesh, false, hits);
+        return hits.length ? hits[0].point.y : null;
+      };
+      return () => {
+        material.cameraFloor = null;
+      };
+    }, [material, bedRay]);
 
     // Sync prop-driven uniforms onto the material.
     useLayoutEffect(() => {
@@ -523,6 +540,7 @@ export const Ocean = forwardRef(
         */}
         {bedGeometry && seaBedMaterial && (
           <mesh
+            ref={bedMesh}
             geometry={bedGeometry}
             material={seaBedMaterial}
             visible={bedVisible}
@@ -541,16 +559,6 @@ export const Ocean = forwardRef(
             layers={layers}
           />
         )}
-        {deepMaterial && (
-          <mesh
-            geometry={geometry}
-            material={deepMaterial}
-            // Opaque: drawn only while the Ocean is whole, so a faded one shows what is behind.
-            visible={surfaceVisible && (opacity ?? 1) >= 1}
-            renderOrder={(renderOrder ?? 0) - 1}
-            layers={layers}
-          />
-        )}
         <mesh
           ref={surfaceMesh}
           geometry={geometry}
@@ -561,19 +569,6 @@ export const Ocean = forwardRef(
           renderOrder={(renderOrder ?? 0) + 2}
           layers={layers}
         />
-        {bodyGeometry && volumeMaterials && (
-          // The glass's light play, over all that shows through it.
-          <mesh
-            geometry={bodyGeometry}
-            material={volumeMaterials[1]}
-            // Unset, the material keeps its own (on).
-            visible={
-              bodyVisible && (bodyShimmer === undefined || bodyShimmer > 0)
-            }
-            renderOrder={(renderOrder ?? 0) + 3}
-            layers={layers}
-          />
-        )}
         <OceanSamplerContext.Provider value={sampler}>
           <OceanContactContext.Provider value={contactRegistry}>
             {children}

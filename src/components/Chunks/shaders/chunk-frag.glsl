@@ -39,7 +39,7 @@ uniform vec2 bathySize; // grid size in texels
 varying float vSectionDist;
 #endif
 
-#ifdef CHUNK_FENCE
+#if defined(CHUNK_FENCE) || defined(CHUNK_WATER_FENCE)
 // x: 1 while the cut is live, 0 to pass everything; y: +1 normally, -1 to draw ONLY
 // what the fence removed (the peel patch).
 uniform vec2 fenceParams;
@@ -49,7 +49,12 @@ uniform vec2 fenceSize;   // grid size in texels
 #include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
 
-#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY) || defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS) || defined(CHUNK_HEIGHT_CLIP)
+#ifdef CHUNK_WATER_SECTION
+// The section plane where it takes the water (object space): none stands where it is > 0.
+uniform vec4 waterSectionPlane;
+#endif
+
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY) || defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS) || defined(CHUNK_HEIGHT_CLIP) || defined(CHUNK_WATER_SECTION) || defined(CHUNK_WATER_FENCE)
 varying vec3 vObjectPos;
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
 #endif
@@ -417,11 +422,28 @@ void main() {
   }
   #endif
 
-  #ifdef CHUNK_WATER
-  // What lies in the water fades by its path through it, as under any sea (water-body.glsl):
-  // the bed through the column over it, so a coast or an island rises through the water
-  // without anything here knowing where the shoreline runs.
-  outgoingLight = waterBodyFog(outgoingLight, waterBodyWorldOf(vViewPosition));
+  #if defined(CHUNK_WATER) && defined(CHUNK_WATER_TINT)
+  // The seabed - the shallowest cap, the only one given the water - dimmed by the daylight its
+  // depth leaves it (water-body.glsl's waterBodyDim): the stack's surface and walls carry the
+  // water in front of it. On its water-facing side, while the stack draws its water, and where
+  // a cut that takes the water has not taken it from over this point; below the seabed nothing
+  // is.
+  {
+    float waterKept = waterTintShown;
+    #ifdef CHUNK_WATER_SECTION
+    if(dot(waterSectionPlane.xyz, vObjectPos) + waterSectionPlane.w > 0.0)
+      waterKept = 0.0;
+    #endif
+    #ifdef CHUNK_WATER_FENCE
+    // The side the block keeps (fenceParams' y aside: the peel patch draws the other).
+    if(fenceParams.x > 0.5 && fenceSide(fenceMap, fenceToUv, fenceSize, vObjectPos.xz) < 0.0)
+      waterKept = 0.0;
+    #endif
+    vec3 bedNormal = normalize(normal * mat3(viewMatrix));
+    float bedFacing = smoothstep(-0.15, 0.15, bedNormal.y);
+    vec3 underWater = waterBodyDim(outgoingLight, waterBodyWorldOf(vViewPosition));
+    outgoingLight = mix(outgoingLight, underWater, bedFacing * waterKept);
+  }
   #endif
 
   #include <opaque_fragment>

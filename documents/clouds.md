@@ -339,20 +339,24 @@ high up, so the range stops at 2^−1.5.
   instead of the generator, or its pressure centres into the wind. It moves with the clock (see
   "Motion").
 
-**Over the ground** (`terrain`, on by default; `scenery-cloud-terrain.ts`,
-`shaders/cloud-terrain.glsl`). With a `GeoRelief` in the `World`, the clouds take its ground from
-its tiles (the relief's loader, `WorldReliefState.loader`, heights only,
-`buildGeoReliefTile`'s `heightsOnly`), drawn on the GPU into the frame fixed on the Earth they
-are read in. That frame's latitudes are the globe's conformal sphere's, some 0.2° off the
+**Over the ground** (`terrain`, on by default). The ground is the `Scenery`'s
+(`SceneryGround`, `scenery-ground.ts`, `shaders/ground-terrain.glsl`), shared with the sea, which
+reads how deep it is from it (`GroundMap`, `sceneGroundMap`): the clouds read its maps
+(`CloudGround`). With a `GeoRelief` in the `World`, it takes the ground from its tiles (the
+relief's loader, `WorldReliefState.loader`, heights only, `buildGeoReliefTile`'s `heightsOnly`),
+drawn on the GPU into the frame fixed on the Earth they are read in. That frame's latitudes are the globe's conformal sphere's, some 0.2° off the
 ground's at mid-latitudes, so each texel's latitude goes through a table of the sphere's
 (`geodeticLatitude`) and its longitude through the sphere's scale (`sphereLongitude`).
-Under the sea, the sea's level.
+What the clouds read is never under the sea's level; the seabed's height, for the sea, has a
+channel of its own.
 
-- **Two maps:** over the whole Earth a cube map 512² a face (some 20 km to a texel; RGBA half
-  floats, the height and its slope east and north, with mips) from the quadtree's 8 tiles of
-  90°, 512 cells each, loaded once; and about the camera a square 200 km across, 512² (some
-  400 m to a texel), from tiles of 1.4° with 256 cells each, loaded again once the camera's foot
-  is 30 km from its middle, below 300 km up, and drawn into the one not in use.
+- **Three maps:** over the whole Earth a cube map 512² a face (some 20 km to a texel; RGBA half
+  floats, the height and its slope east and north, and the seabed's height in alpha, with mips)
+  from the quadtree's 8 tiles of 90°, 512 cells each, loaded once; about the camera a square
+  200 km across, 512² (some 400 m to a texel), from tiles of 1.4° with 256 cells each, loaded
+  again once the camera's foot is 30 km from its middle, below 300 km up, and drawn into the one
+  not in use; and for the sea's shallows, close to the camera, a square 30 km across (some 60 m
+  to a texel) from tiles of 0.18°, below 30 km up. The clouds read the first two.
 - **The layers rise** with the ground's broad height (0.8 of it, over some 110 km): the same
   rise about the scene and in the far weather, so the two agree. A view's runs through a layer
   are as tall as the rise along that view (read at five places along each), not the highest

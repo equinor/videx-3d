@@ -37,6 +37,7 @@ import {
   waterOpticsOf,
 } from '../../sdk/weather/water-optics';
 import { sceneWaterBody, WaterBody } from '../../sdk/materials/water-body';
+import { sceneGroundMap } from '../../sdk/materials/ground-map';
 import { geometryFootprint } from '../../sdk/geometries/geometry-footprint';
 import type { CameraWater } from '../../sdk/utils/camera-site';
 import {
@@ -369,6 +370,25 @@ export class OceanMaterial extends ShaderMaterial {
    * down by the sea that draws it, so its seabed, its walls and the data in it fade alike.
    */
   readonly water = new WaterBody();
+  /**
+   * Whether its water is also the scene's (`sceneWaterBody`), for what reads that: an
+   * `Ocean`'s is. A `ChunkStack`'s is its own, handed to its chunks, so a `Scenery`'s sea about
+   * it keeps the scene's. Default true
+   */
+  sharesSceneWater = true;
+  /**
+   * Whether a cut has taken the water where the camera is (world position): it is in air
+   * there, over the footprint or not. A `ChunkStack` sets it for a section or a fence that
+   * takes its sea. Default none
+   */
+  cameraCut: ((position: Vector3) => boolean) | null = null;
+  /**
+   * The seabed's height (world Y) under the camera's world position, or null where none is
+   * known there: under it, the camera is in the ground, not in the water. Asked only while the
+   * camera is over the water, under its level and over its deepest. An `Ocean` with a bed
+   * casts a ray against it. Default none (the water ends at its {@link WaterBody.depth})
+   */
+  cameraFloor: ((position: Vector3) => number | null) | null = null;
 
   private _waveHeightScale!: number;
   private _directionalSpread!: number;
@@ -1180,8 +1200,8 @@ export class OceanMaterial extends ShaderMaterial {
 
   /**
    * The water's place in the world as the surface is drawn: its level, its extent (the
-   * surface geometry's box), where in it the water lies (its footprint, for an outline that
-   * does not fill the box) and its seabed's map, from the drawn object's frame (Y up, turned
+   * surface geometry's box) and its seabed's map (endless, the scene's ground where the map
+   * does not cover: `sceneGroundMap`), from the drawn object's frame (Y up, turned
    * about it at most); whether `camera` is over it, exactly; and the scene's water
    * (`sceneWaterBody`) taken from it, so what lies in it fades by it wherever it is in the
    * tree. Runs as the surface renders (the OIT variants too), and from the camera site's probe
@@ -1220,14 +1240,6 @@ export class OceanMaterial extends ShaderMaterial {
       .set(e[0], e[8], e[12], e[2], e[10], e[14], 0, 0, 1)
       .invert();
     const footprint = geometryFootprint(geometry);
-    water.setFootprint(
-      footprint.texture
-        ? {
-            texture: footprint.texture,
-            toUv: this._footprintToUv.copy(footprint.toUv).multiply(toObject),
-          }
-        : null,
-    );
     const map = this.uniforms.uBathyMap?.value as Texture | undefined;
     if (map) {
       water.setBed({
@@ -1239,19 +1251,34 @@ export class OceanMaterial extends ShaderMaterial {
         yOffset: e[13],
       });
     }
+    // Endless (no floor of its own), its seabed is the scene's ground where it has one, its
+    // level the sea's: a sea of its own size keeps its own.
+    water.setGround(
+      water.depth >= 1e30 ? sceneGroundMap(scene) : null,
+      e[5],
+      water.level,
+    );
     // The camera over the footprint, on its triangles; how deep, and over the seabed.
     camera.updateWorldMatrix(true, false);
     const eye = this._eye.setFromMatrixPosition(camera.matrixWorld);
     const at = this._eyeXZ.set(eye.x, eye.z, 1).applyMatrix3(toObject);
-    const over = footprint.contains(at.x, at.y);
-    water.cameraOver = over;
+    const over = footprint.contains(at.x, at.y) && !this.cameraCut?.(eye);
     const depth = water.level - eye.y;
-    sceneWaterBody(scene).copyFrom(water, this);
-    this._scene = scene;
+    // Under its seabed the camera is in the ground: over the water, but not in it.
+    let aboveBed = true;
+    if (over && depth > 0 && depth < water.depth && this.cameraFloor) {
+      const bed = this.cameraFloor(eye);
+      aboveBed = bed === null || eye.y > bed;
+    }
+    water.cameraOver = over && aboveBed;
+    if (this.sharesSceneWater) {
+      sceneWaterBody(scene).copyFrom(water, this);
+      this._scene = scene;
+    }
     return {
       depth,
       over,
-      inside: over && depth > 0 && depth < water.depth,
+      inside: over && aboveBed && depth > 0 && depth < water.depth,
       owner: this,
     };
   }
@@ -1266,7 +1293,6 @@ export class OceanMaterial extends ShaderMaterial {
     this.syncWater(scene, camera, geometry, object);
   }
   private readonly _toObject = new Matrix3();
-  private readonly _footprintToUv = new Matrix3();
   private readonly _bedToUv = new Matrix3();
   private readonly _eye = new Vector3();
   private readonly _eyeXZ = new Vector3();

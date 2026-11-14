@@ -6,6 +6,7 @@ import {
   SurfaceMeta,
 } from '../../sdk';
 import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
+import type { WaterBody } from '../../sdk/materials/water-body';
 import { ChunkContactTexture } from './chunk-contacts';
 import {
   ChunkBuildProgress,
@@ -127,6 +128,11 @@ export type ChunkStackContextValue = {
   drawWater?: boolean;
   /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ChunkStackProps.drawWater`) */
   waterTintShown?: IUniform<number>;
+  /**
+   * The stack's own water (its sea's `WaterBody`): what its sea bed is seen through. Its own,
+   * not the scene's, so a `Scenery`'s sea about it does not take its place. Null without a sea.
+   */
+  waterBody?: WaterBody | null;
   /**
    * The sea bed's depth grid as a texture, when the stack builds a sea: the column's
    * bed channel (the relief, on a relief column), from the `stackWater` generator.

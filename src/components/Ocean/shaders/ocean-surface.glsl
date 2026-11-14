@@ -363,14 +363,6 @@ vec3 oceanGlint(vec3 N, vec3 V, float glint, float rough) {
   return uSunColor * pow(ndh, shininess) * energy * glint;
 }
 
-// The surface as a layer over what lies under it, premultiplied: the sky it reflects by
-// `fresnel` and the sun's glint, covering `fresnel` of what lies under it. The water's own
-// colour is not the surface's: it is what lies under it, each faded by its own path through
-// the water (water-fog.glsl), the seabed, the void, the data, or the deep water.
-vec4 oceanSurfaceLayer(vec3 N, vec3 V, vec3 sky, float fresnel, float glint, float rough) {
-  return vec4(sky * uReflectionIntensity * fresnel + oceanGlint(N, V, glint, rough), fresnel);
-}
-
 // A premultiplied layer as colour and opacity, for blending. Its colour is kept no brighter
 // than 1 where it can be, its opacity raised instead: a target may clamp a straight colour
 // before it blends (the glint over Fresnel's 2 % is fifty times the glint), and where the glint

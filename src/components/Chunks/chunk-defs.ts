@@ -456,11 +456,13 @@ export type ChunkWaterTint = {
    * Strength of the tint deep down (0..1, 0 = off). Follows
    * {@link OceanWaterProps.waterOpacity} when omitted, so the bed reads denser as
    * the water does — the same coupling the `Ocean` component uses.
+   * @deprecated the bed is seen through the water over it by `optics`; no effect
    */
   bedTint?: number;
   /**
    * Depth below the water level at which the tint reaches ~86% of `bedTint`, in
    * metres. Default {@link DEFAULT_BED_TINT_DEPTH}.
+   * @deprecated the bed is seen through the water over it by `optics`; no effect
    */
   bedTintDepth?: number;
   /**

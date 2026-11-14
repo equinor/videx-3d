@@ -340,12 +340,14 @@ void main() {
   // stage's or the background's (`clears`, below).
   bool beyond = false;
   if(seenInWater) {
-    // Through the water over it, from where the view enters it; land, from in the water,
-    // through the water the view crosses before it leaves the sea.
+    // Dimmed by the daylight its depth leaves it. From the air the sea's surface carries the
+    // water in front of it (skyOceanWaterUnder); from in the water, through the water between,
+    // and land through the water the view crosses before it leaves the sea.
     color *= skyOceanDim(-height);
-    float below = altitude > 0.0 ? max(dist - sea, 0.0) : skyOceanPathBelowSurface(cameraPosition, world);
-    float path = skyOceanCutawayPath(below, skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-    color = skyOceanFog(color, path, skyOceanLightAlong(max(-altitude, 0.0), max(-height, 0.0), path), dir);
+    if(altitude <= 0.0) {
+      float path = skyOceanCutawayPath(skyOceanPathBelowSurface(cameraPosition, world), skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
+      color = skyOceanFog(color, path, skyOceanLightAlong(-altitude, max(-height, 0.0), path), dir);
+    }
     if(altitude > 0.0 && sea > dist)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {

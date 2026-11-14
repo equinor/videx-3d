@@ -1,5 +1,8 @@
 // An endless sea for the sky: a wavy surface at uSkyOceanLevel over a flat seabed
-// uSkyOceanDepth below it. The surface is shaded by the Ocean component's own code from
+// uSkyOceanDepth below it. Seen from the air, the surface carries the water down to the seabed
+// under it (the scene's ground where its maps cover, ground-map.glsl, else that depth), and
+// what lies under it is only dimmed by the daylight its depth leaves it; from in the water,
+// what is seen fades by its own path through the water. The surface is shaded by the Ocean component's own code from
 // an OceanMaterial's uniforms (see SceneryMaterial.linkOcean), so the two look the same.
 // The background finds both planes per pixel; a stage (SceneryStage) draws the same
 // functions on real geometry, which is how the scene gets water in front of it.
@@ -16,8 +19,12 @@
 #include <lights_pars_begin>
 #include ../../../sdk/materials/shaderLib/scene-light.glsl
 #include ../../../sdk/materials/shaderLib/surface-detail.glsl
+#include ../../../sdk/materials/shaderLib/ground-map.glsl
 
 #define SKY_OCEAN_WATER_IOR 1.333
+// From how high up (world units over the sea) the water starts to read as too deep to see
+// through, and from how high it does, whatever its depth: the seabed far below shows nothing.
+#define SKY_OCEAN_OPAQUE vec2(2000.0, 5000.0)
 
 // uSkyOceanLevel, uSkyOceanDepth and uSkyOceanBuried: sky.glsl, which every layer reads.
 // So are water-fog.glsl and the cutaway's shape and cuts (uSkyOceanCutaway{Anchor, Heading,
@@ -380,6 +387,33 @@ vec3 skyOceanBedPathLight(vec3 origin, float bedDepth, float path) {
   return skyOceanLightAlong(skyOceanViewDepth(origin), bedDepth, path);
 }
 
+// How far down the seabed lies under the sea point `world`: the scene's ground (ground-map.glsl)
+// where its maps cover, else the sea's own depth.
+float skyOceanDepthAt(vec3 world) {
+  float covered;
+  float height = groundMapHeight(world, covered);
+  return covered > 0.5 ? max(-height, 0.0) : uSkyOceanDepth;
+}
+
+// The water under the sea point `world` (`up` there), seen from the air along `dir`: a layer
+// (premultiplied) between what the surface reflects and what lies under it, down to the seabed
+// under it (skyOceanDepthAt), lit where the line gathers its light (water-fog.glsl's
+// waterUnderSurface). Far off, where the waves' detail has faded by `flatness`
+// (oceanFlatness), and from a few kilometres up (SKY_OCEAN_OPAQUE), water too deep to see
+// through. No derivatives.
+vec4 skyOceanWaterUnder(vec3 world, vec3 up, vec3 dir, float flatness) {
+  if(uSkyOceanWater < 0.5)
+    return vec4(0.0);
+  float depth = skyOceanDepthAt(world);
+  float facing = dot(dir, up);
+  float path = waterPathDown(depth, facing);
+  vec4 water = waterUnderSurface(path, facing, uSkyOceanExtinction, uSkyOceanWaterColor, skyOceanLightAlong(0.0, depth, path));
+  float deep = max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, skyOceanCameraAltitude()));
+  if(deep > 0.0)
+    water = mix(water, waterUnderSurface(1e6, facing, uSkyOceanExtinction, uSkyOceanWaterColor, skyOceanLightAlong(0.0, depth, 1e6)), deep);
+  return water;
+}
+
 // The waves at a point of the sea, `dist` along the view ray. Each read of the waves
 // compiles to a full copy of it, so a shader shading both sides takes it once.
 struct SkyOceanWave {
@@ -461,10 +495,10 @@ vec4 skyOceanReflectedClouds(vec3 r, vec3 sky, vec3 world, vec3 up, float texel)
 
 // The surface seen from above at plane point `p` (the field's wave plane: the stage, the
 // contacts), with its `wave` there, at `world`: its colour, and how much of what lies under it
-// that covers: the sky it reflects by Fresnel, the sun's glint and the foam. The water's own
-// colour is what lies under it, faded by its path through the water (the seabed's layer, the
-// void's, a stage's seabed, what lies in the sea). `texel` is world units per pixel.
-// ⚠️ Derivatives.
+// that covers: the sky it reflects by Fresnel, the sun's glint and the foam, over the water
+// down to the seabed under it (skyOceanWaterUnder). What lies under it (the seabed, the relief,
+// a layer, the void) is only dimmed by the daylight its depth leaves it. `texel` is world units
+// per pixel. ⚠️ Derivatives.
 vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float blend, vec3 world) {
   vec3 normal = wave.normal;
   float night = mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
@@ -495,6 +529,7 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // stands over the sea's horizon there (skyLightFrom).
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
   vec4 surface = vec4(reflected * uReflectionIntensity * roughFresnel + oceanGlint(normal, V, glint, wave.rough), fresnel);
+  surface = waterLayerOver(surface, skyOceanWaterUnder(world, wave.up, dir, wave.flatness));
 
   float foamFar;
   float coverage = max(oceanWindFoam(), oceanContactFoam(p, uTime));
@@ -607,21 +642,18 @@ vec2 skyOceanFromAirReach(vec3 origin, vec3 dir, vec3 reach) {
 }
 
 // The background's sea seen from the air, or from below a dry sea's level, for a camera at
-// `origin` looking along `dir`: only the seabed through the water, as a layer over the void
-// beyond it (premultiplied). The surface is a layer of its own, blended over it (and over a
-// stage) by the GPU, so the sky and a stage composite it the same way. The seabed is `bed`,
-// as shaded where the view reaches it (`reach`, skyOceanBedReach). `reached` is whether the
-// view meets the sea at all: nothing where it does not.
+// `origin` looking along `dir`: only the seabed, as a layer over the void beyond it
+// (premultiplied). The surface is a layer of its own, blended over it (and over a stage) by
+// the GPU, so the sky and a stage composite it the same way: it carries the water
+// (skyOceanWaterUnder). The seabed is `bed`, as shaded where the view reaches it (`reach`,
+// skyOceanBedReach), dimmed by the daylight its depth leaves it. `reached` is whether the view
+// meets the sea at all: nothing where it does not.
 vec4 skyOceanFromAir(vec3 dir, vec3 origin, float blend, vec3 reach, vec3 bed, out bool reached) {
-  float altitude = skyOceanViewAltitude(origin);
-  float ay = max(abs(dot(dir, uSkyUp)), 1e-6);
-  bool wet = altitude > 0.0 && uSkyOceanWater > 0.5;
+  bool wet = skyOceanViewAltitude(origin) > 0.0 && uSkyOceanWater > 0.5;
   vec2 surface = skyOceanFromAirReach(origin, dir, reach);
-  // Dry, the fog is off.
-  float path = wet && uSkyCurvature > 0.0 ? max(reach.x - surface.x, 0.0) : uSkyOceanDepth / ay;
   vec3 bedPoint = origin + dir * reach.x;
   float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  vec4 seen = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), path * skyOceanCutawayWater(cutaway), skyOceanBedPathLight(origin, uSkyOceanDepth, path), dir);
+  vec4 seen = skyOceanFloorOver(bed, cutaway, bedPoint);
   // Dry, from high up: through the air and as space sees it, as the relief's ground past
   // which it shows. Eased in by the same share, so nothing changes in the air. Over an
   // opaque surface the air's light is what it adds to the share of it that it keeps.
@@ -781,9 +813,14 @@ float skyOceanCover(vec3 world, float height) {
   if(fromAir) {
     vec3 reach = skyOceanReach(cameraPosition, dir, altitude);
     if(height < -margin || (reach.z < 0.5 && reach.x < pastCurve)) {
-      // As the surface layer covers it (skyOceanSurfaceOf), on a calm sea: by its reflection.
-      float facing = clamp(dot(globeUpAt(cameraPosition + dir * reach.x), -dir), 0.0, 1.0);
-      float opacity = mix(OCEAN_F0, 1.0, pow(1.0 - facing, uFresnelPower));
+      // As the surface layer covers it (skyOceanSurfaceOf), on a calm sea: by its reflection,
+      // over the water under it.
+      vec3 at = cameraPosition + dir * reach.x;
+      vec3 up = globeUpAt(at);
+      float facing = clamp(dot(up, -dir), 0.0, 1.0);
+      float reflection = mix(OCEAN_F0, 1.0, pow(1.0 - facing, uFresnelPower));
+      float water = skyOceanWaterUnder(at, up, dir, oceanFlatness(reach.x)).a;
+      float opacity = 1.0 - (1.0 - reflection) * (1.0 - water);
       surface = opacity * skyOceanCutawayWater(cutaway);
     }
   }

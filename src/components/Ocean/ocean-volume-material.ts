@@ -1,8 +1,6 @@
 import {
-  BackSide,
   Color,
   DoubleSide,
-  FrontSide,
   IUniform,
   ShaderMaterial,
   ShaderMaterialParameters,
@@ -31,17 +29,6 @@ export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
   sectionPlane?: IUniform<Vector4>;
   /** see {@link OceanMaterialParameters.fence} */
   fence?: FenceFieldUniforms;
-  /**
-   * Which part of a closed wall this draws (default `'both'`, double-sided):
-   * - `'water'`: the inner faces (back faces of outward walls), the water along the sight
-   *   line, from inside and, as the walls across the box, from outside;
-   * - `'glass'`: the outer faces, only the light play on the glass the line enters by.
-   *
-   * Without depth writes, a double-sided draw lets a far wall's inner face paint over the
-   * near glass wherever it is drawn later: draw `'water'` and `'glass'` as two meshes, the
-   * glass last (as `Ocean` does).
-   */
-  wall?: 'both' | 'water' | 'glass';
 };
 
 /**
@@ -55,13 +42,11 @@ export const DEFAULT_OCEAN_BODY_FOG_DENSITY = 0.004;
 
 /**
  * OIT-compatible water-body (volume) material for the side walls of an ocean
- * box. Shades the walls as a transparent, depth-tinted blue body (a fog-like
- * tint that builds up with view distance), so the interior reads as water both
- * when the camera is inside the box and when looking in from outside. Double-sided by
- * default; `Ocean` draws its walls in two parts (`wall`): the water on the inner faces,
- * then the glass's light play on the outer faces, last, so a far wall never paints over
- * the near glass. Shares the surface's
- * deep and shallow colours so the body matches the surface.
+ * box. Shades the walls as a transparent, depth-tinted body (a fog-like tint that builds up
+ * with view distance), so the interior reads as water both when the camera is inside the box
+ * and when looking in from outside. Rendered double-sided so the walls are visible from either
+ * side. Shares the surface's water (its optics' colour, `linkSea`) so the body matches the
+ * surface.
  *
  * The wall's top ring follows the same wave heights as the ocean surface (tapered
  * to zero at the sea bed) so the rim stays sealed when vertex displacement is
@@ -81,7 +66,6 @@ export class OceanVolumeMaterial extends ShaderMaterial {
       wallAttribute = false,
       sectionPlane,
       fence,
-      wall = 'both',
       ...rest
     } = parameters;
 
@@ -89,13 +73,10 @@ export class OceanVolumeMaterial extends ShaderMaterial {
       vertexShader,
       fragmentShader,
       transparent: true,
-      side:
-        wall === 'water' ? BackSide : wall === 'glass' ? FrontSide : DoubleSide,
+      side: DoubleSide,
       depthWrite: false,
       defines: {
         SEA_LAYERS: 3,
-        ...(wall === 'water' ? { OCEAN_WALL_WATER: '' } : {}),
-        ...(wall === 'glass' ? { OCEAN_WALL_GLASS: '' } : {}),
         ...(wallAttribute ? { OCEAN_WALL_ATTRIBUTE: '' } : {}),
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
@@ -177,6 +158,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
     this.uniforms.uDisplacement.value = Math.min(Math.max(value, 0), 1);
   }
 
+  /** @deprecated the walls take the water's colour (its optics, `linkSea`); no effect */
   get deepColor(): Color {
     return this.uniforms.uDeepColor.value;
   }
@@ -184,6 +166,7 @@ export class OceanVolumeMaterial extends ShaderMaterial {
     this.uniforms.uDeepColor.value.set(value as Color);
   }
 
+  /** @deprecated the walls take the water's colour (its optics, `linkSea`); no effect */
   get shallowColor(): Color {
     return this.uniforms.uShallowColor.value;
   }

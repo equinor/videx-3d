@@ -81,11 +81,22 @@ export type OceanWaterProps = {
    * sees through it. Default as `deepColor` and `bodyFogDensity` give it, else `'realistic'`.
    */
   optics?: WaterOptics | WaterOpticsPreset;
-  /** Deep water colour (seen looking straight down). */
+  /**
+   * Deep water colour (seen looking straight down).
+   * @deprecated `optics` (its `color`); still taken as the water's colour where `optics` is
+   * left out
+   */
   deepColor?: string;
-  /** Shallow/scatter water colour (seen at grazing angles). */
+  /**
+   * Shallow/scatter water colour (seen at grazing angles).
+   * @deprecated the water's look is one model (`optics`); no effect
+   */
   shallowColor?: string;
-  /** Base body opacity looking straight down (0 = clear, 1 = opaque). */
+  /**
+   * Base body opacity looking straight down (0 = clear, 1 = opaque).
+   * @deprecated how far one sees is `optics` (its `clarity`): no effect on the surface; still
+   * the walls' densest tint where `bodyMaxOpacity` is left out
+   */
   waterOpacity?: number;
   /**
    * Water depth at which the sea reaches ~86% of its full colour and opacity, in
@@ -95,11 +106,13 @@ export type OceanWaterProps = {
    * ⚠️ Needs a bathymetry grid to have any effect — a `ChunkStack` supplies the
    * column's shallowest surface. Without one the shader has no depth input and
    * falls back to the view angle, which cannot tell shallow from deep.
+   * @deprecated shallow water shows its bed by `optics` (the water over it); no effect
    */
   shoalDepth?: number;
   /**
    * What is left of `waterOpacity` where the bed reaches the surface, 0..1.
    * Default 0 (fully clear, leaving only the reflection).
+   * @deprecated shallow water shows its bed by `optics` (the water over it); no effect
    */
   shoalOpacity?: number;
   /**
@@ -204,9 +217,13 @@ export type OceanWaterProps = {
  * @group Components
  */
 export type OceanBodyProps = {
-  /** Per-meter tint build-up of the water body. */
+  /**
+   * Per-meter tint build-up of the water body's walls, with the camera's distance to them.
+   * Also the water's clarity where `optics` is left out, and a `ChunkStack`'s immersion fog in
+   * its water.
+   */
   bodyFogDensity?: number;
-  /** Densest water-body tint reached far through the water (0..1). */
+  /** Densest tint the water body's walls reach far from the camera (0..1). */
   bodyMaxOpacity?: number;
   /** Animated shimmer amount of the water body, 0 = off. */
   bodyShimmer?: number;
@@ -225,6 +242,7 @@ export type OceanBedProps = {
   /**
    * Strength of the water-colour tint applied to the water-facing (top) side
    * of the sea bed (0..1).
+   * @deprecated the bed is seen through the water over it by `optics`; no effect
    */
   seaBedWaterTint?: number;
   /**

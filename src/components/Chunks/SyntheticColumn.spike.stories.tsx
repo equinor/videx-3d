@@ -13,6 +13,7 @@ import {
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
+import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import {
   getSyntheticColumn,
   syntheticColumnKeys,
@@ -181,15 +182,14 @@ type SyntheticColumnProps = {
   floorColor: string;
   water: boolean;
   seaLevel: number;
-  waterOpacity: number;
+  /** the water's look (optics): realistic, or clear to see the bed and what lies under the sea */
+  optics: WaterOpticsPreset;
   waterLayerOpacity: number;
   windSpeed: number;
   windDirection: number;
   foamAmount: number;
   displacement: boolean;
   waterResolution: number;
-  shoalDepth: number;
-  shoalOpacity: number;
   shoreFoam: number;
   shoreBreakDepth: number;
   surfScale: number;
@@ -209,8 +209,6 @@ type SyntheticColumnProps = {
   immersionTransition: number;
   immersionSettle: number;
   immersionBackground: boolean;
-  bedTint: number;
-  bedTintDepth: number;
   bedOpacity: number;
   ship: boolean;
   shipX: number;
@@ -546,17 +544,15 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     return {
       depth: props.seaLevel,
       opacity: props.waterLayerOpacity,
+      optics: props.optics,
       windSpeed: props.windSpeed,
       windDirection: [Math.cos(angle), Math.sin(angle)] as Vec2,
-      waterOpacity: props.waterOpacity,
       foamAmount: props.foamAmount,
       displacement: props.displacement,
       resolution: props.waterResolution > 0 ? props.waterResolution : undefined,
       bodyFogDensity: props.bodyFogDensity,
       bodyMaxOpacity: props.bodyMaxOpacity,
       bodyShimmer: props.bodyShimmer,
-      shoalDepth: props.shoalDepth,
-      shoalOpacity: props.shoalOpacity,
       shoreFoam: props.shoreFoam,
       shoreBreakDepth: props.shoreBreakDepth,
       surfScale: props.surfScale,
@@ -565,8 +561,6 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
       shoreNoise: props.shoreNoise,
       shoreNoiseScale: props.shoreNoiseScale,
       swash: props.swash,
-      bedTint: props.bedTint,
-      bedTintDepth: props.bedTintDepth,
       wetBand: props.wetBand,
       wetStrength: props.wetStrength,
       keepBed: props.keepBed,
@@ -574,7 +568,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
   }, [
     props.water,
     props.seaLevel,
-    props.waterOpacity,
+    props.optics,
     props.waterLayerOpacity,
     props.windSpeed,
     props.windDirection,
@@ -584,8 +578,6 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.bodyFogDensity,
     props.bodyMaxOpacity,
     props.bodyShimmer,
-    props.shoalDepth,
-    props.shoalOpacity,
     props.shoreFoam,
     props.shoreBreakDepth,
     props.surfScale,
@@ -594,8 +586,6 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
     props.shoreNoise,
     props.shoreNoiseScale,
     props.swash,
-    props.bedTint,
-    props.bedTintDepth,
     props.wetBand,
     props.wetStrength,
     props.keepBed,
@@ -819,7 +809,7 @@ const meta = {
           'A chunk cut from a GENERATED stratigraphic column — a set of surfaces that are exact functions of one another, rather than the independent surfaces of `SyntheticCoverage`.\n\n' +
           'Each unit is deposited as `thickness = drape + fill · max(0, dPrev − datum)`: `drape` blankets the topography, `fill` levels it toward `datum`. Where the surface below is already shallower than the datum the unit has NO thickness, so it **pinches out over the highs** — a real zero-thickness termination, which the demo field only shows by accident.\n\n' +
           'The column also contains a **fault** (gridded into a ramp and dying out along strike — a height field cannot hold the break, so the surfaces are carried across it exactly as an interpreter would), a **partly-mapped unit** (a survey extent, not geology), and an **angular unconformity** whose truncated horizons are recorded as NO DATA by default, which is what an interpreter delivers and what makes them indistinguishable from a survey edge.\n\n' +
-          '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The sea is declared on the `ChunkStack` rather than as a chunk layer, and takes no part in the depth order, so the ground rises THROUGH the plane instead of being flattened onto it and the water body ends at the shoreline. `bedTint` then tints the bed toward the water colour BY DEPTH, so the shoreline appears on its own.\n\n' +
+          '⭐ The SHALLOWEST surface is the SEA BED, and it is shaped rather than noised: a basin ~210 m deep, a coast rising out of it to ~45 m above sea level on one side, and an island standing off it with a hill on top (~99 m). Those are composable landform primitives (`ramp`, `dome`) with a little dune texture over them — noise alone reads as static, not as terrain. The sea is declared on the `ChunkStack` rather than as a chunk layer, and takes no part in the depth order, so the ground rises THROUGH the plane instead of being flattened onto it and the water body ends at the shoreline. The bed is then seen through the water over it, by its DEPTH (`optics`), so the shoreline appears on its own.\n\n' +
           '⭐ The column carries **fluid contacts** — a GOC at ~2200 m and an OWC at ~2600 m — drawn as LINES rather than as coloured volumes. A contact is an ordinary depth grid (mostly flat, same conventions as a horizon) but it is deliberately NOT a stack layer: it takes no part in the depth order, so it can neither truncate a horizon nor be truncated by one, and it carves the rock into nothing. It is drawn per FRAGMENT wherever the geometry’s own height crosses the contact’s grid, so ONE test gives both the accumulation outline on a cap and the horizontal line on a section face or a wall — note how the lines run dead flat across the dipping strata. ⭐ Being pure shading, swapping a contact rebuilds no geometry at all. See the Contacts group.\n\n' +
           '⭐ Everything about the column — grid size and resolution, number of units, structure, seed, erosion encoding, where the fault and the unconformity fall — comes from the `COLUMN` constants in `src/storybook/data/synthetic-surfaces.ts`. Change one and reload to get a different field.\n\n' +
           'A **tanker** floats in the sea for scale — 253 m against a 7 km field. It reads the wave sampler and the contact-foam registry the `ChunkStack` provides, exactly as it would inside an `<Ocean>`, so it heaves with the swell and spreads foam where it meets the water.\n\n' +
@@ -850,15 +840,13 @@ export const Default: Story = {
     floorColor: '#6b6b6b',
     water: true,
     seaLevel: 0,
-    waterOpacity: 0.7,
+    optics: 'realistic',
     waterLayerOpacity: 1,
     windSpeed: 10,
     windDirection: 30,
     foamAmount: 0.5,
     displacement: false,
     waterResolution: 0,
-    shoalDepth: 25,
-    shoalOpacity: 0,
     shoreFoam: 0.8,
     shoreBreakDepth: 1.3,
     surfScale: 1,
@@ -878,8 +866,6 @@ export const Default: Story = {
     immersionTransition: 5,
     immersionSettle: 0.12,
     immersionBackground: true,
-    bedTint: 0.6,
-    bedTintDepth: 80,
     bedOpacity: 1,
     ship: true,
     shipX: 2200,
@@ -1035,10 +1021,11 @@ export const Default: Story = {
         'Sea level, in metres below datum (positive-down, as surfaces are given). 0 is where the sea bed was designed for — it spans roughly 210 m deep to 99 m above sea level, so the coast, the island and its hill all stand clear. Raise it to drown them: the ground is not truncated by the water, it simply goes under. ⚠️ This is the sea SURFACE, not a water depth.',
       table: { category: 'Water' },
     },
-    waterOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+    optics: {
+      control: { type: 'inline-radio' },
+      options: ['realistic', 'clear'],
       description:
-        'The WATER’s own opacity, looking straight down. ⭐ It is a base, not the final alpha: the shader mixes it toward 1 with the Fresnel term, so the surface is see-through from above and mirror-like at grazing angles whatever this says. 1 = opaque from every angle.',
+        'The water’s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea’s (15 m visibility), the bed lost to the water but where shallow; CLEAR to see the bed and what lies under the sea (750 m).',
       table: { category: 'Water' },
     },
     waterLayerOpacity: {
@@ -1074,18 +1061,6 @@ export const Default: Story = {
       description:
         'Target triangle edge for the water lid, in metres. 0 = leave it to the library: the fewest triangles that fill the outline when displacement is off, a default resolution when it is on. ⚠️ A cost knob over the whole footprint — halving it roughly quadruples the lid.',
       table: { category: 'Sea state' },
-    },
-    shoalDepth: {
-      control: { type: 'range', min: 1, max: 200, step: 1 },
-      description:
-        'Water depth at which the sea reaches ~86% of its full colour and opacity, in metres. ⭐ The shader had NO depth input before the bathymetry texture and used the VIEW ANGLE as a stand-in — which cannot tell a metre of water over a bank from the open sea. This replaces the proxy with the real thing, so a shoal reads as a shoal from any angle.',
-      table: { category: 'Shore' },
-    },
-    shoalOpacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      description:
-        'What is left of `waterOpacity` where the bed reaches the surface. 0 = water with no depth is fully clear and only the Fresnel reflection remains.',
-      table: { category: 'Shore' },
     },
     shoreFoam: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
@@ -1138,7 +1113,7 @@ export const Default: Story = {
     wetBand: {
       control: { type: 'range', min: 0, max: 30, step: 0.5 },
       description:
-        'Depth of the WET band just below the waterline, in metres. 0 = off. Wet ground is darker, which is what stops the shore reading as a hard colour boundary between dry land and tinted bed. ⚠️ On the bed’s CAP only, the same scope as `bedTint`.',
+        'Depth of the WET band just below the waterline, in metres. 0 = off. Wet ground is darker, which is what stops the shore reading as a hard colour boundary between dry land and tinted bed. ⚠️ On the bed’s CAP only, the same scope as the water over the bed.',
       table: { category: 'Shore' },
     },
     wetStrength: {
@@ -1154,8 +1129,7 @@ export const Default: Story = {
     },
     bodyMaxOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      description:
-        'Densest tint the body reaches far through the water. Follows `waterOpacity` when the sea leaves it unset.',
+      description: 'Densest tint the body reaches far through the water.',
       table: { category: 'Water body' },
     },
     bodyShimmer: {
@@ -1179,7 +1153,7 @@ export const Default: Story = {
     immersionVisibility: {
       control: { type: 'range', min: 25, max: 2000, step: 25 },
       description:
-        'Roughly how far you can see inside the block, in metres. ⭐ The point of the effect is a positional CUE — telling you that you have flown the camera into the ground — not occlusion, so dimming that still leaves wellbores readable beats the blackout realism would ask for. ⚠️ `FogExp2` saturates QUADRATICALLY (`exp(-(d / visibility)²)`): ~63% fogged at this distance, ~98% at twice it. Three offers no way to bound fog short of patching every shader, so this is the only control over how much you can see. ⚠️ The sea uses `bodyFogDensity` instead, because that one has to agree with the water body’s wall shader.',
+        'Roughly how far you can see inside the block, in metres. ⭐ The point of the effect is a positional CUE — telling you that you have flown the camera into the ground — not occlusion, so dimming that still leaves wellbores readable beats the blackout realism would ask for. ⚠️ `FogExp2` saturates QUADRATICALLY (`exp(-(d / visibility)²)`): ~63% fogged at this distance, ~98% at twice it. Three offers no way to bound fog short of patching every shader, so this is the only control over how much you can see. ⚠️ The sea uses its `optics` instead, the same water its walls and its bed are seen through.',
       table: { category: 'Immersion' },
     },
     immersionTransition: {
@@ -1199,18 +1173,6 @@ export const Default: Story = {
       description:
         'Take the scene background to the medium’s colour too. ⚠️ Fogged geometry against an unfogged background is the classic mismatch, and it is worse on a BRIGHT background than a dark one: the fog reads as a haze hanging in the room rather than as a medium. Off means setting your background yourself. ⚠️ Interpolated where the host’s background is a colour, swapped where it is a texture or cube map — those cannot be blended.',
       table: { category: 'Immersion' },
-    },
-    bedTint: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      description:
-        'Tint the SEA BED toward the water colour, as if seen through the water column — the chunk’s answer to the `Ocean` component’s `seaBedWaterTint`. ⭐ Depth-dependent where that one is flat, because this sea bed is real geology and rises through the water: the tint fades to nothing at the waterline, so the coast and the island stay dry-looking without anything having to know where the shoreline runs.',
-      table: { category: 'Sea bed' },
-    },
-    bedTintDepth: {
-      control: { type: 'range', min: 5, max: 400, step: 5 },
-      description:
-        'Depth below sea level at which `bedTint` reaches ~86% of its strength, in metres — how tight the gradient at the shoreline is. ⚠️ Beer-Lambert saturates: at 80 anything below ~250 m is already past 95%, so on a deep bed the whole cap reads uniform and the gradient is spent around the coast. Raise it to see depth across the whole bed.',
-      table: { category: 'Sea bed' },
     },
     bedOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },

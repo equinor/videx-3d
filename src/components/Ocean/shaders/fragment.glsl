@@ -5,9 +5,9 @@
 // Each layer is filtered to the pixel by its mips, and what they filter out roughens the sun's
 // glint, so there is no LOD ring and the horizon does not shimmer.
 //
-// Reflections use a procedural analytic sky gradient, by Fresnel over what lies under the
-// surface, which fades by its own path through the water (water-body.glsl): one water model
-// with every sea's (documents/water.md). The material is OIT-compatible: it includes
+// Reflections use a procedural analytic sky gradient, by Fresnel over the water down to the
+// seabed under the surface (water-body.glsl's waterBodySurfaceWater), through which what lies
+// under it shows: one water model with every sea's (documents/water.md). The material is OIT-compatible: it includes
 // the shared oit.glsl chunk and routes its final colour through oitProcess() so
 // it composites correctly with the other transparent subsurface geometry.
 
@@ -142,8 +142,6 @@ void main() {
 
   // --- The bed under the surface, for the surf ------------------------------
   // ⚠️ `bathy` is the map's coverage: where the bed is unmapped there is no shore.
-  // The water's colour over the bed is the bed's own, seen through the water
-  // (water-body.glsl), not the surface's.
   float bathy = 0.0;
   float waterDepth = 0.0;
   // How squarely the waves meet the shore here. Drives both the swash and, as
@@ -180,15 +178,16 @@ void main() {
 
   // --- The surface ----------------------------------------------------------
   // From above, the sky it reflects and the sun's glint, covering Fresnel of what lies under
-  // it (oceanSurfaceLayer). The water's own colour is what lies under it, each faded by its own
-  // path through the water (water-body.glsl): the bed, the walls, the data, and where there is
-  // nothing, the deep water behind (the Ocean's backdrop). Gusts and slicks (oceanWaves) turn
-  // the reflection and how much there is of it, in the colour only.
+  // it, over the water down to the seabed under it (water-body.glsl's waterBodySurfaceWater):
+  // what lies in the water shows through as much as the water lets it, only dimmed by the
+  // daylight its depth leaves it. Gusts and slicks (oceanWaves) turn the reflection and how
+  // much there is of it, in the colour only.
   vec4 layer;
   if(!underside) {
     vec3 reflected = oceanRoughReflect(reflect(-V, N), vec3(0.0, 1.0, 0.0), rough);
     float roughFresnel = oceanRoughFresnel(fresnel, ndvAA, rough);
     layer = vec4(oceanSkyReflection(reflected) * uReflectionIntensity * roughFresnel + oceanGlint(N, V, 1.0, rough), fresnel);
+    layer = waterLayerOver(layer, waterBodySurfaceWater(vWorldPosition, -V));
   } else {
     // From below: the sky through Snell's window, beyond it the deep water mirrored, seen
     // through the water between (as the Scenery's sea's underside).

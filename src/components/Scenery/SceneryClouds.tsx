@@ -24,7 +24,6 @@ import {
 } from '../../sdk/weather/weather';
 import { WeatherClock } from '../../sdk/weather/weather-clock';
 import { useWeather, useWeatherClock } from '../Weather/weather-context';
-import { useWorldRelief } from '../World/world-relief';
 import {
   CLOUDS_LOOKS,
   cloudsChainLayer,
@@ -104,8 +103,6 @@ export const SceneryClouds = ({
   const scene = useThree(state => state.scene);
   const camera = useThree(state => state.camera);
   const weather = useWeather();
-  // The World's relief: the ground the clouds lie over.
-  const loader = useWorldRelief()?.loader ?? null;
 
   useEffect(() => {
     if (!registry && import.meta.env.DEV)
@@ -143,11 +140,10 @@ export const SceneryClouds = ({
     [gl, volume],
   );
 
-  // The ground: the relief's, while `terrain`.
-  const terrainSource = terrain ? loader : null;
+  // The ground: the scenery's (its World's relief), while `terrain`.
   useEffect(() => {
-    volume?.terrain.setSource(terrainSource);
-  }, [volume, terrainSource]);
+    volume?.terrain.set(registry?.ground ?? null, terrain);
+  }, [volume, registry, terrain]);
   useEffect(() => {
     if (volume) volume.temporal = temporal;
   }, [volume, temporal]);
@@ -319,9 +315,6 @@ export const SceneryClouds = ({
       precompile(gl, noise.generator, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.terrain.generator, camera, OWN_SCENE, 'offscreen', {
-        priority: PRECOMPILE_PRIORITY.background,
-      }),
       ...volume.weatherGenerators(gl).map(generator =>
         precompile(gl, generator, camera, OWN_SCENE, 'offscreen', {
           priority: PRECOMPILE_PRIORITY.background,
@@ -377,8 +370,8 @@ export const SceneryClouds = ({
     volume.composite.renderOrder = registry.view.renderOrder + AFTER_SURFACE;
     const drawn = ready && enabled && volume.cloudy;
     volume.composite.visible = drawn && registry.view.clouds;
-    // Its ground drawn as it comes in, and asked for about the camera as it moves.
-    if (drawn) volume.updateTerrain(gl, state.camera);
+    // Its ground as the scenery has drawn it so far.
+    if (drawn) volume.updateTerrain();
     // The scene's light: what is filmed of them, the share of the light they let through, their
     // shadows and what the sea reflects of them.
     volume.filmable = drawn;

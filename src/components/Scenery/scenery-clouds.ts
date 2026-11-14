@@ -70,7 +70,7 @@ import { CloudCoverMap } from './scenery-cloud-cover-map';
 import { CloudLightMap } from './scenery-cloud-light';
 import { CloudPlaceMap } from './scenery-cloud-place-map';
 import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
-import { CloudTerrain } from './scenery-cloud-terrain';
+import { CloudGround, earthFrame } from './scenery-ground';
 import { CloudWeather } from './scenery-cloud-weather';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import type {
@@ -630,8 +630,8 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   // A global weather's maps of the weather systems, and each type's quantiles of the cover map
   // (and what they were filled for).
   private readonly weather: CloudWeather;
-  /** the ground under the clouds, from a relief (see {@link CloudTerrain}): none until given one */
-  readonly terrain = new CloudTerrain();
+  /** the ground under the clouds, the scenery's (see {@link CloudGround}): none until given one */
+  readonly terrain = new CloudGround();
   /** a local weather's light maps (see {@link CloudLightMap}) */
   readonly lightMaps = new CloudLightMap(CLOUDS_LEVELS);
   /** a local weather's cover maps (see {@link CloudCoverMap}) */
@@ -1262,9 +1262,8 @@ void main() {
 
   // The frame fixed on the Earth (world -> Earth), and the scene's true east and north in it.
   private updateEarth(globe: Globe) {
-    const up = globe.up;
-    const north = globe.north;
-    east.crossVectors(north, up).normalize();
+    earthFrame(globe, this.earth);
+    // The Earth's directions of the scene's east and north.
     const sphere = globe.uniforms.uGlobeSphere.value;
     const located = sphere.w > 0.5;
     const sinChi = located ? sphere.x : 0;
@@ -1272,20 +1271,8 @@ void main() {
     const lambda = located ? globe.uniforms.uGlobeLocation.value.x : 0;
     const sinL = Math.sin(lambda);
     const cosL = Math.cos(lambda);
-    // The Earth's directions of the local east, north and up there.
-    const e = [-sinL, cosL, 0];
-    const n = [-sinChi * cosL, -sinChi * sinL, cosChi];
-    const u = [cosChi * cosL, cosChi * sinL, sinChi];
-    this.eastEarth.fromArray(e);
-    this.northEarth.fromArray(n);
-    const m = this.earth.elements;
-    // Column-major: m[col * 3 + row] = e[row] east[col] + n[row] north[col] + u[row] up[col].
-    for (let col = 0; col < 3; col++)
-      for (let row = 0; row < 3; row++)
-        m[col * 3 + row] =
-          e[row] * east.getComponent(col) +
-          n[row] * north.getComponent(col) +
-          u[row] * up.getComponent(col);
+    this.eastEarth.set(-sinL, cosL, 0);
+    this.northEarth.set(-sinChi * cosL, -sinChi * sinL, cosChi);
   }
 
   // The field's axes in the world: east, north and up at the local weather's middle (where it
@@ -2354,13 +2341,9 @@ void main() {
     reflection.strength = settings?.global ? 1 : 0;
   }
 
-  /**
-   * Draw what has come in of its ground, and ask for the ground about `camera` as it moves. In
-   * the frame loop, while it is drawn.
-   */
-  updateTerrain(renderer: WebGLRenderer, camera: Camera) {
-    cameraAt.setFromMatrixPosition(camera.matrixWorld);
-    this.terrain.update(renderer, this.sky.globe, cameraAt);
+  /** Take what the scenery has drawn of its ground. In the frame loop, while it is drawn. */
+  updateTerrain() {
+    this.terrain.update();
   }
 
   /**
@@ -2370,7 +2353,6 @@ void main() {
   dispose(release?: (material: Material) => void) {
     this.target.dispose();
     this.geometry.dispose();
-    this.terrain.dispose(release);
     this.lightMaps.dispose(release);
     this.coverMap.dispose(release);
     this.placeMap.dispose(release);

@@ -224,6 +224,7 @@ type ExampleProps = {
   seaBedDuneWavelength: number;
   seaBedDuneDirection: number;
   seaBedDuneSharpness: number;
+  bodyMaxOpacity: number;
   bodyShimmer: number;
 
   // Group visibility
@@ -441,6 +442,7 @@ const OceanDemo = (props: ExampleProps) => {
       seaBedDuneWavelength={props.seaBedDuneWavelength}
       seaBedDuneDirection={duneDirection}
       seaBedDuneSharpness={props.seaBedDuneSharpness}
+      bodyMaxOpacity={props.bodyMaxOpacity}
       bodyShimmer={props.bodyShimmer}
       surfaceVisible={props.surfaceVisible}
       bodyVisible={props.bodyVisible}
@@ -570,6 +572,10 @@ const meta = {
       ...range(0, 1, 0.01),
       table: { category: 'Body & sea bed' },
     },
+    bodyMaxOpacity: {
+      ...range(0, 1, 0.01),
+      table: { category: 'Body & sea bed' },
+    },
     bodyShimmer: {
       ...range(0, 1, 0.01),
       table: { category: 'Body & sea bed' },
@@ -647,6 +653,7 @@ const commonArgs = {
   seaBedDuneWavelength: 180,
   seaBedDuneDirection: 30,
   seaBedDuneSharpness: 0,
+  bodyMaxOpacity: 0.7,
   bodyShimmer: 0,
 
   surfaceVisible: true,

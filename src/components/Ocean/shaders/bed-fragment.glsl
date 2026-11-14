@@ -1,8 +1,10 @@
 // Ocean sea-bed fragment shader.
 //
 // Shades the displaced sea bed with simple sun-direction diffuse lighting so the
-// procedural slope reads as relief. The water-facing (top) side is seen through the
-// water over it (water-body.glsl, one model with every sea's seabed); the underside
+// procedural slope reads as relief. The water-facing (top) side lies under the water
+// (water-body.glsl, one model with every sea's seabed): dimmed by the daylight its depth
+// leaves it, the surface and the walls carrying the water in front of it; from in the water
+// faded by the water between. The underside
 // (seen from outside / below the box) keeps its light, sandy/yellowish base colour.
 //
 // OIT-compatible: includes the shared oit.glsl chunk and routes its final colour
@@ -108,13 +110,24 @@ void main() {
     lit *= 1.0 + band * uDuneSharpness * 0.5;
   }
 
-  // Seen through the water over it, as any seabed is (water-body.glsl): on both sides, for at a
-  // grazing look the far slope of a dune faces away and is no less under water. Its underside,
-  // seen from beneath it, has no water in front of it and keeps its sandy base: the water's
-  // flat floor (the box's bottom) would count the water between that and the dunes.
+  // Under the water, as any seabed is (water-body.glsl): dimmed by the daylight its depth leaves
+  // it, the surface and the walls carrying the water in front of it; from in the water, faded
+  // by the water between. Its underside, seen from beneath it, has no water in front of it and
+  // keeps its sandy base: the water's flat floor (the box's bottom) would count the water
+  // between that and the dunes.
+  // The bed is a height field: a face is seen from beneath exactly when its own upward normal
+  // (the triangle's, from the derivatives, whichever way it is wound) points away from the eye.
   vec3 toEye = cameraPosition - vWorldPosition;
-  bool underside = dot(vWorldNormal, toEye) < 0.0 && dot(toEye, uWaterBody.xyz) < 0.0;
-  vec3 color = underside ? lit : waterBodyFog(lit, vWorldPosition);
+  vec3 up = uWaterBody.xyz;
+  vec3 face = cross(dFdx(vWorldPosition), dFdy(vWorldPosition));
+  face *= sign(dot(face, up));
+  bool underside = dot(face, toEye) < 0.0;
+  // From in the water, or from over its level, the bed is seen from above everywhere: what
+  // faces away is a slope behind a crest, which only the depth buffer's precision lets through
+  // at a grazing look. Left to the crest in front of it.
+  if(underside && (waterBodyCameraIn() || dot(cameraPosition, up) > uWaterBody.w))
+    discard;
+  vec3 color = underside ? lit : waterBodyFogBed(lit, vWorldPosition);
 
   float alpha = uOpacity * uMasterOpacity;
 

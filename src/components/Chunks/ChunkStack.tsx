@@ -31,6 +31,7 @@ import { useSharedTextures } from '../../hooks/useSharedTextures';
 import {
   CutUniforms,
   createHeightFieldClipBinding,
+  fenceSideAt,
   HeightFieldClip,
   PlanarPolygonGeometry,
   readCameraTarget,
@@ -1117,6 +1118,7 @@ export const ChunkStack = ({
       heightClip: clipBinding?.uniforms,
       drawWater,
       waterTintShown,
+      waterBody: sea?.surface.water ?? null,
       bathymetry,
       prepareCuts: hasCut,
       section: sectionState,
@@ -1167,6 +1169,7 @@ export const ChunkStack = ({
     clipBinding,
     drawWater,
     waterTintShown,
+    sea,
     bathymetry,
     hasCut,
     sectionState,
@@ -1305,9 +1308,65 @@ export const ChunkStack = ({
       void precompile(gl, seaRoot.current, camera, scene);
   }, [gl, camera, scene, seaSurface, seaVolume, seaGeometry]);
 
+  // The stack's water ends at its seabed: how far down, its deepest under its level (the
+  // body's bottom under the lid's), where the bed's map does not say (its edges). As `Ocean`.
+  useLayoutEffect(() => {
+    if (!seaSurface) return;
+    const lid = seaGeometry?.lid;
+    const body = seaGeometry?.body;
+    if (!lid || !body) {
+      seaSurface.water.depth = Infinity;
+      return;
+    }
+    if (!lid.boundingBox) lid.computeBoundingBox();
+    if (!body.boundingBox) body.computeBoundingBox();
+    const level = (lid.boundingBox!.min.y + lid.boundingBox!.max.y) / 2;
+    seaSurface.water.depth = Math.max(level - body.boundingBox!.min.y, 0);
+  }, [seaSurface, seaGeometry]);
+
   // Where the camera is at the stack's water (the camera site's), and the water synced to it
-  // before the frame, so its walls and what lies in it have this frame's (as `Ocean`).
+  // before the frame, so its walls and what lies in it have this frame's (as `Ocean`). Where a
+  // cut takes the water, none stands: the camera there is in air (`OceanMaterial.cameraCut`).
   const seaLid = useRef<Mesh>(null);
+  const sectionTakesWater = section?.water === true;
+  const fenceTakesWater = fence?.water === true;
+  const [seaScratch] = useState(() => ({
+    eye: new Vector3(),
+    toStack: new Matrix4(),
+  }));
+  useLayoutEffect(() => {
+    if (!seaSurface) return;
+    seaSurface.cameraCut = (position: Vector3) => {
+      // The camera in the stack's own frame, where the cuts are.
+      const root = stackFrame.current;
+      const eye = seaScratch.eye.copy(position);
+      if (root) {
+        root.updateWorldMatrix(true, false);
+        eye.applyMatrix4(seaScratch.toStack.copy(root.matrixWorld).invert());
+      }
+      if (sectionTakesWater && sectionState?.enabled) {
+        const plane = sectionState.plane;
+        if (plane.normal.dot(eye) > -plane.constant) return true;
+      }
+      return (
+        fenceTakesWater &&
+        !!fenceState?.enabled &&
+        !!fenceState.index &&
+        !!fenceState.field &&
+        fenceSideAt(fenceState.index, fenceState.field, eye.x, eye.z) < 0
+      );
+    };
+    return () => {
+      seaSurface.cameraCut = null;
+    };
+  }, [
+    seaSurface,
+    seaScratch,
+    sectionTakesWater,
+    fenceTakesWater,
+    sectionState,
+    fenceState,
+  ]);
   const seaProbe = useCallback<CameraProbe>(
     (site, probeCamera) => {
       const mesh = seaLid.current;

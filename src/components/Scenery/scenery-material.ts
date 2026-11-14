@@ -22,6 +22,7 @@ import {
   Vector4,
   WebGLRenderer,
 } from 'three';
+import { GroundMap } from '../../sdk/materials/ground-map';
 import { Boundary, boundaryDisc } from '../../sdk/geometries/boundary';
 import {
   applySurfaceDetail,
@@ -119,6 +120,11 @@ export class SceneryMaterial extends ShaderMaterial {
    * camera ({@link syncCamera}).
    */
   readonly oceanCharts: OceanCharts;
+  /**
+   * The ground's maps (`GroundMap`): how deep the sea is under its surface where they cover.
+   * None until a `Scenery`'s ground draws them (`SceneryGround`); its uniforms are the sky's.
+   */
+  readonly groundMap = new GroundMap();
   // Whether the globe is the sky's own, which it then sets (curvature): not a World's.
   private readonly ownsGlobe: boolean;
   private bedDetail: SurfaceDetail | undefined;
@@ -339,12 +345,13 @@ export class SceneryMaterial extends ShaderMaterial {
     this.ownsGlobe = !globe;
     this.oceanCharts = new OceanCharts(this.globe);
     // The globe's own uniform objects, so every material sharing the sky's shares them too;
-    // the same for the sea's charts.
+    // the same for the sea's charts and the ground's maps.
     Object.assign(
       this.uniforms,
       this.globe.uniforms,
       this.oceanCharts.uniforms,
     );
+    this.groundMap.bind(this.uniforms);
     if (this.ownsGlobe)
       this.globe.enabled = this.uniforms.uSkyCurvature.value > 0;
     else this.syncCurvature();

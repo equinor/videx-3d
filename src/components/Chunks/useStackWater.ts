@@ -84,12 +84,15 @@ export function useStackWater(
   // ⚠️ So is the bathymetry, which arrives asynchronously — one rebuild, once.
   const materials = useMemo(() => {
     if (!enabled) return null;
+    const surface = new OceanMaterial({
+      sectionPlane,
+      fence,
+      bathymetry: bathymetry ?? undefined,
+    });
+    // Its water is the stack's own (`ChunkStackContextValue.waterBody`), not the scene's.
+    surface.sharesSceneWater = false;
     return {
-      surface: new OceanMaterial({
-        sectionPlane,
-        fence,
-        bathymetry: bathymetry ?? undefined,
-      }),
+      surface,
       // A chunk's interval wall measures its vertical coordinate in metres, so
       // the walls read their unit-relative height from `wallV` instead.
       volume: new OceanVolumeMaterial({

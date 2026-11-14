@@ -19,6 +19,7 @@ import {
   Mesh,
   NoToneMapping,
   Object3D,
+  Scene,
   ShaderMaterial,
   SphericalHarmonics3,
   Vector2,
@@ -37,6 +38,7 @@ import {
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { sceneWaterBody } from '../../sdk/materials/water-body';
+import { setSceneGroundMap } from '../../sdk/materials/ground-map';
 import { waterOpticsOf } from '../../sdk/weather/water-optics';
 import { OceanMaterial } from '../Ocean/ocean-material';
 import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
@@ -92,6 +94,7 @@ import {
 } from './scenery-hollow';
 import { SceneryHollowGrip } from './scenery-hollow-grip';
 import { SceneryReliefHub } from './scenery-relief-hub';
+import { SceneryGround } from './scenery-ground';
 import { sceneryOceanDefines } from './scenery-stage';
 import {
   SKY_HDR_SUN_RADIANCE,
@@ -290,6 +293,9 @@ export type SceneryProps = {
   children?: ReactNode;
 };
 
+// The ground's maps are compiled for a scene of their own, without lights: three keys a program
+// on the lights of the scene it is compiled for (see precompile).
+const GROUND_SCENE = new Scene();
 const DEFAULT_ENVIRONMENT_RESOLUTION = 128;
 const DEFAULT_CAPTURE_INTERVAL = 250;
 // Seconds the scene's light probe takes to ease most of the way to a new bake: about as
@@ -577,6 +583,9 @@ export const Scenery = ({
     sky.name = 'scenery-sky';
     return sky;
   });
+  // The ground under it, from its World's relief: how deep its sea is, what its clouds rise
+  // over. Drawn into the sky's maps, so every material sharing the sky's uniforms reads them.
+  const [sceneryGround] = useState(() => new SceneryGround(material.groundMap));
   // What draws itself in the sky (the 3D clouds), for the light: see ScenerySkyOverlay.
   const overlay = useRef<ScenerySkyOverlay | null>(null);
   const registry = useMemo<SceneryRegistry>(
@@ -585,8 +594,9 @@ export const Scenery = ({
       set: setFeature,
       view: { clouds: false, renderOrder: 0 },
       overlay,
+      ground: sceneryGround,
     }),
-    [material, setFeature],
+    [material, setFeature, sceneryGround],
   );
   const [standIn] = useState(() => createSceneryStandInMaterial(material));
   const [geometry] = useState(createSceneryGeometry);
@@ -736,9 +746,43 @@ export const Scenery = ({
       releaseMaterial(gl, standIn);
       geometry.dispose();
       baker.dispose(m => releaseMaterial(gl, m));
+      sceneryGround.dispose(m => releaseMaterial(gl, m));
     },
-    [gl, material, standIn, geometry, baker],
+    [gl, material, standIn, geometry, baker, sceneryGround],
   );
+
+  // The ground from the World's relief, drawn once its program is compiled (in a scene of its
+  // own, without lights: see precompile), and the scene's while this is mounted.
+  const groundSource = worldRelief?.loader ?? null;
+  useEffect(() => {
+    sceneryGround.setSource(groundSource);
+  }, [sceneryGround, groundSource]);
+  const [groundReady, setGroundReady] = useState(false);
+  useLayoutEffect(() => {
+    const pending = precompile(
+      gl,
+      sceneryGround.generator,
+      sceneCamera,
+      GROUND_SCENE,
+      'offscreen',
+      { priority: PRECOMPILE_PRIORITY.background },
+    );
+    if (!pending) {
+      setGroundReady(true);
+      return;
+    }
+    let current = true;
+    pending.then(() => {
+      if (current) setGroundReady(true);
+    });
+    return () => {
+      current = false;
+    };
+  }, [gl, sceneryGround, sceneCamera]);
+  useEffect(() => {
+    setSceneGroundMap(scene, sceneryGround.map, sceneryGround);
+    return () => setSceneGroundMap(scene, null, sceneryGround);
+  }, [scene, sceneryGround]);
 
   // The stand-in is drawn while the sky compiles, so it compiles first, ahead of the sky's
   // own, and is drawn once it has: drawn before, Chrome's GPU process waits for it behind
@@ -1506,6 +1550,10 @@ export const Scenery = ({
       sceneWater.setBed(null);
       sceneWater.owner = material;
     }
+    // Its ground: drawn as it comes in and asked for about the camera as it moves; the sea's
+    // seabed where it covers.
+    if (groundReady) sceneryGround.update(gl, material.globe, camera.position);
+    sceneWater.setGround(sceneryGround.map, 1, material.oceanLevel);
     // The waves at the enclosing Weather's pace.
     const waveStep = step(delta);
     if (water) {

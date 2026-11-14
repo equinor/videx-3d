@@ -41,7 +41,6 @@ import { selectTrajectoryLod } from './trajectory-lod';
 import { TrajectoryEmitterMaterial } from './TrajectoryEmitterMaterial';
 import { TrajectoryHighlightMaterial } from './TrajectoryHighlightMaterial';
 import { TrajectoryMaterial } from './TrajectoryMaterial';
-import { useWaterFog } from '../../Ocean/useSceneWater';
 
 /**
  * Trajectory props
@@ -264,8 +263,6 @@ export const Trajectory = ({
     }
     return new TrajectoryMaterial();
   }, [customMaterial]);
-  // What lies in the water fades by it, as under any sea (useWaterFog).
-  useWaterFog(customMaterial ? null : (material as Material));
 
   // Ghost material for the Highlighter (reconstructs the same tube). Attached to the
   // meshes via userData.highlightMaterial below; the Highlighter prefers it over its

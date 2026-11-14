@@ -12,7 +12,7 @@ import type { Vec3 } from '../types/common';
  * @group Weather
  */
 export type WaterOptics = {
-  /** the colour of water too deep to see through (CSS, sRGB). Default `#0b3a44` */
+  /** the colour of water too deep to see through (CSS, sRGB). Default `#102c3a` */
   color?: string;
   /**
    * how far one sees through it, metres: what lies this far away in the water keeps 5 % of
@@ -23,7 +23,8 @@ export type WaterOptics = {
 
 /**
  * The water's looks by name: `realistic`, about the North Sea's (15 m); `clear`, to see the
- * seabed and what lies under the sea from above (750 m).
+ * seabed and what lies under the sea from above (750 m). Both the offshore North Sea's dark
+ * slate blue-grey.
  *
  * @group Weather
  */
@@ -34,8 +35,8 @@ export const WATER_OPTICS_PRESETS: Record<
   WaterOpticsPreset,
   Required<WaterOptics>
 > = {
-  realistic: { color: '#0b3a44', clarity: 15 },
-  clear: { color: '#0b3a44', clarity: 750 },
+  realistic: { color: '#102c3a', clarity: 15 },
+  clear: { color: '#102c3a', clarity: 750 },
 };
 
 /** The preset a water's optics left out are taken from. @group Weather */

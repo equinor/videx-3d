@@ -1,18 +1,18 @@
 // Ocean water-body (volume) fragment shader.
 //
-// Shades the box side walls as the water along the sight line
-// (water-body.glsl's waterBodyLayer, one model with the sea's): the longer the line runs below
-// the surface, the more of the water's own light it shows. This gives the "inside a water body"
-// feel when the camera is within the box, and the body seen through the (transparent) surface
-// from outside, without a separate fullscreen pass. Animated caustic light play near the
-// surface breaks up the flat tint.
+// Shades the box side walls, both faces, as a tinted water body: the further a wall fragment
+// is from the camera, the denser the tint between the camera and it, like an exponential fog.
+// This gives the "inside a water body" feel when the camera is within the box, and a tinted
+// body seen through the walls from outside, without a separate fullscreen pass. Its colour is
+// the water's own (WaterBody: its optics), lit at the wall's depth, so the walls match the
+// surface. From in the water, the walls show the water from the camera to them by its optics
+// instead: the line to the wall the camera sees runs all in the water, so it holds for any
+// outline. Animated caustic light play near the surface breaks up the flat tint.
 //
 // OIT-compatible: includes the shared oit.glsl chunk and routes its final colour
 // through oitProcess() so it composites with the surface and subsurface geometry.
 
 uniform float uTime;
-uniform vec3 uDeepColor;
-uniform vec3 uShallowColor;
 uniform float uFogDensity;   // per-meter tint build-up
 uniform float uMaxOpacity;   // densest tint (far through the water)
 uniform float uShimmer;      // animated brightness variation (0 = off)
@@ -59,40 +59,42 @@ void main() {
 
   #include <logdepthbuf_fragment>
 
-  // The water behind the wall along the sight line (waterBodyLayer): one model with the sea's.
-  // A wall facing out has none in front of it: what lies behind it fades by its own path.
-  // The glass part (OCEAN_WALL_GLASS, the outer faces drawn last) carries only the light play.
-  vec4 layer = vec4(0.0);
-  #ifndef OCEAN_WALL_GLASS
-  layer = waterBodyLayer(vWorldPosition);
-  #endif
+  float dist = length(vViewPosition);
 
-  // Animated underwater light play (see ocean-body.glsl): light in the water just behind the
-  // glass, added over what shows through, so it neither tints nor hides it.
-  // ⚠️ Only on the glass the sight line enters the water by, seen from outside: never on the
-  // walls across the box or from inside. A wall's inner face stands in for the body of water,
-  // so light play painted on it reads as a texture on a pane of glass. Doing this properly
+  // Exponential fog build-up with view distance through the water.
+  float fog = 1.0 - exp(-dist * uFogDensity);
+
+  // The water's own colour, lit at the wall's depth, as seen looking along the view.
+  vec3 up = uWaterBody.xyz;
+  float depth = clamp(uWaterBody.w - dot(vWorldPosition, up), 0.0, uWaterBodyFloor.x);
+  vec3 extinction = uWaterBodyExtinction;
+  vec3 light = waterFogLight(waterLitDepth(depth, extinction), extinction, uWaterBodyFloor.y);
+  vec3 color = uWaterBodyColor * light * waterGlow(dot(normalize(vWorldPosition - cameraPosition), up));
+
+  // Animated underwater light play (see ocean-body.glsl).
+  // ⚠️ Outward-facing side only. Caustics are light LANDING on a surface, and the
+  // inner face of a wall is not one — it stands in for the body of water, so light
+  // play painted on it reads as a texture on a pane of glass. Doing this properly
   // means marching the volume, which is a long way past what this material is.
-  #ifndef OCEAN_WALL_WATER
-  if(uShimmer > 0.0) {
-    float glass = gl_FrontFacing && !waterBodyCameraIn() ? 1.0 : 0.0;
-    // Lit as the water looking up, where the light comes from.
-    vec3 light = uWaterBodyColor * WATER_GLOW * WATER_GLOW;
-    layer.rgb += oceanBodyLight(vec3(0.0), vWorldPosition, vWallV, uTime, uShimmer * glass, light);
+  if(uShimmer > 0.0 && gl_FrontFacing)
+    color = oceanBodyLight(color, vWorldPosition, vWallV, uTime, uShimmer, uWaterBodyColor * WATER_GLOW * WATER_GLOW);
+
+  float alpha = clamp(fog * uMaxOpacity, 0.0, 1.0);
+
+  // From in the water, the water between the camera and the wall, as what lies in it fades
+  // (waterBodyFog): its part of the line, under the surface and over the seabed. ⚠️ A wall
+  // seen past a notch of a concave outline counts the notch's air too.
+  if(waterBodyCameraIn()) {
+    float floorDepth = waterBodyFloorAt(vWorldPosition);
+    float wallDepth = clamp(uWaterBody.w - dot(vWorldPosition, up), 0.0, floorDepth);
+    float path = waterBodyPath(vWorldPosition, floorDepth);
+    vec4 layer = waterFogOver(vec4(0.0), path, extinction, uWaterBodyColor, waterBodyLight(vWorldPosition, wallDepth, floorDepth, path), waterBodyFacing(vWorldPosition));
+    // As colour and opacity, its colour no brighter than 1 (as the surface's, oceanStraight).
+    alpha = clamp(max(layer.a, max(layer.r, max(layer.g, layer.b))), 1e-3, 1.0);
+    color = layer.rgb / alpha;
   }
-  #endif
 
-  #ifdef OCEAN_WALL_GLASS
-  if(max(layer.r, max(layer.g, layer.b)) < 1e-4)
-    discard;
-  #endif
-
-  // As colour and opacity, its colour no brighter than 1 (as the surface's, oceanStraight).
-  float coverage = clamp(max(layer.a, max(layer.r, max(layer.g, layer.b))), 1e-3, 1.0);
-  vec3 color = layer.rgb / coverage;
-  float alpha = coverage * uMasterOpacity;
-
-  gl_FragColor = vec4(color, alpha);
+  gl_FragColor = vec4(color, alpha * uMasterOpacity);
 
   #include <colorspace_fragment>
 

@@ -1161,6 +1161,7 @@ export const Chunk = ({
     peel,
     water: holdsSeabed ? stack.water : null,
     waterTintShown: stack.waterTintShown,
+    waterBody: stack.waterBody,
     bathymetry: stack.bathymetry,
     // A sea kept whole keeps its bed only while the stack draws that sea.
     seaBed: holdsSeabed && !!stack.water && stack.drawWater !== false,

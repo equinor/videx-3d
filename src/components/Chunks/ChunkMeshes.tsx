@@ -33,7 +33,7 @@ import {
 } from './cap-visibility';
 import { ChunkContactTexture, resolveLayerContacts } from './chunk-contacts';
 import { CHUNK_MATERIAL_LINGER, releaseGeometry } from './chunk-resources';
-import { useSceneWater } from '../Ocean/useSceneWater';
+import type { WaterBody } from '../../sdk/materials/water-body';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { ChunkDetail } from './chunk-detail';
 import {
@@ -112,6 +112,8 @@ export type ChunkMeshesProps = {
   water?: StackWater | null;
   /** 1 while the stack draws its sea, 0 while not: the bed tint follows it */
   waterTintShown?: IUniform<number>;
+  /** the stack's own water, which its sea bed's cap is seen through (`ChunkStackContextValue.waterBody`) */
+  waterBody?: WaterBody | null;
   /**
    * The sea bed's depth grid, from the stack. Drives the bed tint by the water
    * standing over each fragment's MAP location instead of by its own depth — which
@@ -319,6 +321,7 @@ export const ChunkMeshes = ({
   bathymetry = null,
   seaBed = false,
   sectionWater = false,
+  waterBody,
   fenceWater = false,
   carrierMaterial,
   carrierDetail,
@@ -383,8 +386,6 @@ export const ChunkMeshes = ({
   // to take their programs over rather than compile them again (Chunk lets the old chunk
   // go at once).
   const gl = useThree(state => state.gl);
-  // The scene's water (sceneWaterBody): what lies in it fades by it, whichever sea writes it.
-  const sceneWater = useSceneWater();
 
   const materials = useMemo(() => {
     // Every material built here is owned here and disposed on cleanup.
@@ -434,7 +435,16 @@ export const ChunkMeshes = ({
             ? fenceUniformsInverse
             : fenceUniforms,
         heightClip,
-        water: sceneWater,
+        // The seabed alone lies under the water: the shallowest cap, given the tint. The
+        // stack's own water, and the cuts that take it.
+        water: waterTint && waterBody ? waterBody : undefined,
+        waterCut:
+          waterTint && waterBody
+            ? {
+                section: sectionWater ? sectionUniform : undefined,
+                fence: fenceWater ? fenceUniforms : undefined,
+              }
+            : undefined,
       });
       owned.push(material);
       return material;
@@ -699,7 +709,9 @@ export const ChunkMeshes = ({
     tileUniforms,
     debugTiles,
     hasLevels,
-    sceneWater,
+    waterBody,
+    sectionWater,
+    fenceWater,
   ]);
 
   useEffect(() => {
