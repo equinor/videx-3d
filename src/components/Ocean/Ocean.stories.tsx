@@ -59,33 +59,35 @@ function disposeGeometries(g: Geometries) {
 }
 
 /**
- * A single box mesh that floats on the ocean. Rendered as a child of `<Ocean>`,
- * it reads the live wave field via `useBuoyancy` (sampling its four bottom
- * corners) so it heaves/pitches/rolls with the waves. The heading is fixed; only
- * the vertical motion and tilt follow the surface. When `contactFoam` is set it
- * also spreads foam where it meets the water.
+ * A box floating on the ocean, `length` along its heading by `width` across and `height`
+ * tall, its draught as the buoyancy settles it. Rendered as a child of `<Ocean>`, it reads the
+ * live wave field via `useBuoyancy` (sampling its four bottom corners) so it heaves/pitches/
+ * rolls with the waves. The heading is fixed; only the vertical motion and tilt follow the
+ * surface. When `contactFoam` is set it also spreads foam where it meets the water, over its
+ * own footprint.
  */
 function FloatingBox({
   position,
-  size,
+  length,
+  width,
+  height,
+  heading,
   color,
   contactFoam,
-}: {
-  position: [number, number, number];
-  size: number;
-  color: string;
-  contactFoam: boolean;
-}) {
+}: Floater & { contactFoam: boolean }) {
   const ref = useRef<Group>(null);
-  const half = size / 2;
+  const halfLength = length / 2;
+  const halfWidth = width / 2;
+  // The corners in the body's frame (X along its heading): useBuoyancy turns them by the
+  // group's heading, rotation.y.
   const points = useMemo<BuoyancyPoint[]>(
     () => [
-      [half, half],
-      [half, -half],
-      [-half, half],
-      [-half, -half],
+      [halfLength, halfWidth],
+      [halfLength, -halfWidth],
+      [-halfLength, halfWidth],
+      [-halfLength, -halfWidth],
     ],
-    [half],
+    [halfLength, halfWidth],
   );
   useBuoyancy(ref, { points, mass: 0.1 });
   useOceanContact(
@@ -95,37 +97,80 @@ function FloatingBox({
       return {
         x: g.position.x,
         z: g.position.z,
-        heading: 0,
-        halfLength: half,
-        halfWidth: half,
-        foamWidth: half,
+        heading,
+        halfLength,
+        halfWidth,
+        foamWidth: Math.max(halfWidth, 2),
       };
-    }, [half]),
+    }, [halfLength, halfWidth, heading]),
     contactFoam,
   );
   return (
-    <group ref={ref} position={position}>
-      <mesh position={[0, half * 0.4, 0]}>
-        <boxGeometry args={[size, size * 0.8, size]} />
+    <group ref={ref} position={position} rotation={[0, heading, 0]}>
+      <mesh position={[0, height * 0.3, 0]}>
+        <boxGeometry args={[length, height, width]} />
         <meshStandardMaterial color={color} />
       </mesh>
     </group>
   );
 }
 
-// A handful of boxes scattered near the origin. Kept small relative to the wave
-// length so they bob and tilt visibly (a large box spans many waves and barely
-// reacts). Crank up the wind / amplitude for livelier motion.
-const FLOATERS: {
+type Floater = {
   position: [number, number, number];
-  size: number;
+  /** along its heading, metres */
+  length: number;
+  /** across it, metres */
+  width: number;
+  height: number;
+  /** radians, from +X toward −Z (as three turns about +Y) */
+  heading: number;
   color: string;
-}[] = [
-  { position: [-600, 0, -300], size: 60, color: '#c0392b' },
-  { position: [450, 0, -550], size: 50, color: '#e67e22' },
-  { position: [100, 0, 350], size: 80, color: '#f1c40f' },
-  { position: [750, 0, 400], size: 45, color: '#2980b9' },
-  { position: [-350, 0, 650], size: 65, color: '#27ae60' },
+};
+
+// What floats on a North Sea field, at its own size: a supply vessel, a workboat and three
+// buoys, a few hundred metres apart. The long vessel spans the short waves and only follows
+// the swell's heave; the buoys ride every wave.
+const FLOATERS: Floater[] = [
+  {
+    position: [0, 0, 0],
+    length: 90,
+    width: 20,
+    height: 12,
+    heading: 0.4,
+    color: '#c0392b',
+  },
+  {
+    position: [-180, 0, 140],
+    length: 25,
+    width: 8,
+    height: 5,
+    heading: -0.9,
+    color: '#e67e22',
+  },
+  {
+    position: [150, 0, -120],
+    length: 4,
+    width: 4,
+    height: 3,
+    heading: 0,
+    color: '#f1c40f',
+  },
+  {
+    position: [220, 0, 160],
+    length: 4,
+    width: 4,
+    height: 3,
+    heading: 0,
+    color: '#f1c40f',
+  },
+  {
+    position: [-60, 0, -220],
+    length: 4,
+    width: 4,
+    height: 3,
+    heading: 0,
+    color: '#f1c40f',
+  },
 ];
 
 function FloatingBoxes({ contactFoam }: { contactFoam: boolean }) {
@@ -162,7 +207,6 @@ type ExampleProps = {
   detailScale: number;
   windDirection: number;
   windSpeed: number;
-  amplitude: number;
   steepness: number;
   displacement: boolean;
   /** the water's look (optics): realistic, or clear to see the bed and what lies under the sea */
@@ -383,7 +427,6 @@ const OceanDemo = (props: ExampleProps) => {
       position={position}
       windDirection={wind}
       windSpeed={props.windSpeed}
-      amplitude={props.amplitude}
       steepness={props.steepness}
       displacement={props.displacement}
       optics={props.optics}
@@ -482,7 +525,6 @@ const meta = {
     detailScale: { ...range(0, 0.5, 0.01), table: { category: 'Surface' } },
     windDirection: { ...range(0, 360, 1), table: { category: 'Surface' } },
     windSpeed: { ...range(0, 25, 0.5), table: { category: 'Surface' } },
-    amplitude: { ...range(0, 3, 0.05), table: { category: 'Surface' } },
     steepness: { ...range(0, 2, 0.05), table: { category: 'Surface' } },
     displacement: {
       control: { type: 'boolean' },
@@ -590,7 +632,6 @@ const commonArgs = {
   detailScale: 0.05,
   windDirection: 45,
   windSpeed: 10,
-  amplitude: 1,
   steepness: 1,
   displacement: false,
   optics: 'realistic' as WaterOpticsPreset,
@@ -655,17 +696,24 @@ export const Surface: Story = {
 };
 
 /**
- * A few box meshes floating on the waves, demonstrating `useBuoyancy`. Each box
- * is a child of `<Ocean>` and samples the live wave field at its corners to
- * heave/pitch/roll with the surface. Raise the wind speed for a livelier sea.
+ * What floats on a North Sea field, at its own size, demonstrating `useBuoyancy`: a 90 m
+ * supply vessel, a 25 m workboat and three buoys, each a child of `<Ocean>` sampling the live
+ * wave field at its corners to heave/pitch/roll with the surface, and spreading contact foam.
+ * The surface is displaced, so it moves with the waves they ride. A long hull spans the short
+ * waves and follows only the long ones; a buoy rides every wave.
  */
 export const Buoyancy: Story = {
   args: {
     ...commonArgs,
     variant: 'plane',
+    surfaceSegments: 512,
+    displacement: true,
     floaters: true,
     contactFoam: true,
-    windSpeed: 20,
-    amplitude: 2,
+    windSpeed: 15,
+  },
+  parameters: {
+    cameraPosition: [330, 110, 330],
+    cameraTarget: [0, 0, 0],
   },
 };

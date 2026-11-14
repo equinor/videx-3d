@@ -800,7 +800,12 @@ export class OceanMaterial extends ShaderMaterial {
     this.updateWaves();
   }
 
-  /** Wave height multiplier applied on top of the spectrum's physical Hs. */
+  /**
+   * Wave height multiplier applied on top of the spectrum's physical Hs.
+   * @deprecated the waves are as the wind gives them, wavelengths, foam and whitecaps with
+   * them: scaling their height alone breaks that. For more wind, `windSpeed`; for waves from
+   * weather far away, `swells`. Still applied
+   */
   get amplitude(): number {
     return this._waveHeightScale;
   }

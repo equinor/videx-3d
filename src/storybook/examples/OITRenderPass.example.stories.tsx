@@ -652,7 +652,6 @@ const Example = (args: ExampleProps) => {
             position={[0, 0, 0]}
             windDirection={oceanWind}
             windSpeed={10}
-            amplitude={1}
             displacement={false}
             waterOpacity={0.7}
             reflectionIntensity={1}

@@ -41,7 +41,12 @@ export type OceanWaterProps = {
    * enclosing `Weather`'s, else as the wind gives them; `{ strength: 0, slicks: 0 }`, none.
    */
   gusts?: WeatherGusts;
-  /** Wave height multiplier on top of the spectrum's physical Hs. */
+  /**
+   * Wave height multiplier on top of the spectrum's physical Hs.
+   * @deprecated the waves are as the wind gives them, wavelengths, foam and whitecaps with
+   * them: scaling their height alone breaks that. For more wind, `windSpeed`; for waves from
+   * weather far away, `swells`. Still applied
+   */
   amplitude?: number;
   /**
    * Swells from weather far away, running on regardless of the wind here: each its
