@@ -786,6 +786,59 @@ by whichever chunk it is the lid of (§10.8.1).
 the chunk's for its own stack — so they agree only within `maxError`, the same
 residual already accepted where two chunks meet.
 
+#### 6.3.1 The coastline is constrained into the bed's cap
+
+The waterline you see is where the flat lid meets the bed's cap, so it is only as
+good as that cap's tessellation. Refined for height alone, the cap is within
+`maxError` (5 m) of the grid vertically, and on a gentle beach 5 m of height is
+hundreds of metres of shore. The waterline came out jagged, short of the real one in
+places and past it in others. The cap's dimming and the shore's wet band follow the
+grid exactly (§6.6.3), so the ground between was dimmed as if under water with no
+water over it, and in places the water stood on land.
+
+The chunk that draws the sea bed therefore builds with the bed's COASTLINE in its
+tessellation (`SurfaceChunkSpec.sea`, set by `Chunk` when its top layer is the
+stack's `seabed`):
+
+- `traceLevelLines` traces where the bed's channel crosses the level, as closed
+  rings around what stands at or above it. Each vertex lies on a cell edge where the
+  grid meets the level exactly. The rings are simplified to within
+  `LEVEL_LINE_TOLERANCE` (0.1 cell) and constrained like a cut
+  (`SurfaceStackOptions.levelLines`). They are kept whole at every coarser level.
+- ⭐ The grid nodes on both sides of every cell edge that crosses the level are
+  inserted as well. Without them a refinement coarser than the line joins line
+  vertices to each other across a bay or a spit, and those triangles lie flat AT
+  the level, coplanar with the lid, on the wrong side of the shore. The islets and
+  ponds too small to constrain (`TERMINATION_MIN_VERTICES`) get their nodes too.
+- The line's vertices keep their grid height in EVERY layer, and the nodes in the
+  bed (`exactVertices`). A vertex re-placed on a layer's own TIN would be up to
+  `maxError` off again.
+- ⭐ Every other vertex of the bed keeps the grid's SIDE of the level
+  (`StackOwnSampleOptions.levels`): where its own TIN lies across the level from the
+  grid, it takes the grid height. Within `maxError` of the level the own TIN put
+  land under the lid and seabed above it, cells away from the line — pale patches
+  of water on the beach. With deeper horizons in the stack, many of the bed's
+  vertices are theirs, so this mattered more than the line itself in
+  SyntheticColumn.
+
+Measured in SyntheticColumn (25 m cells, `maxError` 5): the area where the bed's cap
+and its grid disagree about land and sea fell from 339,000 m² to 7,400 m², for 6 %
+more triangles (the line's vertices are shared by every layer's cap) and about 50 ms
+more tessellation. What remains is inside cells: the grid's bilinear contour curves
+between two edge crossings, the mesh runs straight. Where the line crosses a tile
+seam, the noder's vertex sits on the simplified chord: off the level by the
+tolerance's worth of slope.
+
+The lines are traced once per bed channel and level, simplified on the bed alone
+so every chunk gets the same rings (a seam between two chunks needs that), and
+cached in the generator. Changing the sea level rebuilds only the chunk that
+draws the bed, besides the sea.
+
+⚠️ This is the STILL water's line. With `displacement` on, the lid heaves by the
+full wave height right up to the beach, so the waterline swings across a gentle
+shore by the wave height divided by its slope. Damping the waves with depth is
+the shallow-water work still to do.
+
 ⚠️ The sea needs an `outline` on the stack. A `cutSource` alone gives nothing to
 draw it over.
 

@@ -274,6 +274,12 @@ export type StackTessellation = {
    */
   terminationVertices?: (Uint32Array | null)[];
   /**
+   * The vertices lying on the constrained level lines (see the `levelLines`
+   * argument of {@link tessellateStack}; repeats possible), which every layer keeps
+   * at its grid height.
+   */
+  levelLineVertices?: Uint32Array;
+  /**
    * Rim vertices that ended up in NO kept triangle and are therefore missing from
    * `rimVertices`.
    *
@@ -352,6 +358,8 @@ export type StackTessellationLevel = {
   coverage?: Uint8Array[];
   /** as {@link StackTessellation.terminationVertices}, for this level */
   terminationVertices?: (Uint32Array | null)[];
+  /** as {@link StackTessellation.levelLineVertices}, for this level */
+  levelLineVertices?: Uint32Array;
   /** as {@link StackTessellation.constraintFailures} — should be 0 */
   constraintFailures: number;
 };
@@ -1050,6 +1058,11 @@ function coverageRings(masks: Uint8Array[], nx: number): (GridRing[] | null)[] {
  *   joined along their seams (see {@link planStackTessellation}); omitted = one
  *   triangulation
  * @param lod coarser levels to build as well (see {@link StackTessellation.levels})
+ * @param levelLines lines where a layer crosses a level plane (see
+ *   `traceLevelLines`) — a sea bed's coastline — constrained like a cut and kept
+ *   whole at every level, their vertices at every layer's grid height (see
+ *   {@link StackTessellation.levelLineVertices}). Only the rings that reach the
+ *   outline are kept.
  * @returns the shared tessellation, or `null` when nothing survives the mask
  *
  * @group Geometries
@@ -1064,6 +1077,7 @@ export function tessellateStack(
   terminations?: GridRing[][],
   tileCells?: number,
   lod?: StackTessellationLod,
+  levelLines?: GridRing[],
 ): StackTessellation | null {
   const plan = planStackTessellation(
     reference,
@@ -1075,6 +1089,7 @@ export function tessellateStack(
     terminations,
     tileCells,
     lod,
+    levelLines,
   );
   return plan.finish(plan.tiles.map(tile => tessellateStackTile(tile)));
 }
@@ -1151,6 +1166,7 @@ export function planStackTessellation(
   terminations?: GridRing[][],
   tileCells?: number,
   lod?: StackTessellationLod,
+  levelLines?: GridRing[],
 ): StackTessellationPlan {
   const { nx, ny } = reference.header;
   const toGrid = surfaceWorldToGrid(reference.header, reference.worldPosition);
@@ -1176,7 +1192,13 @@ export function planStackTessellation(
   // where two lines cross sits on the simplified chord, up to the tolerance off
   // the true line, and must be judged by its own thickness.
   const traced = new Set<number[]>();
-  if (terminations && terminations.length > 0) {
+  // The level lines, one set, kept to the ones reaching the outline like the
+  // terminations.
+  const levelSets: GridPolygon[] = [[]];
+  if (
+    (terminations && terminations.length > 0) ||
+    (levelLines && levelLines.length > 0)
+  ) {
     // By BOX: a simplified straight run may cross the outline with no vertex in it.
     let minX = Infinity;
     let maxX = -Infinity;
@@ -1205,11 +1227,12 @@ export function planStackTessellation(
       }
       return x1 >= minX && x0 <= maxX && y1 >= minY && y0 <= maxY;
     };
-    for (const rings of terminations) {
+    for (const rings of terminations ?? []) {
       const kept = rings.filter(reaches);
       for (const ring of kept) for (const p of ring) traced.add(p);
       terminationSets.push(kept);
     }
+    if (levelLines) levelSets[0] = levelLines.filter(reaches);
   }
 
   // The chunk's grid window, a cell wider than the outline all round.
@@ -1324,6 +1347,7 @@ export function planStackTessellation(
     cutPolygons.forEach(snapRings);
     snapRings(coverageSets);
     snapRings(terminationSets);
+    snapRings(levelSets);
   }
 
   // ⚠️ A cut rim CROSSES this chunk's rim — that is what makes it a partial
@@ -1336,6 +1360,7 @@ export function planStackTessellation(
     cutPolygons.length > 0 ||
     coverageSets.length > 0 ||
     terminationSets.some(set => set.length > 0) ||
+    levelSets[0].length > 0 ||
     tiled
   ) {
     const flat: GridRing[] = [];
@@ -1345,6 +1370,7 @@ export function planStackTessellation(
     cutPolygons.forEach(visit);
     visit(coverageSets);
     visit(terminationSets);
+    visit(levelSets);
     const open = flat.map(() => false);
     for (const ring of seamRings) {
       flat.push(ring);
@@ -1361,6 +1387,7 @@ export function planStackTessellation(
       cutPolygons.forEach(replace);
       replace(coverageSets);
       replace(terminationSets);
+      replace(levelSets);
       for (let i = 0; i < seamRings.length; i++) seamRings[i] = noded[at++];
     }
   }
@@ -1385,6 +1412,7 @@ export function planStackTessellation(
     cutPolygons.forEach(visit);
     visit(coverageSets);
     visit(terminationSets);
+    visit(levelSets);
     seamRings.forEach(collect);
   }
 
@@ -1525,6 +1553,8 @@ export function planStackTessellation(
     { length: tileCount },
     () => [],
   );
+  // per tile, per chain: whether it is a piece of a level line
+  const chainOnLevel: boolean[][] = Array.from({ length: tileCount }, () => []);
   const inGrid = (p: number[]) =>
     p[0] >= 0 && p[0] <= nx - 1 && p[1] >= 0 && p[1] <= ny - 1;
   // Every layer's height along a pinch-out piece, for a coarser level to thin it by.
@@ -1549,7 +1579,7 @@ export function planStackTessellation(
     }
     return out;
   };
-  const cutRing = (ring: GridRing, pair = -1) => {
+  const cutRing = (ring: GridRing, pair = -1, onLevel = false) => {
     let tile = -1;
     let at: number[] = [];
     const flush = () => {
@@ -1569,6 +1599,7 @@ export function planStackTessellation(
           ? null
           : Int32Array.from(at, k => (traced.has(ring[k]) ? pair : -1)),
       );
+      chainOnLevel[tile].push(onLevel);
     };
     for (let i = 0; i < ring.length; i++) {
       const p = ring[i];
@@ -1606,6 +1637,7 @@ export function planStackTessellation(
       cutRing(ring, pair);
     }
   });
+  for (const ring of levelSets[0]) cutRing(ring, -1, true);
 
   const tiles: StackTileInput[] = [];
   // A coarser level's plan tolerance grows with its error, so a thinned line
@@ -1705,6 +1737,25 @@ export function planStackTessellation(
           return kept.length > 0 ? Uint32Array.from(kept) : null;
         })
       : undefined;
+    // Every vertex of the level lines' chains, through `toVertex` (-1 = none).
+    const onLevelLines = (
+      outs: { chains: Int32Array[] }[],
+      toVertex: (tile: number, local: number) => number,
+    ) => {
+      const found: number[] = [];
+      outs.forEach((o, t) =>
+        chainOnLevel[t].forEach((on, c) => {
+          if (!on) return;
+          for (const local of o.chains[c]) {
+            const v = local < 0 ? -1 : toVertex(t, local);
+            if (v >= 0) found.push(v);
+          }
+        }),
+      );
+      return Uint32Array.from(found);
+    };
+    const levelLineVertices =
+      levelSets[0].length > 0 ? onLevelLines(outputs, vertexOf) : undefined;
 
     const fineCoords = stitched.coords;
     // Coarser levels add the vertices only they use — where thinned lines cross —
@@ -1808,6 +1859,13 @@ export function planStackTessellation(
         terminationVertices: terminations
           ? marks.map(m => (m.length > 0 ? Uint32Array.from(m) : null))
           : undefined,
+        levelLineVertices:
+          levelSets[0].length > 0
+            ? onLevelLines(outs, (t, local) => {
+                const v = level.vertexOf(t, local);
+                return v < 0 ? -1 : remap[v];
+              })
+            : undefined,
         constraintFailures: outs.reduce(
           (sum, o) => sum + o.constraintFailures,
           0,
@@ -1824,6 +1882,7 @@ export function planStackTessellation(
       coverageRingPoints,
       terminationRingPoints,
       terminationVertices,
+      levelLineVertices,
       rimDropped,
       constraintFailures: outputs.reduce(
         (sum, o) => sum + o.constraintFailures,

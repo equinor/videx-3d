@@ -51,7 +51,12 @@ import {
   SurfaceStackShared,
   SurfaceStackStream,
 } from '../sdk';
-import type { ThicknessLoops } from '../sdk/geometries/surface-stack-terminations';
+import type {
+  LevelLines,
+  ThicknessLoops,
+} from '../sdk/geometries/surface-stack-terminations';
+import { traceLevelLines } from '../sdk/geometries/surface-stack-terminations';
+import type { GridRing } from '../sdk/geometries/triangulate-grid-delaunay';
 import { claimGeneratorRun } from './generator-supersede';
 import {
   getStackCandidates,
@@ -140,6 +145,38 @@ function scanTerminations(
     threshold,
     report && ((done, total) => report('terminations', done, total)),
   );
+}
+
+// Per sea bed channel (the column's, shared by reference), its coastlines by
+// level: every chunk drawing that bed constrains the same lines.
+const levelLineCache = new WeakMap<Float32Array, Map<number, LevelLines>>();
+const LEVEL_LINE_LEVELS = 4;
+
+/** Where a column's sea bed meets its sea level (see `traceLevelLines`). */
+function stackLevelLines(
+  channel: Float32Array,
+  nx: number,
+  level: number,
+): { rings: GridRing[]; nodes: Uint32Array } {
+  let byLevel = levelLineCache.get(channel);
+  if (!byLevel) {
+    byLevel = new Map();
+    levelLineCache.set(channel, byLevel);
+  }
+  let lines = byLevel.get(level);
+  if (!lines) {
+    lines = traceLevelLines(channel, nx, level);
+    // A dragged sea level leaves one entry per value it passed.
+    if (byLevel.size >= LEVEL_LINE_LEVELS) {
+      byLevel.delete(byLevel.keys().next().value!);
+    }
+    byLevel.set(level, lines);
+  }
+  // Copies: the plan puts points near a tile seam onto it, in place.
+  return {
+    rings: lines.rings.map(ring => ring.map(p => [p[0], p[1]])),
+    nodes: lines.nodes,
+  };
 }
 
 /**
@@ -650,6 +687,25 @@ export async function buildSpecStack(
       masks: eMasks,
     };
 
+    // The stack's sea bed, when this chunk draws it: its coastline is constrained,
+    // so the cap meets the sea's flat lid where the grid puts the shore.
+    const seaAt = spec.sea ? context.index.get(spec.sea.bed) : undefined;
+    const seaPick = seaAt === undefined ? -1 : picks.indexOf(seaAt);
+    const seaLayer =
+      seaPick >= 0 && !voided[seaPick] ? source.indexOf(seaPick) : -1;
+    const levelLines =
+      spec.sea && seaLayer >= 0
+        ? {
+            layer: seaLayer,
+            level: -spec.sea.depth,
+            ...stackLevelLines(
+              eChannels[seaLayer],
+              context.reference.header.nx,
+              -spec.sea.depth,
+            ),
+          }
+        : undefined;
+
     // ⭐ A ceiling holds no volume: that is what makes the void below it a void,
     // and what makes the carrier a terminator rather than a unit.
     const fills = ceilings.map((ceiling, k) => {
@@ -794,6 +850,7 @@ export async function buildSpecStack(
         tileCells: spec.resolve?.tileCells,
         lod: spec.resolve?.lod,
         terminationLoops,
+        levelLines,
         ...derived,
         stream: streamPackets(onPartial, isStale, source, fills, ceilings),
         capNeighbours: true,

@@ -108,6 +108,85 @@ export function traceThicknessLines(
 }
 
 /**
+ * How far a simplified level line may stray from the traced one, in grid cells —
+ * a fifth of {@link TERMINATION_TOLERANCE}: the grid nodes either side of the line
+ * are inserted too (see {@link LevelLines.nodes}), and must not end up on the
+ * wrong side of it.
+ *
+ * @group Geometries
+ */
+export const LEVEL_LINE_TOLERANCE = 0.1;
+
+/** The result of {@link traceLevelLines}. */
+export type LevelLines = ThicknessLines & {
+  /**
+   * The grid nodes either side of every cell edge that crosses the level (`row * nx
+   * + col`, ascending) — the tiny loops' too — to be inserted with the rings: each
+   * triangle along the line then has a vertex off it, at the grid's height.
+   * Without them, a refinement coarser than the line joins line vertices to each
+   * other across a bay or a spit — triangles lying flat AT the level, on the wrong
+   * side of it — and leaves the islets and ponds too small to constrain to it.
+   */
+  nodes: Uint32Array;
+};
+
+/**
+ * Trace where one layer crosses a level plane (scene Y) as closed rings around
+ * the parts that stand at or above it — a coastline, for a sea bed and its water
+ * level — simplified to within {@link LEVEL_LINE_TOLERANCE} cells in plan, with
+ * the grid nodes bracketing them.
+ *
+ * Each traced vertex lies on a cell edge where the grid's linear interpolation
+ * meets the level exactly, so a tessellation that constrains these rings, inserts
+ * the nodes and keeps all of them at the grid's height meets the plane along the
+ * rings.
+ *
+ * ⭐ Simplified on the layer alone (it is at the level all along the line, so
+ * only the plan tolerance decides): every chunk cut from the same grid gets the
+ * same rings, whatever else it stacks.
+ *
+ * @param channel the layer's heights over the common grid
+ * @param nx the common grid's column count
+ * @param level the plane's scene Y
+ *
+ * @group Geometries
+ */
+export function traceLevelLines(
+  channel: Float32Array,
+  nx: number,
+  level: number,
+): LevelLines {
+  const plane = new Float32Array(channel.length).fill(level);
+  const traced = scanThicknessLoops(plane, channel, nx, 0);
+  // Every crossing edge's nodes, the tiny loops' included: those stay
+  // unconstrained, but their nodes put them in the mesh where the grid has them.
+  const ny = channel.length / nx;
+  const nodes: number[] = [];
+  const crosses = (a: number, b: number) => {
+    const ha = channel[a];
+    const hb = channel[b];
+    return (
+      ha !== STACK_NO_DATA &&
+      hb !== STACK_NO_DATA &&
+      ha >= level !== hb >= level
+    );
+  };
+  const mark = new Uint8Array(channel.length);
+  for (let row = 0; row < ny; row++) {
+    for (let col = 0; col < nx; col++) {
+      const n = row * nx + col;
+      if (col + 1 < nx && crosses(n, n + 1)) mark[n] = mark[n + 1] = 1;
+      if (row + 1 < ny && crosses(n, n + nx)) mark[n] = mark[n + nx] = 1;
+    }
+  }
+  for (let n = 0; n < mark.length; n++) if (mark[n]) nodes.push(n);
+  return {
+    ...simplifyThicknessLoops(traced, { tolerance: LEVEL_LINE_TOLERANCE }),
+    nodes: Uint32Array.from(nodes),
+  };
+}
+
+/**
  * The scan half of {@link traceThicknessLines}: marching squares over the pair's
  * thickness, linked into closed loops, with tiny and open ones counted and
  * dropped.

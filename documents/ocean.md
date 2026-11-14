@@ -179,7 +179,8 @@ it. See [camera.md](./camera.md#over-the-water-exactly).
 The sea takes no part in the depth order, which is what stops it truncating the
 ground beneath it: a sea bed above the plane comes THROUGH it rather than being
 flattened onto it, and the water body ends at the shoreline. See
-`documents/chunks.md` §6.
+`documents/chunks.md` §6. The bed's cap meets the flat lid where the bed's grid puts
+the shore, because its coastline is built into the cap (§6.3.1).
 
 `seaBedWaterTint` is the one thing that does NOT carry over: it belongs to the bed
 material the component draws, and a chunk's sea bed is ordinary geology. The

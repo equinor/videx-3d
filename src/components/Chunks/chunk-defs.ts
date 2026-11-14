@@ -1442,6 +1442,14 @@ export type SurfaceChunkSpec = {
   /** the column this chunk is cut from (see {@link SurfaceChunkStackSpec}) */
   stack?: SurfaceChunkStackSpec;
   /**
+   * The column's sea, given to the chunk that draws its bed (`bed`, a column
+   * surface id) at its level (`depth`, metres below the scene's zero, as
+   * `StackWater.depth`). The bed's coastline is then constrained into the build
+   * (`SurfaceStackOptions.levelLines`), so its cap meets the sea's flat lid where
+   * the grid puts the shore. Column builds only.
+   */
+  sea?: { bed: string; depth: number };
+  /**
    * The column's carrier plane, repeated here so a chunk built WITHOUT a shared
    * column can still terminate against it. Same declaration as
    * {@link SurfaceChunkStackSpec.carrier}.

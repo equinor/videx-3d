@@ -56,6 +56,12 @@ export type StackOwnSampleOptions = {
   threshold?: number;
   /** per layer, true where it does not truncate the layer below it — a fluid, the sea */
   nonTruncating?: boolean[];
+  /**
+   * Per layer, a level plane (scene Y) it must stay on the grid's side of at every
+   * vertex — a sea bed's water level, whose line is constrained into the
+   * tessellation (`SurfaceStackOptions.levelLines`). See {@link StackOwnLayerJob.level}.
+   */
+  levels?: (number | undefined)[];
 };
 
 /**
@@ -78,6 +84,14 @@ export type StackOwnLayerJob = {
   triangles: Uint16Array | Uint32Array | null;
   /** per shared vertex, 1 where it keeps its grid height */
   exact: Uint8Array | null;
+  /**
+   * A level plane (scene Y) whose side each vertex takes from the grid: where the
+   * own surface lies across it from the grid, the vertex keeps its grid height.
+   * Within `maxError` of a sea's level the own TIN would otherwise put land under
+   * the water's flat lid, or seabed above it, away from the coastline the
+   * tessellation follows.
+   */
+  level?: number;
   /**
    * Grid to scene XZ, `x = a·col + b·row + c` and `z = d·col + e·row + f`, to
    * compute the normals in; `null` for no normals.
@@ -114,7 +128,8 @@ export type StackOwnLayer = {
  *
  * Kept at the grid height: the layer's own nodes (on its TIN anyway), its own lines
  * — the termination lines of the two pairs it belongs to and its data edge — and
- * the rim and cuts, which other chunks' walls and caps meet.
+ * the rim and cuts, which other chunks' walls and caps meet, and the level lines,
+ * where a plane drawn elsewhere (a sea's lid) meets it.
  *
  * ⭐ WHICH units exist is still the grid's call. Two TINs are off their grids
  * independently, by up to `maxError` each, so a unit the grid has pinched out
@@ -123,6 +138,11 @@ export type StackOwnLayer = {
  *   and takes its normal — the pair stays exactly as thin;
  * - thick on the grid: its own surface, but never within the threshold of the
  *   layer above — the pair stays thick.
+ *
+ * ⭐ So is which side of a sea's level a vertex lies on, for a layer given one
+ * (`StackOwnSampleOptions.levels`): there it takes its grid height wherever its own
+ * surface lies across the level from the grid, and the cap crosses the level only
+ * along the constrained line.
  *
  * Runs serially; {@link prepareStackOwnSurfaces}, {@link sampleStackOwnLayer} and
  * {@link createStackOwnCombiner} are its three steps, the middle one per layer and
@@ -211,6 +231,7 @@ export function prepareStackOwnSurfaces(
       nodes: hasTin ? own.nodes[layer] : null,
       triangles: hasTin ? triangles : null,
       exact: hasTin ? exact[layer] : null,
+      level: options.levels?.[layer],
       toScene: hasTin && options.normals?.[layer] !== false ? toScene : null,
     };
   });
@@ -248,6 +269,7 @@ export function sampleStackOwnLayer(job: StackOwnLayerJob): StackOwnLayer {
   const normals = tin ? new Int16Array(vertices * 3) : null;
   const y = new Float32Array(vertices);
   const at: TinLocation = { a: 0, b: 0, c: 0, wa: 0, wb: 0, wc: 0 };
+  const level = job.level;
 
   for (let v = 0; v < vertices; v++) {
     const hit = locate(coords[2 * v], coords[2 * v + 1], at);
@@ -259,6 +281,7 @@ export function sampleStackOwnLayer(job: StackOwnLayerJob): StackOwnLayer {
       if (!isNoData(ya) && !isNoData(yb) && !isNoData(yc)) {
         h = at.wa * ya + at.wb * yb + at.wc * yc;
       }
+      if (level !== undefined && h > level !== grid[v] > level) h = grid[v];
     }
     y[v] = h;
     if (!normals || !tin) continue;
@@ -387,9 +410,9 @@ function sampleGrid(
 }
 
 /**
- * Per layer, the shared vertices kept at its grid height: the rim and cuts, which
- * other chunks meet, and its own lines — the termination lines of both pairs it
- * belongs to, its data edge, and any node added along them.
+ * Per layer, the shared vertices kept at its grid height: the rim, cuts and level
+ * lines, which other chunks or a plane meet, and its own lines — the termination
+ * lines of both pairs it belongs to, its data edge, and any node added along them.
  */
 function exactVertices(
   tessellation: StackTessellation,
@@ -403,6 +426,14 @@ function exactVertices(
     for (const v of ring) common[v] = 1;
   }
   tessellation.cuts?.forEach(flags => markBoundary(indices, flags, common));
+  // A level line is where a layer meets a plane drawn by something else (a sea's
+  // flat lid): only the grid height puts the layer on the plane there.
+  for (const line of [
+    tessellation.levelLineVertices,
+    ...(tessellation.levels?.map(level => level.levelLineVertices) ?? []),
+  ]) {
+    if (line) for (let i = 0; i < line.length; i++) common[line[i]] = 1;
+  }
 
   let vertexOfNode: Map<number, number> | null = null;
   if (own.lineNodes?.some(lists => lists.length > 0)) {

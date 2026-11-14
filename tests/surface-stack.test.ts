@@ -33,6 +33,7 @@ import {
   scanThicknessLoops,
   TERMINATION_MIN_VERTICES,
   ThicknessLoops,
+  traceLevelLines,
   traceThicknessLines,
 } from '../src/sdk/geometries/surface-stack-terminations';
 import {
@@ -2104,5 +2105,160 @@ describe('constraining where a unit wedges out', () => {
 
     expect(result.tessellation.constraintFailures).toBe(0);
     expect(result.maxInteriorWall).toBeLessThanOrEqual(0.5 + 1e-3);
+  });
+});
+
+describe('constraining a sea bed’s coastline', () => {
+  const polygon = maskPolygon(4, 28);
+  const LEVEL = 0;
+  // A gentle beach (1 m a cell, 1:100) along the columns, its shoreline wavy along
+  // the rows, an island off it, and a ripple under `maxError` (5) that the bed's own
+  // TIN leaves out: the TIN alone may put the shore cells off where the grid has it.
+  const beach = () => [
+    layerFrom(
+      (col, row) =>
+        16 -
+        col +
+        2 * Math.sin(row / 2) +
+        3 * Math.sin(col * 1.7) * Math.cos(row * 2.3) -
+        30 * Math.exp(-((col - 7) ** 2 + (row - 16) ** 2) / 6),
+    ),
+    // A horizon below with relief of its own, whose vertices the bed's cap carries
+    // on its own TIN, not at its grid height.
+    layerFrom(
+      (col, row) => 1600 + 60 * Math.sin(col / 1.3) * Math.cos(row / 1.7),
+    ),
+  ];
+
+  // Area (cells²) where the cap and the grid disagree about standing above the
+  // level, sampled at 36 points per triangle.
+  const misplacedShore = (
+    build: NonNullable<ReturnType<typeof buildSurfaceStack>>,
+    channel: Float32Array,
+    nx: number,
+  ) => {
+    const { coords, indices } = build.tessellation;
+    const h = build.heights[0];
+    const ny = channel.length / nx;
+    const grid = (x: number, y: number) => {
+      const c = Math.min(Math.floor(x), nx - 2);
+      const r = Math.min(Math.floor(y), ny - 2);
+      const s = x - c;
+      const t = y - r;
+      const at = (i: number, j: number) => channel[(r + j) * nx + c + i];
+      return (
+        (at(0, 0) * (1 - s) + at(1, 0) * s) * (1 - t) +
+        (at(0, 1) * (1 - s) + at(1, 1) * s) * t
+      );
+    };
+    const N = 8;
+    let miss = 0;
+    for (let i = 0; i < indices.length; i += 3) {
+      const [a, b, c] = [indices[i], indices[i + 1], indices[i + 2]];
+      const area =
+        Math.abs(
+          (coords[2 * b] - coords[2 * a]) *
+            (coords[2 * c + 1] - coords[2 * a + 1]) -
+            (coords[2 * c] - coords[2 * a]) *
+              (coords[2 * b + 1] - coords[2 * a + 1]),
+        ) / 2;
+      let off = 0;
+      let count = 0;
+      for (let p = 0; p < N; p++) {
+        for (let q = 0; p + q < N; q++) {
+          const u = (p + 1 / 3) / N;
+          const v = (q + 1 / 3) / N;
+          const w = 1 - u - v;
+          const x = u * coords[2 * a] + v * coords[2 * b] + w * coords[2 * c];
+          const y =
+            u * coords[2 * a + 1] +
+            v * coords[2 * b + 1] +
+            w * coords[2 * c + 1];
+          const mesh = u * h[a] + v * h[b] + w * h[c];
+          if (mesh > LEVEL !== grid(x, y) > LEVEL) off++;
+          count++;
+        }
+      }
+      miss += (area * off) / count;
+    }
+    return miss;
+  };
+
+  const build = (
+    withLines: boolean,
+    extra: {
+      tileCells?: number;
+      lod?: { levels: number; factor: number };
+      /** the level the own surfaces are held to, if not the traced one */
+      level?: number;
+    } = {},
+  ) => {
+    const layers = beach();
+    const reference = buildStackReference(layers, polygon)!;
+    const { nx } = reference.header;
+    const levelLines = withLines
+      ? {
+          layer: 0,
+          level: extra.level ?? LEVEL,
+          ...traceLevelLines(reference.channels[0], nx, LEVEL),
+        }
+      : undefined;
+    const result = buildSurfaceStack(reference, layers, {
+      polygon,
+      maxError: 5,
+      fills: [true, false],
+      levelLines,
+      tileCells: extra.tileCells,
+      lod: extra.lod,
+    })!;
+    return {
+      result,
+      miss: misplacedShore(result, reference.channels[0], nx),
+    };
+  };
+
+  // Furthest a level line vertex lies off the level, over every level of detail.
+  const worstOffLevel = (built: ReturnType<typeof build>) => {
+    const t = built.result.tessellation;
+    let worst = 0;
+    for (const line of [
+      t.levelLineVertices,
+      ...(t.levels?.map(level => level.levelLineVertices) ?? []),
+    ]) {
+      expect(line?.length).toBeGreaterThan(0);
+      for (const v of line!) {
+        worst = Math.max(worst, Math.abs(built.result.heights[0][v] - LEVEL));
+      }
+    }
+    return worst;
+  };
+
+  it('⭐ puts the cap on the level where the grid crosses it', () => {
+    const lined = build(true);
+
+    expect(lined.result.tessellation.constraintFailures).toBe(0);
+    expect(worstOffLevel(lined)).toBeLessThan(1e-2);
+    // Where the cap and the grid disagree about land and sea. What is left with
+    // the line is inside cells: the grid's bilinear contour curves between two
+    // edge crossings, the mesh runs straight.
+    expect(lined.miss).toBeLessThan(build(false).miss / 4);
+    // The bed's own TIN, `maxError` off its grid, would put vertices near the
+    // shore on the wrong side of the level: they take the grid's (a NaN level
+    // never compares, so it never decides).
+    expect(lined.miss).toBeLessThan(build(true, { level: NaN }).miss * 0.85);
+  });
+
+  it('keeps the line at coarser levels and across tile seams', () => {
+    const lod = { levels: 2, factor: 2 };
+    expect(worstOffLevel(build(true, { lod }))).toBeLessThan(1e-2);
+
+    // Where the line crosses a seam, the noder puts a vertex on its simplified
+    // chord: off the level by at most the tolerance's worth of slope.
+    const tiled = build(true, { tileCells: 8, lod });
+    const t = tiled.result.tessellation;
+    expect(t.tiling).toBeDefined();
+    expect(t.constraintFailures).toBe(0);
+    for (const level of t.levels!) expect(level.constraintFailures).toBe(0);
+    expect(tiled.miss).toBeLessThan(build(true).miss * 1.5);
   });
 });

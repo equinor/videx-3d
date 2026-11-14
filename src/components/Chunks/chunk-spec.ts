@@ -54,6 +54,8 @@ export type BuildSurfaceChunkSpecOptions = {
    * ignored, exactly as it was before there was a carrier at all.
    */
   carrier?: ChunkCarrier;
+  /** the column's sea, for the chunk drawing its bed (see `SurfaceChunkSpec.sea`) */
+  sea?: { bed: string; depth: number } | null;
   /**
    * Outline of the chunk drawn directly above this one (see
    * `SurfaceChunkSpec.coverAbove`).
@@ -341,6 +343,7 @@ export function buildSurfaceChunkSpec(
       offset: outlinePolygon.offset,
     },
     stack,
+    sea: stack && options.sea ? options.sea : undefined,
     carrier: carrierSpec(options.carrier),
     cuts: cuts.length > 0 ? cuts : undefined,
     coverAbove: options.coverAbove

@@ -58,6 +58,7 @@ import {
   StackTileOutput,
   tessellateStackTile,
 } from './stack-tiles';
+import type { GridRing } from './triangulate-grid-delaunay';
 import {
   collectCoverageCrossings,
   collectStackCandidateLevels,
@@ -731,6 +732,21 @@ export type SurfaceStackOptions = {
    */
   terminationLines?: ThicknessLines[];
   /**
+   * Where layer `layer` crosses the plane at scene Y `level` (see
+   * `traceLevelLines`), in reference grid coordinates: the `rings` are constrained
+   * into the shared tessellation and the bracketing `nodes` inserted, every layer
+   * kept at its grid height along the rings and the layer at its own on the nodes,
+   * and on the grid's side of the level everywhere (`StackOwnSampleOptions.levels`).
+   * A sea bed's coastline, so the cap meets a flat sea lid exactly where the grid
+   * puts the shore rather than within `maxError` of it (`documents/chunks.md` §6).
+   */
+  levelLines?: {
+    layer: number;
+    level: number;
+    rings: GridRing[];
+    nodes: Uint32Array;
+  };
+  /**
    * Per layer, its data edge's crossings (see `collectCoverageCrossings`) from an
    * earlier plan of the same masks (see {@link SurfaceStackPlan.coverageCrossings}).
    * Collected here for any layer without one.
@@ -1121,7 +1137,8 @@ export function planSurfaceStack(
   const tinNodes = candidates;
   // Per layer, the added nodes that lie on ITS lines, which keep its grid height.
   const lineNodes: Uint32Array[][] = reference.channels.map(() => []);
-  if (refineTerminations || refineCoverage) {
+  const levelLines = options.levelLines;
+  if (refineTerminations || refineCoverage || levelLines) {
     const lists = candidates;
     const errors = candidateErrors;
     candidateErrors = [];
@@ -1143,6 +1160,10 @@ export function planSurfaceStack(
       if (coverage) {
         extra.push(coverage);
         lineNodes[i].push(coverage);
+      }
+      if (levelLines?.layer === i && levelLines.nodes.length > 0) {
+        extra.push(levelLines.nodes);
+        lineNodes[i].push(levelLines.nodes);
       }
       const total = extra.reduce((a, e) => a + e.length, 0);
       // An added node marks a line, which every coarser level keeps.
@@ -1198,6 +1219,7 @@ export function planSurfaceStack(
     terminations?.map(t => t.rings),
     options.tileCells,
     lod && { errors: lod, candidateErrors },
+    options.levelLines?.rings,
   );
   const tPlan = performance.now();
   const stitch = (outputs: StackTileOutput[]): SurfaceStackStitched | null => {
@@ -1267,6 +1289,13 @@ function stackOwnOptions(
     nonTruncating: reference.channels.map(
       (_, i) => !!options.fluid?.[i] || !!unbounded?.[i],
     ),
+    levels: options.levelLines
+      ? reference.channels.map((_, i) =>
+          i === options.levelLines!.layer
+            ? options.levelLines!.level
+            : undefined,
+        )
+      : undefined,
   };
 }
 

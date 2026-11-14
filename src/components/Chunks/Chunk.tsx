@@ -815,6 +815,15 @@ export const Chunk = ({
   // ⚠️ A primitive: the section and fence state objects come and go with the cut.
   const cutsPrepared = stack.prepareCuts === true;
   const peelable = peel !== undefined || cutsPrepared;
+  // The stack's sea, when this chunk draws its bed: the coastline enters the build.
+  // Primitives, so only the sea's level rebuilds it.
+  const seaBedId =
+    stack.water &&
+    !!stack.seabed &&
+    stableLayers[0]?.surface?.id === stack.seabed
+      ? stack.seabed
+      : null;
+  const seaDepth = seaBedId ? (stack.water?.depth ?? 0) : 0;
 
   const spec = useMemo(() => {
     if (!outlinePolygon || !utm || stableLayers.length === 0) return null;
@@ -834,6 +843,7 @@ export const Chunk = ({
       // rebuild the geometry every time a section or fence is switched on or off.
       section: cutsPrepared,
       peelable,
+      sea: seaBedId ? { bed: seaBedId, depth: seaDepth } : null,
       // Only a declared column with an envelope can be shared; otherwise this
       // chunk builds (and resolves) on its own.
       stack:
@@ -865,6 +875,8 @@ export const Chunk = ({
     stack.columnRelief,
     cutsPrepared,
     peelable,
+    seaBedId,
+    seaDepth,
   ]);
 
   const [shown, setShown] = useState<ShownChunk | null>(null);
