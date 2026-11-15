@@ -185,6 +185,11 @@ vec3 hollowStrata(float folded, float depth, float mottle) {
 
 void main() {
   #include <logdepthbuf_fragment>
+  #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
+  // Past the far plane just in front of it, as the vertices are held (hollow-vertex): the
+  // background lies on it, and a tie went to it, eating the far walls (2026-11-15).
+  gl_FragDepth = min(gl_FragDepth, 1.0 - 1.0 / 2097152.0);
+  #endif
   vec3 up = normalize(vHollowUp);
   vec3 rake = normalize(vHollowRake);
   vec3 face = normalize(vHollowNormal);
