@@ -325,6 +325,7 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uSunShininess',
   'uSunGlintSpread',
   'uSparkle',
+  'uCrestLight',
   'uFoamColor',
   'uFoamAmount',
   'uFoamShape',
@@ -593,6 +594,8 @@ export class OceanMaterial extends ShaderMaterial {
         uSunShininess: new Uniform(200),
         uSunGlintSpread: new Uniform(0),
         uSparkle: new Uniform(OCEAN_SPARKLE_DEFAULT[quality] ?? 0),
+        // Light through the crests (crestLight), as modelled.
+        uCrestLight: new Uniform(1),
 
         uFoamColor: new Uniform(new Color('#ffffff')),
         uFoamAmount: new Uniform(0.5),
@@ -1354,6 +1357,18 @@ export class OceanMaterial extends ShaderMaterial {
   }
   set foamAmount(value: number) {
     this.uniforms.uFoamAmount.value = value;
+  }
+
+  /**
+   * How much of the sun's light through the waves' crests is drawn, with the sun behind them:
+   * the water's own light tinted by the short path through a crest. 0 none, 1 (the default)
+   * as modelled, more for more. A few operations a pixel at any quality.
+   */
+  get crestLight(): number {
+    return this.uniforms.uCrestLight.value;
+  }
+  set crestLight(value: number) {
+    this.uniforms.uCrestLight.value = Math.max(value, 0);
   }
 
   /**

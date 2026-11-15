@@ -201,6 +201,8 @@ void main() {
     float roughFresnel = oceanRoughFresnel(fresnel, ndvAA, rough);
     layer = vec4(oceanSky(reflected, skyRoughness, skyOver) * uReflectionIntensity * roughFresnel + oceanGlint(N, V, 1.0, rough, worldXZ, texel), fresnel);
     layer = waterLayerOver(layer, waterBodySurfaceWater(vWorldPosition, -V));
+    // The sun's light through the crests, out of the water toward the eye.
+    layer.rgb += oceanCrestLight(N, V, height, flatness, fresnel, uWaterBodyExtinction, uWaterBodyColor, uSunColor, vec3(0.0, 1.0, 0.0));
   } else {
     // From below: the sky through Snell's window, beyond it the deep water mirrored, seen
     // through the water between (as the Scenery's sea's underside).

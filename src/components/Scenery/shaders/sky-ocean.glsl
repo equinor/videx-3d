@@ -536,6 +536,10 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
   vec4 surface = vec4(reflected * uReflectionIntensity * roughFresnel + oceanGlint(normal, V, glint, wave.rough, p, texel), fresnel);
   surface = waterLayerOver(surface, skyOceanWaterUnder(wave.depth, wave.up, dir, wave.flatness));
+  // The sun's (or the moon's) light through the crests, out of the water toward the eye, as the
+  // glint has it.
+  if(uSkyOceanWater > 0.5)
+    surface.rgb += oceanCrestLight(normal, V, wave.height, wave.flatness, fresnel, uSkyOceanExtinction, uSkyOceanWaterColor, uSunColor * glint, wave.up);
 
   float foamFar;
   // The surf where the waves break on a shore (oceanShoreFoam), as the Ocean's.

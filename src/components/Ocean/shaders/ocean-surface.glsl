@@ -39,6 +39,7 @@ uniform vec3 uSunColor;
 uniform float uSunShininess;
 uniform float uSunGlintSpread; // roughness added to the glint, widening its path; 0 = none
 uniform float uSparkle; // how much of the glint's glitter is drawn (OCEAN_SPARKLE), 1 as modelled
+uniform float uCrestLight; // how much light through the crests is drawn (oceanCrestLight), 1 as modelled
 
 uniform vec3 uFoamColor;
 uniform float uFoamAmount;
@@ -498,6 +499,30 @@ vec3 oceanGlint(vec3 N, vec3 V, float glint, float rough, vec2 p, float texel) {
   }
   #endif
   return uSunColor * g;
+}
+
+// --- Light through the crests ---------------------------------------------------
+// The sun's light crossing a wave's crest and scattered toward the eye, seen with the sun behind
+// the wave: the water's own light looking toward the light from in it (water-fog.glsl's
+// waterGlow straight up, 9 times its colour), tinted by the short path through the crest (half
+// the waves' significant height, 0.3 to 3 m: red goes first, so it glows turquoise), on a
+// narrow lobe about the sun's direction pushed by the normal (Barré-Brisebois and Bouchard
+// 2011's thin translucency), high on the waves only, and fading with their detail (`flatness`).
+// `fresnel` is the share the surface reflects (the rest leaves the water), `sun` the light's
+// colour there, `up` the sea's up; uCrestLight scales it (OceanMaterial.crestLight).
+#define OCEAN_CREST_GLOW 9.0
+#define OCEAN_CREST_BEND 0.5
+#define OCEAN_CREST_POWER 4.0
+vec3 oceanCrestLight(vec3 N, vec3 V, float height, float flatness, float fresnel, vec3 extinction, vec3 waterColor, vec3 sun, vec3 up) {
+  float crest = uCrestLight * smoothstep(0.0, 0.5 * uSignificantHeight, height) * (1.0 - flatness);
+  if(crest <= 0.0)
+    return vec3(0.0);
+  vec3 L = normalize(uSunDirection);
+  float behind = pow(clamp(dot(V, -normalize(L + N * OCEAN_CREST_BEND)), 0.0, 1.0), OCEAN_CREST_POWER);
+  // Only while the light is up over the sea.
+  behind *= smoothstep(-0.02, 0.05, dot(L, up));
+  vec3 tint = exp(-extinction * clamp(0.5 * uSignificantHeight, 0.3, 3.0));
+  return crest * behind * (1.0 - fresnel) * OCEAN_CREST_GLOW * waterColor * tint * sun;
 }
 
 // A premultiplied layer as colour and opacity, for blending. Its colour is kept no brighter

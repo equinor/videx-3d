@@ -139,6 +139,8 @@ type SeaBenchArgs = {
   displacement: boolean;
   /** how much of the sun's glitter both seas draw (`sparkle`): 0 none */
   sparkle: number;
+  /** how much light through the crests both seas draw (`crestLight`): 0 none, 1 as modelled */
+  crestLight: number;
   /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
   fresnelPower: number;
   /** the stand-alone sea's scene lit by the studio HDR too (`scene.environment`), which it then reflects */
@@ -205,6 +207,7 @@ const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   seaQuality: args.quality,
   seaOptics: args.optics,
   seaSparkle: args.sparkle,
+  seaCrestLight: args.crestLight,
   seaFresnelPower: args.fresnelPower,
 });
 
@@ -272,6 +275,7 @@ const StandAlone = ({
         // The old Fresnel where the sea args ask for it, as the Scenery's sea.
         fresnelPower={sky.seaFresnelPower > 0 ? sky.seaFresnelPower : undefined}
         sparkle={sky.seaSparkle}
+        crestLight={sky.seaCrestLight}
       />
     </>
   );
@@ -664,6 +668,12 @@ const meta = {
       description:
         'The sun’s glitter (`sparkle`), both seas: the glint broken into the glints of ripples too small to draw, where a pixel holds few of them, the same mean. 0 none (compiled out; the default on low and medium), 1 as modelled (the default on high and ultra). Recompiles as it turns on or off.',
     },
+    crestLight: {
+      table: { category: 'Conditions' },
+      control: { type: 'range', min: 0, max: 3, step: 0.05 },
+      description:
+        'The sun’s light through the waves’ crests (`crestLight`), both seas, with the sun behind them: a turquoise glow high on the waves, from the water’s own colour and clarity. 0 none, 1 as modelled (the default).',
+    },
     fresnelPower: {
       table: { category: 'Conditions' },
       control: { type: 'range', min: 0, max: 8, step: 0.1 },
@@ -879,6 +889,7 @@ const meta = {
     roughReflect: 1,
     displacement: false,
     sparkle: 0,
+    crestLight: 1,
     fresnelPower: 0,
     skyEnvironment: false,
     stage: true,

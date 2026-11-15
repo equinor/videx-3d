@@ -100,6 +100,18 @@ modelled; more for more of it) defaults by `quality`: none on low and medium, 1 
 ultra. On the A1000 at 1280 × 720 it costs the `<Scenery>`'s sea 1–3 % from 300 m and 4–8 % from
 30 m.
 
+**Light through the crests** (2026-11-15; `crestLight`, default 1). With the sun behind the
+waves, its light crosses their thin crests and leaves toward the eye: the water's own light
+looking toward the light from in it (`waterGlow` straight up, 9 times its colour), tinted by
+the short path through a crest (half the significant height, 0.3–3 m: red goes first, so it
+glows turquoise, brighter in clearer water), on a narrow lobe about the sun's direction pushed
+by the normal (Barré-Brisebois and Bouchard 2011), high on the waves only, fading with their
+detail, as much as leaves the water (1 − Fresnel), in the sun's colour there (the `<Scenery>`'s
+with its clouds' shadow). Subtle by design: measured with the sun 12° up (orange) at 12 m/s
+from 15 m, 1 changes 0.3 % of the sea's pixels by more than 2/255, 3 a quarter of them by up
+to 13/255. 0 none, more for more; a few operations, no measurable cost (`oceanCrestLight` in
+`ocean-surface.glsl`, both seas).
+
 **Fresnel** (2026-11-15). The share reflected is water's: Fresnel's equations for an
 unpolarised ray into water of IOR 1.333 (2.04 % straight on), from above and, by reciprocity,
 from below through Snell's window, and in the `<Scenery>`'s estimate of what the surface hides.

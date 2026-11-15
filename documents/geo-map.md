@@ -124,8 +124,11 @@ Earth — to the other side of it, where the scene's own map does not reach.
 - **Drawn per pixel.** The grid's vertices carry their longitude and latitude, and their point
   of the plane, from which the fragment shader masks off what lies past the projection's
   outline. Past 100 m a device pixel they are worked out per pixel from the plane
-  (`geoMapLonLat`, each projection's inverse in GLSL). Tiles are chosen by each one's own scale:
-  Web Mercator toward the poles gets finer ones.
+  (`geoMapLonLat`, each projection's inverse in GLSL), as is the scene's map seen wide from
+  directions; every angle that becomes a longitude or latitude there is taken by `atanPrecise`
+  (`precise-angles.glsl`): ANGLE's own `atan` and `asin` on Direct3D are off by 35–160 m, a
+  pixel or two of such a view, against the layers drawn from the CPU (2026-11-15). Tiles are
+  chosen by each one's own scale: Web Mercator toward the poles gets finer ones.
 - **A change cross-fades** over `GEO_MAP_PROJECTION_FADE` (0.3 s): both views are drawn, added
   premultiplied. The layers move to the new one at once.
 - **The zone's bounds.** In the scene's map a dashed outline marks the zone it is laid out for:

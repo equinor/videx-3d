@@ -212,6 +212,12 @@ export type OceanWaterProps = {
    * ultra.
    */
   sparkle?: number;
+  /**
+   * How much of the sun's light through the waves' crests is drawn, with the sun behind them:
+   * a turquoise glow high on the waves, from the water's own colour and clarity. 0 none, 1 (the
+   * default) as modelled, more for more.
+   */
+  crestLight?: number;
   /** The foam's feature frequency, per metre. Default 0.05. */
   detailScale?: number;
   /** @deprecated the fine ripples are the sea's finest layer; ignored */
@@ -366,6 +372,7 @@ export function applyOceanWaterProps(
   if (props.foamAmount !== undefined) material.foamAmount = props.foamAmount;
   material.fresnelPower = props.fresnelPower ?? null;
   material.sparkle = props.sparkle ?? null;
+  material.crestLight = props.crestLight ?? 1;
   if (props.detailScale !== undefined) material.detailScale = props.detailScale;
   if (props.detailStrength !== undefined)
     material.detailStrength = props.detailStrength;

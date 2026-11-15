@@ -160,6 +160,8 @@ export type SceneryArgs = {
   seaFresnelPower: number;
   /** how much of the sun's glitter is drawn (`sparkle`): 0 none */
   seaSparkle: number;
+  /** how much light through the crests is drawn (`crestLight`): 0 none, 1 as modelled */
+  seaCrestLight: number;
   seaDetailFadeStart: number;
   seaDetailFadeEnd: number;
   // Subsurface
@@ -293,6 +295,7 @@ export const sceneryArgs: SceneryArgs = {
   seaDetailScale: 0.05,
   seaFresnelPower: 0,
   seaSparkle: 0,
+  seaCrestLight: 1,
   seaDetailFadeStart: 15000,
   seaDetailFadeEnd: 60000,
   subsurfaceFollowSun: sceneryDefaults.subsurface.light.followSun,
@@ -580,6 +583,7 @@ export const sceneryOceanFromArgs = (
   detailScale: args.seaDetailScale,
   fresnelPower: args.seaFresnelPower > 0 ? args.seaFresnelPower : undefined,
   sparkle: args.seaSparkle,
+  crestLight: args.seaCrestLight,
   detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
 });
 
@@ -723,6 +727,7 @@ const ADVANCED = new Set<string>([
   'seaDetailScale',
   'seaFresnelPower',
   'seaSparkle',
+  'seaCrestLight',
   'seaDetailFadeStart',
   'seaDetailFadeEnd',
   'abyssCeiling',
@@ -1120,6 +1125,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     0.05,
     SEA,
     'The sun’s glitter (`sparkle`): the glint broken into the glints of ripples too small to draw, where a pixel holds few of them, the same mean. 0 none (compiled out; the component’s default on low and medium), 1 as modelled (its default on high and ultra), more for more. About 5 % of the sea. Recompiles as it turns on or off.',
+  ),
+  seaCrestLight: range(
+    0,
+    3,
+    0.05,
+    SEA,
+    'The sun’s light through the waves’ crests (`crestLight`), with the sun behind them: a turquoise glow high on the waves, from the water’s own colour and clarity. 0 none, 1 as modelled (the default), more for more.',
   ),
   seaDetailFadeStart: range(
     0,

@@ -12,6 +12,9 @@
 #include ../../../Scenery/shaders/relief-atlas.glsl
 #include ../../../../sdk/materials/shaderLib/color-ramp.glsl
 #include ../../../../sdk/materials/shaderLib/contours.glsl
+// Longitudes and latitudes by atanPrecise: the GPU's own atan and asin are off by tens of
+// metres to hundreds on the Earth, a pixel or two of a wide view (precise-angles.glsl).
+#include ../../../../sdk/materials/shaderLib/precise-angles.glsl
 
 // The looks (SceneryReliefLooks), as relief-fragment.glsl reads them: a column per look, 0
 // the relief's own and 1 + i its layer i's.
@@ -70,9 +73,9 @@ float eeDY(float t) {
   float t6 = t2 * t2 * t2;
   return EE_A1 + 3.0 * EE_A2 * t2 + t6 * (7.0 * EE_A3 + 9.0 * EE_A4 * t2);
 }
-// The parametric latitude at y / R, by Newton's method.
+// The parametric latitude at y / R, by Newton's method; it ends at π/3 (asin(√3 / 2)).
 float eeTheta(float yr) {
-  float maxT = asin(sqrt(3.0) / 2.0);
+  float maxT = PI / 3.0;
   float t = clamp(yr / EE_A1, -maxT, maxT);
   for(int i = 0; i < 6; i++)
     t = clamp(t - (eeY(t) - yr) / eeDY(t), -maxT, maxT);
@@ -83,20 +86,24 @@ float eeTheta(float yr) {
 // point of the projection's plane (east and south).
 vec2 geoMapLonLat(vec2 plane) {
   vec2 p = vec2(plane.x, -plane.y);
+  // Mercator's latitude atan(sinh(y / R)), the same as 2 atan(exp(y / R)) − π/2.
   if(uGeoMapProjection == 1)
-    return degrees(vec2(p.x / MERCATOR_RADIUS, 2.0 * atan(exp(p.y / MERCATOR_RADIUS)) - 0.5 * PI));
+    return degrees(vec2(p.x / MERCATOR_RADIUS, atanPrecise(sinh(p.y / MERCATOR_RADIUS), 1.0)));
   if(uGeoMapProjection == 3) {
     float n = uGeoMapCone.x;
     float s = n < 0.0 ? -1.0 : 1.0;
     vec2 fromApex = vec2(s * p.x, s * (uGeoMapCone.z - p.y));
     float r = max(length(fromApex), 1e-3);
-    float theta = atan(fromApex.x, fromApex.y);
-    float latitude = s * (2.0 * atan(pow(abs(uGeoMapCone.y) / r, 1.0 / abs(n))) - 0.5 * PI);
+    float theta = atanPrecise(fromApex.x, fromApex.y);
+    // 2 atan(t) − π/2, as atan((t² − 1) / 2t).
+    float t = pow(abs(uGeoMapCone.y) / r, 1.0 / abs(n));
+    float latitude = s * atanPrecise(t * t - 1.0, 2.0 * t);
     return degrees(vec2(theta / n, latitude));
   }
   float t = eeTheta(p.y / EE_RADIUS);
   float lambda = 3.0 * (p.x / EE_RADIUS) * eeDY(t) / (2.0 * sqrt(3.0) * max(cos(t), 1e-6));
-  return degrees(vec2(lambda, asin(clamp(sin(t) * 2.0 / sqrt(3.0), -1.0, 1.0))));
+  float sine = clamp(sin(t) * 2.0 / sqrt(3.0), -1.0, 1.0);
+  return degrees(vec2(lambda, atanPrecise(sine, sqrt(max(1.0 - sine * sine, 0.0)))));
 }
 
 // How much of the pixel lies on the projection's map (its plane's point east and south):
@@ -118,13 +125,13 @@ float geoMapOnMap(vec2 plane) {
     float s = n < 0.0 ? -1.0 : 1.0;
     vec2 fromApex = vec2(s * p.x, s * (uGeoMapCone.z - p.y));
     float r = length(fromApex);
-    float theta = atan(fromApex.x, fromApex.y);
+    float theta = atanPrecise(fromApex.x, fromApex.y);
     float size = length(pixel);
     float wedge = (abs(n) * PI - abs(theta)) * r / size;
     float end = (abs(uGeoMapCone.w) - r) / size;
     return clamp(min(wedge, end) + 0.5, 0.0, 1.0);
   }
-  float maxT = asin(sqrt(3.0) / 2.0);
+  float maxT = PI / 3.0;
   float t = eeTheta(p.y / EE_RADIUS);
   float topY = eeY(maxT) * EE_RADIUS;
   float edgeX = EE_RADIUS * 2.0 * sqrt(3.0) * PI * cos(t) / (3.0 * eeDY(t));
@@ -184,7 +191,7 @@ void main() {
     geo = geoMapLonLat(vPlane) - vec2(0.0, uGeoMapLatitude);
   else if(uGeoMapSphere > 0.5) {
     vec3 d = normalize(vDir);
-    geo = degrees(vec2(atan(d.y, d.x), asin(clamp(d.z, -1.0, 1.0)))) - vec2(0.0, uGeoMapLatitude);
+    geo = degrees(vec2(atanPrecise(d.y, d.x), atanPrecise(d.z, length(d.xy)))) - vec2(0.0, uGeoMapLatitude);
   }
   // A pixel's step across and up the screen, in degrees; the short way round where the
   // longitude wraps between neighbouring pixels.
