@@ -354,7 +354,18 @@ stage's `boundary`, as `setFlatSea` takes it now) and `up` the scene's:
   level at `d` from the disc's axis `(d² − r²) / (s + √(R² − d²))`: no near-equal
   numbers subtracted, good to a millimetre near the field, and far off to the precision of
   the position itself (12 cm at 2000 km);
-- `s`, `r²` and `R` reach the GPU from 64-bit floats on the CPU.
+- `s`, `r²` and `R` reach the GPU from 64-bit floats on the CPU;
+- **angles that become places go through `atanPrecise`** (shaderLib/precise-angles.glsl).
+  On Windows WebGL runs through ANGLE on Direct3D, whose `atan` and `asin` are short
+  polynomials: measured 1.1e-5 and 2.5e-5 rad off, 35 m and 160 m on the Earth. The ground
+  maps (ground-terrain.glsl) were drawn that far off, which put the sea's depth 60–150 m out
+  along steep fjord walls: a dark rim along every shore with realistic optics (2026-11-15).
+  One Newton step on `sin` and `cos` (good to a few parts in 10⁷) brings it to about a metre;
+  a latitude is `atanPrecise(z, length(xy))` rather than `asin(z)`. `globeSphereOffset` and
+  `globeGeographicAt` take it as well. Its cost did not show in the frame on the Iris Xe
+  (fjord, oblique and 400 km views, interleaved A/B/A: the second A within 0.1 ms of B).
+  Directions — a sun's elevation, a
+  cloud's — keep the built-ins.
 
 ### The camera, once per draw
 

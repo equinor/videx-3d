@@ -213,8 +213,8 @@ Inside a `Scenery` with a sea, `water` `'fog'` (the default, but `GeoPolygons`')
 layer as the seabed under it is seen: from above, dimmed with its depth and through the
 water in front of it; from in the water, through the water between; taken with the seabed
 by the cutaway (the relief's own water, `skyOceanFog` and its kin). As the seabed, it is
-gone under the water from a few kilometres up, where the sea turns opaque
-(`SKY_OCEAN_OPAQUE`). It is then drawn among
+gone under water too deep to see through, and far off, where the sea turns opaque. It is
+then drawn among
 the see-through objects, after the relief and before the sea's surface (`renderOrder` 0.5,
 wired for an `OITRenderPass`), so the waves lie over it. `'clear'` draws it on top of
 everything see-through, as a map (`LAYERS.OVERLAY`, `renderOrder` 999). Outside a `Scenery`,
@@ -229,9 +229,11 @@ what the background draws between the camera and it, by the layer's own height, 
 needed — the same past the far plane:
 
 - the sea's surface, from above the water, over what lies under it, as opaque as the surface
-  is there (from a few kilometres up, and far off, all of it);
-- the seabed, from anywhere above it, with the water on or off, over what lies below the
-  sea's `depth`, as much as it hides (`seabedOpacity`, the cutaway; nothing without a
+  is there (far off, all of it);
+- the seabed, from anywhere above it, with the water on or off, over what lies below it, as
+  much as it hides: from the air over water as deep as the ground map has it there, give or
+  take half its texel (so data on the true seabed is never taken for under it where the map
+  is coarse), else below the sea's `depth` (`seabedOpacity`, the cutaway; nothing without a
   seabed). Not where a relief's tiles draw the seabed — out to the far plane from in the water
   and over a dry sea, where they hide what lies below by depth;
 - either over what lies past the Earth's curve: nothing shows through the globe.
@@ -265,7 +267,8 @@ Earth's curve stays hidden. What lies on land stays where it is.
 - **Fading in**, its alpha takes the share revealed; opaque tubes and symbols are left out
   by a screen door (a 4x4 Bayer pattern, `geoRevealDoor`), so they stay opaque. At 0 it is
   drawn as before, at its depth: the two are never drawn at once, so the swap is seamless
-  where the sea is opaque — from a few kilometres up — and shows close up over clear water.
+  where the sea is opaque — far off, and over water too deep to see through — and shows
+  over clear, shallow water.
 - **Where it lies on the map**, not in 3D: an outline 2.5 km down is drawn at the surface,
   over where it lies, so in an oblique view it does not meet a well's path at its depth.
   Data at different depths share the sea's level (tubes keep their volume; flat layers their
@@ -404,7 +407,7 @@ shared too), unlit so its colour reads the same from any side.
   `geoSpanLift`), again as finer tiles come in, without laying the nodes again; handed to the
   GPU per node, over the ground it reads.
 - **Through the sea:** `water` `'fog'` dims it as the seabed under it (`geo-water.glsl`); like
-  the seabed, it is gone where the sea turns opaque from a few kilometres up, and under the
+  the seabed, it is gone where the water over it is too deep to see through, and under the
   background's sea and seabed past a stage (see [Through the sea](#through-the-sea-water)).
 
 ## Points: `GeoSymbols`

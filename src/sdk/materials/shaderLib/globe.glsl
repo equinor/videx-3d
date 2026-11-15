@@ -3,6 +3,9 @@
 // plane, its centre just far enough below for the plane to meet the sphere on the disc's
 // edge; off (uGlobe.w 0), the level plane everywhere. In 32-bit floats: about the disc's
 // centre, in forms that subtract no near-equal numbers (see documents/world.md, step 2).
+// Angles that become places by atanPrecise: the GPU's own atan and asin are off by tens of
+// metres to hundreds on the Earth (precise-angles.glsl).
+#include ./precise-angles.glsl
 
 uniform vec3 uGlobeUp; // the scene's up, normalised
 uniform vec4 uGlobeDisc; // the disc's centre on the level plane, and its radius
@@ -192,7 +195,7 @@ vec2 globeSphereOffset(vec3 p) {
   float w = sqrt(e * e + q * q);
   float sinD = n - sinChi0 * (q > 0.0 ? e * e / (q + w) : w - q);
   float cosD = n * sinChi0 * cosChi0 + u * sinChi0 * sinChi0 + w * cosChi0;
-  return vec2(atan(sinD, cosD), atan(e, q));
+  return vec2(atanPrecise(sinD, cosD), atanPrecise(e, q));
 }
 
 // Where the disc's centre lies on the Earth: its longitude (radians), and the conformal
@@ -209,15 +212,16 @@ uniform vec2 uGlobeLocation;
 vec2 globeGeographicAt(vec2 offset) {
   float n = uGlobeSphere.z;
   float sinChi = clamp(uGlobeSphere.x * cos(offset.x) + uGlobeSphere.y * sin(offset.x), -0.9999999, 0.9999999);
-  // The conformal latitude's inverse (conformal-sphere.ts, geodeticLatitude), in 3 steps.
+  // The conformal latitude's inverse (conformal-sphere.ts, geodeticLatitude), in 3 steps, on
+  // the isometric latitude ψ; then φ = atan(sinh ψ), not asin(tanh ψ) (precise-angles.glsl).
   float q = (atanh(sinChi) - uGlobeLocation.y) / n;
-  float sinPhi = tanh(q);
+  float psi = q;
   for(int i = 0; i < 3; i++)
-    sinPhi = tanh(q + GLOBE_WGS84_E * atanh(GLOBE_WGS84_E * sinPhi));
+    psi = q + GLOBE_WGS84_E * atanh(GLOBE_WGS84_E * tanh(psi));
   // Δλ + (n − 1) sin Δλ, undone to first order: (n − 1)² is a few parts in 10⁸.
   float lambda = uGlobeLocation.x + offset.y - (n - 1.0) * sin(offset.y);
   lambda -= 2.0 * GLOBE_PI * floor((lambda + GLOBE_PI) / (2.0 * GLOBE_PI));
-  return vec2(asin(sinPhi), lambda);
+  return vec2(atanPrecise(sinh(psi), 1.0), lambda);
 }
 
 // The latitude and longitude (radians) of the ground under `p`: the twin of

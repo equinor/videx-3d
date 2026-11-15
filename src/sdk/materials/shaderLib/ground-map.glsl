@@ -36,33 +36,48 @@ float groundMapAbout(sampler2D map, mat3 fromWorld, vec3 q, out float weight) {
 }
 
 // The ground's height under `world` (metres over the sea), from the finest of its maps there;
-// `covered` 1 where one is drawn, else 0 (and the height 0).
-float groundMapHeight(vec3 world, out float covered) {
+// `covered` 1 where one is drawn, else 0 (and the height 0); `cell` how far apart, in metres,
+// the texels it was read from lie there: what a slope may stray from it by.
+float groundMapHeight(vec3 world, out float covered, out float cell) {
   covered = 0.0;
+  cell = 0.0;
   if(uGround.x + uGround.y + uGround.z < 0.5)
     return 0.0;
   vec3 q = (world - uGroundCentre.xyz) + uGroundUp * uGroundCentre.w;
+  float radius = length(q);
   float height = 0.0;
   if(uGround.x > 0.5) {
     height = textureLod(uGroundEarth, uGroundEarthFromWorld * q, 0.0).a;
     covered = 1.0;
+    // A face spans a right angle.
+    cell = radius * 1.5707963 / float(textureSize(uGroundEarth, 0).x);
   }
   float weight;
   if(uGround.y > 0.5) {
     float near = groundMapAbout(uGroundNear, uGroundNearFromWorld, q, weight);
     if(weight > 0.0) {
+      // Its rows across are its reach's inverse: the square spans twice the reach.
+      float nearCell = 2.0 * radius / (length(vec3(uGroundNearFromWorld[0][0], uGroundNearFromWorld[1][0], uGroundNearFromWorld[2][0])) * float(textureSize(uGroundNear, 0).x));
       height = covered > 0.5 ? mix(height, near, weight) : near;
+      cell = covered > 0.5 ? mix(cell, nearCell, weight) : nearCell;
       covered = 1.0;
     }
   }
   if(uGround.z > 0.5) {
     float fine = groundMapAbout(uGroundFine, uGroundFineFromWorld, q, weight);
     if(weight > 0.0) {
+      float fineCell = 2.0 * radius / (length(vec3(uGroundFineFromWorld[0][0], uGroundFineFromWorld[1][0], uGroundFineFromWorld[2][0])) * float(textureSize(uGroundFine, 0).x));
       height = covered > 0.5 ? mix(height, fine, weight) : fine;
+      cell = covered > 0.5 ? mix(cell, fineCell, weight) : fineCell;
       covered = 1.0;
     }
   }
   return height;
+}
+
+float groundMapHeight(vec3 world, out float covered) {
+  float cell;
+  return groundMapHeight(world, covered, cell);
 }
 
 #endif

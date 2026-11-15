@@ -442,10 +442,16 @@ The water takes the `<Ocean>` component's props under the same names (see
 [Ocean](./ocean.md)), so one object can drive both; the sun and the reflected sky come
 from the sky. `water: false` leaves the seabed dry; `seabed: false` leaves the void
 below the water, seen through it from above, while from the void its lid is still a roof,
-as under a seabed. Far off, over the waves' `detailFadeDistance`, and everywhere once the
-camera climbs from 2 to 5 km over the sea (`SKY_OCEAN_OPAQUE`), the water turns opaque
-whatever its `waterOpacity`, so from high up the seabed no longer greys the sea; close to it
-the water stays as see-through as set. `seabedOpacity` (default 1) lets the void, or the scene under a stage's
+as under a seabed. Far off, over the waves' `detailFadeDistance`, the water turns opaque
+whatever its `waterOpacity`; nearer it is as see-through as its depth and optics make it,
+from any height alike. (It used to turn opaque from 2 to 5 km up, `SKY_OCEAN_OPAQUE`, which
+hid the seabed showing wrong through shallow water; removed 2026-11-15 once that was fixed.)
+Seen from the air, the seabed under the background's sea lies as deep as the scene's ground
+map has it, along the view bent into the water, and is lit as that deep (`skySeaLayer`):
+the water in front of it reads the same depth, so through the shallows it shows bright,
+and through deep water not at all. On the sea's fixed `depth` it was lit 100 m deep under
+water a metre deep: a dark rim along every coast with realistic optics, and with clear ones
+a bright bed through fjords hundreds of metres deep. `seabedOpacity` (default 1) lets the void, or the scene under a stage's
 seabed, show through it. Each of these only changes uniforms, except that crossing a
 `seabedOpacity` of 1 makes a stage's seabed materials again (see Performance). The
 seabed's look (`ScenerySeabed`) is lit with the model and options of a

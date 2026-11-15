@@ -22,9 +22,6 @@
 #include ../../../sdk/materials/shaderLib/ground-map.glsl
 
 #define SKY_OCEAN_WATER_IOR 1.333
-// From how high up (world units over the sea) the water starts to read as too deep to see
-// through, and from how high it does, whatever its depth: the seabed far below shows nothing.
-#define SKY_OCEAN_OPAQUE vec2(2000.0, 5000.0)
 
 // uSkyOceanLevel, uSkyOceanDepth and uSkyOceanBuried: sky.glsl, which every layer reads.
 // So are water-fog.glsl and the cutaway's shape and cuts (uSkyOceanCutaway{Anchor, Heading,
@@ -399,17 +396,15 @@ float skyOceanDepthAt(vec3 world) {
 // seen from the air along `dir`: a layer (premultiplied) between what the surface reflects and
 // what lies under it, down to that seabed, lit where the line gathers its light (water-fog.glsl's
 // waterUnderSurface). Far off, where the waves' detail has faded by `flatness`
-// (oceanFlatness), and from a few kilometres up (SKY_OCEAN_OPAQUE), water too deep to see
-// through. No derivatives.
+// (oceanFlatness), water too deep to see through, seen from any height alike. No derivatives.
 vec4 skyOceanWaterUnder(float depth, vec3 up, vec3 dir, float flatness) {
   if(uSkyOceanWater < 0.5)
     return vec4(0.0);
   float facing = dot(dir, up);
   float path = waterPathDown(depth, facing);
   vec4 water = waterUnderSurface(path, facing, uSkyOceanExtinction, uSkyOceanWaterColor, skyOceanLightAlong(0.0, depth, path));
-  float deep = max(flatness, smoothstep(SKY_OCEAN_OPAQUE.x, SKY_OCEAN_OPAQUE.y, skyOceanCameraAltitude()));
-  if(deep > 0.0)
-    water = mix(water, waterUnderSurface(1e6, facing, uSkyOceanExtinction, uSkyOceanWaterColor, skyOceanLightAlong(0.0, depth, 1e6)), deep);
+  if(flatness > 0.0)
+    water = mix(water, waterUnderSurface(1e6, facing, uSkyOceanExtinction, uSkyOceanWaterColor, skyOceanLightAlong(0.0, depth, 1e6)), flatness);
   return water;
 }
 
@@ -840,8 +835,20 @@ float skyOceanCover(vec3 world, float height) {
   }
   // From in the water, the seabed straight below the camera's level, as the water's layer has it.
   bool inWater = uSkyOceanWater > 0.5 && altitude <= 0.0;
-  vec3 bedReach = skyOceanBedReach(cameraPosition, dir, inWater);
-  bool below = height < -uSkyOceanDepth - margin || (!inWater && bedReach.z < 0.5 && bedReach.x < pastCurve);
+  // From the air over water the background's seabed lies as deep as the ground map has it
+  // under the point (skySeaLayer), give or take half a texel of it on a slope: only what lies
+  // deeper than that is below it. Coarse far out, so data on the true seabed is never taken
+  // for under it. Else the sea's own depth.
+  float floorDepth = uSkyOceanDepth;
+  if(fromAir) {
+    float covered;
+    float cell;
+    float ground = groundMapHeight(world, covered, cell);
+    if(covered > 0.5)
+      floorDepth = max(-ground, 0.0) + 0.5 * cell;
+  }
+  vec3 bedReach = fromAir ? skyOceanReach(cameraPosition, dir, altitude + floorDepth) : skyOceanBedReach(cameraPosition, dir, inWater);
+  bool below = height < -floorDepth - margin || (!inWater && bedReach.z < 0.5 && bedReach.x < pastCurve);
   // A relief's tiles draw the seabed out to their reach, but from the air through water,
   // where only a stage's area shows theirs.
   bool reliefBed = uSkyOceanReliefReach > 0.0 && !fromAir && min(bedReach.x, dist) < uSkyOceanReliefReach;

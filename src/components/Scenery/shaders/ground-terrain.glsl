@@ -7,6 +7,7 @@
 // Earth at its middle, seen from the Earth's centre.
 
 #include ./cloud-map-noise.glsl
+#include ../../../sdk/materials/shaderLib/precise-angles.glsl
 
 // Heights, metres (R32F, read texel by texel); its columns and rows.
 uniform highp sampler2D uTerrainGrid;
@@ -69,13 +70,14 @@ float terrainGridAt(vec2 g) {
 }
 
 // Where `dir` (unit, fixed on the Earth) lies on the grid, in nodes, and its geodetic
-// latitude (radians, z).
+// latitude (radians, z). Its angles by atanPrecise: the GPU's asin and atan drew the maps
+// 160 m off (precise-angles.glsl).
 vec3 terrainGridPlace(vec3 dir) {
-  float chi = asin(clamp(dir.z, -1.0, 1.0));
+  float chi = atanPrecise(dir.z, length(dir.xy));
   float latitude = terrainLatitude(chi);
   // The sphere's longitude from the disc's centre's, then the Earth's (sphereLongitude's
   // inverse, to the square of n − 1).
-  float delta = atan(dir.y, dir.x) - uTerrainLongitude.x;
+  float delta = atanPrecise(dir.y, dir.x) - uTerrainLongitude.x;
   delta = mod(delta + MAP_PI, 2.0 * MAP_PI) - MAP_PI;
   float longitude = degrees(uTerrainLongitude.x + delta - uTerrainLongitude.y * sin(delta));
   float step = uTerrainGridPlace.z;

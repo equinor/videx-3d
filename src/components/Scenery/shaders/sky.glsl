@@ -647,7 +647,22 @@ vec4 skySeaLayer(vec3 dir, vec3 origin, float blend) {
   if(!staged.skip && !water && skyOceanSeesBed(origin)) {
     vec3 reach = skyOceanBedReach(origin, dir, false);
     vec3 bedPoint = origin + dir * reach.x;
-    vec3 bed = skyOceanBed(bedPoint, globeUpAt(bedPoint), uSkyOceanDepth);
+    vec3 bedUp = globeUpAt(bedPoint);
+    float bedDepth = uSkyOceanDepth;
+    // From the air over water, the seabed the water in front of it reads (skyOceanWaterUnder):
+    // as deep as the ground lies there (skyOceanDepthAt), along the view bent into the water,
+    // lit as that deep. On the sea's own depth, near a shore the water let a bed through that
+    // was lit as that deep: with clear water bright, the shallows reading as deep; with
+    // realistic water black, a dark rim along every coast.
+    float altitude = skyOceanViewAltitude(origin);
+    if(uSkyOceanWater > 0.5 && altitude > 0.0) {
+      vec3 at = origin + dir * skyOceanReach(origin, dir, altitude).x;
+      bedUp = globeUpAt(at);
+      bedDepth = skyOceanDepthAt(at);
+      vec3 bent = refract(dir, bedUp, 1.0 / SKY_OCEAN_WATER_IOR);
+      bedPoint = at + bent * (bedDepth / max(-dot(bent, bedUp), 1e-3));
+    }
+    vec3 bed = skyOceanBed(bedPoint, bedUp, bedDepth);
     bool reached;
     sea = skyOceanFromAir(dir, origin, blend, reach, bed, reached);
     #ifndef SKY_ABYSS
