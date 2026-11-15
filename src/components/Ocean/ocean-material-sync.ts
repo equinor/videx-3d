@@ -176,15 +176,18 @@ export type OceanWaterProps = {
   tonalSharpness?: number;
   /** @deprecated ignored */
   tonalColor?: string;
-  /** Zenith sky colour used for the procedural reflection. */
+  /** Zenith sky colour of the gradient reflected where the scene has no sky (`OceanMaterial.updateSky`). */
   skyColor?: string;
-  /** Horizon sky colour used for the procedural reflection. */
+  /** Horizon sky colour of that gradient. */
   horizonColor?: string;
   /** Reflection intensity multiplier. */
   reflectionIntensity?: number;
-  /** Sun direction in world space (specular highlight + reflected glow). */
+  /**
+   * Direction toward the sun in world space (the glint, the foam's light). Default the
+   * scene's: a `Scenery`'s sun or moon, else the scene's brightest directional light.
+   */
   sunDirection?: Vec3;
-  /** Sun colour. */
+  /** Sun colour, its intensity in it. Default the scene's, as `sunDirection`. */
   sunColor?: string;
   /** Sun specular shininess exponent. */
   sunShininess?: number;
@@ -337,13 +340,15 @@ export function applyOceanWaterProps(
   if (props.horizonColor) material.horizonColor = props.horizonColor;
   if (props.reflectionIntensity !== undefined)
     material.reflectionIntensity = props.reflectionIntensity;
-  if (props.sunDirection)
-    material.sunDirection = new Vector3(
-      props.sunDirection[0],
-      props.sunDirection[1],
-      props.sunDirection[2],
-    );
-  if (props.sunColor) material.sunColor = props.sunColor;
+  // Left out, the scene's sky's sun (OceanMaterial.updateSky).
+  material.sunDirection = props.sunDirection
+    ? new Vector3(
+        props.sunDirection[0],
+        props.sunDirection[1],
+        props.sunDirection[2],
+      )
+    : null;
+  material.sunColor = props.sunColor ?? null;
   if (props.sunShininess !== undefined)
     material.sunShininess = props.sunShininess;
   if (props.foamColor) material.foamColor = props.foamColor;

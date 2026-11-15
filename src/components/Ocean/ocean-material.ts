@@ -2,6 +2,7 @@ import {
   type BufferGeometry,
   type Camera,
   Color,
+  type CubeTexture,
   DoubleSide,
   IUniform,
   MathUtils,
@@ -38,6 +39,11 @@ import {
   waterOpticsOf,
 } from '../../sdk/weather/water-optics';
 import { sceneWaterBody, WaterBody } from '../../sdk/materials/water-body';
+import {
+  cubeUVSize,
+  sceneSky,
+  type SceneSkySource,
+} from '../../sdk/materials/scene-sky';
 import { sceneGroundMap } from '../../sdk/materials/ground-map';
 import { depthMapHeightAt } from '../../sdk/materials/depth-map';
 import { geometryFootprint } from '../../sdk/geometries/geometry-footprint';
@@ -359,6 +365,18 @@ export const OCEAN_SURFACE_UNIFORMS = [
  */
 /** The most layers a sea draws (`SEA_QUALITY`): the uniforms for them are always there. */
 const OCEAN_MAX_SEA_LAYERS = 4;
+// Its sun where neither it nor its scene's sky has one.
+const OCEAN_SUN_DIRECTION = new Vector3(-0.3, 0.8, -0.5).normalize();
+const OCEAN_SUN_COLOR = new Color('#fff6e0');
+// The defines the scene's sky sets (setSky).
+const OCEAN_SKY_DEFINES = [
+  'OCEAN_SKY_ENV',
+  'ENVMAP_TYPE_CUBE_UV',
+  'CUBEUV_TEXEL_WIDTH',
+  'CUBEUV_TEXEL_HEIGHT',
+  'CUBEUV_MAX_MIP',
+  'OCEAN_SKY_CLOUDS',
+] as const;
 // The local winds over the mean the short waves' answer is worked out at (uWeatherGustRough):
 // linear between, none at 0, 1 at the mean.
 const OCEAN_GUST_FACTORS = [0.25, 0.5, 1.5, 2] as const;
@@ -415,6 +433,12 @@ export class OceanMaterial extends ShaderMaterial {
   private _running = false;
   // The sea state's input last set, to set it only as it changes.
   private _inputKey = '';
+  // Whether its sun is its own (set) rather than its scene's sky's (updateSky).
+  private _ownSunDirection = false;
+  private _ownSunColor = false;
+  private _ownGlintSpread = false;
+  // What the sky's defines were last set for (setSky).
+  private _skyKey = '';
 
   constructor(parameters: OceanMaterialParameters = {}) {
     const {
@@ -543,9 +567,15 @@ export class OceanMaterial extends ShaderMaterial {
         uSkyColor: new Uniform(new Color('#7fb2e6')),
         uHorizonColor: new Uniform(new Color('#cfe3f2')),
         uReflectionIntensity: new Uniform(1),
+        // The scene's sky (setSky): its environment, prefiltered, and the clouds over it.
+        uSkyEnv: new Uniform<Texture | null>(null),
+        uSkyEnvIntensity: new Uniform(1),
+        uSkyEnvRotation: new Uniform(new Matrix3()),
+        uSkyClouds: new Uniform<CubeTexture | null>(null),
+        uSkyCloudBase: new Uniform(0),
 
-        uSunDirection: new Uniform(new Vector3(-0.3, 0.8, -0.5).normalize()),
-        uSunColor: new Uniform(new Color('#fff6e0')),
+        uSunDirection: new Uniform(OCEAN_SUN_DIRECTION.clone()),
+        uSunColor: new Uniform(OCEAN_SUN_COLOR.clone()),
         uSunShininess: new Uniform(200),
         uSunGlintSpread: new Uniform(0),
 
@@ -1200,18 +1230,26 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uReflectionIntensity.value = value;
   }
 
+  /**
+   * The direction toward the sun its glint and foam are lit by (world). Set to a direction to
+   * keep it; null to take its scene's sky's sun ({@link updateSky}), its scene's brightest
+   * directional light outside a `Scenery`. Default its scene's.
+   */
   get sunDirection(): Vector3 {
     return this.uniforms.uSunDirection.value;
   }
-  set sunDirection(value: Vector3) {
-    this.uniforms.uSunDirection.value.copy(value).normalize();
+  set sunDirection(value: Vector3 | null) {
+    this._ownSunDirection = value !== null;
+    if (value) this.uniforms.uSunDirection.value.copy(value).normalize();
   }
 
+  /** The sun's colour, intensity in it; null to take its scene's sky's ({@link sunDirection}). Default its scene's */
   get sunColor(): Color {
     return this.uniforms.uSunColor.value;
   }
-  set sunColor(value: Color | string | number) {
-    this.uniforms.uSunColor.value.set(value as Color);
+  set sunColor(value: Color | string | number | null) {
+    this._ownSunColor = value !== null;
+    if (value !== null) this.uniforms.uSunColor.value.set(value as Color);
   }
 
   get sunShininess(): number {
@@ -1221,12 +1259,72 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uSunShininess.value = value;
   }
 
-  /** roughness added to the sun glint, widening its path at the same energy; 0 = none */
+  /**
+   * Roughness added to the sun glint, widening its path at the same energy; 0 = none. Null to
+   * take its scene's sky's (a `Scenery`'s low sun lays a broad path). Default its scene's
+   */
   get sunGlintSpread(): number {
     return this.uniforms.uSunGlintSpread.value;
   }
-  set sunGlintSpread(value: number) {
-    this.uniforms.uSunGlintSpread.value = Math.max(value, 0);
+  set sunGlintSpread(value: number | null) {
+    this._ownGlintSpread = value !== null;
+    if (value !== null)
+      this.uniforms.uSunGlintSpread.value = Math.max(value, 0);
+  }
+
+  /**
+   * Reflect the sky of `scene` ({@link sceneSky}): a `Scenery`'s, else the scene's environment
+   * and brightest directional light, else its own gradient ({@link skyColor},
+   * {@link horizonColor}) and sun. Once a frame, before it is drawn: it may prefilter the
+   * scene's environment. The `Ocean` and `ChunkStack` do.
+   */
+  updateSky(renderer: WebGLRenderer, scene: Scene): void {
+    this.setSky(sceneSky(scene).resolve(renderer, scene));
+  }
+
+  /**
+   * Reflect `source`, or the gradient and its own sun for null. Its sun is the source's where
+   * it has none of its own ({@link sunDirection}). An environment appearing, going or changing
+   * its size, or clouds doing so, compiles the material again.
+   */
+  setSky(source: SceneSkySource | null): void {
+    const u = this.uniforms;
+    const environment = source?.environment ?? null;
+    const clouds = source?.clouds ?? null;
+    const height = environment
+      ? (environment.image as { height: number }).height
+      : 0;
+    const key = `${height}|${clouds ? 1 : 0}`;
+    if (key !== this._skyKey) {
+      this._skyKey = key;
+      const d = this.defines;
+      for (const name of OCEAN_SKY_DEFINES) delete d[name];
+      if (environment) {
+        const size = cubeUVSize(height);
+        d.OCEAN_SKY_ENV = '';
+        d.ENVMAP_TYPE_CUBE_UV = '';
+        d.CUBEUV_TEXEL_WIDTH = size.texelWidth;
+        d.CUBEUV_TEXEL_HEIGHT = size.texelHeight;
+        d.CUBEUV_MAX_MIP = `${size.maxMip}.0`;
+      }
+      if (clouds) d.OCEAN_SKY_CLOUDS = '';
+      this.needsUpdate = true;
+    }
+    u.uSkyEnv.value = environment;
+    if (source) {
+      u.uSkyEnvIntensity.value = source.intensity;
+      (u.uSkyEnvRotation.value as Matrix3).copy(source.rotation);
+    }
+    u.uSkyClouds.value = clouds;
+    u.uSkyCloudBase.value = source?.cloudBase ?? 0;
+    const sun = source?.sun ?? null;
+    if (!this._ownSunDirection)
+      (u.uSunDirection.value as Vector3).copy(
+        sun ? sun.direction : OCEAN_SUN_DIRECTION,
+      );
+    if (!this._ownSunColor)
+      (u.uSunColor.value as Color).copy(sun ? sun.color : OCEAN_SUN_COLOR);
+    if (!this._ownGlintSpread) u.uSunGlintSpread.value = sun?.glintSpread ?? 0;
   }
 
   get foamColor(): Color {

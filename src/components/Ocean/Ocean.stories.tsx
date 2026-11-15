@@ -10,8 +10,10 @@ import {
   createOceanPlane,
   SurfaceMeta,
   Vec2,
+  Vec3,
 } from '../../sdk';
 import { createDemoMultiPolygon } from '../../storybook/data/demo-polygons';
+import { SeaStoryLighting } from '../../storybook/components/SeaStoryLighting';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
@@ -235,7 +237,13 @@ type ExampleProps = {
   // Buoyancy demo
   floaters: boolean;
   contactFoam: boolean;
+
+  /** the studio HDR as the scene's environment, which the sea then reflects */
+  skyEnvironment: boolean;
 };
+
+// The story's sun, which the sea's glint takes (its scene's brightest directional light).
+const SUN_DIRECTION: Vec3 = [-1, 2, -3];
 
 const OceanDemo = (props: ExampleProps) => {
   const data = useData();
@@ -416,42 +424,47 @@ const OceanDemo = (props: ExampleProps) => {
   if (!geometries) return null;
 
   return (
-    <Ocean
-      quality={props.quality}
-      detailOctaves={props.detailOctaves}
-      detailScale={props.detailScale}
-      skyColor="#465a6a"
-      name="Ocean"
-      geometry={geometries.surface}
-      bodyGeometry={geometries.body}
-      bedGeometry={geometries.bed}
-      position={position}
-      windDirection={wind}
-      windSpeed={props.windSpeed}
-      steepness={props.steepness}
-      displacement={props.displacement}
-      optics={props.optics}
-      reflectionIntensity={props.reflectionIntensity}
-      foamAmount={props.foamAmount}
-      foamColor={props.foamColor}
-      opacity={props.opacity}
-      wireframe={props.wireframe}
-      seaBedColor={props.seaBedColor}
-      seaBedOpacity={props.seaBedOpacity}
-      seaBedDuneStrength={props.seaBedDuneStrength}
-      seaBedDuneWavelength={props.seaBedDuneWavelength}
-      seaBedDuneDirection={duneDirection}
-      seaBedDuneSharpness={props.seaBedDuneSharpness}
-      bodyMaxOpacity={props.bodyMaxOpacity}
-      bodyShimmer={props.bodyShimmer}
-      surfaceVisible={props.surfaceVisible}
-      bodyVisible={props.bodyVisible}
-      bedVisible={props.bedVisible}
-      sunDirection={[-1, 2, -3]}
-      sunShininess={100}
-    >
-      {props.floaters && <FloatingBoxes contactFoam={props.contactFoam} />}
-    </Ocean>
+    <>
+      <SeaStoryLighting
+        sunDirection={SUN_DIRECTION}
+        environment={props.skyEnvironment}
+      />
+      <Ocean
+        quality={props.quality}
+        detailOctaves={props.detailOctaves}
+        detailScale={props.detailScale}
+        skyColor="#465a6a"
+        name="Ocean"
+        geometry={geometries.surface}
+        bodyGeometry={geometries.body}
+        bedGeometry={geometries.bed}
+        position={position}
+        windDirection={wind}
+        windSpeed={props.windSpeed}
+        steepness={props.steepness}
+        displacement={props.displacement}
+        optics={props.optics}
+        reflectionIntensity={props.reflectionIntensity}
+        foamAmount={props.foamAmount}
+        foamColor={props.foamColor}
+        opacity={props.opacity}
+        wireframe={props.wireframe}
+        seaBedColor={props.seaBedColor}
+        seaBedOpacity={props.seaBedOpacity}
+        seaBedDuneStrength={props.seaBedDuneStrength}
+        seaBedDuneWavelength={props.seaBedDuneWavelength}
+        seaBedDuneDirection={duneDirection}
+        seaBedDuneSharpness={props.seaBedDuneSharpness}
+        bodyMaxOpacity={props.bodyMaxOpacity}
+        bodyShimmer={props.bodyShimmer}
+        surfaceVisible={props.surfaceVisible}
+        bodyVisible={props.bodyVisible}
+        bedVisible={props.bedVisible}
+        sunShininess={100}
+      >
+        {props.floaters && <FloatingBoxes contactFoam={props.contactFoam} />}
+      </Ocean>
+    </>
   );
 };
 
@@ -602,6 +615,12 @@ const meta = {
       control: { type: 'boolean' },
       table: { category: 'Buoyancy' },
     },
+    skyEnvironment: {
+      control: { type: 'boolean' },
+      table: { category: 'Sky' },
+      description:
+        'The studio HDR as `scene.environment`: the sea reflects it in place of its gradient.',
+    },
   },
   decorators: [Canvas3dDecorator, DataProviderDecorator],
   parameters: {
@@ -609,6 +628,8 @@ const meta = {
     scale: 1000,
     background: '#bcd4e6',
     cameraPosition: [0, 4000, 11000],
+    // Its own sun and, when asked, environment (SeaStoryLighting).
+    ownLighting: () => true,
   },
 } satisfies Meta<typeof OceanDemo>;
 
@@ -662,6 +683,8 @@ const commonArgs = {
 
   floaters: false,
   contactFoam: false,
+
+  skyEnvironment: false,
 };
 
 /** Flat ocean surface plane (`createOceanPlane`). */

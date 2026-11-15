@@ -79,9 +79,35 @@ cannot show rather than shrinking to a point: the waves too small for its footpr
 layers' mips filter out) or faded out with distance, and the small ones no layer draws, as
 much as the wind gives (Cox and Munk's mean square slope, `0.003 + 0.00512 × windSpeed`). So
 far off, and from high up, it spreads into a broad soft patch, as seen from aircraft. The
-`<Scenery>`'s endless sea takes the same prop. `OceanMaterial.sunGlintSpread` (default 0)
-widens the glint further at the same peak, so its path broadens and brightens; the `<Scenery>`
-raises it about sunrise and sunset for a broad glitter path.
+`<Scenery>`'s endless sea takes the same prop. `OceanMaterial.sunGlintSpread` (default the
+scene's sky's, else 0) widens the glint further at the same peak, so its path broadens and
+brightens; the `<Scenery>` raises it about sunrise and sunset for a broad glitter path.
+
+**One sky** (built 2026-11-15). An `Ocean`'s and a `ChunkStack`'s sea reflect the sky of their
+scene (`sceneSky`, `SceneSky` in `sdk/materials/scene-sky.ts`; `OceanMaterial.updateSky`, run
+by both before each frame), in the reflection, through Snell's window from below and in the
+foam's light:
+
+- **Under a `<Scenery>`**, the sky it publishes: the environment it bakes of the air over the
+  sea (whichever zone the camera is in: under water the surface still reflects the air), its
+  `environment.intensity`, the film of its 3D clouds over that (sharper than the bake holds
+  them, as its own sea reads it), and its sun or moon as its own sea's glint has it. The
+  `<Scenery>`'s sea keeps its own sky, drawn per pixel.
+- **Otherwise**, the scene's: `scene.environment` (and `environmentIntensity`,
+  `environmentRotation`), prefiltered once per texture as three prefilters it for its own
+  materials (`prefilteredEnvironment`), and its brightest visible `DirectionalLight` (searched
+  for again every half second, its direction and colour read each frame).
+- **Without either**, the gradient of `skyColor` and `horizonColor` with a sun's glow in it,
+  and its own default sun.
+
+The environment is read as blurred as the slopes no pixel shows roughen the surface (their
+variance as GGX's alpha squared); a reflection turned below the horizon by a steep wave is
+mirrored back up, as the `<Scenery>`'s sea does. `sunDirection` and `sunColor` (colour ×
+intensity) given are the sea's own sun whatever the scene's; left out (or set to null on the
+material), the scene's. An environment appearing, going or changing size compiles the
+surface again (defines for three's `cube_uv_reflection_fragment`); a new one of the same size
+does not. Measured on the A1000 at 1920 × 1080 (SeaBench stand-alone, studio HDR against the
+gradient): the surface's draw 1.19 → 1.27 ms from 300 m, 1.48 → 1.62 ms from 2 km.
 
 ## Geometry builders
 

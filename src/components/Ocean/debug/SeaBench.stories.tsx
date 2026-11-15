@@ -21,6 +21,7 @@ import {
   type SceneryArgs,
 } from '../../../storybook/components/scenery-controls';
 import { SceneryStoryRendering } from '../../../storybook/components/scenery-story-rendering';
+import { SeaStoryLighting } from '../../../storybook/components/SeaStoryLighting';
 import {
   SEA_POSE_AZIMUTH,
   SEA_POSES,
@@ -136,6 +137,8 @@ type SeaBenchArgs = {
   roughReflect: number;
   /** the stand-alone sea's vertices moved by its long waves (`Ocean`'s `displacement`) */
   displacement: boolean;
+  /** the stand-alone sea's scene lit by the studio HDR too (`scene.environment`), which it then reflects */
+  skyEnvironment: boolean;
   stage: boolean;
   /** the waves (and clouds) held still: the enclosing `Weather`'s clock paused */
   paused: boolean;
@@ -242,21 +245,26 @@ const StandAlone = ({
   const { azimuth, elevation } = skySunPosition(sky);
   const sunDirection = directionFromCompass(azimuth, elevation) as Vec3;
   return (
-    <Ocean
-      geometry={geometry}
-      quality={args.quality}
-      optics={args.optics}
-      displacement={args.displacement}
-      // Its wind and swell the bench's Weather's: it draws the weather's sea.
-      foamAmount={args.foamAmount}
-      steepness={args.steepness}
-      waveTuning={tuningOf(args)}
-      foamTuning={foamTuningOf(args)}
-      sunDirection={sunDirection}
-      // The Ocean's own default sun, a warm white; its sky as the Ocean stories'. One sky for
-      // both scenes is still to come (documents/ocean.md).
-      skyColor="#465a6a"
-    />
+    <>
+      {/* The sky's sun, the Ocean's own default warm white: the sea's glint takes it. */}
+      <SeaStoryLighting
+        sunDirection={sunDirection}
+        environment={args.skyEnvironment}
+      />
+      <Ocean
+        geometry={geometry}
+        quality={args.quality}
+        optics={args.optics}
+        displacement={args.displacement}
+        // Its wind and swell the bench's Weather's: it draws the weather's sea.
+        foamAmount={args.foamAmount}
+        steepness={args.steepness}
+        waveTuning={tuningOf(args)}
+        foamTuning={foamTuningOf(args)}
+        // Its gradient as the Ocean stories', where the scene has no environment.
+        skyColor="#465a6a"
+      />
+    </>
   );
 };
 
@@ -537,7 +545,8 @@ const meta = {
     autoClear: true,
     cameraPosition: [0, 300, -1000],
     cameraTarget: [0, 0, 0],
-    ownLighting: (args: SeaBenchArgs) => args.scene === 'scenery',
+    // A Scenery lights its own; the stand-alone sea's, SeaStoryLighting.
+    ownLighting: () => true,
     pixelRatio: (args: SeaBenchArgs) => args.pixelRatio,
   },
   argTypes: {
@@ -580,6 +589,13 @@ const meta = {
       control: { type: 'boolean' },
       description:
         'The stand-alone sea’s vertices moved by its long waves (`displacement`), on a 6 km plane of about 6 m a vertex (its edge shows from a few hundred metres up).',
+      if: { arg: 'scene', eq: 'ocean' },
+    },
+    skyEnvironment: {
+      table: { category: 'Bench' },
+      control: { type: 'boolean' },
+      description:
+        'The studio HDR as `scene.environment`: the stand-alone sea reflects it in place of its gradient.',
       if: { arg: 'scene', eq: 'ocean' },
     },
     debugView: {
@@ -841,6 +857,7 @@ const meta = {
     slickScale: 400,
     roughReflect: 1,
     displacement: false,
+    skyEnvironment: false,
     stage: true,
     paused: false,
     timeScale: 1,

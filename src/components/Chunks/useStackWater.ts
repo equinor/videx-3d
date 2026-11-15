@@ -167,11 +167,13 @@ export function useStackWater(
 
   // The waves at the enclosing Weather's pace.
   const step = useWeatherStep();
-  useFrame(({ gl: renderer }, delta) => {
+  useFrame(({ gl: renderer, scene }, delta) => {
     const waveStep = step(delta);
     if (!materials) return;
     // Its waves on the weather's clock while it draws the weather's sea; its walls with it.
     materials.surface.step(waveStep);
+    // The sky it reflects and the sun it glints with: the scene's, its own where given.
+    materials.surface.updateSky(renderer, scene);
     materials.surface.renderWaves(renderer);
     materials.volume.time = materials.surface.time;
     if (materials.face) materials.face.time = materials.surface.time;

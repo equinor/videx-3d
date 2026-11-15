@@ -38,6 +38,7 @@ import {
 import { Vec3 } from '../../sdk/types/common';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { sceneWaterBody } from '../../sdk/materials/water-body';
+import { sceneSky, type SceneSkySource } from '../../sdk/materials/scene-sky';
 import { setSceneGroundMap } from '../../sdk/materials/ground-map';
 import { waterOpticsOf } from '../../sdk/weather/water-optics';
 import { OceanMaterial } from '../Ocean/ocean-material';
@@ -1358,13 +1359,32 @@ export const Scenery = ({
   }, [waterKey]);
 
   // The glint's colour is set each frame, with the light the sky's clouds let through.
+  // A low sun lays a broad glitter path.
+  const glintSpread = SKY_TWILIGHT_GLINT_SPREAD * state.twilight * sunTwilight;
   useLayoutEffect(() => {
     if (!water) return;
     water.sunDirection = lightDirection;
-    // A low sun lays a broad glitter path.
-    water.sunGlintSpread =
-      SKY_TWILIGHT_GLINT_SPREAD * state.twilight * sunTwilight;
-  }, [water, lightDirection, state.twilight, sunTwilight]);
+    water.sunGlintSpread = glintSpread;
+  }, [water, lightDirection, glintSpread]);
+
+  // The sky the scene's other seas reflect (an `Ocean`'s, a `ChunkStack`'s: sceneSky),
+  // written each frame as its own sea's.
+  const [publishedSky] = useState(() => ({
+    direction: new Vector3(),
+    color: new Color(),
+    glintSpread: 0,
+  }));
+  const skySource = useRef<SceneSkySource | null>(null);
+  useLayoutEffect(() => {
+    const sky = sceneSky(scene);
+    const source = sky.claim(material);
+    source.sun = publishedSky;
+    skySource.current = source;
+    return () => {
+      sky.release(material);
+      skySource.current = null;
+    };
+  }, [scene, material, publishedSky]);
 
   useEffect(() => {
     dirty.current = true;
@@ -1618,13 +1638,23 @@ export const Scenery = ({
       dirty.current = true;
     }
     const lightThrough = skyOverlay ? skyOverlay.light : 1;
-    if (water) {
-      // The glint goes with the light, as the sky does.
-      water.sunColor
-        .copy(lightColor)
-        .multiplyScalar(
-          (lightIntensity / Math.max(sunIntensity, 1e-6)) * lightThrough,
-        );
+    // The glint goes with the light, as the sky does.
+    publishedSky.color
+      .copy(lightColor)
+      .multiplyScalar(
+        (lightIntensity / Math.max(sunIntensity, 1e-6)) * lightThrough,
+      );
+    if (water) water.sunColor.copy(publishedSky.color);
+    const published = skySource.current;
+    if (published) {
+      published.environment = hasEnvironment
+        ? baker.environmentOf('air')
+        : null;
+      published.intensity = environmentIntensity;
+      published.clouds = skyOverlay?.texture ?? null;
+      published.cloudBase = skyOverlay?.reflection.base ?? 0;
+      publishedSky.direction.copy(lightDirection);
+      publishedSky.glintSpread = glintSpread;
     }
     if (sunShimmer && sunRays > 0) material.sunRayPhase += delta;
     material.sunRadiance =

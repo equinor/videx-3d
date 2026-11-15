@@ -489,6 +489,12 @@ export const Ocean = forwardRef(
         cameraSite.get(camera);
         // Its waves on the weather's clock while it draws the weather's sea.
         material.step(waveStep);
+        // The sky it reflects and the sun it glints with: the scene's, its own where given.
+        material.updateSky(gl, scene);
+        if (seaBedMaterial) {
+          seaBedMaterial.sunDirection = material.sunDirection;
+          seaBedMaterial.sunColor = material.sunColor;
+        }
         const group = ref.current;
         const view = group
           ? group.worldToLocal(viewFrom.copy(camera.position))

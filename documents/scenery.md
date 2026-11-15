@@ -364,7 +364,9 @@ exact, but 200 km out what they place stands 3 km over the sea
 `environment` bakes the sky into `scene.environment` (lights MeshStandard and
 MeshPhysical materials) and `lightProbe` into a `LightProbe` (lights every
 `lights: true` material). Both default on. ⚠️ With both, MeshStandard materials receive
-the sky's diffuse light from each.
+the sky's diffuse light from each. An `Ocean` or a `ChunkStack`'s sea in the scene reflects
+the air's bake, the 3D clouds' film and the scene light's sun or moon, which the scenery
+publishes for them each frame (`sceneSky`; [ocean.md, One sky](./ocean.md#basic-usage)).
 
 The bakes are made once for each zone the camera can be in — the air over the sea, the
 water in it and, below the seabed (or the abyss level), the `subsurface` — and swapped as
