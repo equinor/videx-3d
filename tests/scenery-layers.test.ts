@@ -6,6 +6,7 @@ import {
   SceneryLayerView,
 } from '../src/components/Scenery/scenery-layers';
 import { SceneryMaterial } from '../src/components/Scenery/scenery-material';
+import { OceanMaterial } from '../src/components/Ocean/ocean-material';
 
 const key = (defines: Record<string, unknown>) => JSON.stringify(defines);
 
@@ -59,6 +60,32 @@ describe('sceneryLayerDefines', () => {
       key(sceneryLayerDefines(sky, layer)),
     );
     expect(new Set(keys).size).toBe(3);
+  });
+
+  it('draws the sea with its water’s glitter and Fresnel, as they change', () => {
+    const sky = new SceneryMaterial();
+    sky.ocean = true;
+    const water = new OceanMaterial();
+    sky.linkOcean(water);
+    const sea = () => sceneryLayerDefines(sky, 'sea');
+    // No glitter by default on medium, compiled in once asked for.
+    expect(sea()).not.toHaveProperty('OCEAN_SPARKLE');
+    water.sparkle = 0.5;
+    sky.linkOcean(water);
+    expect(sea()).toHaveProperty('OCEAN_SPARKLE');
+    water.sparkle = null;
+    sky.linkOcean(water);
+    expect(sea()).not.toHaveProperty('OCEAN_SPARKLE');
+    expect(sea()).not.toHaveProperty('OCEAN_FRESNEL_POWER');
+    water.fresnelPower = 4;
+    sky.linkOcean(water);
+    expect(sea()).toHaveProperty('OCEAN_FRESNEL_POWER');
+    water.fresnelPower = null;
+    sky.linkOcean(water);
+    expect(sea()).not.toHaveProperty('OCEAN_FRESNEL_POWER');
+    // On high, by default.
+    sky.linkOcean(new OceanMaterial({ quality: 'high' }));
+    expect(sea()).toHaveProperty('OCEAN_SPARKLE');
   });
 });
 

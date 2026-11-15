@@ -199,7 +199,7 @@ void main() {
     // sea does: under it, an environment holds the sea or a floor.
     reflected.y = abs(reflected.y);
     float roughFresnel = oceanRoughFresnel(fresnel, ndvAA, rough);
-    layer = vec4(oceanSky(reflected, skyRoughness, skyOver) * uReflectionIntensity * roughFresnel + oceanGlint(N, V, 1.0, rough), fresnel);
+    layer = vec4(oceanSky(reflected, skyRoughness, skyOver) * uReflectionIntensity * roughFresnel + oceanGlint(N, V, 1.0, rough, worldXZ, texel), fresnel);
     layer = waterLayerOver(layer, waterBodySurfaceWater(vWorldPosition, -V));
   } else {
     // From below: the sky through Snell's window, beyond it the deep water mirrored, seen
@@ -208,7 +208,7 @@ void main() {
     vec3 deep = waterBodyDeep(reflect(-V, N).y, false);
     vec3 under = deep;
     if(dot(exitDir, exitDir) > 0.0) {
-      float mirrored = pow(1.0 - clamp(dot(exitDir, -N), 0.0, 1.0), uFresnelPower);
+      float mirrored = oceanFresnelAt(dot(exitDir, -N));
       under = mix(oceanSky(normalize(exitDir), skyRoughness, 0.0), deep, mirrored);
     }
     layer = vec4(waterBodyFog(under, vWorldPosition), 1.0);

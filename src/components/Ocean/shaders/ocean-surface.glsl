@@ -38,6 +38,7 @@ uniform vec3 uSunDirection; // world space, normalised
 uniform vec3 uSunColor;
 uniform float uSunShininess;
 uniform float uSunGlintSpread; // roughness added to the glint, widening its path; 0 = none
+uniform float uSparkle; // how much of the glint's glitter is drawn (OCEAN_SPARKLE), 1 as modelled
 
 uniform vec3 uFoamColor;
 uniform float uFoamAmount;
@@ -357,34 +358,146 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   return normalize(vec3(-slope.x, 1.0, -slope.y));
 }
 
-// Fresnel, analytically widened to avoid grazing-angle shading aliasing. `ndvAA` is the
-// widened cosine. Clamped to 1: looking straight down on a flat normal it rounds a hair over,
-// and pow() of the negative base is NaN. Water reflects 2 % straight on (OCEAN_F0).
+// The share of light water reflects at `c`, the cosine of the angle of incidence on the air
+// side: by Fresnel's equations for an unpolarised ray into water of IOR 1.333 (2.04 % straight
+// on, all at grazing). From below, at the cosine of the ray's angle in air as it leaves, the
+// same (reciprocity). OCEAN_FRESNEL_POWER (an OceanMaterial's `fresnelPower`) draws the old
+// look instead: Schlick's curve from 2 % with that exponent (4 held more reflection at middle
+// angles than water does).
 #define OCEAN_F0 0.02
+#define OCEAN_IOR 1.333
+float oceanFresnelAt(float c) {
+  c = clamp(c, 0.0, 1.0);
+  #ifdef OCEAN_FRESNEL_POWER
+  return mix(OCEAN_F0, 1.0, pow(1.0 - c, uFresnelPower));
+  #else
+  float g = sqrt(OCEAN_IOR * OCEAN_IOR - 1.0 + c * c);
+  float s = (g - c) / (g + c);
+  float p = (c * (g + c) - 1.0) / (c * (g - c) + 1.0);
+  return 0.5 * s * s * (1.0 + p * p);
+  #endif
+}
+
+// Fresnel, analytically widened to avoid grazing-angle shading aliasing. `ndvAA` is the
+// widened cosine. Clamped to 1: looking straight down on a flat normal it rounds a hair over.
 float oceanFresnel(vec3 N, vec3 V, out float ndvAA) {
   float ndv = clamp(dot(N, V), 0.0, 1.0);
   ndvAA = min(max(ndv, fwidth(ndv)), 1.0);
-  return mix(OCEAN_F0, 1.0, pow(1.0 - ndvAA, uFresnelPower));
+  return oceanFresnelAt(ndvAA);
 }
 
+#ifdef OCEAN_SPARKLE
+// --- The sun's glitter --------------------------------------------------------
+// The glint (oceanGlint) is what many small glints the pixel cannot show send of the sun on
+// average. Where few of them fall in a pixel, they are a few bright points instead, and they
+// come and go as the ripples move: a cell of the sea fixed in the world shows k of them,
+// Poisson-distributed about the mean (as Deliot and Belcour 2023 draw glints), as k / mean of
+// the glint. Many to a pixel, that is 1: the smooth glint, the same mean at every distance. How
+// many glints a square metre has is the specular points' density (Longuet-Higgins 1960): the
+// slope pdf at the half vector times the curvature of the waves too short to draw, taken as
+// their slope variance times a ripple's wavenumber squared. So a rough sea, crowded with
+// ripples, has so many that past a few metres they are a sheen; a calmer one fewer, standing
+// out. The cells are as wide as a pixel's footprint, read at the two powers of two either side
+// and blended, so nothing pops as it changes. Closer, where a ripple spans pixels, the waves
+// drawn carry the glint: the glitter gives way to it as a pixel narrows from four ripples to
+// one. `uSparkle` scales how much of it is drawn (OceanMaterial.sparkle).
+// A ripple's wavenumber squared ((rad/m)², about 6 cm long), the size it spans (m), how often a
+// cell's ripples turn anew (Hz, each draw rising and falling over two turns), and the most one
+// draw outshines the mean: past it, they come oftener and dimmer, at the same mean.
+#define OCEAN_SPARKLE_CURVATURE 11000.0
+#define OCEAN_SPARKLE_FACET 0.03
+#define OCEAN_SPARKLE_RATE 8.0
+#define OCEAN_SPARKLE_MAX 4.0
+
+// Jarzynski and Olano's pcg3d: three well-mixed words from three, exact for any cell index.
+uvec3 oceanPcg3(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z;
+  v.y += v.z * v.x;
+  v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z;
+  v.y += v.z * v.x;
+  v.z += v.x * v.y;
+  return v;
+}
+
+// k / mean for the cell hashed `h` at its `turn`, `mean` facets expected in it.
+float oceanSparkleDraw(uvec3 h, uint turn, float mean) {
+  vec3 u = vec3(oceanPcg3(h ^ uvec3(turn * 747796405u, turn, ~turn))) * (1.0 / 4294967296.0);
+  float k = 0.0;
+  if(mean < 4.0) {
+    // Poisson by inversion: the first count whose cumulative share passes u.x.
+    float term = exp(-mean);
+    float sum = term;
+    for(int i = 1; i < 12; i++) {
+      if(sum >= u.x)
+        break;
+      term *= mean / float(i);
+      sum += term;
+      k += 1.0;
+    }
+  } else {
+    // As normal (Irwin-Hall of three, scaled to unit variance).
+    k = max(mean + sqrt(mean) * 2.0 * (u.x + u.y + u.z - 1.5), 0.0);
+  }
+  return k / mean;
+}
+
+// k / mean in the cell `cell` wide at `p` (world, m) on level `level`, `perArea` the facets a
+// square metre expected to send the sun to the eye: each turn's draw faded into the next's.
+float oceanSparkleCell(vec2 p, float cell, float level, float perArea) {
+  float mean = max(perArea * cell * cell, 1.0 / OCEAN_SPARKLE_MAX);
+  uvec3 h = oceanPcg3(uvec3(uvec2(ivec2(floor(p / cell))), uint(level)));
+  // Each cell turns at its own phase, so they do not twinkle in step.
+  float clock = uTime * OCEAN_SPARKLE_RATE + float(h.x) * (1.0 / 4294967296.0);
+  float turn = floor(clock);
+  uint t = uint(turn);
+  return mix(oceanSparkleDraw(h, t, mean), oceanSparkleDraw(h, t + 1u, mean), clock - turn);
+}
+
+float oceanSparkle(vec2 p, float texel, float perArea) {
+  float level = log2(max(texel, OCEAN_SPARKLE_FACET) / OCEAN_SPARKLE_FACET);
+  float l0 = floor(level);
+  float cell = OCEAN_SPARKLE_FACET * exp2(l0);
+  return mix(oceanSparkleCell(p, cell, l0, perArea), oceanSparkleCell(p, 2.0 * cell, l0 + 1.0, perArea), level - l0);
+}
+#endif
+
 // The sun's glint off the waves: `rough` the slope variance the pixel cannot show
-// (oceanWaves); `glint` scales it.
-vec3 oceanGlint(vec3 N, vec3 V, float glint, float rough) {
+// (oceanWaves); `glint` scales it. `p` is the surface point (world X/Z, m) and `texel` the
+// metres a pixel spans there, for its glitter (OCEAN_SPARKLE).
+vec3 oceanGlint(vec3 N, vec3 V, float glint, float rough, vec2 p, float texel) {
   vec3 H = normalize(V + normalize(uSunDirection));
   float ndh = max(dot(N, H), 0.0);
   // The slopes the pixel cannot show still scatter the sun: their variance widens the glint
   // (the exponent read as a Beckmann roughness), at the same energy, so from far off or high
   // up it spreads into a broad patch. The added spread (uSunGlintSpread) keeps its peak
   // instead, so the path also brightens.
+  float base = 2.0 / (uSunShininess + 2.0);
   float shininess = uSunShininess;
   float energy = 1.0;
   if(rough > 0.0 || uSunGlintSpread > 0.0) {
-    float base = 2.0 / (uSunShininess + 2.0);
     float roughness = base + rough;
     shininess = 2.0 / (roughness + uSunGlintSpread) - 2.0;
     energy = base / roughness;
   }
-  return uSunColor * pow(ndh, shininess) * energy * glint;
+  float lobe = pow(ndh, shininess);
+  float g = lobe * energy * glint;
+  #ifdef OCEAN_SPARKLE
+  // Of the lobe's variance, the ripples' share (the rest the sun's own breadth and the glitter
+  // path's added spread, drawn smooth), and their glints a square metre there: the slope pdf at
+  // the half vector, lobe / (π variance), times their curvature. None where a ripple spans more
+  // than a pixel: the waves drawn show it.
+  float shown = smoothstep(1.0, 4.0, texel / OCEAN_SPARKLE_FACET);
+  if(g > 1e-4 && rough > 0.0 && shown > 0.0) {
+    float variance = base + rough + uSunGlintSpread;
+    // π² = 9.8696.
+    float perArea = OCEAN_SPARKLE_CURVATURE * rough * lobe / (9.8696044 * variance);
+    g *= mix(1.0, oceanSparkle(p, texel, perArea), clamp(uSparkle * shown * rough / variance, 0.0, 1.0));
+  }
+  #endif
+  return uSunColor * g;
 }
 
 // A premultiplied layer as colour and opacity, for blending. Its colour is kept no brighter

@@ -137,6 +137,10 @@ type SeaBenchArgs = {
   roughReflect: number;
   /** the stand-alone sea's vertices moved by its long waves (`Ocean`'s `displacement`) */
   displacement: boolean;
+  /** how much of the sun's glitter both seas draw (`sparkle`): 0 none */
+  sparkle: number;
+  /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
+  fresnelPower: number;
   /** the stand-alone sea's scene lit by the studio HDR too (`scene.environment`), which it then reflects */
   skyEnvironment: boolean;
   stage: boolean;
@@ -200,6 +204,8 @@ const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   seaFoamTuning: foamTuningOf(args),
   seaQuality: args.quality,
   seaOptics: args.optics,
+  seaSparkle: args.sparkle,
+  seaFresnelPower: args.fresnelPower,
 });
 
 // The camera to the pose, once the controls are there, and again as it changes.
@@ -263,6 +269,9 @@ const StandAlone = ({
         foamTuning={foamTuningOf(args)}
         // Its gradient as the Ocean stories', where the scene has no environment.
         skyColor="#465a6a"
+        // The old Fresnel where the sea args ask for it, as the Scenery's sea.
+        fresnelPower={sky.seaFresnelPower > 0 ? sky.seaFresnelPower : undefined}
+        sparkle={sky.seaSparkle}
       />
     </>
   );
@@ -649,6 +658,18 @@ const meta = {
       table: { category: 'Conditions' },
       control: { type: 'range', min: 0, max: 1, step: 0.01 },
     },
+    sparkle: {
+      table: { category: 'Conditions' },
+      control: { type: 'range', min: 0, max: 2, step: 0.05 },
+      description:
+        'The sun’s glitter (`sparkle`), both seas: the glint broken into the glints of ripples too small to draw, where a pixel holds few of them, the same mean. 0 none (compiled out; the default on low and medium), 1 as modelled (the default on high and ultra). Recompiles as it turns on or off.',
+    },
+    fresnelPower: {
+      table: { category: 'Conditions' },
+      control: { type: 'range', min: 0, max: 8, step: 0.1 },
+      description:
+        '0: the reflection water has (Fresnel, IOR 1.333). Above: the old look (`fresnelPower`), Schlick’s curve with this exponent; 4 was the default. Recompiles as it turns on or off.',
+    },
     steepness: {
       control: { type: 'range', min: 0, max: 2, step: 0.05 },
       description:
@@ -857,6 +878,8 @@ const meta = {
     slickScale: 400,
     roughReflect: 1,
     displacement: false,
+    sparkle: 0,
+    fresnelPower: 0,
     skyEnvironment: false,
     stage: true,
     paused: false,

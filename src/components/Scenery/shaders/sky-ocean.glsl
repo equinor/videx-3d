@@ -534,7 +534,7 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // The glint is the scene's light's, which is the field's: far round the Earth only while it
   // stands over the sea's horizon there (skyLightFrom).
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
-  vec4 surface = vec4(reflected * uReflectionIntensity * roughFresnel + oceanGlint(normal, V, glint, wave.rough), fresnel);
+  vec4 surface = vec4(reflected * uReflectionIntensity * roughFresnel + oceanGlint(normal, V, glint, wave.rough, p, texel), fresnel);
   surface = waterLayerOver(surface, skyOceanWaterUnder(wave.depth, wave.up, dir, wave.flatness));
 
   float foamFar;
@@ -568,9 +568,7 @@ vec3 skyOceanUndersideOf(vec3 normal, vec3 dir, float blend, float depth) {
   if(dot(exitDir, exitDir) <= 0.0)
     return farWater;
   // On the air side, so the window's rim fades to the mirror instead of cutting off.
-  // Clamped to 1: straight up through a flat surface it rounds over, and pow() of the
-  // negative base is NaN.
-  float fresnel = pow(1.0 - clamp(dot(exitDir, -normal), 0.0, 1.0), uFresnelPower);
+  float fresnel = oceanFresnelAt(dot(exitDir, -normal));
   return mix(skySurface(normalize(exitDir), blend), farWater, fresnel);
 }
 
@@ -827,7 +825,7 @@ float skyOceanCover(vec3 world, float height) {
       vec3 at = cameraPosition + dir * reach.x;
       vec3 up = globeUpAt(at);
       float facing = clamp(dot(up, -dir), 0.0, 1.0);
-      float reflection = mix(OCEAN_F0, 1.0, pow(1.0 - facing, uFresnelPower));
+      float reflection = oceanFresnelAt(facing);
       float water = skyOceanWaterUnder(skyOceanDepthAt(at), up, dir, oceanFlatness(reach.x)).a;
       float opacity = 1.0 - (1.0 - reflection) * (1.0 - water);
       surface = opacity * skyOceanCutawayWater(cutaway);

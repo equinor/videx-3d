@@ -74,6 +74,8 @@ export const SCENERY_SHARED_DEFINES = [
   'SEA_LAYERS',
   'SEA_DETAIL',
   'OCEAN_CONTACT_COUNT',
+  'OCEAN_SPARKLE',
+  'OCEAN_FRESNEL_POWER',
   ...SURFACE_DETAIL_DEFINES,
 ];
 
@@ -1052,6 +1054,12 @@ export class SceneryMaterial extends ShaderMaterial {
       this.switchesVersion++;
     }
     this.setSwitch('SEA_DETAIL', water.seaState.detail !== null);
+    // Its glitter and its Fresnel, as the water's (`quality`, `fresnelPower`).
+    this.setSwitch('OCEAN_SPARKLE', 'OCEAN_SPARKLE' in water.defines);
+    this.setSwitch(
+      'OCEAN_FRESNEL_POWER',
+      'OCEAN_FRESNEL_POWER' in water.defines,
+    );
   }
 
   /** height of the sea surface along {@link up} */

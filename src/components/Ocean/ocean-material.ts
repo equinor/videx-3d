@@ -324,6 +324,7 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uSunColor',
   'uSunShininess',
   'uSunGlintSpread',
+  'uSparkle',
   'uFoamColor',
   'uFoamAmount',
   'uFoamShape',
@@ -368,6 +369,17 @@ const OCEAN_MAX_SEA_LAYERS = 4;
 // Its sun where neither it nor its scene's sky has one.
 const OCEAN_SUN_DIRECTION = new Vector3(-0.3, 0.8, -0.5).normalize();
 const OCEAN_SUN_COLOR = new Color('#fff6e0');
+
+/**
+ * How much of the sun's glitter each quality draws by default ({@link OceanMaterial.sparkle}):
+ * none on low and medium, where its cost (about 5 % of the sea) is not spent unasked.
+ */
+export const OCEAN_SPARKLE_DEFAULT: Record<SeaQuality, number> = {
+  low: 0,
+  medium: 0,
+  high: 1,
+  ultra: 1,
+};
 // The defines the scene's sky sets (setSky).
 const OCEAN_SKY_DEFINES = [
   'OCEAN_SKY_ENV',
@@ -486,6 +498,8 @@ export class OceanMaterial extends ShaderMaterial {
       defines: {
         SEA_LAYERS: sea.layers.length,
         ...(sea.detail ? { SEA_DETAIL: '' } : {}),
+        // The sun's glitter, where it is drawn (sparkle).
+        ...(OCEAN_SPARKLE_DEFAULT[quality] > 0 ? { OCEAN_SPARKLE: '' } : {}),
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
@@ -578,6 +592,7 @@ export class OceanMaterial extends ShaderMaterial {
         uSunColor: new Uniform(OCEAN_SUN_COLOR.clone()),
         uSunShininess: new Uniform(200),
         uSunGlintSpread: new Uniform(0),
+        uSparkle: new Uniform(OCEAN_SPARKLE_DEFAULT[quality] ?? 0),
 
         uFoamColor: new Uniform(new Color('#ffffff')),
         uFoamAmount: new Uniform(0.5),
@@ -1341,11 +1356,46 @@ export class OceanMaterial extends ShaderMaterial {
     this.uniforms.uFoamAmount.value = value;
   }
 
-  get fresnelPower(): number {
-    return this.uniforms.uFresnelPower.value;
+  /**
+   * How much of the sun's glitter is drawn: the glint broken into the glints of ripples too
+   * small to draw, where a pixel holds few of them (the same mean). 0 for none, which compiles
+   * it out (about 5 % of the sea where it is drawn); 1 as modelled; more for more of it. Null
+   * for its quality's ({@link OCEAN_SPARKLE_DEFAULT}: none on low and medium, 1 on high and
+   * ultra). Turning it on or off compiles it again.
+   */
+  get sparkle(): number {
+    return this.uniforms.uSparkle.value;
   }
-  set fresnelPower(value: number) {
-    this.uniforms.uFresnelPower.value = value;
+  set sparkle(value: number | null) {
+    const amount = Math.max(
+      value ?? OCEAN_SPARKLE_DEFAULT[this.quality] ?? 0,
+      0,
+    );
+    this.uniforms.uSparkle.value = amount;
+    const on = amount > 0;
+    if (on === 'OCEAN_SPARKLE' in this.defines) return;
+    if (on) this.defines.OCEAN_SPARKLE = '';
+    else delete this.defines.OCEAN_SPARKLE;
+    this.needsUpdate = true;
+  }
+
+  /**
+   * Null (the default) for the reflection water has (Fresnel's equations, IOR 1.333); an
+   * exponent for the old look, Schlick's curve from 2 % with it (4 was the default: more
+   * reflection at middle angles than water has). Changing between the two compiles it again.
+   */
+  get fresnelPower(): number | null {
+    return 'OCEAN_FRESNEL_POWER' in this.defines
+      ? this.uniforms.uFresnelPower.value
+      : null;
+  }
+  set fresnelPower(value: number | null) {
+    if (value !== null) this.uniforms.uFresnelPower.value = value;
+    const on = value !== null;
+    if (on === 'OCEAN_FRESNEL_POWER' in this.defines) return;
+    if (on) this.defines.OCEAN_FRESNEL_POWER = '';
+    else delete this.defines.OCEAN_FRESNEL_POWER;
+    this.needsUpdate = true;
   }
 
   /** The foam's feature frequency, per metre. Default 0.05 */

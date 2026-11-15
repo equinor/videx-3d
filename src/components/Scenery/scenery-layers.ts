@@ -67,7 +67,13 @@ export function sceneryLayerDefines(
     // Under a sea, where it leaves the void showing: the sea's code, but not its seabed's detail.
     if (sky.ocean) {
       defines.SKY_OCEAN = '';
-      for (const key of ['SEA_LAYERS', 'SEA_DETAIL', 'OCEAN_CONTACT_COUNT'])
+      for (const key of [
+        'SEA_LAYERS',
+        'SEA_DETAIL',
+        'OCEAN_CONTACT_COUNT',
+        'OCEAN_SPARKLE',
+        'OCEAN_FRESNEL_POWER',
+      ])
         if (switches[key] !== undefined) defines[key] = switches[key];
     }
   } else {

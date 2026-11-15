@@ -199,8 +199,19 @@ export type OceanWaterProps = {
    * that.
    */
   foamAmount?: number;
-  /** Fresnel exponent (higher = reflections concentrated near the horizon). */
+  /**
+   * Left out (the default), the reflection water has (Fresnel's equations, IOR 1.333). Given,
+   * the old look: Schlick's curve from 2 % with this exponent (4 held more reflection at middle
+   * angles than water does).
+   */
   fresnelPower?: number;
+  /**
+   * How much of the sun's glitter is drawn: the glint broken into the glints of ripples too
+   * small to draw, where a pixel holds few of them. 0 none, 1 as modelled, more for more.
+   * Default by `quality`: none on low and medium (it costs about 5 % of the sea), 1 on high and
+   * ultra.
+   */
+  sparkle?: number;
   /** The foam's feature frequency, per metre. Default 0.05. */
   detailScale?: number;
   /** @deprecated the fine ripples are the sea's finest layer; ignored */
@@ -353,8 +364,8 @@ export function applyOceanWaterProps(
     material.sunShininess = props.sunShininess;
   if (props.foamColor) material.foamColor = props.foamColor;
   if (props.foamAmount !== undefined) material.foamAmount = props.foamAmount;
-  if (props.fresnelPower !== undefined)
-    material.fresnelPower = props.fresnelPower;
+  material.fresnelPower = props.fresnelPower ?? null;
+  material.sparkle = props.sparkle ?? null;
   if (props.detailScale !== undefined) material.detailScale = props.detailScale;
   if (props.detailStrength !== undefined)
     material.detailStrength = props.detailStrength;

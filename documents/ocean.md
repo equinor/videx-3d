@@ -83,6 +83,30 @@ far off, and from high up, it spreads into a broad soft patch, as seen from airc
 scene's sky's, else 0) widens the glint further at the same peak, so its path broadens and
 brightens; the `<Scenery>` raises it about sunrise and sunset for a broad glitter path.
 
+**Glitter** (built 2026-11-15; `sparkle`, `OCEAN_SPARKLE`). The glint is what many small glints
+a pixel cannot show send of the sun on average; where few of them fall in a pixel they are
+bright points instead, coming and going as the ripples move. A cell of the sea fixed in the
+world shows a Poisson count of them about their mean (as Deliot and Belcour 2023 draw glints),
+as that count over the mean of the glint: many to a pixel it is the smooth glint, the same mean
+at every distance. How many glints a square metre holds is the specular points' density
+(Longuet-Higgins 1960): the slope pdf at the half vector times the curvature of the waves too
+short to draw (their slope variance times a 6 cm ripple's wavenumber squared). So a rough sea,
+crowded with ripples, has so many that a few metres off they are a sheen; a calmer one fewer.
+Cells are a pixel's footprint wide, read at the two powers of two either side and blended, so
+nothing pops; each draw fades into the next (eight turns a second, each cell at its own
+phase), no draw outshines the mean more than 4 times, and there is none where a ripple spans
+more than a pixel, where the waves drawn carry the glint. `sparkle` (0 none, compiled out; 1 as
+modelled; more for more of it) defaults by `quality`: none on low and medium, 1 on high and
+ultra. On the A1000 at 1280 × 720 it costs the `<Scenery>`'s sea 1–3 % from 300 m and 4–8 % from
+30 m.
+
+**Fresnel** (2026-11-15). The share reflected is water's: Fresnel's equations for an
+unpolarised ray into water of IOR 1.333 (2.04 % straight on), from above and, by reciprocity,
+from below through Snell's window, and in the `<Scenery>`'s estimate of what the surface hides.
+`fresnelPower` given draws the old look instead (`OCEAN_FRESNEL_POWER`): Schlick's curve from
+2 % with that exponent; its old default, 4, reflected about half as much again as water at
+middle angles (0.26 against 0.17 at 72°), a paler sea. Measured, the same cost either way.
+
 **One sky** (built 2026-11-15). An `Ocean`'s and a `ChunkStack`'s sea reflect the sky of their
 scene (`sceneSky`, `SceneSky` in `sdk/materials/scene-sky.ts`; `OceanMaterial.updateSky`, run
 by both before each frame), in the reflection, through Snell's window from below and in the

@@ -156,7 +156,10 @@ export type SceneryArgs = {
   seaOptics: WaterOpticsPreset;
   skySeabedColor: string;
   seaDetailScale: number;
+  /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
   seaFresnelPower: number;
+  /** how much of the sun's glitter is drawn (`sparkle`): 0 none */
+  seaSparkle: number;
   seaDetailFadeStart: number;
   seaDetailFadeEnd: number;
   // Subsurface
@@ -288,7 +291,8 @@ export const sceneryArgs: SceneryArgs = {
   seaOptics: 'realistic',
   skySeabedColor: sceneryDefaults.ocean.seabed.color,
   seaDetailScale: 0.05,
-  seaFresnelPower: 4,
+  seaFresnelPower: 0,
+  seaSparkle: 0,
   seaDetailFadeStart: 15000,
   seaDetailFadeEnd: 60000,
   subsurfaceFollowSun: sceneryDefaults.subsurface.light.followSun,
@@ -574,7 +578,8 @@ export const sceneryOceanFromArgs = (
   shoreFoam: args.seaShoreFoam,
   optics: args.seaOptics,
   detailScale: args.seaDetailScale,
-  fresnelPower: args.seaFresnelPower,
+  fresnelPower: args.seaFresnelPower > 0 ? args.seaFresnelPower : undefined,
+  sparkle: args.seaSparkle,
   detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
 });
 
@@ -717,6 +722,7 @@ const ADVANCED = new Set<string>([
   'skySeabedColor',
   'seaDetailScale',
   'seaFresnelPower',
+  'seaSparkle',
   'seaDetailFadeStart',
   'seaDetailFadeEnd',
   'abyssCeiling',
@@ -1102,11 +1108,18 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     'The foam\u2019s feature frequency.',
   ),
   seaFresnelPower: range(
-    1,
+    0,
     8,
     0.1,
     SEA,
-    'Higher keeps the reflections nearer the horizon.',
+    '0: the reflection water has (Fresnel, IOR 1.333). Above: the old look, Schlick’s curve with this exponent (4 was the default; higher keeps the reflections nearer the horizon). Recompiles as it turns on or off.',
+  ),
+  seaSparkle: range(
+    0,
+    2,
+    0.05,
+    SEA,
+    'The sun’s glitter (`sparkle`): the glint broken into the glints of ripples too small to draw, where a pixel holds few of them, the same mean. 0 none (compiled out; the component’s default on low and medium), 1 as modelled (its default on high and ultra), more for more. About 5 % of the sea. Recompiles as it turns on or off.',
   ),
   seaDetailFadeStart: range(
     0,

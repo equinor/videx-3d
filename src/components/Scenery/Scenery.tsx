@@ -702,6 +702,12 @@ export const Scenery = ({
   material.ocean = hasOcean;
   // With a sea, the void lies below its seabed.
   material.abyss = hasAbyss || hasOcean;
+  // Its Fresnel and glitter defines (OceanMaterial.fresnelPower, sparkle), so here too, before
+  // the switches are read.
+  if (water) {
+    water.fresnelPower = oceanOptions?.fresnelPower ?? null;
+    water.sparkle = oceanOptions?.sparkle ?? null;
+  }
   if (water) material.linkOcean(water);
   // What a stage and its relief compile with from the sky, as a key (SceneryOceanState).
   const definesKey = JSON.stringify(sceneryOceanDefines(material));
