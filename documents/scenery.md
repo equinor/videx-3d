@@ -451,7 +451,8 @@ whatever its `waterOpacity`; nearer it is as see-through as its depth and optics
 from any height alike. (It used to turn opaque from 2 to 5 km up, `SKY_OCEAN_OPAQUE`, which
 hid the seabed showing wrong through shallow water; removed 2026-11-15 once that was fixed.)
 Seen from the air, the seabed under the background's sea lies as deep as the scene's ground
-map has it, along the view bent into the water, and is lit as that deep (`skySeaLayer`):
+map has it, on the line of sight (not bent at the surface, so it meets the stage's seabed and
+the relief, which lie where they are), and is lit as that deep (`skySeaLayer`):
 the water in front of it reads the same depth, so through the shallows it shows bright,
 and through deep water not at all. On the sea's fixed `depth` it was lit 100 m deep under
 water a metre deep: a dark rim along every coast with realistic optics, and with clear ones
