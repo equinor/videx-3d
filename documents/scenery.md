@@ -194,7 +194,9 @@ camera rises out of it. The far clouds, seen through little of it, stay crisp. R
 grows over the day, as the sun mixes the air, and is thicker in summer: neither changes by
 itself here, but a host can drive `haze` and `hazeHeight` with the time or the season.
 Heights are measured from the sea's `level` (the void's lid without a sea). `air: false`
-turns all of it off.
+turns all of it off. Inside a `<Weather>`, `visibility`, `haze` and `hazeHeight` left out are
+the weather's (`WeatherState.air`), so a weather can bring its own air; given, the Scenery's
+win.
 
 Above the tropopause the sky darkens toward space, black from the top of the stratosphere
 (`SKY_SPACE_START` 12 km, `SKY_SPACE` 50 km), by how little air each view passes: the lowest

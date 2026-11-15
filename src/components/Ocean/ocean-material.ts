@@ -47,6 +47,7 @@ import {
   weatherGustsOf,
 } from '../../sdk/weather/wind-field';
 import { SeaWaveBake } from './sea-wave-bake';
+import type { WeatherSea } from '../Weather/weather-sea';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
 
@@ -365,10 +366,6 @@ const OCEAN_GUST_FACTORS = [0.25, 0.5, 1.5, 2] as const;
 export class OceanMaterial extends ShaderMaterial {
   isOceanMaterial = true;
 
-  /** the sea's waves, which floating objects ride ({@link SeaState.heightAt}) */
-  readonly seaState: SeaState;
-  /** the sea's layers as textures, baked each frame by {@link OceanMaterial.renderWaves} */
-  readonly waveBake: SeaWaveBake;
   /** how much of the sea's waves it draws */
   readonly quality: SeaQuality;
   /**
@@ -405,6 +402,15 @@ export class OceanMaterial extends ShaderMaterial {
   private _gusts: WeatherGusts | null = null;
   private _optics!: Required<WaterOptics>;
   private _contactCount!: number;
+  // Its own sea, and the weather's it draws instead while given one (`sea`).
+  private readonly _ownState: SeaState;
+  private readonly _ownBake: SeaWaveBake;
+  private _sea: WeatherSea | null = null;
+  // Whether the layers' uniforms hold the weather's sea's tiles, and whose tiles they hold.
+  private _drawsShared = false;
+  private _layerBake: SeaWaveBake | null = null;
+  // The weather's sea's input the ratios below were worked out for.
+  private _seaRevision = -1;
   // Whether the clock has run: until it does, a new wind is the sea's at once (settled).
   private _running = false;
   // The sea state's input last set, to set it only as it changes.
@@ -573,8 +579,9 @@ export class OceanMaterial extends ShaderMaterial {
       },
     });
 
-    this.seaState = sea;
-    this.waveBake = bake;
+    this._ownState = sea;
+    this._ownBake = bake;
+    this._layerBake = bake;
     this.quality = quality;
     this.water.bind(this.uniforms);
     this.optics = waterOpticsOf();
@@ -616,13 +623,58 @@ export class OceanMaterial extends ShaderMaterial {
     attachOitVariants(this);
   }
 
+  /** the sea's waves, which floating objects ride ({@link SeaState.heightAt}): the weather's while it draws that ({@link OceanMaterial.sea}), else its own */
+  get seaState(): SeaState {
+    return this._sea?.state(this.quality) ?? this._ownState;
+  }
+
+  /** the sea's layers as textures, baked each frame by {@link OceanMaterial.renderWaves} */
+  get waveBake(): SeaWaveBake {
+    return this._sea?.bakeOf(this.quality) ?? this._ownBake;
+  }
+
+  /**
+   * The weather's sea (`WeatherSea`, `useWeatherSea`) to draw instead of its own, or null for
+   * its own: all the seas under a weather that take its wind and swells draw one sea, on its
+   * clock, baked once a frame. Its own wind, swells and wave height are then not the sea's:
+   * set while it draws its own. One without a wind leaves it its own.
+   */
+  get sea(): WeatherSea | null {
+    return this._sea;
+  }
+  set sea(value: WeatherSea | null) {
+    if (value === this._sea) return;
+    this._sea = value;
+    this.syncSea();
+  }
+
+  // Point the layers' uniforms at the tiles of the sea it draws, as that changes: another
+  // `sea`, or the weather's gaining or losing its wind.
+  private syncSea(): void {
+    const shared = this._sea?.active ?? false;
+    const bake = this.waveBake;
+    if (shared === this._drawsShared && this._layerBake === bake) return;
+    this._drawsShared = shared;
+    this._layerBake = bake;
+    this._seaRevision = -1;
+    for (let i = 0; i < OCEAN_MAX_SEA_LAYERS; i++)
+      this.uniforms[`uSeaSurface${i}`].value = bake.layers[i]?.surface ?? null;
+    if (shared) this.updateSeaRatios();
+    else {
+      // Back to its own: from its own input, as it stands now.
+      this._inputKey = '';
+      this.updateWaves(true);
+    }
+  }
+
   /**
    * The sea state's input from the wind, the swells and the height scale: eased toward as the
    * clock runs, or the sea's at once while it has not run yet. Cheap enough per change, but
-   * not per frame (some milliseconds).
+   * not per frame (some milliseconds). Drawing the weather's sea, only the gusts.
    */
   private updateWaves(resettle = false): void {
     this.updateGusts();
+    if (this._drawsShared) return;
     const direction = this.uniforms.uWindDirection.value as Vector2;
     const input = {
       windSpeed: this.uniforms.uWindSpeed.value as number,
@@ -636,17 +688,23 @@ export class OceanMaterial extends ShaderMaterial {
     const key = JSON.stringify(input);
     if (key === this._inputKey) return;
     this._inputKey = key;
-    this.seaState.setInput(input);
-    if (!this._running || resettle) this.seaState.settle();
-    this.uniforms.uSignificantHeight.value = this.seaState.stats().targetHeight;
-    // How the short waves answer the gusts, from the finest layer's band up on medium and
-    // finer (it answers by half, the ripples and what no layer draws in full), else from
-    // what no layer draws.
-    const layers = this.seaState.layers;
+    this._ownState.setInput(input);
+    if (!this._running || resettle) this._ownState.settle();
+    this.updateSeaRatios();
+  }
+
+  // What the surface takes of the sea state's input: the height it is drawn for, and how the
+  // short waves answer the gusts.
+  private updateSeaRatios(): void {
+    const sea = this.seaState;
+    this.uniforms.uSignificantHeight.value = sea.stats().targetHeight;
+    // From the finest layer's band up on medium and finer (it answers by half, the ripples
+    // and what no layer draws in full), else from what no layer draws.
+    const layers = sea.layers;
     const kMin =
       layers.length > 3 ? layers[3].kMin : layers[layers.length - 1].kMax;
     (this.uniforms.uWeatherGustRough.value as Vector4).fromArray(
-      this.seaState.shortWaveRatios(OCEAN_GUST_FACTORS, kMin),
+      sea.shortWaveRatios(OCEAN_GUST_FACTORS, kMin),
     );
   }
 
@@ -680,7 +738,9 @@ export class OceanMaterial extends ShaderMaterial {
 
   /**
    * The sea's clock, seconds. Run on (a step under an hour) it eases the sea toward its
-   * input; set back or far on, the waves just move to it.
+   * input; set back or far on, the waves just move to it. Drawing the weather's sea
+   * ({@link OceanMaterial.sea}), only its foam and gusts run on it: setting it moves that sea
+   * to the weather's time (`WeatherSea.advance`), whose waves follow that clock alone.
    */
   get time(): number {
     return this.uniforms.uTime.value;
@@ -691,14 +751,28 @@ export class OceanMaterial extends ShaderMaterial {
     // The gusts run with the mean wind.
     const travel = this.uniforms.uWeatherGustTravel.value as Vector2;
     const speed = this.uniforms.uWindSpeed.value as number;
-    if (dt > 0 && dt < 3600) {
-      this.seaState.update(dt);
-      this._running = true;
-      travel.x += speed * dt;
-    } else {
-      this.seaState.time = value;
-      travel.x = speed * value;
+    const run = dt > 0 && dt < 3600;
+    if (run) travel.x += speed * dt;
+    else travel.x = speed * value;
+    this.syncSea();
+    if (this._drawsShared) {
+      this._sea!.advance();
+      return;
     }
+    if (run) {
+      this._ownState.update(dt);
+      this._running = true;
+    } else this._ownState.time = value;
+  }
+
+  /**
+   * Run its clock a frame, on by `seconds` (the weather's steps, `useWeatherStep`): its own
+   * time stays small for the shaders' single precision. Drawing the weather's sea
+   * ({@link OceanMaterial.sea}), that sea is moved to the weather's time as well, in double
+   * precision on the CPU: its waves follow that clock alone.
+   */
+  step(seconds: number): void {
+    this.time = this.time + seconds;
   }
 
   /**
@@ -721,12 +795,18 @@ export class OceanMaterial extends ShaderMaterial {
         ? pixelSpan(renderer, camera, Math.abs(distance)) *
           SEA_BAKE_PIXEL_MARGIN
         : 0;
+    this.syncSea();
     const layers = this.seaState.layers;
-    this.waveBake.update(
-      renderer,
-      this.seaState.layerTables(),
-      pixel > 0 ? i => layers[i].size > pixel : undefined,
-    );
+    const drawn = pixel > 0 ? (i: number) => layers[i].size > pixel : undefined;
+    const shared = this._drawsShared ? this._sea : null;
+    if (shared) {
+      // Baked once a frame for every sea drawing it; its input is the weather's.
+      shared.bake(renderer, this.quality, drawn);
+      if (this._seaRevision !== shared.revision) {
+        this._seaRevision = shared.revision;
+        this.updateSeaRatios();
+      }
+    } else this._ownBake.update(renderer, this._ownState.layerTables(), drawn);
     const stats = this.seaState.stats();
     const ripples = Math.max(this._waveTuning.ripples ?? 1, 0);
     const layerStats = this.uniforms.uSeaLayerStats.value as Vector2[];
@@ -1334,7 +1414,7 @@ export class OceanMaterial extends ShaderMaterial {
 
   dispose(): void {
     super.dispose();
-    this.waveBake.dispose();
+    this._ownBake.dispose();
     if (this._scene) sceneWaterBody(this._scene).release(this);
   }
 }

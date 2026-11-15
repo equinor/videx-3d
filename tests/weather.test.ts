@@ -19,6 +19,7 @@ import {
   weatherOceanWind,
   weatherPreset,
   weatherPresetOf,
+  weatherSeaSwells,
   weatherSystemsOf,
   windToward,
   type CloudLevel,
@@ -255,6 +256,28 @@ describe('wind', () => {
     expect(weatherOceanWind(weatherPreset('few'), {}).windSpeed).toBe(
       undefined,
     );
+  });
+
+  it("takes the weather's swells, each the way it travels, unless the sea has its own", () => {
+    // From the west it runs east, +X; from the north, south, +Z.
+    const swell = [
+      { height: 2, period: 12, from: 270 },
+      { height: 1, period: 9, from: 0, spread: 8 },
+    ];
+    const swells = weatherSeaSwells(swell);
+    expect(swells[0].direction[0]).toBeCloseTo(1, 6);
+    expect(swells[0].direction[1]).toBeCloseTo(0, 6);
+    expect(swells[1].direction[1]).toBeCloseTo(1, 6);
+    expect(swells[1]).toMatchObject({ height: 1, period: 9, spread: 8 });
+    expect(swells[0].spread).toBeUndefined();
+
+    const weather = { wind: { speed: 8, from: 90 }, swell };
+    expect(weatherOceanWind(weather, {}).swells).toEqual(swells);
+    const own = [
+      { height: 3, period: 14, direction: [0, -1] as [number, number] },
+    ];
+    expect(weatherOceanWind(weather, { swells: own }).swells).toBe(own);
+    expect(weatherOceanWind({ wind: weather.wind }, {}).swells).toBeUndefined();
   });
 });
 

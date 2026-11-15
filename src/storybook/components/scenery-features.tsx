@@ -24,23 +24,28 @@ import { sceneryCutawayFromArgs } from './scenery-cutaway-controls';
  * A story's scenery features from its {@link SceneryArgs}, under its `<Scenery>`: the
  * graticule and the cutaway as the args set them, and the sea and the void with what
  * only the story knows (their levels, a seabed of its own) laid over the args'. `false`
- * leaves one out.
+ * leaves one out. With `weather`, the sea takes its wind and swell from the enclosing
+ * `Weather` (`sceneryWeatherFromArgs`), and draws its sea.
  */
 export const SceneryArgsFeatures = ({
   args,
   ocean,
   abyss,
+  weather = false,
 }: {
   args: SceneryArgs;
   ocean: Partial<SceneryOceanProps> | false;
   abyss: Partial<SceneryAbyssProps> | false;
+  weather?: boolean;
 }) => {
   const graticule = sceneryGraticuleFromArgs(args);
   const cutaway = sceneryCutawayFromArgs(args);
   return (
     <>
       {graticule && <GeoGraticule {...graticule} />}
-      {ocean && <SceneryOcean {...sceneryOceanFromArgs(args)} {...ocean} />}
+      {ocean && (
+        <SceneryOcean {...sceneryOceanFromArgs(args, weather)} {...ocean} />
+      )}
       {abyss && <SceneryAbyss {...sceneryAbyssFromArgs(args)} {...abyss} />}
       {cutaway && <SceneryCutaway {...cutaway} />}
     </>

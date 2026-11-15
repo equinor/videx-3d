@@ -45,6 +45,8 @@ import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
 import { useWorld } from '../World/world-context';
 import { useWorldRelief } from '../World/world-relief';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeather } from '../Weather/weather-context';
+import { useWeatherOceanSea } from '../Weather/useWeatherOceanSea';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import type { ProgressReport } from '../Progress/progress-store';
 import {
@@ -526,15 +528,22 @@ export const Scenery = ({
   const oceanDefaults = sceneryDefaults.ocean;
   const oceanLevel = oceanOptions?.level ?? oceanDefaults.level;
   const airOptions: SkyAir | null = air === true ? {} : air || null;
+  // What its air leaves out, the enclosing Weather's.
+  const weatherAir = useWeather()?.air;
   const airScaleHeight = airOptions
     ? (airOptions.scaleHeight ?? sceneryDefaults.air.scaleHeight)
     : 0;
   const airVisibility = airOptions
-    ? (airOptions.visibility ?? sceneryDefaults.air.visibility)
+    ? (airOptions.visibility ??
+      weatherAir?.visibility ??
+      sceneryDefaults.air.visibility)
     : 0;
-  const airHaze = airOptions?.haze ?? sceneryDefaults.air.haze;
+  const airHaze =
+    airOptions?.haze ?? weatherAir?.haze ?? sceneryDefaults.air.haze;
   const airHazeHeight =
-    airOptions?.hazeHeight ?? sceneryDefaults.air.hazeHeight;
+    airOptions?.hazeHeight ??
+    weatherAir?.hazeHeight ??
+    sceneryDefaults.air.hazeHeight;
   // The air's ground: the sea's surface, or the void's lid.
   const airLevel = hasOcean ? oceanLevel : hasAbyss ? abyssLevel : 0;
   const oceanDepth = oceanOptions?.depth ?? oceanDefaults.depth;
@@ -1300,17 +1309,27 @@ export const Scenery = ({
     oceanSeabedOpacity,
   ]);
 
-  // Its own wind where given, the enclosing Weather's for what it leaves out: in the wave
-  // plane, true east and south, as the default compass frame's X and Z.
+  // Its own wind and swells where given, the enclosing Weather's for what it leaves out: in
+  // the wave plane, true east and south, as the default compass frame's X and Z.
   const {
     windSpeed: seaWindSpeed,
     windDirection: seaWindDirection,
     gusts: seaGusts,
+    swells: seaSwells,
   } = useWeatherOceanWind(
     oceanOptions?.windSpeed,
     oceanOptions?.windDirection,
     oceanOptions?.gusts,
+    oceanOptions?.swells,
   );
+  // Leaving its waves to the weather, it draws the weather's sea.
+  useWeatherOceanSea(water, {
+    windSpeed: oceanOptions?.windSpeed,
+    windDirection: oceanOptions?.windDirection,
+    swells: oceanOptions?.swells,
+    amplitude: oceanOptions?.amplitude,
+    waveTuning: oceanOptions?.waveTuning,
+  });
 
   // Every render: the props are an inline object, and applying them is cheap.
   useLayoutEffect(() => {
@@ -1320,6 +1339,7 @@ export const Scenery = ({
       windSpeed: seaWindSpeed,
       windDirection: seaWindDirection,
       gusts: seaGusts,
+      swells: seaSwells,
     });
   });
 
@@ -1575,7 +1595,8 @@ export const Scenery = ({
     // The waves at the enclosing Weather's pace.
     const waveStep = step(delta);
     if (water) {
-      water.time += waveStep;
+      // Its waves on the weather's clock while it draws the weather's sea.
+      water.step(waveStep);
       // Before the sky draws the sea: its layers for this frame, but those too fine to show
       // from the camera's altitude over it.
       water.renderWaves(

@@ -16,6 +16,7 @@ import {
   sceneryArgTypes,
   sceneryDecorators,
   sceneryPropsFromArgs,
+  sceneryWeatherFromArgs,
   sceneryProgressArgs,
   sceneryReliefArgs,
   SceneryReliefArgs,
@@ -219,16 +220,16 @@ function layerOf(args: CloudsArgs, level: CloudLevel): CloudLayer | null {
   };
 }
 
-// The weather from the story's controls: its wind, and its layers about its middle, or its
-// weather systems.
+// The weather from the story's controls: its wind, swell and haze (the sea and the air take
+// them from it), and its layers about its middle, or its weather systems.
 function weatherFromArgs(args: CloudsArgs): WeatherState {
   if (args.weatherMode === 'global')
     return {
-      wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
+      ...sceneryWeatherFromArgs(args),
       systems: { seed: args.systemsSeed },
     };
   return {
-    wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
+    ...sceneryWeatherFromArgs(args),
     clouds: CLOUD_LEVELS.map(level => layerOf(args, level)).filter(
       (layer): layer is CloudLayer => !!layer,
     ),
@@ -676,7 +677,7 @@ const ClockedScenery = ({
       >
         <LookControls args={args} />
       </SceneryDebugPanel>
-      <Scenery {...sceneryPropsFromArgs(sky)}>{children}</Scenery>
+      <Scenery {...sceneryPropsFromArgs(sky, true)}>{children}</Scenery>
     </>
   );
 };
@@ -710,6 +711,7 @@ const CloudsStory = (args: CloudsArgs) => {
           {/* The sea, the void and the stage as in the other Scenery stories. */}
           <SceneryArgsFeatures
             args={args}
+            weather
             ocean={sea && { level: 0, depth: DEPTH }}
             abyss={{}}
           />

@@ -9,6 +9,12 @@ import {
 } from '../../components/Ocean/ocean-material';
 import type { SeaQuality } from '../../sdk/weather/sea-state';
 import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
+import {
+  weatherSeaSwells,
+  type WeatherState,
+  type WeatherSwell,
+} from '../../sdk/weather/weather';
+import type { Vec2 } from '../../sdk/types/common';
 import type { GeoReliefProps } from '../../components/Layers/GeoRelief';
 import {
   GRATICULE_LABEL_DENSITY,
@@ -133,6 +139,12 @@ export type SceneryArgs = {
   seaShoreFoam: number;
   /** compass bearing the wind blows toward */
   windDirection: number;
+  /** a swell's significant height, metres: 0 none */
+  swellHeight: number;
+  /** its peak period, seconds */
+  swellPeriod: number;
+  /** compass bearing it comes from */
+  swellFrom: number;
   seaSteepness: number;
   /** ⚠️ Tuning, to be settled: the wave model's open choices (the sea bench sets them) */
   seaWaveTuning?: OceanWaveTuning;
@@ -269,6 +281,9 @@ export const sceneryArgs: SceneryArgs = {
   foamAmount: 0.5,
   seaShoreFoam: 0,
   windDirection: 90,
+  swellHeight: 0,
+  swellPeriod: 12,
+  swellFrom: 270,
   seaSteepness: 1,
   seaOptics: 'realistic',
   skySeabedColor: sceneryDefaults.ocean.seabed.color,
@@ -500,18 +515,57 @@ export const skyMoonFromArgs = (args: SceneryArgs): SkyMoon | false =>
 export const skyStarsFromArgs = (args: SceneryArgs): SkyStars | false =>
   args.stars && { brightness: args.starBrightness, latitude: args.sunLatitude };
 
-/** A `SceneryOcean`'s props from {@link SceneryArgs}, but for its level and depth, which are the story's. */
-export const sceneryOceanFromArgs = (args: SceneryArgs): SceneryOceanProps => ({
+/** The swell of {@link SceneryArgs}, as a weather has it: none at no height. */
+export const swellFromArgs = (args: SceneryArgs): WeatherSwell[] =>
+  args.swellHeight > 0
+    ? [
+        {
+          height: args.swellHeight,
+          period: args.swellPeriod,
+          from: args.swellFrom,
+        },
+      ]
+    : [];
+
+/**
+ * A story's `Weather` from {@link SceneryArgs}: its wind and swell, and its air's haze (with
+ * `air` on). For a story with a `<Weather>` around its Scenery, whose sea and air then take
+ * them from it (`weather` in {@link sceneryOceanFromArgs} and {@link sceneryPropsFromArgs}).
+ */
+export const sceneryWeatherFromArgs = (
+  args: SceneryArgs,
+): Pick<WeatherState, 'wind' | 'swell' | 'air'> => ({
+  wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
+  swell: swellFromArgs(args),
+  ...(args.air
+    ? { air: { haze: args.airHaze, hazeHeight: args.airHazeHeight } }
+    : {}),
+});
+
+/**
+ * A `SceneryOcean`'s props from {@link SceneryArgs}, but for its level and depth, which are the
+ * story's. With `weather`, no wind or swell of its own: it draws the enclosing `Weather`'s sea
+ * ({@link sceneryWeatherFromArgs}).
+ */
+export const sceneryOceanFromArgs = (
+  args: SceneryArgs,
+  weather = false,
+): SceneryOceanProps => ({
   water: args.skyWater,
   seabed: args.skySeabed && { color: args.skySeabedColor },
   seabedOpacity: args.skySeabedOpacity,
   waterOpacity: args.waterOpacity,
-  windSpeed: args.windSpeed,
-  // A compass bearing in the controls; the sea takes world X/Z.
-  windDirection: [
-    Math.sin((args.windDirection * Math.PI) / 180),
-    -Math.cos((args.windDirection * Math.PI) / 180),
-  ],
+  ...(weather
+    ? {}
+    : {
+        windSpeed: args.windSpeed,
+        // A compass bearing in the controls; the sea takes world X/Z.
+        windDirection: [
+          Math.sin((args.windDirection * Math.PI) / 180),
+          -Math.cos((args.windDirection * Math.PI) / 180),
+        ] as Vec2,
+        swells: weatherSeaSwells(swellFromArgs(args)),
+      }),
   steepness: args.seaSteepness,
   waveTuning: args.seaWaveTuning,
   foamTuning: args.seaFoamTuning,
@@ -561,15 +615,18 @@ export const sceneryAbyssFromArgs = (args: SceneryArgs): SceneryAbyssProps => ({
 
 /**
  * Every `<Scenery>` prop {@link SceneryArgs} set. Its features (graticule, sea, void, cutaway)
- * are components of their own under it: see `SceneryArgsFeatures`.
+ * are components of their own under it: see `SceneryArgsFeatures`. With `weather`, its air
+ * without a haze of its own: the enclosing `Weather`'s ({@link sceneryWeatherFromArgs}).
  */
-export const sceneryPropsFromArgs = (args: SceneryArgs) =>
+export const sceneryPropsFromArgs = (args: SceneryArgs, weather = false) =>
   ({
     sun: skySunFromArgs(args),
     observer: skyObserverFromArgs(args),
     moon: skyMoonFromArgs(args),
     stars: skyStarsFromArgs(args),
-    air: args.air && { haze: args.airHaze, hazeHeight: args.airHazeHeight },
+    air:
+      args.air &&
+      (weather ? {} : { haze: args.airHaze, hazeHeight: args.airHazeHeight }),
     colors: {
       zenith: args.skyZenith,
       horizon: args.skyHorizon,
@@ -654,6 +711,8 @@ const ADVANCED = new Set<string>([
   'skyIntensity',
   'skyHorizonBlend',
   'windDirection',
+  'swellPeriod',
+  'swellFrom',
   'seaSteepness',
   'skySeabedColor',
   'seaDetailScale',
@@ -1005,6 +1064,21 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SEA,
     'Compass bearing the wind blows toward.',
   ),
+  swellHeight: range(
+    0,
+    6,
+    0.1,
+    SEA,
+    'A swell from weather far away: its significant height in metres, running on whatever the wind here does. 0 none.',
+  ),
+  swellPeriod: {
+    ...range(4, 20, 0.5, SEA, 'The swell\u2019s peak period, in seconds.'),
+    if: { arg: 'swellHeight', truthy: true },
+  },
+  swellFrom: {
+    ...range(0, 360, 1, SEA, 'Compass bearing the swell comes from.'),
+    if: { arg: 'swellHeight', truthy: true },
+  },
   seaSteepness: range(
     0,
     2,

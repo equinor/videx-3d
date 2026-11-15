@@ -45,12 +45,25 @@ to tuning (`foamTuning`, ⚠️ to be settled and removed; defaults dialled in o
 `waveCount`, `directionalSpread`, `detailStrength` and the `tonal*`
 props are deprecated and ignored.
 
-Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed`, `windDirection`
-and `gusts` left out are the weather's wind: its speed, the way it blows toward, and its gusts.
-The `<Scenery>`'s endless sea and a `ChunkStack`'s water take it the same way. Given, the sea's own
-win. The waves also run at the weather's clock's pace (`timeScale`, `paused`), as many seconds a
-frame as it ran (`useWeatherStep`): a timelapse races them, a paused weather holds them still.
-Its jumps (a `time` set) do not move them.
+Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed`, `windDirection`,
+`gusts` and `swells` left out are the weather's: its wind's speed, the way it blows toward and
+its gusts, and its swells (`WeatherState.swell`). The `<Scenery>`'s endless sea and a
+`ChunkStack`'s water take them the same way. Given, the sea's own win.
+
+**One sea under a weather** (built 2026-11-15). A sea that leaves its waves to the weather — no
+`windSpeed`, `windDirection`, `swells` or `amplitude` of its own, nor wave tuning that changes
+the sea state (`spreadFloor`, `tail`) — draws the weather's sea (`WeatherSea`,
+`useWeatherSea`; `OceanMaterial.sea`, set by `useWeatherOceanSea`): one `SeaState` a quality,
+on the weather's clock, its layers baked once a frame however many seas draw it (a second sea
+bakes only the layers the first left out as too fine to show from where it looked). So an
+`Ocean`, a `ChunkStack`'s water and the `<Scenery>`'s sea under one weather are one sea, the same
+waves at the same place and time, and their floating objects ride the same waves. Its phases
+follow the clock's time: a jump (`time` set) moves the waves to it at once, and the weather's
+wind changing eases them toward it, as a wind of a sea's own does. Given a wind or swells of
+its own, a sea keeps a sea state of its own, which runs at the clock's pace from when it was
+drawn (`useWeatherStep`, as many seconds a frame as the clock ran: a timelapse races it, a
+paused weather holds it still, a jump does not move it). Without a wind in the weather, every
+sea keeps its own.
 
 `gusts` (`WeatherGusts`, default as the wind gives them) is how the wind varies over the sea:
 gusts from cat's paws of some tens of metres to gust fronts of kilometres run downwind with it,

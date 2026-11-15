@@ -54,7 +54,10 @@ the environment's bake, as in StageDebug.
 ## The weather
 
 `WeatherState` (`sdk/weather/weather.ts`) is the wind (`speed` in m/s, `from` a compass bearing,
-as reports give it) and the cloud, one of two kinds (decided 2026-11-07):
+as reports give it), the swell (`swell`, `WeatherSwell`: each its significant `height` in
+metres, peak `period` in seconds, the bearing it comes `from`, and its `spread`), the air
+(`air`, `WeatherAir`: `visibility` in metres, `haze` 0 to 1 and `hazeHeight` in metres, as a
+`Scenery`'s `air` has them) and the cloud, one of two kinds (decided 2026-11-07):
 
 - **Local** (`local: WeatherLocal`): its cloud layers (`clouds`, `CloudLayer`: `type`, `cover`
   0 to 1, `base` and `top` in metres over the sea) about one place, and no cloud beyond. Its
@@ -114,11 +117,15 @@ and `'scattered cumulus'` the cumulus alone.
 `<Weather weather={…}>` hands it down; `useWeather()` reads it (`null` without one).
 
 - **The waves:** `<Ocean>`, `<SceneryOcean>` and a `ChunkStack`'s water take the weather's wind
-  for whichever of `windSpeed`, `windDirection` and `gusts` they leave out (`weatherOceanWind`,
-  `useWeatherOceanWind`). The direction is the way the wind blows toward, in the default
-  compass frame (`windToward`): world X/Z, and a `Scenery`'s wave plane, east and south. A
-  value once applied stays on the material when the weather goes away, as a removed prop's
-  does.
+  and swells for whichever of `windSpeed`, `windDirection`, `gusts` and `swells` they leave out
+  (`weatherOceanWind`, `useWeatherOceanWind`; `weatherSeaSwells`). The direction is the way the
+  wind blows toward, and a swell runs, in the default compass frame (`windToward`): world X/Z,
+  and a `Scenery`'s wave plane, east and south. A value once applied stays on the material
+  when the weather goes away, as a removed prop's does. Those that leave their waves to the
+  weather altogether draw one sea, the weather's (`WeatherSea`; see
+  [ocean.md](./ocean.md)).
+- **The air:** a `<Scenery>` takes the weather's `visibility`, `haze` and `hazeHeight` for
+  whichever its `air` leaves out (`air={false}` still has none).
 - **The wind near the surface:** `WeatherWind.gusts` (`WeatherGusts`) is the weather's gust and
   slick field, one field for whatever reads it: `weatherWindAt` (`sdk/weather/wind-field.ts`)
   on the CPU and its twin `weather-wind.glsl` give the local wind over the mean and where a

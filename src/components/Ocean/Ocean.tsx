@@ -28,6 +28,7 @@ import {
 } from '../../sdk/utils/camera-site';
 import type { SeaQuality } from '../../sdk/weather/sea-state';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeatherOceanSea } from '../Weather/useWeatherOceanSea';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import { OceanBedMaterial } from './ocean-bed-material';
 import {
@@ -196,16 +197,25 @@ export const Ocean = forwardRef(
 
     useImperativeHandle(fref, () => ref.current!);
 
-    // Its own wind where given, the enclosing Weather's for what it leaves out.
-    const wind = useWeatherOceanWind(windSpeed, windDirection, gusts);
+    // Its own wind and swells where given, the enclosing Weather's for what it leaves out.
+    const wind = useWeatherOceanWind(windSpeed, windDirection, gusts, swells);
     const seaWindSpeed = wind.windSpeed;
     const seaWindDirection = wind.windDirection;
     const seaGusts = wind.gusts;
+    const seaSwells = wind.swells;
 
     const material = useMemo(() => {
       if (customMaterial) return customMaterial;
       return new OceanMaterial({ quality, detailOctaves });
     }, [customMaterial, quality, detailOctaves]);
+    // Leaving its waves to the weather, it draws the weather's sea.
+    useWeatherOceanSea(material instanceof OceanMaterial ? material : null, {
+      windSpeed,
+      windDirection,
+      swells,
+      amplitude,
+      waveTuning,
+    });
 
     // Optional water-body (side walls) material — a separate mesh so it routes
     // through OIT independently of the surface and sea bed.
@@ -314,7 +324,7 @@ export const Ocean = forwardRef(
             windDirection: seaWindDirection,
             windSpeed: seaWindSpeed,
             amplitude,
-            swells,
+            swells: seaSwells,
             directionalSpread,
             steepness,
             displacement,
@@ -348,7 +358,7 @@ export const Ocean = forwardRef(
         windSpeed: seaWindSpeed,
         gusts: seaGusts,
         amplitude,
-        swells,
+        swells: seaSwells,
         waveTuning,
         foamTuning,
         directionalSpread,
@@ -382,7 +392,7 @@ export const Ocean = forwardRef(
       seaWindSpeed,
       seaGusts,
       amplitude,
-      swells,
+      seaSwells,
       waveTuning,
       foamTuning,
       directionalSpread,
@@ -477,7 +487,8 @@ export const Ocean = forwardRef(
       const waveStep = step(delta);
       if (material instanceof OceanMaterial) {
         cameraSite.get(camera);
-        material.time += waveStep;
+        // Its waves on the weather's clock while it draws the weather's sea.
+        material.step(waveStep);
         const group = ref.current;
         const view = group
           ? group.worldToLocal(viewFrom.copy(camera.position))
@@ -492,7 +503,10 @@ export const Ocean = forwardRef(
         contactRegistry.upload(material, { from: view });
       }
       for (const volumeMaterial of volumeMaterials ?? [])
-        volumeMaterial.time += waveStep;
+        volumeMaterial.time =
+          material instanceof OceanMaterial
+            ? material.time
+            : volumeMaterial.time + waveStep;
     });
 
     // Debug: toggle wireframe on every material used by the ocean.

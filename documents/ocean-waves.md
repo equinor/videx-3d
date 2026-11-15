@@ -267,7 +267,8 @@ weather the bake eases toward it as it does for the wind.
 - **Refraction**: waves turning to the shore and slowing as they shoal (see Shallow water).
 - **Glitter**: the ripples no layer draws only widen the glint, so it is a smooth patch where
   the sea sparkles.
-- **Into the sea**: `Weather` (`swell`, one sea state shared), the `Scenery`'s far charts for
-  floating objects, the whitecaps' life (streaks downwind, decay), the water's optics.
+- **Into the sea**: the `Scenery`'s far charts for floating objects, the whitecaps' life
+  (streaks downwind, decay). The weather's swell and one sea state shared under a `Weather`
+  were built 2026-11-15 (`WeatherSea`, [ocean.md](./ocean.md)).
 - **The gusts elsewhere**: the clouds (gust fronts under showers), and a field fixed to the
   globe for the sea seen from orbit.

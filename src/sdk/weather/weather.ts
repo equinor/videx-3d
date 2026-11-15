@@ -3,6 +3,7 @@ import {
   type CompassFrame,
   directionFromCompass,
 } from '../utils/vector-operations';
+import type { SeaSwell } from './sea-spectrum';
 import type { WeatherGusts } from './wind-field';
 
 /**
@@ -209,8 +210,39 @@ export type WeatherLocal = {
 export const WEATHER_LOCAL_RADIUS = 100000;
 
 /**
- * The weather: its wind, and its cloud. A `Weather` component hands it to what draws it: the
- * sea's waves and the clouds.
+ * A swell: waves from weather far away, running on regardless of the wind here.
+ *
+ * @group Weather
+ */
+export type WeatherSwell = {
+  /** significant wave height, metres */
+  height: number;
+  /** peak period, seconds (a long ocean swell 10–20 s) */
+  period: number;
+  /** compass bearing it comes from, in degrees (0 north, 90 east), as the wind's */
+  from: number;
+  /** how narrow it runs about its way: the exponent s of cos^2s(θ/2). Default 24 */
+  spread?: number;
+};
+
+/**
+ * The air: how far one sees through it, and its low haze. What a `Scenery`'s `air` leaves out
+ * it takes from here.
+ *
+ * @group Weather
+ */
+export type WeatherAir = {
+  /** how far one sees at the sea's level before the air takes all of it, in metres */
+  visibility?: number;
+  /** how much of the air near the sea is low haze, 0 to 1 */
+  haze?: number;
+  /** height over which the low haze thins by e, in metres */
+  hazeHeight?: number;
+};
+
+/**
+ * The weather: its wind, swell, air and cloud. A `Weather` component hands it to what draws
+ * it: the sea's waves, the air and the clouds.
  *
  * - **Local** (with {@link local}): its cloud layers, about one place, and no cloud beyond.
  * - **Global** (without): the weather systems over the whole Earth ({@link systems}), the
@@ -220,6 +252,9 @@ export const WEATHER_LOCAL_RADIUS = 100000;
  */
 export type WeatherState = {
   wind?: WeatherWind;
+  /** swells from weather far away, in any order */
+  swell?: WeatherSwell[];
+  air?: WeatherAir;
   /** its cloud layers, in any order: drawn while it is local */
   clouds?: CloudLayer[];
   /** local: its layers alone, about one place; without it, global */
@@ -594,22 +629,54 @@ export function windToward(wind: WeatherWind, frame?: CompassFrame): Vec2 {
 
 /**
  * The wind a sea is drawn with: its own where it has it (`own`), the weather's for what it
- * leaves out. What neither gives stays out, so the sea keeps what it had.
+ * leaves out, its swells too ({@link weatherSeaSwells}). What neither gives stays out, so the
+ * sea keeps what it had.
  *
  * @group Weather
  */
 export function weatherOceanWind(
   weather: WeatherState | null | undefined,
-  own: { windSpeed?: number; windDirection?: Vec2; gusts?: WeatherGusts },
+  own: {
+    windSpeed?: number;
+    windDirection?: Vec2;
+    gusts?: WeatherGusts;
+    swells?: SeaSwell[];
+  },
   frame?: CompassFrame,
-): { windSpeed?: number; windDirection?: Vec2; gusts?: WeatherGusts } {
+): {
+  windSpeed?: number;
+  windDirection?: Vec2;
+  gusts?: WeatherGusts;
+  swells?: SeaSwell[];
+} {
   const wind = weather?.wind;
   return {
     windSpeed: own.windSpeed ?? wind?.speed,
     windDirection:
       own.windDirection ?? (wind ? windToward(wind, frame) : undefined),
     gusts: own.gusts ?? wind?.gusts,
+    swells:
+      own.swells ??
+      (weather?.swell ? weatherSeaSwells(weather.swell, frame) : undefined),
   };
+}
+
+/**
+ * The weather's swells as a sea takes them ({@link SeaSwell}): each the way it travels, level,
+ * as X and Z of `frame` (as {@link windToward}; default north `-Z`).
+ *
+ * @group Weather
+ */
+export function weatherSeaSwells(
+  swell: readonly WeatherSwell[],
+  frame?: CompassFrame,
+): SeaSwell[] {
+  return swell.map(({ height, period, from, spread }) => ({
+    height,
+    period,
+    direction: windToward({ speed: 0, from }, frame),
+    ...(spread !== undefined ? { spread } : {}),
+  }));
 }
 
 /**

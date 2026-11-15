@@ -1,7 +1,7 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite';
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { createOceanPlane } from '../../../sdk/geometries/ocean-geometry';
-import type { Vec2, Vec3 } from '../../../sdk/types/common';
+import type { Vec3 } from '../../../sdk/types/common';
 import { directionFromCompass } from '../../../sdk/utils/vector-operations';
 import type { SeaQuality } from '../../../sdk/weather/sea-state';
 import type { WaterOpticsPreset } from '../../../sdk/weather/water-optics';
@@ -89,6 +89,12 @@ type SeaBenchArgs = {
   windSpeed: number;
   /** the compass bearing the wind blows toward */
   windDirection: number;
+  /** a swell's significant height, metres: 0 none */
+  swellHeight: number;
+  /** its peak period, seconds */
+  swellPeriod: number;
+  /** the compass bearing it comes from */
+  swellFrom: number;
   foamAmount: number;
   /** the waves' slopes for show (`steepness`); 1 as the spectrum gives them */
   steepness: number;
@@ -182,6 +188,9 @@ const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   hollow: false,
   windSpeed: args.windSpeed,
   windDirection: args.windDirection,
+  swellHeight: args.swellHeight,
+  swellPeriod: args.swellPeriod,
+  swellFrom: args.swellFrom,
   foamAmount: args.foamAmount,
   seaSteepness: args.steepness,
   seaWaveTuning: tuningOf(args),
@@ -189,12 +198,6 @@ const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   seaQuality: args.quality,
   seaOptics: args.optics,
 });
-
-// A compass bearing as the sea's X/Z, north −Z (as sceneryOceanFromArgs).
-const windOf = (bearing: number): Vec2 => [
-  Math.sin((bearing * Math.PI) / 180),
-  -Math.cos((bearing * Math.PI) / 180),
-];
 
 // The camera to the pose, once the controls are there, and again as it changes.
 const BenchPose = ({ pose }: { pose: SeaPoseName }) => {
@@ -244,8 +247,7 @@ const StandAlone = ({
       quality={args.quality}
       optics={args.optics}
       displacement={args.displacement}
-      windSpeed={args.windSpeed}
-      windDirection={windOf(args.windDirection)}
+      // Its wind and swell the bench's Weather's: it draws the weather's sea.
       foamAmount={args.foamAmount}
       steepness={args.steepness}
       waveTuning={tuningOf(args)}
@@ -267,21 +269,12 @@ const weatherOf = (preset: SkyPreset): WeatherState => {
   };
 };
 
-// No clouds: the args' wind, its gusts, and the clock, which `paused` and `timeScale` set.
-const calmOf = (args: SeaBenchArgs, gusts: WeatherGusts): WeatherState => ({
-  clouds: [],
-  wind: {
-    speed: args.windSpeed,
-    from: (args.windDirection + 180) % 360,
-    gusts,
-  },
-  local: { radius: WEATHER_LOCAL_RADIUS },
-});
-
-// The bench's weather: a preset's sky and wind, or calm; the gusts the args'. The seas take
-// their own wind, so from the weather only its gusts.
+// The bench's weather: a preset's sky, or none; the wind, its gusts and the swell the args',
+// which both scenes' seas take from it (they draw the weather's sea), and the clock, which
+// `paused` and `timeScale` set.
 const useBenchWeather = (args: SeaBenchArgs): WeatherState => {
   const { clouds, windSpeed, windDirection } = args;
+  const { swellHeight, swellPeriod, swellFrom } = args;
   const { gustAuto, gustStrength, gustScale, slicks, slickScale } = args;
   return useMemo(() => {
     const gusts = gustsOf({
@@ -292,18 +285,25 @@ const useBenchWeather = (args: SeaBenchArgs): WeatherState => {
       slickScale,
     } as SeaBenchArgs);
     // Hidden for the stand-alone sea, the `clouds` arg is not passed at all.
-    if (!clouds || clouds === 'none')
-      return calmOf({ windSpeed, windDirection } as SeaBenchArgs, gusts);
-    const weather = weatherOf(clouds);
-    const wind = weather.wind ?? {
-      speed: windSpeed,
-      from: (windDirection + 180) % 360,
+    const sky =
+      !clouds || clouds === 'none'
+        ? { clouds: [], local: { radius: WEATHER_LOCAL_RADIUS } }
+        : weatherOf(clouds);
+    return {
+      ...sky,
+      wind: { speed: windSpeed, from: (windDirection + 180) % 360, gusts },
+      swell:
+        swellHeight > 0
+          ? [{ height: swellHeight, period: swellPeriod, from: swellFrom }]
+          : [],
     };
-    return { ...weather, wind: { ...wind, gusts } };
   }, [
     clouds,
     windSpeed,
     windDirection,
+    swellHeight,
+    swellPeriod,
+    swellFrom,
     gustAuto,
     gustStrength,
     gustScale,
@@ -324,6 +324,7 @@ const SceneryScene = ({
     <Scenery {...sceneryPropsFromArgs(sky)}>
       <SceneryArgsFeatures
         args={sky}
+        weather
         ocean={{ level: 0, depth: DEPTH }}
         abyss={{}}
       />
@@ -610,6 +611,24 @@ const meta = {
       control: { type: 'range', min: 0, max: 360, step: 1 },
       description: 'The compass bearing the wind blows toward.',
     },
+    swellHeight: {
+      table: { category: 'Conditions' },
+      control: { type: 'range', min: 0, max: 6, step: 0.1 },
+      description:
+        'A swell from weather far away (the Weather’s `swell`): its significant height in metres. 0 none.',
+    },
+    swellPeriod: {
+      table: { category: 'Conditions' },
+      control: { type: 'range', min: 4, max: 20, step: 0.5 },
+      description: 'The swell’s peak period, in seconds.',
+      if: { arg: 'swellHeight', truthy: true },
+    },
+    swellFrom: {
+      table: { category: 'Conditions' },
+      control: { type: 'range', min: 0, max: 360, step: 1 },
+      description: 'The compass bearing the swell comes from.',
+      if: { arg: 'swellHeight', truthy: true },
+    },
     foamAmount: {
       table: { category: 'Conditions' },
       control: { type: 'range', min: 0, max: 1, step: 0.01 },
@@ -793,6 +812,9 @@ const meta = {
     sunHour: 10,
     windSpeed: 10,
     windDirection: 90,
+    swellHeight: 0,
+    swellPeriod: 12,
+    swellFrom: 270,
     foamAmount: 0.5,
     steepness: 1,
     spreadFloor: 1,

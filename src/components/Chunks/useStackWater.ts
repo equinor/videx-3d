@@ -14,6 +14,7 @@ import { OceanMaterial } from '../Ocean/ocean-material';
 import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
 import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
 import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeatherOceanSea } from '../Weather/useWeatherOceanSea';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import { ChunkDepthMap } from './chunk-depth-map';
 import { StackWater } from './chunk-defs';
@@ -70,12 +71,18 @@ export function useStackWater(
   const gl = useThree(state => state.gl);
 
   const contacts = useMemo(createOceanContactRegistry, []);
-  // Its own wind where given, the enclosing Weather's for what it leaves out.
+  // Its own wind and swells where given, the enclosing Weather's for what it leaves out.
   const {
     windSpeed: seaWindSpeed,
     windDirection: seaWindDirection,
     gusts: seaGusts,
-  } = useWeatherOceanWind(water?.windSpeed, water?.windDirection, water?.gusts);
+    swells: seaSwells,
+  } = useWeatherOceanWind(
+    water?.windSpeed,
+    water?.windDirection,
+    water?.gusts,
+    water?.swells,
+  );
 
   // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
   // materials. That is a discrete choice, unlike the sea state, which is swept.
@@ -103,6 +110,14 @@ export function useStackWater(
       face: cut ? new OceanVolumeMaterial({ wallAttribute: true }) : null,
     };
   }, [enabled, sectionPlane, fence, bathymetry, cut]);
+  // Leaving its waves to the weather, it draws the weather's sea.
+  useWeatherOceanSea(materials?.surface ?? null, {
+    windSpeed: water?.windSpeed,
+    windDirection: water?.windDirection,
+    swells: water?.swells,
+    amplitude: water?.amplitude,
+    waveTuning: water?.waveTuning,
+  });
 
   useEffect(() => {
     if (!materials) return;
@@ -124,6 +139,7 @@ export function useStackWater(
       windSpeed: seaWindSpeed,
       windDirection: seaWindDirection,
       gusts: seaGusts,
+      swells: seaSwells,
       opacity,
     };
     applyOceanWaterProps(materials.surface, props);
@@ -144,6 +160,7 @@ export function useStackWater(
     seaWindSpeed,
     seaWindDirection,
     seaGusts,
+    seaSwells,
     wireframe,
     level,
   ]);
@@ -153,10 +170,11 @@ export function useStackWater(
   useFrame(({ gl: renderer }, delta) => {
     const waveStep = step(delta);
     if (!materials) return;
-    materials.surface.time += waveStep;
+    // Its waves on the weather's clock while it draws the weather's sea; its walls with it.
+    materials.surface.step(waveStep);
     materials.surface.renderWaves(renderer);
-    materials.volume.time += waveStep;
-    if (materials.face) materials.face.time += waveStep;
+    materials.volume.time = materials.surface.time;
+    if (materials.face) materials.face.time = materials.surface.time;
 
     // Collect the registered floating-object footprints and upload them as
     // contact foam. Skipped entirely when nothing is registered, so a sea with no
