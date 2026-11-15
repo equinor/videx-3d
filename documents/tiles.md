@@ -250,7 +250,17 @@ Each frame, from the roots within reach:
   `selectLodLevel`);
 - a tile marked `leaf` — no data finer than it under it, by the data in its layers'
   windows, not only what its nodes took — is never split for the view (only for
-  `balance`, below);
+  `balance`, below). **Across a coast it takes more** (built 2026-11-15): where a layer's
+  data under the tile crosses the sea's level, a leaf has at least 2.5 cells to one of the
+  layer's (`COAST_CELLS`), along its columns and its rows. The coast is a level through the
+  data, drawn from the tile's nodes; with about one node to a data cell each depth draws it
+  apart, so it moved whenever the view chose another depth (the skerries off the
+  Sognefjord's mouth, on 2′ data, from 2.4 × 4.9 km cells: 15 % of the ground on the wrong
+  side at depth 7). Over five coasts of the demo's reliefs, 1.5 cells to a data cell left 1–7 %
+  on the wrong side of it, 3 at most 1 %, 6 0.2 %; a leaf and its child now disagree on 0.4 %
+  (2.4 % before). Only there: split for its cells everywhere, Volve's flat seabed drew 172
+  tiles where 3 do. Relief triangles at the Sognefjord at 2 km rose from 51 k to 99 k, and
+  from 417 k to 523 k for Norway from 400 km at 45°; frame times unchanged within noise;
 - **a split tile is drawn until all four children are in**, and those not in are wanted.
   Ground is never missing, and never drawn twice;
 - **balanced** (`balance`, built 2026-11-04): given each tile's neighbours at its depth

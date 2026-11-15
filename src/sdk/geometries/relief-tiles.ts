@@ -37,8 +37,17 @@ const LATTICE = 4;
 // Values along the side of the coarse level a layer's distance to its edge is measured
 // on, and its detail bounded from.
 const EDGE_LEVEL_SIZE = 512;
-// A layer with data finer than this share of a tile's cell lets the tile be split.
+// A layer with data finer than this share of a tile's cell, along its columns or its rows,
+// lets the tile be split.
 const FINER = 0.75;
+// And where its data under the tile crosses the sea's level, with fewer than this many of the
+// tile's cells to one of the layer's: the coast, a level through the data, is drawn from the
+// tile's nodes, and with fewer of them to a data cell each depth draws it apart. Over five
+// coasts of the demo's reliefs, with 1.5 cells to a data cell 1–7 % of the ground fell on the
+// wrong side of it, with 3 at most 1 %, with 6 0.2 %. 2.5, not 3: their data cells are 3.03
+// of the tiles' cells at a depth. Only there: elsewhere cells finer than the data shade it
+// no better (split for them, Volve's seabed drew 5 times the triangles).
+const COAST_CELLS = 2.5;
 
 /**
  * One relief data set of a relief, and how it eases in where its data ends.
@@ -114,7 +123,11 @@ export type ReliefTile = {
    * layer's data lies between its nodes, how far that data lies off its heights
    */
   error: number;
-  /** no layer under it has data finer than its cells: it need not be split */
+  /**
+   * no layer under it has data finer than its cells, nor, where its data crosses the sea's
+   * level, coarser than a few of them: its children would draw the same ground, and the same
+   * coast. It need not be split
+   */
   leaf: boolean;
   /**
    * where a layer finer than its cells ends, or lies wholly between its nodes: shaded apart
@@ -862,6 +875,8 @@ type LayerRead = {
   detail: number;
   /** metres between the layer's own nodes, at the grid's middle */
   spacing: number;
+  /** the most of the layer's cells one of the grid's spans, along its columns or its rows, at its middle */
+  across: number;
   /** how much of the layer a point gets: its coverage there, faded in over the feather */
   weightAt: (col: number, row: number, coverage: number) => number;
 };
@@ -917,6 +932,10 @@ function readReliefLayers(
       const perCol = Math.hypot(dcx, dcz);
       const perRow = Math.hypot(drx, drz);
       const spacing = 1 / Math.max(perCol, perRow, 1e-12 / cell);
+      const across = Math.max(
+        Math.hypot(dcx, drx) * cellU,
+        Math.hypot(dcz, drz) * cellV,
+      );
       const level = Math.min(
         Math.max(Math.floor(Math.log2(cell / spacing)), 0),
         layer.maxLevel,
@@ -956,6 +975,7 @@ function readReliefLayers(
             ? footprintDetail(layer.detail, halfLevel, range, layer.wrap)
             : 0,
         spacing,
+        across,
         weightAt,
       };
     }),
@@ -1330,7 +1350,6 @@ async function buildTile(
   const node = new Float64Array(2);
   const sample = new Float64Array(2);
   const midCellU = grid.cellU((nodes - 1) / 2);
-  const cell = Math.min(midCellU, grid.cellV);
 
   // Each layer's projection onto the tile, the level it is read at and its windows,
   // read all at once; merged in turn below.
@@ -1371,7 +1390,7 @@ async function buildTile(
     // A layer smaller than a cell may give no node at all: its data in the window, not
     // what the nodes took, tells whether there is anything finer under the tile.
     const range = windowRange(read.window);
-    if (range && read.spacing < cell * FINER) {
+    if (range && read.across * FINER > 1) {
       leaf = false;
       if (whole < nodes * nodes) edge = true;
       if (gives === 0) {
@@ -1379,7 +1398,13 @@ async function buildTile(
         betweenMin = Math.min(betweenMin, range[0] - read.detail);
         betweenMax = Math.max(betweenMax, range[1] + read.detail);
       }
-    }
+    } else if (
+      range &&
+      read.across * COAST_CELLS > 1 &&
+      range[0] < 0 &&
+      range[1] > 0
+    )
+      leaf = false;
   }
 
   // The tile's own nodes, and the gap at its half-cell points between the merged data

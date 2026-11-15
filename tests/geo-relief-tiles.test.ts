@@ -181,14 +181,65 @@ describe('buildGeoReliefTile', () => {
     }
     expect(worst).toBeLessThan(1e-3);
     expect(tile.error).toBeLessThan(1e-3);
-    // Its cells (76 m north–south, 40 m east–west) are finer than the layer's 100 m.
-    expect(tile.leaf).toBe(true);
+    // Its cells (76 m north–south, 40 m east–west) are finer than the layer's 100 m, but the
+    // plane crosses the sea's level at the field, and north–south they are not 2.5 to one:
+    // split, and its children (38 m, 20 m) not.
+    expect(tile.leaf).toBe(false);
+    const fine = await buildGeoReliefTile(
+      reader,
+      { layers: [{ id: 'plane' }], base: -120 },
+      geoTileKeyAt(14, LON, LAT),
+    );
+    expect(fine.leaf).toBe(true);
     const coarse = await buildGeoReliefTile(
       reader,
       { layers: [{ id: 'plane' }], base: -120 },
       geoTileKeyAt(10, LON, LAT),
     );
     expect(coarse.leaf).toBe(false);
+  });
+
+  it('stops splitting only where its children would draw the same coast', async () => {
+    // Rough ground about the sea's level, 0.02° cells: a coast at every scale down to them.
+    const cell = 0.02;
+    const nx = 41;
+    const values = new Float32Array(nx * nx);
+    for (let k = 0; k < values.length; k++)
+      values[k] = 50 * Math.sin(k * 12.9898 + Math.sin(k * 78.233) * 437.5);
+    const reader = storeOf(
+      gridToRelief(
+        {
+          values,
+          size: [nx, nx],
+          origin: [4.6, 60.4],
+          cell: [cell, cell],
+          crs: LONLAT,
+        },
+        { id: 'coast', name: 'coast' },
+      ),
+    );
+    const source = { layers: [{ id: 'coast' }], base: -120 };
+    const at = (depth: number) =>
+      buildGeoReliefTile(reader, source, geoTileKeyAt(depth, 5, 60.8));
+    let depth = 4;
+    while (!(await at(depth)).leaf) depth++;
+    const [leaf, child] = await Promise.all([at(depth), at(depth + 1)]);
+    const [west, north, span] = geoTileRegion(child.key);
+    let apart = 0;
+    const n = 100;
+    for (let a = 0; a < n; a++) {
+      for (let b = 0; b < n; b++) {
+        const lon = west + (span * (a + 0.5)) / n;
+        const lat = north - (span * (b + 0.5)) / n;
+        if (
+          geoReliefTileHeightAt(leaf, lon, lat) >= 0 !==
+          geoReliefTileHeightAt(child, lon, lat) >= 0
+        )
+          apart++;
+      }
+    }
+    // 2.4 % with the leaves at 1.33 cells to a data cell, as before the coast's rule; 0.4 %.
+    expect(apart / n / n).toBeLessThan(0.01);
   });
 
   it('splits over a layer lying wholly between its nodes', async () => {

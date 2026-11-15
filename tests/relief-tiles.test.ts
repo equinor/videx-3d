@@ -97,8 +97,9 @@ describe('buildReliefTile', () => {
     // A plane is drawn exactly by any triangles.
     expect(tile.error).toBeLessThan(1e-3);
     expect(tile.layers.every(id => id === 1)).toBe(true);
-    // As fine as the data: nothing finer to split for.
-    expect(tile.leaf).toBe(true);
+    // As fine as the data, but it meets the sea's level at its corner: a coast, which takes
+    // a few cells to a data cell to stay put.
+    expect(tile.leaf).toBe(false);
 
     // Read back anywhere on it, between its nodes too, and clamped at its edges.
     for (const [x, z] of [
