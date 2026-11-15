@@ -151,6 +151,7 @@ export * from './materials/ground-map';
 export * from './materials/bake-texture';
 export * from './materials/blue-noise';
 export * from './materials/cliff-texture';
+export * from './materials/depth-map';
 export * from './materials/depth-material';
 export * from './materials/fence-field';
 export * from './materials/graticule';

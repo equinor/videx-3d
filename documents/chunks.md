@@ -834,10 +834,10 @@ so every chunk gets the same rings (a seam between two chunks needs that), and
 cached in the generator. Changing the sea level rebuilds only the chunk that
 draws the bed, besides the sea.
 
-⚠️ This is the STILL water's line. With `displacement` on, the lid heaves by the
-full wave height right up to the beach, so the waterline swings across a gentle
-shore by the wave height divided by its slope. Damping the waves with depth is
-the shallow-water work still to do.
+This is the STILL water's line. With `displacement` on the lid heaves with the
+waves, which die out toward the shore by the bed's depth (`ocean-waves.md`,
+Shallow water), so it stays near this line; the surf's swash moves the foam's
+edge, not the lid.
 
 ⚠️ The sea needs an `outline` on the stack. A `cutSource` alone gives nothing to
 draw it over.

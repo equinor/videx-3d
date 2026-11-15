@@ -11,44 +11,20 @@
 // the shared oit.glsl chunk and routes its final colour through oitProcess() so
 // it composites correctly with the other transparent subsurface geometry.
 
-// Surf zone shape. These are the parts nobody has information to tune, so they are
-// constants rather than knobs.
-// A floor on the wave height standing in for background swell: an open coast
-// breaks in a dead calm, and without this the shore would go glassy at wind 0.
-#ifndef OCEAN_SWELL_FLOOR
-#define OCEAN_SWELL_FLOOR 0.5
-#endif
-// Whitewater still left at the water's edge, relative to the break line. Surf is
-// generated AT the break and decays as it washes inshore, so the shore is the dim
-// end of the band rather than the bright one.
-#ifndef OCEAN_SURF_RESIDUAL
-#define OCEAN_SURF_RESIDUAL 0.3
-#endif
-// Surf left on a shore the waves are running away from. Not zero — a lee shore
-// still gets refracted and diffracted energy round the headland.
-#ifndef OCEAN_LEE_EXPOSURE
-#define OCEAN_LEE_EXPOSURE 0.25
-#endif
-
-// The surface's own uniforms, contact foam's included, are declared in ocean-surface.glsl,
-// shared with the Sky's sea.
+// The surface's own uniforms, contact foam's and the surf's included, are declared in
+// ocean-surface.glsl, shared with the Sky's sea.
 uniform vec3 uSkyColor;
 uniform vec3 uHorizonColor;
 
 uniform float uMasterOpacity; // master multiplier (CommonComponent opacity prop)
 
 #ifdef OCEAN_BATHYMETRY
-// The sea bed's depth grid, so shallow water can read as shallow. Without it the
-// shader has no depth input at all and uses the VIEW ANGLE as a stand-in, which
-// cannot tell a metre of water over a sandbank from the open sea.
+// The sea bed's depth grid (object XZ), whose own slope tells how squarely the waves meet a
+// shore. The depth itself is the water body's (waterBodyFloorAt), which reads the same grid.
 uniform sampler2D uBathyMap;
 uniform mat3 uBathyToUv; // object XZ -> uv
 uniform vec2 uBathySize; // grid size in texels
 uniform vec3 uShoal;     // x: water level (object Y), y: 1 / depth scale, z: opacity at zero depth
-uniform vec4 uShore;      // x: shore foam amount, y: break depth (x wave height), z: swash, w: gradient step (m)
-uniform vec2 uShoreNoise; // x: edge raggedness (m), y: its frequency (1 / m)
-uniform vec2 uShoreFade;  // x: foam strength (1 = full white surf), y: fraction lost at distance
-uniform float uSurfScale; // exaggeration of the surf zone's width, 1 = as measured
 #endif
 
 #if defined(OCEAN_BATHYMETRY) || defined(OCEAN_FENCE)
@@ -124,7 +100,11 @@ void main() {
   float height;
   vec2 crest;
   float rough;
-  vec3 N = oceanWaves(worldXZ, flatness, slope, height, crest, rough);
+  // The still water's depth here: the bed's grid, else the scene's ground, else the flat floor
+  // (water-body.glsl). The waves shoal and die out by it, and the surf breaks by it. The
+  // surface lies level, so its still point is at the water's height.
+  float depth = waterBodyFloorAt(vec3(worldXZ.x, uWaterBody.w, worldXZ.y));
+  vec3 N = oceanWaves(worldXZ, flatness, depth, slope, height, crest, rough);
 
   // Viewed from below (inside the ocean box), the surface is back-facing; flip
   // the normal toward the camera so the underside is shaded as a water surface
@@ -140,41 +120,24 @@ void main() {
   float ndvAA;
   float fresnel = oceanFresnel(N, V, ndvAA);
 
-  // --- The bed under the surface, for the surf ------------------------------
-  // ⚠️ `bathy` is the map's coverage: where the bed is unmapped there is no shore.
-  float bathy = 0.0;
-  float waterDepth = 0.0;
-  // How squarely the waves meet the shore here. Drives both the swash and, as
-  // exposure, how much surf a stretch of coast gets at all.
-  float shoreAlign = 1.0;
+  // --- How squarely the waves meet the shore here -------------------------------
+  // Drives the swash and, as exposure, how much surf a stretch of coast gets. A bathymetry
+  // grid's slope is stepped across it; any other depth's (the scene's ground, a flat floor) is
+  // taken from its screen derivatives.
+  vec2 bedSlope;
   #ifdef OCEAN_BATHYMETRY
   {
-    float bedY;
-    bathy = sampleDepthMap(uBathyMap, uBathyToUv, uBathySize, vObjectXZ, bedY);
-
-    // ⚠️ NOT refraction, and not pretending to be. Real waves turn to face the
-    // shore as they shoal, so run-up on a beach is near-uniform along it; this
-    // shader carries the deep-water direction right up to the sand, which made the
-    // waterline scallop into stripes sliding ALONG the coast whenever the wind ran
-    // parallel to it. Weighting the swash by how squarely the waves meet the shore
-    // suppresses that: waves running along a coast stop moving its waterline. It
-    // removes the artefact rather than modelling its cause — the honest version
-    // re-evaluates the wave field on a shore-projected coordinate, which is a
-    // second 16-component sum per fragment.
-    float bedX, bedZ;
+    float bedY, bedX, bedZ;
+    sampleDepthMap(uBathyMap, uBathyToUv, uBathySize, vObjectXZ, bedY);
     sampleDepthMap(uBathyMap, uBathyToUv, uBathySize, vObjectXZ + vec2(uShore.w, 0.0), bedX);
     sampleDepthMap(uBathyMap, uBathyToUv, uBathySize, vObjectXZ + vec2(0.0, uShore.w), bedZ);
-    vec2 grad = vec2(bedX - bedY, bedZ - bedY);
-    float gradLen = length(grad);
-    // A flat bed has no shore to face, so there is nothing to weight.
-    shoreAlign = gradLen > 1e-6 ? abs(dot(normalize(uWindDirection), grad / gradLen)) : 1.0;
-
-    // ⭐ The swell carries the waterline with it: offsetting the LEVEL by this
-    // fragment's own wave height makes the shore advance and retreat, varied
-    // along the coast, with no clock of its own and no second field to tune.
-    waterDepth = uShoal.x + height * uShore.z * shoreAlign - bedY;
+    bedSlope = vec2(bedX - bedY, bedZ - bedY);
   }
+  #else
+  bedSlope = oceanDepthSlope(depth, worldXZ);
   #endif
+  float shoreAlign = oceanShoreAlign(bedSlope);
+  float shoreDepth = oceanShoreDepth(depth, shoreAlign);
 
   // --- The surface ----------------------------------------------------------
   // From above, the sky it reflects and the sun's glint, covering Fresnel of what lies under
@@ -213,66 +176,12 @@ void main() {
   float contactFoam = oceanContactFoam(worldXZ, uTime);
   foamCoverage = max(foamCoverage, contactFoam);
 
-  // Surf where the waves break on the shore. ⭐ Folded into the SAME coverage as
-  // the whitecaps, so it inherits the noise texture, the froth and the footprint
-  // AA below rather than reading as a different kind of foam.
-  // ⚠️⚠️ Keyed on water DEPTH, never on the water body's boundary — most of that
-  // boundary is the outline CROP, and surf along an arbitrary crop edge would be
-  // a confident lie.
-  float shoreWeight = 0.0;
-  #ifdef OCEAN_BATHYMETRY
-  {
-    // ⭐⭐ Waves break where the depth falls to ~1.3x the wave height, so the surf
-    // zone MOVES WITH THE SEA STATE instead of sitting at a fixed depth: a thin
-    // line in a calm, a wide belt in a storm. A fixed band was the single most
-    // unphysical thing about this — the whole sea offshore responded to the wind
-    // and the shore did not.
-    float surfHeight = max(uSignificantHeight, OCEAN_SWELL_FLOOR);
-    float breakDepth = max(uShore.y * surfHeight * uSurfScale, 1e-3);
-
-    float edge = waterDepth;
-    if(uShoreNoise.x > 0.0) {
-      // A ragged edge rather than the bathymetry contour exactly. ⚠️ Drifts slowly
-      // on its own rather than with the waves: a coastline's raggedness belongs to
-      // the shore and must not stream downwind.
-      float n = oceanFbm(worldXZ * uShoreNoise.y + uTime * 0.02);
-      float nAA = 1.0 - smoothstep(0.5, 3.0, uShoreNoise.y * 6.2831853 * texel);
-      edge += (n - 0.5) * 2.0 * uShoreNoise.x * nAA;
-    }
-
-    // ⭐⭐ The profile PEAKS AT THE BREAK LINE, not at the water's edge. Foam is
-    // generated where the waves break and then washes inshore while decaying, so
-    // the bright line stands OFFSHORE and the shore is the dim end. A band that
-    // maxes at depth 0 traces the coastline exactly, which is what makes it read
-    // as a drawn outline around the land rather than as water doing something.
-    float t = max(edge, 0.0) / breakDepth;
-    float seaward = exp(-pow(max(t - 1.0, 0.0) / 0.25, 2.0));
-    float inshore = mix(OCEAN_SURF_RESIDUAL, 1.0, exp(-(1.0 - min(t, 1.0)) / 0.45));
-
-    // Sets: surf arrives in groups, so the band pulses along the coast instead of
-    // standing still. Low frequency, so it survives being zoomed out.
-    float sets = mix(0.6, 1.0, oceanFbm(worldXZ * 0.0006 + uTime * 0.03));
-
-    // Exposure: a windward coast breaks, a lee shore mostly does not. Free — the
-    // alignment is already computed for the swash.
-    float exposure = mix(OCEAN_LEE_EXPOSURE, 1.0, shoreAlign);
-
-    // ⭐ Analytic anti-aliasing: once the band is narrower than a pixel it would be
-    // drawn as a hard aliased line, so drop its amplitude by however much it is
-    // over-wide. Preserves the integral, so it goes soft and dim rather than thin
-    // and hard. ⚠️ Only bites on a STEEP shore — a band measured in metres of depth
-    // is hundreds of metres across on a gentle shelf.
-    // ⚠️ From the unperturbed depth: the AA width follows the field, not the
-    // raggedness applied to it.
-    float aa = min(1.0, breakDepth / max(fwidth(waterDepth), 1e-6));
-
-    float shoreFoam = clamp(
-      seaward * inshore * sets * exposure * aa * uShore.x * bathy, 0.0, 1.0);
-    foamCoverage = max(foamCoverage, shoreFoam);
-    // What share of the foam here IS the shore band — see the distance fade below.
-    shoreWeight = shoreFoam / max(foamCoverage, 1e-4);
-  }
-  #endif
+  // Surf where the waves break on the shore (oceanShoreFoam): in the same coverage as the
+  // whitecaps, so it takes their texture, froth and footprint AA.
+  float shoreFoam = oceanShoreFoam(shoreDepth, fwidth(shoreDepth), shoreAlign, worldXZ, texel);
+  foamCoverage = max(foamCoverage, shoreFoam);
+  // What share of the foam here IS the shore band, for its own distance fade below.
+  float shoreWeight = shoreFoam / max(foamCoverage, 1e-4);
 
   float foamFar;
   float foamBlend = oceanFoam(crest, worldXZ, texel, foamCoverage, foamFar);
@@ -280,21 +189,8 @@ void main() {
   // Distance fade: once the foam noise shrinks below the pixel footprint it can no
   // longer be resolved and full-white foam reads as harsh bright noise, so far
   // crests are faded back into the water as their feature footprint
-  // approaches and exceeds one pixel.
-  // ⚠️ The shore band needs its OWN factor: on a gentle shelf it never goes
-  // sub-pixel (its width on screen is the break depth over the bed's gradient,
-  // hundreds of metres), so the whitecaps' footprint fade would leave it at full
-  // strength.
-  // ⚠️⚠️ Guarded, not just multiplied by `shoreWeight`: without a bathymetry grid
-  // there IS no shore band and `uShoreFade` is not declared, so referring to it
-  // here compiles only in the variant that happens to have the define.
-  float foamFade = foamFar * uFoamLook.x;
-  #ifdef OCEAN_BATHYMETRY
-  {
-    float shoreFade = 1.0 - uShoreFade.x * (1.0 - foamFar * uShoreFade.y);
-    foamFade = mix(foamFade, shoreFade, shoreWeight);
-  }
-  #endif
+  // approaches and exceeds one pixel. The surf by its own (oceanShoreFade).
+  float foamFade = mix(foamFar * uFoamLook.x, oceanShoreFade(foamFar), shoreWeight);
   foamFade = clamp(foamFade, 0.0, 1.0);
 
   // ⭐⭐ ONE effective foam opacity, used by the colour AND by the alpha below.

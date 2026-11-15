@@ -213,6 +213,40 @@ field, and the sea reads it per pixel (`oceanWaves`):
   sea 0–1 %. The frame's own ratios swing more than that between rounds.
 - The bench's `wind` debug view shows the field: blue a lull, red a gust, green a slick.
 
+## Shallow water (`sdk/weather/sea-shallow.ts`)
+
+The waves answer the depth of the still water under them, by one rule on both sides of the
+sea: the surface's shaders (`sea-layers.glsl`'s `seaShallowFactors`) and the heights floating
+objects ride (`SeaState.heightAtDepth`, through `createOceanSampler`).
+
+- **Shoaling**: each layer's height by linear theory's coefficient √(c_g,deep / c_g) at its
+  waves' typical wavenumber, √(slope variance / height variance) of the layer as drawn (Fenton
+  and McKee's explicit dispersion, 0.05 % off). A dip of some 9 % at middling depths, then up
+  toward the shore. Long layers feel the bottom first; the ripples only in the surf.
+- **Breaking**: all the layers by `1 / (1 + r⁴)^¼`, `r` the shoaled significant height times the
+  break depth over the depth (`SEA_BREAK_DEPTH` 1.3, `shoreBreakDepth`): the waves held under
+  some 0.78 of the depth, so they die out toward the shore, and the still waterline stays where
+  the bed meets the level.
+- The per-pixel slopes and heights are cut alike, the crests taken over their spread as cut
+  (the foam's texture keeps its look), and the whitecaps' share by the breaking limit: in the
+  surf zone the surf stands in for them. The displaced vertices (`displacement`) and a water
+  body's wall top use the same factors, so the rim stays sealed.
+- The surf (`oceanShoreFoam`) breaks at the same depth over the same height, so it stands where
+  the waves are being cut, and its swash is carried by the waves' height as in deep water.
+- **Where the depth comes from**: the `Ocean`'s and a `ChunkStack`'s bathymetry grid
+  (`depthMapHeightAt` reads it on the CPU as `depth-map.glsl` does), else the scene's ground map
+  under an endless sea, else the water's flat floor. The `Scenery`'s sea reads the ground map
+  per pixel (already read for the water's colour); its floaters read the relief's tiles
+  (`SceneryReliefHub.heightAt`), finer than the map, so near a coast their damping can differ a
+  little from the drawn waves'.
+- **Cost**: deeper than `seaDeepDepth` (every layer past k·h = 6, the limit over 0.999), the
+  factors are all 1 and nothing is worked out. On the sea bench (A1000, 1920 × 1080 at 1, three
+  rounds interleaved with HEAD, the sea over the sky's draw as the clock check) the `Scenery`'s
+  sea is 0.95–0.99 of HEAD from 30 m to 20 km: the surf, its noise only in the band, and the
+  shared depth read paid for by code moved out of the `Ocean`'s own surf.
+- **Not drawn**: the waves keep their deep-water length and speed. They neither slow, bunch up
+  nor turn to face the shore (refraction): a layer is a tile of fixed waves.
+
 ## Across the globe
 
 A sea state stands for a region's weather. Only the waves near the camera are drawn as waves;
@@ -230,6 +264,7 @@ weather the bake eases toward it as it does for the wind.
 - **Ripples with the wind, the rest**: Elfouhaily's short waves grow with the wind mostly
   below a quarter of a metre, so the waves `medium` draws are still much alike at 3 and 20 m/s
   (see the table above); the gusts and slicks now carry the local wind into them.
+- **Refraction**: waves turning to the shore and slowing as they shoal (see Shallow water).
 - **Glitter**: the ripples no layer draws only widen the glint, so it is a smooth patch where
   the sea sparkles.
 - **Into the sea**: `Weather` (`swell`, one sea state shared), the `Scenery`'s far charts for

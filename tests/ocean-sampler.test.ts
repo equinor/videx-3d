@@ -1,3 +1,4 @@
+import { DataTexture, FloatType, Matrix3, RGFormat } from 'three';
 import { describe, expect, it } from 'vitest';
 import { OceanMaterial } from '../src/components/Ocean/ocean-material';
 import { createOceanSampler } from '../src/components/Ocean/ocean-sampler';
@@ -75,6 +76,44 @@ describe('createOceanSampler', () => {
     m.time = 5;
     const b = sampler.getHeightAt(50, 50);
     expect(a).not.toBeCloseTo(b, 4);
+    m.dispose();
+  });
+
+  it('cuts the waves by the depth, as the surface does: to nothing at the shore', () => {
+    const m = new OceanMaterial();
+    m.windSpeed = 12;
+    m.time = 7.5;
+    let depth = 1e30;
+    const sampler = createOceanSampler(m, 0, undefined, () => depth);
+    const rms = () => {
+      let sum = 0;
+      for (let i = 0; i < 400; i++)
+        sum += sampler.getHeightAt(i * 37.3, i * -11.9) ** 2;
+      return Math.sqrt(sum / 400);
+    };
+    const deep = rms();
+    depth = 0;
+    expect(rms()).toBe(0);
+    // In water a metre deep, the sea's height is held under the breaking height there (a
+    // margin for estimating it from 400 points).
+    depth = 1;
+    expect(4 * rms()).toBeLessThan((1.2 * depth) / m.shoreBreakDepth);
+    expect(4 * deep).toBeGreaterThan(2);
+    m.dispose();
+  });
+
+  it('reads the depth under the level from its bathymetry grid, else its flat floor', () => {
+    // A 2 × 2 grid, 10 m cells from the origin: the bed at -4 m, one node unmapped.
+    const data = new Float32Array([-4, 1, -4, 1, -4, 1, -4, 0]);
+    const texture = new DataTexture(data, 2, 2, RGFormat, FloatType);
+    const toUv = new Matrix3().set(1 / 20, 0, 0.25, 0, 1 / 20, 0.25, 0, 0, 1);
+    const m = new OceanMaterial({
+      bathymetry: { texture, toUv, cellSize: 10 },
+    });
+    m.waterLevel = 1;
+    expect(m.depthAt(0, 0)).toBeCloseTo(5, 6);
+    // Beyond the grid it is the water's own floor.
+    expect(m.depthAt(500, 500)).toBe(m.water.depth);
     m.dispose();
   });
 });

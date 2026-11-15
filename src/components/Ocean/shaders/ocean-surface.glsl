@@ -104,6 +104,13 @@ uniform float uRoughReflect;
 float oceanGust = 1.0;
 float oceanSlick = 0.0;
 float oceanRoughMean = 0.0;
+// As oceanWaves last found it: the waves' height there as they would stand in deep water, which
+// carries the waterline up and down a shore (the swash) after they have broken.
+float oceanOpenHeight = 0.0;
+// As oceanWaves last found it: how much of the waves the breaking limit leaves there
+// (seaShallowFactors' `limit`): 1 off the surf zone, falling to 0 toward the shore, where the
+// surf (oceanShoreFoam) stands in for the whitecaps (oceanWindFoam).
+float oceanBreakLimit = 1.0;
 // How much a slick damps the short waves the gusts move (Cox and Munk's slicks keep about 40 %
 // of the whole slope variance at 10 m/s).
 #define OCEAN_SLICK_DAMPING 0.8
@@ -219,20 +226,29 @@ vec4 seaLayerAt(sampler2D map, int index, vec2 p, float pixel2) {
 // texture; and `rough` the slope variance (both axes) the pixel cannot show: what the mips
 // filter out, and the waves no layer draws. `flatness` (oceanFlatness) fades the slopes
 // drawn into that roughness, far off and where two of a Scenery's charts meet; all faded,
-// no layer is read.
+// no layer is read. `depth` is the still water's there: each layer is cut to what is left of
+// it there (seaShallowFactors), so the waves shoal and die out toward a shore; the crests are
+// taken over their spread as cut, so the foam's texture keeps its look (the whitecaps answer
+// the cut by oceanBreakLimit).
 // ⚠️ Derivatives.
-vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out vec2 crest, out float rough) {
+vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float height, out vec2 crest, out float rough) {
   oceanCrestAlong = 0.0;
   oceanGust = 1.0;
   oceanSlick = 0.0;
+  oceanOpenHeight = 0.0;
+  oceanBreakLimit = 1.0;
   float pixel2 = seaPixel2(p);
   float s2 = uSteepness * uSteepness;
   float detailGain2 = uSeaDetail.x * uSeaDetail.x;
-  float total = uSeaLayerStats[0].x + uSeaLayerStats[1].x + uSeaLayerStats[2].x;
+  float limit;
+  vec4 shallow = seaShallowFactors(depth, limit);
+  vec4 shallow2 = shallow * shallow;
+  oceanBreakLimit = limit;
+  float total = shallow2.x * uSeaLayerStats[0].x + shallow2.y * uSeaLayerStats[1].x + shallow2.z * uSeaLayerStats[2].x;
   #if SEA_LAYERS > 3
-  total += uSeaLayerStats[3].x;
+  total += shallow2.w * uSeaLayerStats[3].x;
   #endif
-  total += detailGain2 * uSeaLayerStats[SEA_FINEST].x;
+  total += detailGain2 * limit * limit * uSeaLayerStats[SEA_FINEST].x;
   float detail = 1.0 - flatness;
   if(detail <= 0.001) {
     slope = vec2(0.0);
@@ -261,22 +277,29 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
   vec4 l0 = seaLayerAt(uSeaSurface0, 0, p, pixel2);
   vec4 l1 = seaLayerAt(uSeaSurface1, 1, p, pixel2);
   vec4 l2 = seaLayerAt(uSeaSurface2, 2, p, pixel2);
+  oceanOpenHeight = (l0.z + l1.z + l2.z) * detail;
+  l0 *= vec4(vec3(shallow.x), shallow2.x);
+  l1 *= vec4(vec3(shallow.y), shallow2.y);
+  l2 *= vec4(vec3(shallow.z), shallow2.z);
   vec4 fine = l2;
   float fineVariance = uSeaLayerStats[2].y;
   vec4 sum = l0 + l1 + l2;
-  // The wind sea's crests: the 307 m and 47 m layers; a finer one only breaks them up.
+  // The wind sea's crests: the 307 m and 47 m layers; a finer one only breaks them up. Over
+  // their spread as they stand here, cut by the depth: the foam's texture keeps its look in
+  // shallow water, and the whitecaps answer the depth by their share (oceanBreakLimit).
   float crestHeight = l1.z + l2.z;
-  float crestVariance = uSeaLayerStats[1].y + uSeaLayerStats[2].y;
-  float zCrestFine = l2.z * inversesqrt(max(uSeaLayerStats[2].y, 1e-8));
+  float crestVariance = shallow2.y * uSeaLayerStats[1].y + shallow2.z * uSeaLayerStats[2].y;
+  float zCrestFine = l2.z * inversesqrt(max(shallow2.z * uSeaLayerStats[2].y, 1e-8));
   #if SEA_LAYERS > 3
   vec4 l3 = seaLayerAt(uSeaSurface3, 3, p, pixel2);
+  oceanOpenHeight += l3.z * detail;
   // The finest layer (7.3 m on medium) answers the local wind by half (it lies mostly above
   // the short waves).
   float gustLayer = mix(1.0, sqrt(gustRough), 0.5);
   float gustLayer2 = gustLayer * gustLayer - 1.0;
-  gustSlope += gustLayer2 * l3.w;
-  gustTotal += gustLayer2 * uSeaLayerStats[3].x;
-  l3 *= vec4(gustLayer, gustLayer, gustLayer, gustLayer * gustLayer);
+  gustSlope += gustLayer2 * shallow2.w * l3.w;
+  gustTotal += gustLayer2 * shallow2.w * uSeaLayerStats[3].x;
+  l3 *= vec4(vec3(gustLayer * shallow.w), gustLayer * gustLayer * shallow2.w);
   fine = l3;
   fineVariance = uSeaLayerStats[3].y;
   sum += l3;
@@ -286,17 +309,18 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
   // downwind; by the local wind.
   #ifdef SEA_DETAIL
   vec4 ripples = seaLayerReadShifted(uSeaFinest, uSeaDetailLayer, uSeaLayerStats[SEA_FINEST], SEA_LAYERS, seaLayerUv(uSeaDetailLayer, p), uSeaDetail.yz, seaLayerLod(uSeaDetailLayer, pixel2));
-  float rippleGain = uSeaDetail.x * sqrt(gustRough);
+  float rippleGain = uSeaDetail.x * sqrt(gustRough) * limit;
   float rippleGain2 = rippleGain * rippleGain;
+  float detailGainHere2 = detailGain2 * limit * limit;
   sum += ripples * vec4(rippleGain, rippleGain, rippleGain * uSeaLayers[SEA_FINEST].x / uSeaDetailLayer.x, rippleGain2);
-  gustSlope += (rippleGain2 - detailGain2) * ripples.w;
-  gustTotal += (rippleGain2 - detailGain2) * uSeaLayerStats[SEA_FINEST].x;
+  gustSlope += (rippleGain2 - detailGainHere2) * ripples.w;
+  gustTotal += (rippleGain2 - detailGainHere2) * uSeaLayerStats[SEA_FINEST].x;
   #endif
   total += gustTotal;
   // What breaks the crests up finest (and froths the foam, `crest.y`): the layer below the 47 m
   // one, else the ripples, else the 47 m layer itself.
   #if SEA_LAYERS > 3
-  float zDetail = l3.z * inversesqrt(max(uSeaLayerStats[3].y, 1e-8));
+  float zDetail = l3.z * inversesqrt(max(shallow2.w * uSeaLayerStats[3].y, 1e-8));
   #elif defined(SEA_DETAIL)
   float zDetail = ripples.z * inversesqrt(max(fineVariance, 1e-8));
   #else
@@ -322,7 +346,7 @@ vec3 oceanWaves(vec2 p, float flatness, out vec2 slope, out float height, out ve
   // wind is nil, lowered by its size there in standard deviations (a half-normal, centred and
   // rescaled so as much of the sea stays over the threshold): long along a crest, thin across.
   vec2 crestSlope = l1.xy + l2.xy;
-  float crestSlopeVariance = uSeaLayerStats[1].x + uSeaLayerStats[2].x;
+  float crestSlopeVariance = shallow2.y * uSeaLayerStats[1].x + shallow2.z * uSeaLayerStats[2].x;
   // Along one axis, half the slope variance of both. Rising downwind (> 0) on a crest's back,
   // the side its foam trails on as the crest runs on.
   oceanCrestAlong = dot(crestSlope, wind) * inversesqrt(max(0.5 * crestSlopeVariance, 1e-10));
@@ -375,9 +399,10 @@ vec4 oceanStraight(vec4 layer) {
 // --- Foam: whitecaps on the wind sea's highest crests -------------------------
 // The share of the sea whitecaps cover (Monahan and O'Muircheartaigh 1980: 3.84e-6·U^3.41, about
 // 1 % at 10 m/s and 10 % at 20 m/s; uFoamAmount 0.5 as measured), as the coverage that leaves
-// that share of the crests' texture (oceanWaves' `crest`) over oceanFoam's threshold.
+// that share of the crests' texture (oceanWaves' `crest`) over oceanFoam's threshold. In the surf
+// zone by what the breaking limit leaves of the waves (oceanBreakLimit, after oceanWaves).
 float oceanWindFoam() {
-  float share = min(3.84e-6 * pow(max(uWindSpeed, 0.0), 3.41) * 2.0 * uFoamAmount, 0.5);
+  float share = min(3.84e-6 * pow(max(uWindSpeed, 0.0), 3.41) * 2.0 * uFoamAmount, 0.5) * oceanBreakLimit;
   if(share <= 1e-5)
     return 0.0;
   // How many standard deviations up only that share of the crests stands: the normal's
@@ -385,6 +410,119 @@ float oceanWindFoam() {
   float t = sqrt(-2.0 * log(share));
   float z = t - (2.515517 + 0.802853 * t + 0.010328 * t * t) / (1.0 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
   return clamp(0.5 - z / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);
+}
+
+// --- Surf: where the waves break on a shore ------------------------------------
+// The parts nobody has information to tune, so constants rather than knobs.
+// A floor on the wave height standing in for background swell: an open coast breaks in a dead
+// calm, and without this the shore would go glassy at wind 0.
+#ifndef OCEAN_SWELL_FLOOR
+#define OCEAN_SWELL_FLOOR 0.5
+#endif
+// Whitewater still left at the water's edge, relative to the break line. Surf is generated AT
+// the break and decays as it washes inshore, so the shore is the dim end of the band.
+#ifndef OCEAN_SURF_RESIDUAL
+#define OCEAN_SURF_RESIDUAL 0.3
+#endif
+// Surf left on a shore the waves are running away from. Not zero: a lee shore still gets
+// refracted and diffracted energy round the headland.
+#ifndef OCEAN_LEE_EXPOSURE
+#define OCEAN_LEE_EXPOSURE 0.25
+#endif
+
+// x how much surf (0 none), y its zone's width exaggerated (1 as measured), z how far the waves
+// carry the waterline up and down the shore (the swash, × their height), w the step a
+// bathymetry grid's slope is taken over (m).
+uniform vec4 uShore;
+// x the surf's landward edge's raggedness (m of depth), y its frequency (1 / m).
+uniform vec2 uShoreNoise;
+// x how white the surf is drawn (1 full white), y the share of that lost once its detail is
+// below a pixel.
+uniform vec2 uShoreFade;
+
+// How squarely the waves meet a shore whose bed slopes along `bedSlope` (any scale): 1 head on,
+// 0 running along it, and 1 on a flat bed, which has no shore to face.
+float oceanShoreAlign(vec2 bedSlope) {
+  float len = length(bedSlope);
+  return len > 1e-6 ? abs(dot(normalize(uWindDirection), bedSlope / len)) : 1.0;
+}
+
+// The slope across the wave plane of `depth`, from its screen derivatives and those of the
+// plane point `p`: for a depth with no grid to step across (the scene's ground). ⚠️ Derivatives.
+vec2 oceanDepthSlope(float depth, vec2 p) {
+  vec2 px = dFdx(p);
+  vec2 py = dFdy(p);
+  float fx = dFdx(depth);
+  float fy = dFdy(depth);
+  float det = px.x * py.y - px.y * py.x;
+  return abs(det) > 1e-12 ? vec2(fx * py.y - px.y * fy, px.x * fy - fx * py.x) / det : vec2(0.0);
+}
+
+// The depth the surf reads at a point of still water `depth` deep, the waves meeting the shore
+// there as squarely as `align` (oceanShoreAlign): raised by the waves' height there as in deep
+// water (oceanOpenHeight, after oceanWaves), so the shore advances and retreats with them,
+// varied along the coast, with no clock of its own.
+// ⚠️ NOT refraction, and not pretending to be. Real waves turn to face the shore as they shoal,
+// so run-up on a beach is near-uniform along it; these keep their deep-water direction to the
+// sand, which made the waterline scallop into stripes sliding ALONG the coast when the wind ran
+// parallel to it. Weighting by `align` suppresses that: waves running along a coast stop moving
+// its waterline.
+float oceanShoreDepth(float depth, float align) {
+  return depth + oceanOpenHeight * uShore.z * align;
+}
+
+// The surf's coverage at the plane point `p` (`texel` world units a pixel there), where the
+// surf reads the depth `shoreDepth` (oceanShoreDepth), `shoreWidth` its change across the pixel
+// (its fwidth, taken where derivatives may be), and the waves meet the shore as squarely as
+// `align`. Folded into the same coverage as the whitecaps, so it inherits their texture, froth
+// and distance fade. ⚠️ Keyed on water DEPTH, never on the water's boundary, most of which is
+// a crop.
+float oceanShoreFoam(float shoreDepth, float shoreWidth, float align, vec2 p, float texel) {
+  if(uShore.x <= 0.0)
+    return 0.0;
+  // ⭐⭐ Waves break where the depth falls to uSeaBreakDepth times their height (where
+  // seaShallowFactors cuts them down), so the surf zone MOVES WITH THE SEA STATE: a thin line in
+  // a calm, a wide belt in a storm.
+  float surfHeight = max(uSignificantHeight, OCEAN_SWELL_FLOOR);
+  float breakDepth = max(uSeaBreakDepth * surfHeight * uShore.y, 1e-3);
+  // Offshore of the band (its seaward tail under 1e-7, the ragged edge included), nothing: the
+  // open sea pays for no noise.
+  if(shoreDepth - uShoreNoise.x > 2.0 * breakDepth)
+    return 0.0;
+  // ⭐ Analytic anti-aliasing: once the band is narrower than a pixel it would be drawn as a hard
+  // aliased line, so its amplitude drops by however much it is over-wide, keeping its integral.
+  // Only bites on a steep shore: on a gentle shelf the band is hundreds of metres across. From
+  // the unperturbed depth: the width follows the field, not the raggedness applied to it.
+  float aa = min(1.0, breakDepth / max(shoreWidth, 1e-6));
+
+  float edge = shoreDepth;
+  if(uShoreNoise.x > 0.0) {
+    // A ragged edge rather than the depth's contour exactly. ⚠️ Drifts slowly on its own rather
+    // than with the waves: a coastline's raggedness belongs to the shore.
+    float n = oceanFbm(p * uShoreNoise.y + uTime * 0.02);
+    float nAA = 1.0 - smoothstep(0.5, 3.0, uShoreNoise.y * 6.2831853 * texel);
+    edge += (n - 0.5) * 2.0 * uShoreNoise.x * nAA;
+  }
+
+  // ⭐⭐ The profile PEAKS AT THE BREAK LINE, not at the water's edge: foam is made where the
+  // waves break and washes inshore while decaying, so the bright line stands offshore. A band
+  // peaking at depth 0 traces the coastline exactly and reads as a drawn outline.
+  float t = max(edge, 0.0) / breakDepth;
+  float seaward = exp(-pow(max(t - 1.0, 0.0) / 0.25, 2.0));
+  float inshore = mix(OCEAN_SURF_RESIDUAL, 1.0, exp(-(1.0 - min(t, 1.0)) / 0.45));
+  // Sets: surf arrives in groups, so the band pulses along the coast. Low frequency, so it
+  // survives being zoomed out.
+  float sets = mix(0.6, 1.0, oceanFbm(p * 0.0006 + uTime * 0.03));
+  // Exposure: a windward coast breaks, a lee shore mostly does not.
+  float exposure = mix(OCEAN_LEE_EXPOSURE, 1.0, align);
+  return clamp(seaward * inshore * sets * exposure * aa * uShore.x, 0.0, 1.0);
+}
+
+// The surf's own distance fade (in place of the whitecaps' where it is the foam, by its share):
+// on a gentle shelf the band never goes sub-pixel, so the whitecaps' footprint fade would leave
+// it at full strength. `foamFar` as oceanFoam gives it.
+float oceanShoreFade(float foamFar) {
+  return 1.0 - uShoreFade.x * (1.0 - foamFar * uShoreFade.y);
 }
 
 // Foam coverage [0,1] spread around floating-object contact footprints. For

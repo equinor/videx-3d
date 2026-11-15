@@ -32,12 +32,14 @@ import {
   type SeaQuality,
 } from '../../sdk/weather/sea-state';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
+import { SEA_BREAK_DEPTH, seaDeepDepth } from '../../sdk/weather/sea-shallow';
 import {
   type WaterOptics,
   waterOpticsOf,
 } from '../../sdk/weather/water-optics';
 import { sceneWaterBody, WaterBody } from '../../sdk/materials/water-body';
 import { sceneGroundMap } from '../../sdk/materials/ground-map';
+import { depthMapHeightAt } from '../../sdk/materials/depth-map';
 import { geometryFootprint } from '../../sdk/geometries/geometry-footprint';
 import type { CameraWater } from '../../sdk/utils/camera-site';
 import {
@@ -68,9 +70,9 @@ export const DEFAULT_OCEAN_SHOAL_DEPTH = 25;
 
 /**
  * Default depth at which waves break, as a multiple of the significant wave
- * height. Waves break at roughly 1.3x their own height.
+ * height ({@link SEA_BREAK_DEPTH}): waves break at roughly 1.3x their own height.
  */
-export const DEFAULT_OCEAN_SHORE_BREAK_DEPTH = 1.3;
+export const DEFAULT_OCEAN_SHORE_BREAK_DEPTH = SEA_BREAK_DEPTH;
 
 /** Default feature size of the shore foam's ragged edge, in metres. */
 export const DEFAULT_OCEAN_SHORE_NOISE_SCALE = 200;
@@ -218,6 +220,8 @@ export const SEA_LAYER_UNIFORMS = [
   'uSeaDetailLayer',
   'uSeaDetail',
   'uSeaHex',
+  'uSeaBreakDepth',
+  'uSeaDeepDepth',
 ] as const;
 
 /**
@@ -326,6 +330,9 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uWeatherGustRough',
   'uRoughReflect',
   ...SEA_LAYER_UNIFORMS,
+  'uShore',
+  'uShoreNoise',
+  'uShoreFade',
   'uContactCount',
   'uContactA',
   'uContactB',
@@ -495,6 +502,25 @@ export class OceanMaterial extends ShaderMaterial {
         uSeaDetail: new Uniform(new Vector3()),
         uSeaHex: new Uniform(new Vector2(1, 1)),
         uSignificantHeight: new Uniform(1),
+        // The depth waves break at, × their height (sea-shallow.ts): the waves are cut to it
+        // as the water shallows, and the surf stands where they are.
+        uSeaBreakDepth: new Uniform(SEA_BREAK_DEPTH),
+        // Deeper, the bottom changes no layer's waves (seaDeepDepth): set as they change.
+        uSeaDeepDepth: new Uniform(0),
+        // The surf (ocean-surface.glsl's oceanShoreFoam): x how much, y its zone's width ×,
+        // z the swash, w the step a bathymetry grid's slope is taken over (m).
+        uShore: new Uniform(new Vector4(0, 1, 1, 0)),
+        // x its landward edge's raggedness (m), y that's frequency (1 / m).
+        uShoreNoise: new Uniform(
+          new Vector2(0, 1 / DEFAULT_OCEAN_SHORE_NOISE_SCALE),
+        ),
+        // x how white it is drawn, y the share of that lost once below a pixel.
+        uShoreFade: new Uniform(
+          new Vector2(
+            DEFAULT_OCEAN_SHORE_FOAM_STRENGTH,
+            DEFAULT_OCEAN_SHORE_FOAM_FADE,
+          ),
+        ),
 
         uDeepColor: new Uniform(new Color(DEFAULT_OCEAN_DEEP_COLOR)),
         uShallowColor: new Uniform(new Color('#1b6f8a')),
@@ -576,27 +602,8 @@ export class OceanMaterial extends ShaderMaterial {
       this.uniforms.uShoal = new Uniform(
         new Vector3(0, 1 / DEFAULT_OCEAN_SHOAL_DEPTH, 0),
       );
-      // x: shore foam amount, y: break depth (x wave height), z: swash, w: gradient step (m)
-      this.uniforms.uShore = new Uniform(
-        new Vector4(
-          0,
-          DEFAULT_OCEAN_SHORE_BREAK_DEPTH,
-          1,
-          2 * bathymetry.cellSize,
-        ),
-      );
-      this.uniforms.uSurfScale = new Uniform(1);
-      // x: edge raggedness (m), y: its frequency (1 / m)
-      this.uniforms.uShoreNoise = new Uniform(
-        new Vector2(0, 1 / DEFAULT_OCEAN_SHORE_NOISE_SCALE),
-      );
-      // x: foam strength (1 = full white surf), y: fraction lost at distance
-      this.uniforms.uShoreFade = new Uniform(
-        new Vector2(
-          DEFAULT_OCEAN_SHORE_FOAM_STRENGTH,
-          DEFAULT_OCEAN_SHORE_FOAM_FADE,
-        ),
-      );
+      // The step the grid's slope is taken over (uShore.w): two of its cells.
+      (this.uniforms.uShore.value as Vector4).w = 2 * bathymetry.cellSize;
     }
 
     this.updateWaves();
@@ -725,6 +732,10 @@ export class OceanMaterial extends ShaderMaterial {
     const layerStats = this.uniforms.uSeaLayerStats.value as Vector2[];
     stats.layers.forEach((layer, i) =>
       layerStats[i].set(layer.slopeVariance, layer.variance),
+    );
+    this.uniforms.uSeaDeepDepth.value = seaDeepDepth(
+      stats.layers,
+      this.uniforms.uSeaBreakDepth.value,
     );
     this.uniforms.uSeaResidual.value =
       stats.residualSlopeVariance +
@@ -898,6 +909,26 @@ export class OceanMaterial extends ShaderMaterial {
   }
 
   /**
+   * The still water's depth at X/Z `x`, `z` of the material's object frame, as its waves
+   * read it to shoal and break by (`sea-shallow.ts`): under {@link OceanMaterial.waterLevel}
+   * to the bathymetry grid where that covers, else the water's flat floor (`WaterBody.depth`,
+   * endless 1e30). ⚠️ The scene's ground, which an endless sea's shaders read where it has
+   * one, is the GPU's alone: give a sampler that sea's depth (`createOceanSampler`).
+   */
+  depthAt(x: number, z: number): number {
+    const map = this.uniforms.uBathyMap?.value as Texture | undefined;
+    if (map) {
+      const bed = depthMapHeightAt(
+        { texture: map, toUv: this.uniforms.uBathyToUv.value as Matrix3 },
+        x,
+        z,
+      );
+      if (bed !== null) return this.waterLevel - bed;
+    }
+    return this.water.depth;
+  }
+
+  /**
    * Water depth at which the sea reaches ~86% of its full body colour and
    * opacity, in metres. Small values keep the shoaling to a narrow band along a
    * shore; large ones spread it over the whole shelf.
@@ -928,28 +959,30 @@ export class OceanMaterial extends ShaderMaterial {
    *
    * ⚠️ Independent of the wind, unlike whitecaps: a shore breaks in a calm. It
    * is folded into the same foam coverage, so it picks up the same noise, froth
-   * and distance fade. No effect without a bathymetry grid.
+   * and distance fade. Needs the water's depth to vary: a bathymetry grid, or the
+   * scene's ground under an endless sea.
    */
   get shoreFoam(): number {
-    return this.uniforms.uShore?.value.x ?? 0;
+    return this.uniforms.uShore.value.x;
   }
   set shoreFoam(value: number) {
-    if (this.uniforms.uShore) this.uniforms.uShore.value.x = value;
+    this.uniforms.uShore.value.x = value;
   }
 
   /**
    * Depth at which waves break, as a multiple of the significant wave height.
-   * Default 1.3 — the measured breaking criterion, so the surf zone widens and
-   * narrows with the sea state instead of sitting at a fixed depth.
+   * Default 1.3 ({@link SEA_BREAK_DEPTH}) — the measured breaking criterion. The
+   * waves are cut down to it as the water shallows (`sea-shallow.ts`), and the
+   * surf zone sits where they are, so both widen and narrow with the sea state.
    *
-   * ⚠️ The wave height is floored internally to stand in for background swell, so
-   * an open coast still breaks in a dead calm.
+   * ⚠️ For the surf, the wave height is floored internally to stand in for
+   * background swell, so an open coast still breaks in a dead calm.
    */
   get shoreBreakDepth(): number {
-    return this.uniforms.uShore?.value.y ?? 0;
+    return this.uniforms.uSeaBreakDepth.value;
   }
   set shoreBreakDepth(value: number) {
-    if (this.uniforms.uShore) this.uniforms.uShore.value.y = value;
+    this.uniforms.uSeaBreakDepth.value = value;
   }
 
   /**
@@ -958,13 +991,14 @@ export class OceanMaterial extends ShaderMaterial {
    * ⚠️ A realistic surf zone is only a handful of pixels across at field scale, so
    * this exists for the same reason a pipeline's diameter exaggeration does. Raising
    * it makes the shore visible from further out at the cost of the scale cue a
-   * correctly-sized one gives.
+   * correctly-sized one gives. The waves themselves still break at
+   * {@link OceanMaterial.shoreBreakDepth}.
    */
   get surfScale(): number {
-    return this.uniforms.uSurfScale?.value ?? 1;
+    return this.uniforms.uShore.value.y;
   }
   set surfScale(value: number) {
-    if (this.uniforms.uSurfScale) this.uniforms.uSurfScale.value = value;
+    this.uniforms.uShore.value.y = value;
   }
 
   /**
@@ -972,35 +1006,34 @@ export class OceanMaterial extends ShaderMaterial {
    * of the local wave height. Default 1; 0 pins the shore to the still level.
    */
   get swash(): number {
-    return this.uniforms.uShore?.value.z ?? 0;
+    return this.uniforms.uShore.value.z;
   }
   set swash(value: number) {
-    if (this.uniforms.uShore) this.uniforms.uShore.value.z = value;
+    this.uniforms.uShore.value.z = value;
   }
 
   /**
    * How ragged the shore foam's landward edge is, in metres of water depth.
-   * Default 0 (the edge follows the bathymetry contour exactly, which reads as
+   * Default 0 (the edge follows the depth's contour exactly, which reads as
    * unnaturally crisp).
    *
    * ⚠️ It perturbs the FOAM band only, not the water's depth — perturbing that
    * would make the transparency and colour ripple with it.
    */
   get shoreNoise(): number {
-    return this.uniforms.uShoreNoise?.value.x ?? 0;
+    return this.uniforms.uShoreNoise.value.x;
   }
   set shoreNoise(value: number) {
-    if (this.uniforms.uShoreNoise) this.uniforms.uShoreNoise.value.x = value;
+    this.uniforms.uShoreNoise.value.x = value;
   }
 
   /** Feature size of that raggedness, in metres. Default 200. */
   get shoreNoiseScale(): number {
-    const inverse = this.uniforms.uShoreNoise?.value.y ?? 0;
+    const inverse = this.uniforms.uShoreNoise.value.y;
     return inverse > 0 ? 1 / inverse : 0;
   }
   set shoreNoiseScale(value: number) {
-    if (this.uniforms.uShoreNoise)
-      this.uniforms.uShoreNoise.value.y = 1 / Math.max(value, 1e-3);
+    this.uniforms.uShoreNoise.value.y = 1 / Math.max(value, 1e-3);
   }
 
   /**
@@ -1012,10 +1045,10 @@ export class OceanMaterial extends ShaderMaterial {
    * whole band evenly.
    */
   get shoreFoamStrength(): number {
-    return this.uniforms.uShoreFade?.value.x ?? 0;
+    return this.uniforms.uShoreFade.value.x;
   }
   set shoreFoamStrength(value: number) {
-    if (this.uniforms.uShoreFade) this.uniforms.uShoreFade.value.x = value;
+    this.uniforms.uShoreFade.value.x = value;
   }
 
   /**
@@ -1027,10 +1060,10 @@ export class OceanMaterial extends ShaderMaterial {
    * DEPTH stays hundreds of metres across on a gentle shelf.
    */
   get shoreFoamFade(): number {
-    return this.uniforms.uShoreFade?.value.y ?? 0;
+    return this.uniforms.uShoreFade.value.y;
   }
   set shoreFoamFade(value: number) {
-    if (this.uniforms.uShoreFade) this.uniforms.uShoreFade.value.y = value;
+    this.uniforms.uShoreFade.value.y = value;
   }
 
   /** @deprecated no longer drawn (their repeating, cloud-like patches are gone) */

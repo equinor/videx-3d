@@ -44,6 +44,7 @@ varying vec2 vObjectXZ;
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ./sea-layers.glsl
+#include ../../../sdk/materials/shaderLib/water-body.glsl
 
 void main() {
   vec4 worldPos = modelMatrix * vec4(position, 1.0);
@@ -66,10 +67,13 @@ void main() {
 
   // Displace the top ring (wallHeight = 1) to follow the surface swells, tapering
   // to the anchored sea bed (0). Uses the SAME height as the surface shader
-  // (seaHeight in sea-layers.glsl) so the wall top resolves to the identical world
-  // position as the surface edge — keeping the rim sealed.
-  if(uDisplacement > 0.0 && wallHeight > 0.0)
-    worldPos.y += uDisplacement * seaHeight(worldPos.xz, SEA_DISPLACE_LAST) * wallHeight;
+  // (seaHeight in sea-layers.glsl, by the same depth's factors) so the wall top
+  // resolves to the identical world position as the surface edge — keeping the rim sealed.
+  if(uDisplacement > 0.0 && wallHeight > 0.0) {
+    float limit;
+    vec4 shallow = seaShallowFactors(waterBodyFloorAt(vec3(worldPos.x, uWaterBody.w, worldPos.z)), limit);
+    worldPos.y += uDisplacement * seaHeight(worldPos.xz, SEA_DISPLACE_LAST, shallow) * wallHeight;
+  }
 
   vWorldPosition = worldPos.xyz;
 

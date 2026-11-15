@@ -14,6 +14,7 @@ import {
   FenceFieldUniforms,
 } from '../../sdk/materials/fence-field';
 import { WaterBody } from '../../sdk/materials/water-body';
+import { SEA_BREAK_DEPTH } from '../../sdk/weather/sea-shallow';
 import { SEA_LAYER_UNIFORMS, type OceanMaterial } from './ocean-material';
 import fragmentShader from './shaders/volume-fragment.glsl';
 import vertexShader from './shaders/volume-vertex.glsl';
@@ -96,6 +97,8 @@ export class OceanVolumeMaterial extends ShaderMaterial {
         ]),
         uSeaResidual: new Uniform(0),
         uSeaHex: new Uniform(new Vector2(1, 1)),
+        uSeaBreakDepth: new Uniform(SEA_BREAK_DEPTH),
+        uSeaDeepDepth: new Uniform(0),
         uSteepness: new Uniform(1),
         uDisplacement: new Uniform(0),
         uDeepColor: new Uniform(new Color('#0a2540')),

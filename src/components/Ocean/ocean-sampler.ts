@@ -8,10 +8,11 @@ import { OceanMaterial } from './ocean-material';
  * floating objects) query the water height at any world X/Z, in sync with the
  * animated wave field shown on screen.
  *
- * The height is the material's sea state's (`SeaState.heightAt`): the same
- * waves the surface draws, hex tiling included, at the material's clock, so it
- * follows the wind as the drawn sea does. Only what texture filtering smooths
- * away differs (millimetres).
+ * The height is the material's sea state's (`SeaState.heightAtDepth`): the same
+ * waves the surface draws, hex tiling included, at the material's clock, cut by
+ * the water's depth as the shaders cut them, so it follows the wind and the
+ * shore as the drawn sea does. Only what texture filtering smooths away differs
+ * (millimetres).
  *
  * Coordinates are in the Ocean group's local frame (sea level = local y 0),
  * which equals world space for the typical flat, unrotated planar ocean. Under a
@@ -55,7 +56,8 @@ export function toOceanPlane(
 /**
  * Create an {@link OceanSampler} bound to an {@link OceanMaterial}. The sampler
  * reads the material's sea state, so it reflects sea-state and time changes
- * without any extra wiring.
+ * without any extra wiring. Its heights answer the water's depth as the drawn
+ * waves do (`SeaState.heightAtDepth`): they shoal and die out toward a shore.
  *
  * @param level scene Y of the still water surface. The `Ocean` component leaves
  *   this at 0 because its own group IS sea level; a `ChunkStack` passes the sea's
@@ -64,21 +66,29 @@ export function toOceanPlane(
  * @param plane the plane the waves are laid out in, when it is not the frame's own X/Z
  *   (a `Scenery`'s): the point asked for is taken into it first, so an object rides the
  *   waves drawn under it.
+ * @param depthAt the still water's depth at a point of the frame, where the material's own
+ *   ({@link OceanMaterial.depthAt}) is not what its waves read (a `Scenery`'s, on the scene's
+ *   ground); `undefined` there falls back to it.
  */
 export function createOceanSampler(
   material: OceanMaterial,
   level = 0,
   plane?: OceanPlane,
+  depthAt?: (x: number, z: number) => number | undefined,
 ): OceanSampler {
   const at = { x: 0, z: 0 };
   return {
     getHeightAt(x: number, z: number): number {
+      const depth = depthAt?.(x, z) ?? material.depthAt(x, z);
       if (plane) {
         toOceanPlane(plane, x, z, at);
         x = at.x;
         z = at.z;
       }
-      return level + material.seaState.heightAt(x, z);
+      return (
+        level +
+        material.seaState.heightAtDepth(x, z, depth, material.shoreBreakDepth)
+      );
     },
     get significantHeight(): number {
       return material.significantHeight;

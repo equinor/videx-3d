@@ -189,13 +189,14 @@ own water, `water-body.glsl`'s `waterBodyDim`), as the component's bed is; the l
 and the walls carry the water in front of it. (`bedTint` and `bedTintDepth` are
 deprecated; see `documents/chunks.md` §6.4.1 for what they did.)
 
-⭐ **Depth-driven appearance needs that grid, and a `ChunkStack` is the only thing
-that supplies one today.** `shoalDepth`, `shoalOpacity`, `shoreFoam`,
-`shoreFoamDepth` and `swash` are ordinary `OceanWaterProps`, so a standalone
-`<Ocean>` accepts them — but with no bathymetry the shader has no depth input and
-they do nothing. ⚠️ Without it the water body's colour is mixed by the VIEW ANGLE
-as a stand-in for depth, which cannot tell a metre of water over a bank from the
-open sea. See `documents/chunks.md` §6.6.
+⭐ **The waves answer the depth: they shoal and die out toward a shore, and break
+in surf there** (`documents/ocean-waves.md`, Shallow water), by one rule in every
+sea: the `Ocean`, a `ChunkStack`'s, and the `Scenery`'s. The depth is the
+bathymetry grid where there is one, else the scene's ground under an endless sea,
+else the water's own floor, which a flat sea has nowhere near the waves. The surf
+(`shoreFoam`, `shoreBreakDepth`, `surfScale`, `swash`, `shoreNoise`,
+`shoreNoiseScale`, `shoreFoamStrength`, `shoreFoamFade`) is the same code on all of
+them. Floating objects ride the waves as cut. See `documents/chunks.md` §6.6.
 
 **Floating objects work here.** The stack provides the same wave sampler and
 contact-foam registry an `<Ocean>` does, so a vessel heaves and spreads foam with
@@ -210,7 +211,8 @@ draw it over.
 triangulated from the stack's outline, so give it a target edge length —
 `water: { displacement: true, resolution: 100 }` — and remember it applies over
 the whole footprint. Without displacement the waves are shaded per pixel and the
-lid can stay at its minimum.
+lid can stay at its minimum. Displaced, the waves die out toward the shore by the
+bed's depth, so the waterline stays near the coast the bed's cap is built along.
 
 See the **Components / Misc / Ocean** stories for an interactive demo of every
 variant plus the buoyancy boxes, and **Spikes / Chunks / SyntheticColumn** for

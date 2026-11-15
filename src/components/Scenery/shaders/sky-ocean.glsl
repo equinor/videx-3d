@@ -395,16 +395,15 @@ float skyOceanDepthAt(vec3 world) {
   return covered > 0.5 ? max(-height, 0.0) : uSkyOceanDepth;
 }
 
-// The water under the sea point `world` (`up` there), seen from the air along `dir`: a layer
-// (premultiplied) between what the surface reflects and what lies under it, down to the seabed
-// under it (skyOceanDepthAt), lit where the line gathers its light (water-fog.glsl's
+// The water under a sea point with its seabed `depth` down (skyOceanDepthAt) and `up` there,
+// seen from the air along `dir`: a layer (premultiplied) between what the surface reflects and
+// what lies under it, down to that seabed, lit where the line gathers its light (water-fog.glsl's
 // waterUnderSurface). Far off, where the waves' detail has faded by `flatness`
 // (oceanFlatness), and from a few kilometres up (SKY_OCEAN_OPAQUE), water too deep to see
 // through. No derivatives.
-vec4 skyOceanWaterUnder(vec3 world, vec3 up, vec3 dir, float flatness) {
+vec4 skyOceanWaterUnder(float depth, vec3 up, vec3 dir, float flatness) {
   if(uSkyOceanWater < 0.5)
     return vec4(0.0);
-  float depth = skyOceanDepthAt(world);
   float facing = dot(dir, up);
   float path = waterPathDown(depth, facing);
   vec4 water = waterUnderSurface(path, facing, uSkyOceanExtinction, uSkyOceanWaterColor, skyOceanLightAlong(0.0, depth, path));
@@ -420,6 +419,13 @@ struct SkyOceanWave {
   vec3 normal;
   vec2 slope;
   float height;
+  // the still water's depth there (skyOceanDepthAt), which the waves shoal and break by
+  float depth;
+  // the surf's (oceanShoreFoam): the depth it reads, that's change across the pixel, and how
+  // squarely the waves meet the shore
+  float shoreDepth;
+  float shoreWidth;
+  float shoreAlign;
   vec2 crest; // the foam's texture (oceanWaves)
   float flatness;
   float rough;
@@ -439,7 +445,12 @@ SkyOceanWave skyOceanWave(vec3 delta, vec3 up, float texel, float dist) {
   wave.keep = chart.keep;
   wave.up = up;
   wave.p = oceanChartCoords(chart.index, delta);
-  vec3 n = oceanWaves(wave.p, 1.0 - (1.0 - wave.flatness) * chart.keep, wave.slope, wave.height, wave.crest, wave.rough);
+  wave.depth = skyOceanDepthAt(cameraPosition + delta);
+  vec3 n = oceanWaves(wave.p, 1.0 - (1.0 - wave.flatness) * chart.keep, wave.depth, wave.slope, wave.height, wave.crest, wave.rough);
+  // The scene's ground has no grid to step across: the bed's slope from the depth's derivatives.
+  wave.shoreAlign = oceanShoreAlign(oceanDepthSlope(wave.depth, wave.p));
+  wave.shoreDepth = oceanShoreDepth(wave.depth, wave.shoreAlign);
+  wave.shoreWidth = fwidth(wave.shoreDepth);
   wave.normal = oceanChartNormal(chart.index, n, up);
   return wave;
 }
@@ -529,12 +540,15 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // stands over the sea's horizon there (skyLightFrom).
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
   vec4 surface = vec4(reflected * uReflectionIntensity * roughFresnel + oceanGlint(normal, V, glint, wave.rough), fresnel);
-  surface = waterLayerOver(surface, skyOceanWaterUnder(world, wave.up, dir, wave.flatness));
+  surface = waterLayerOver(surface, skyOceanWaterUnder(wave.depth, wave.up, dir, wave.flatness));
 
   float foamFar;
-  float coverage = max(oceanWindFoam(), oceanContactFoam(p, uTime));
+  // The surf where the waves break on a shore (oceanShoreFoam), as the Ocean's.
+  float shoreFoam = oceanShoreFoam(wave.shoreDepth, wave.shoreWidth, wave.shoreAlign, p, texel);
+  float coverage = max(max(oceanWindFoam(), oceanContactFoam(p, uTime)), shoreFoam);
+  float shoreWeight = shoreFoam / max(coverage, 1e-4);
   float foamBlend = oceanFoam(wave.crest, wave.p, texel, coverage, foamFar);
-  float foamOpacity = foamBlend * (1.0 - clamp(foamFar * uFoamLook.x, 0.0, 1.0));
+  float foamOpacity = foamBlend * (1.0 - clamp(mix(foamFar * uFoamLook.x, oceanShoreFade(foamFar), shoreWeight), 0.0, 1.0));
   // Lit, the foam takes the sky's light toward the wave's normal (a second look at the sky, so
   // only where there is foam) and the sun's as the glint has it; unlit, it is dimmed by night.
   vec3 foamSky = vec3(0.0);
@@ -819,7 +833,7 @@ float skyOceanCover(vec3 world, float height) {
       vec3 up = globeUpAt(at);
       float facing = clamp(dot(up, -dir), 0.0, 1.0);
       float reflection = mix(OCEAN_F0, 1.0, pow(1.0 - facing, uFresnelPower));
-      float water = skyOceanWaterUnder(at, up, dir, oceanFlatness(reach.x)).a;
+      float water = skyOceanWaterUnder(skyOceanDepthAt(at), up, dir, oceanFlatness(reach.x)).a;
       float opacity = 1.0 - (1.0 - reflection) * (1.0 - water);
       surface = opacity * skyOceanCutawayWater(cutaway);
     }

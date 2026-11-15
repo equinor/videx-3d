@@ -452,6 +452,15 @@ seabed's look (`ScenerySeabed`) is lit with the model and options of a
 `ChunkMaterial`, so a chunk layer given the same colour and detail continues it without
 a seam.
 
+The waves shoal and die out toward a coast by the depth of the scene's ground under the
+sea (its ground map, 60 m cells near the field and coarser out), and break in surf there
+(`shoreFoam` and the rest of the `<Ocean>`'s surf settings, default off): the same rule and
+code as the `<Ocean>`'s (see [the waves](./ocean-waves.md), Shallow water). The bed's slope
+for the surf comes from the depth's screen derivatives. The surf is placed to the map's
+accuracy against the coast the relief draws: on a gentle shelf the belt is hundreds of
+metres wide, on a steep coast under a pixel, where it dims. Floating children ride waves cut
+by the relief's ground under them. The sea has no displacement.
+
 The sea never tints the data: a `Chunk`, `ChunkStack` or `Surface` is drawn as it is,
 wherever it lies. A field column whose top is the sea bed hands that seabed to a stage
 instead, which draws it as the sea's own (see below).

@@ -1,5 +1,10 @@
 import { seaHexTiles } from './sea-hex';
 import {
+  SEA_BREAK_DEPTH,
+  seaShallowFactors,
+  type SeaShallowLayer,
+} from './sea-shallow';
+import {
   coxMunkSlopeVariance,
   frictionVelocity,
   SEA_G,
@@ -243,6 +248,12 @@ export class SeaState {
   private readonly gains: number[];
   private readonly strongest: number[];
   private readonly orders: number[][];
+  // Counts the changes to the waves' amplitudes, so their statistics are worked out once a
+  // change (heightAtDepth's, per point).
+  private revision = 0;
+  private statsRevision = -1;
+  private layerStats: SeaShallowLayer[] = [];
+  private readonly shallow: number[] = [];
 
   constructor(input: SeaSpectrumInput, options: SeaStateOptions = {}) {
     this.layers = seaLayers(options.layers ?? SEA_LAYERS_MEDIUM);
@@ -283,6 +294,7 @@ export class SeaState {
    * drawn, or a clock set rather than run.
    */
   settle(): void {
+    this.revision++;
     this.detailRatio = this.detailTarget;
     this.layers.forEach((_, l) => {
       const cand = this.candidates[l];
@@ -343,6 +355,7 @@ export class SeaState {
 
   /** What the sea develops toward from now on: the wind and swells. */
   setInput(input: SeaSpectrumInput): void {
+    this.revision++;
     const spectrum = seaSpectrum(input);
     this.spectrum = spectrum;
     this.layers.forEach((layer, l) => {
@@ -435,6 +448,7 @@ export class SeaState {
   update(dt: number): void {
     if (!(dt > 0)) return;
     this.time += dt;
+    this.revision++;
     // The detail octave eases as its band's waves would, over `response` of their periods.
     if (this.detail) {
       const k = Math.sqrt(this.detail.kMin * this.detail.kMax);
@@ -532,6 +546,35 @@ export class SeaState {
       }
       h += sum / Math.sqrt(w2);
     });
+    return h;
+  }
+
+  /**
+   * The sea's height at (x, z) of the wave plane now over water `depth` deep (m), as it is
+   * drawn: each layer's waves by their share left there ({@link seaShallowFactors}: shoaled,
+   * and held under the depth over `breakDepth`), as the surface's shaders cut them. 0 at no
+   * depth; {@link SeaState.heightAt} in deep water.
+   */
+  heightAtDepth(
+    x: number,
+    z: number,
+    depth: number,
+    breakDepth = SEA_BREAK_DEPTH,
+  ): number {
+    if (this.statsRevision !== this.revision) {
+      this.layerStats = this.stats().layers;
+      this.statsRevision = this.revision;
+    }
+    const f = seaShallowFactors(
+      depth,
+      this.layerStats,
+      breakDepth,
+      this.shallow,
+    );
+    let h = 0;
+    for (let l = 0; l < f.length; l++) {
+      if (f[l] > 0) h += f[l] * this.heightAt(x, z, l);
+    }
     return h;
   }
 

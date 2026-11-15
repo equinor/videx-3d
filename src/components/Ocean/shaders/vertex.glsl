@@ -44,6 +44,7 @@ varying float vSectionDist;
 #include <fog_pars_vertex>
 #include <logdepthbuf_pars_vertex>
 #include ./sea-layers.glsl
+#include ../../../sdk/materials/shaderLib/water-body.glsl
 
 void main() {
   vUv = uv;
@@ -59,10 +60,15 @@ void main() {
   vec4 worldPos = modelMatrix * vec4(position, 1.0);
   vSurfaceXZ = worldPos.xz; // capture before displacement
 
-  if(uDisplacement > 0.0)
-    // The same height as the water-body wall's top ring (volume-vertex.glsl), so the rim
-    // stays sealed.
-    worldPos.y += uDisplacement * seaHeight(worldPos.xz, SEA_DISPLACE_LAST);
+  if(uDisplacement > 0.0) {
+    // Each layer by its share left in the still water's depth here (seaShallowFactors), as the
+    // fragments read the waves and floating objects ride them: they die out toward a shore,
+    // whose still waterline stays where the bed meets the level. The same height as the
+    // water-body wall's top ring (volume-vertex.glsl), so the rim stays sealed.
+    float limit;
+    vec4 shallow = seaShallowFactors(waterBodyFloorAt(vec3(worldPos.x, uWaterBody.w, worldPos.z)), limit);
+    worldPos.y += uDisplacement * seaHeight(worldPos.xz, SEA_DISPLACE_LAST, shallow);
+  }
 
   vWorldPosition = worldPos.xyz;
 

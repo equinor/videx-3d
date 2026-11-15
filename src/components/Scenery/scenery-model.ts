@@ -387,8 +387,8 @@ export const SCENERY_HOLLOW_RIM: readonly (readonly [
 
 /**
  * The water settings an endless sea shares with the `Ocean` component, under the same
- * names. The sun and the reflected sky come from the {@link Scenery}; shoaling and surf
- * need a bathymetry grid, which a flat seabed does not have.
+ * names. The sun and the reflected sky come from the {@link Scenery}. Its waves shoal and
+ * break, and its surf stands, by the depth of the scene's ground under it (`documents/scenery.md`).
  */
 export type SceneryOceanWater = Omit<
   OceanWaterProps,
@@ -399,14 +399,6 @@ export type SceneryOceanWater = Omit<
   | 'displacement'
   | 'shoalDepth'
   | 'shoalOpacity'
-  | 'shoreFoam'
-  | 'shoreBreakDepth'
-  | 'surfScale'
-  | 'swash'
-  | 'shoreNoise'
-  | 'shoreNoiseScale'
-  | 'shoreFoamStrength'
-  | 'shoreFoamFade'
 >;
 
 /**

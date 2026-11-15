@@ -683,13 +683,6 @@ export const Scenery = ({
     }),
     [material],
   );
-  const sampler = useMemo(
-    () =>
-      water && oceanWater
-        ? createOceanSampler(water, oceanLevel, wavePlane)
-        : null,
-    [water, oceanWater, oceanLevel, wavePlane],
-  );
   const contacts = useMemo(createOceanContactRegistry, []);
 
   // In render rather than an effect, so a stage or layer made in this commit compiles with
@@ -946,6 +939,31 @@ export const Scenery = ({
   // The relief tiles drawn, for layers lying on them: the World's, inside one.
   const ownReliefHub = useMemo(() => new SceneryReliefHub(), []);
   const reliefHub = worldRelief?.tiles ?? ownReliefHub;
+
+  // The waves floating children ride (wavePlane above) shoal and break by the depth there, as
+  // the drawn ones do by the scene's ground (its map is the GPU's alone): the relief's ground
+  // under them where its tiles are in, else the sea's own depth.
+  const sampler = useMemo(() => {
+    if (!water || !oceanWater) return null;
+    const point = new Vector3();
+    const at = { latitude: 0, longitude: 0 };
+    const depthAt = (x: number, z: number) => {
+      const earth = material.globe;
+      if (!earth.frame) return oceanDepth;
+      earth.geographic(point.set(x, oceanLevel, z), at);
+      const height = reliefHub.current?.heightAt(at.longitude, at.latitude);
+      return height == null ? oceanDepth : Math.max(-height, 0);
+    };
+    return createOceanSampler(water, oceanLevel, wavePlane, depthAt);
+  }, [
+    water,
+    oceanWater,
+    oceanLevel,
+    oceanDepth,
+    wavePlane,
+    material,
+    reliefHub,
+  ]);
 
   const oceanState = useMemo<SceneryOceanState | null>(
     () =>

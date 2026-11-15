@@ -129,6 +129,8 @@ export type SceneryArgs = {
   skySeabedOpacity: number;
   windSpeed: number;
   foamAmount: number;
+  /** surf where the waves break on a coast of the scene's ground (`shoreFoam`) */
+  seaShoreFoam: number;
   /** compass bearing the wind blows toward */
   windDirection: number;
   seaSteepness: number;
@@ -265,6 +267,7 @@ export const sceneryArgs: SceneryArgs = {
   // As `OceanMaterial`'s own defaults.
   windSpeed: 10,
   foamAmount: 0.5,
+  seaShoreFoam: 0,
   windDirection: 90,
   seaSteepness: 1,
   seaOptics: 'realistic',
@@ -514,6 +517,7 @@ export const sceneryOceanFromArgs = (args: SceneryArgs): SceneryOceanProps => ({
   foamTuning: args.seaFoamTuning,
   quality: args.seaQuality,
   foamAmount: args.foamAmount,
+  shoreFoam: args.seaShoreFoam,
   optics: args.seaOptics,
   detailScale: args.seaDetailScale,
   fresnelPower: args.seaFresnelPower,
@@ -987,6 +991,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   ),
   windSpeed: range(0, 25, 0.5, SEA, 'Drives the waves, in m/s.'),
   foamAmount: range(0, 1, 0.01, SEA, 'Whitecaps on the waves.'),
+  seaShoreFoam: range(
+    0,
+    1,
+    0.01,
+    SEA,
+    'Surf where the waves break on a coast (`shoreFoam`): where the depth of the scene\u2019s ground under the sea falls to 1.3 times their height. The waves shoal and die out toward the shore by the same depth, whatever this is.',
+  ),
   windDirection: range(
     0,
     360,
