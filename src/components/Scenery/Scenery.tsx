@@ -55,6 +55,7 @@ import {
   OceanContactContext,
 } from '../Ocean/ocean-contact';
 import {
+  chartedSeaHeights,
   createOceanSampler,
   OceanSamplerContext,
   type OceanPlane,
@@ -314,6 +315,14 @@ const DEFAULT_NORTH: Vec3 = [0, 0, -1];
 
 const scratch = new Color();
 const lookScratch = new Vector3();
+// The camera's point on the still sea, and its coordinates in its chart, for the foam's life;
+// with the way it looks there, charted FOAM_AHEAD_STEP metres on (m).
+const foamPoint = new Vector3();
+const foamCoords = new Vector2();
+const foamUp = new Vector3();
+const foamLook = new Vector3();
+const foamAheadCoords = new Vector2();
+const FOAM_AHEAD_STEP = 100;
 // Primitive dependency for a colour prop, so an inline `new Color()` does not re-bake every render.
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 
@@ -702,11 +711,12 @@ export const Scenery = ({
   material.ocean = hasOcean;
   // With a sea, the void lies below its seabed.
   material.abyss = hasAbyss || hasOcean;
-  // Its Fresnel and glitter defines (OceanMaterial.fresnelPower, sparkle), so here too, before
-  // the switches are read.
+  // Its Fresnel, glitter and whitecaps' life defines (OceanMaterial.fresnelPower, sparkle,
+  // foamLife), so here too, before the switches are read.
   if (water) {
     water.fresnelPower = oceanOptions?.fresnelPower ?? null;
     water.sparkle = oceanOptions?.sparkle ?? null;
+    water.foamLife = oceanOptions?.foamLife ?? null;
   }
   if (water) material.linkOcean(water);
   // What a stage and its relief compile with from the sky, as a key (SceneryOceanState).
@@ -963,14 +973,28 @@ export const Scenery = ({
     if (!water || !oceanWater) return null;
     const point = new Vector3();
     const at = { latitude: 0, longitude: 0 };
-    const depthAt = (x: number, z: number) => {
+    // The still water's depth under a world point on the sea.
+    const depthUnder = (sea: Vector3) => {
       const earth = material.globe;
       if (!earth.frame) return oceanDepth;
-      earth.geographic(point.set(x, oceanLevel, z), at);
+      earth.geographic(sea, at);
       const height = reliefHub.current?.heightAt(at.longitude, at.latitude);
       return height == null ? oceanDepth : Math.max(-height, 0);
     };
-    return createOceanSampler(water, oceanLevel, wavePlane, depthAt);
+    const depthAt = (x: number, z: number) =>
+      depthUnder(point.set(x, oceanLevel, z));
+    // Anywhere on the globe, in the charts the sea is drawn in: what floating objects placed
+    // far off ride (useBuoyancy).
+    return Object.assign(
+      createOceanSampler(water, oceanLevel, wavePlane, depthAt),
+      chartedSeaHeights({
+        globe: material.globe,
+        charts: material.oceanCharts,
+        heightAt: (x, z, depth) =>
+          water.seaState.heightAtDepth(x, z, depth, water.shoreBreakDepth),
+        depthAt: depthUnder,
+      }),
+    );
   }, [
     water,
     oceanWater,
@@ -1624,11 +1648,36 @@ export const Scenery = ({
       // Its waves on the weather's clock while it draws the weather's sea.
       water.step(waveStep);
       // Before the sky draws the sea: its layers for this frame, but those too fine to show
-      // from the camera's altitude over it.
+      // from the camera's altitude over it; and the whitecaps' life about the camera, in the
+      // chart every pixel takes (none while a line where two meet is in view), ahead of it the
+      // way it looks: the level part of its look, as the chart has it a short way on.
+      const charts = material.oceanCharts;
+      let foamAt: Vector2 | null = null;
+      let foamAhead: Vector2 | null = null;
+      if ((charts.uniforms.uOceanChartOnly.value as number) >= 0) {
+        const earth = material.globe;
+        const stillUp = earth.upAt(camera.position, foamUp);
+        const still = foamPoint
+          .copy(stillUp)
+          .multiplyScalar(-earth.altitude(camera.position))
+          .add(camera.position);
+        const chart = charts.chartAt(still).chart;
+        foamAt = charts.coords(chart, still, foamCoords);
+        const look = camera.getWorldDirection(foamLook);
+        look.addScaledVector(stillUp, -look.dot(stillUp));
+        const on = charts.coords(
+          chart,
+          look.multiplyScalar(FOAM_AHEAD_STEP).add(still),
+          foamAheadCoords,
+        );
+        foamAhead = on.sub(foamAt).divideScalar(FOAM_AHEAD_STEP);
+      }
       water.renderWaves(
         gl,
         camera,
         material.heightOf(camera.position) - material.oceanLevel,
+        foamAt,
+        foamAhead,
       );
       contacts.upload(water, { plane: wavePlane, from: camera.position });
     }

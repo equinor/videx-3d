@@ -207,6 +207,8 @@ export const Tanker = forwardRef<Group, TankerProps>(function Tanker(
         x: g.position.x,
         z: g.position.z,
         heading: g.rotation.y,
+        // Its pose is its parent's: under a Scenery, placed on the globe anywhere.
+        frame: g.parent,
         halfLength: length * 0.5,
         halfWidth: width * 0.5,
         foamWidth: Math.max(2, width * 0.3),

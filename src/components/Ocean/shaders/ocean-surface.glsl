@@ -15,6 +15,10 @@
 #define OCEAN_CREST_SPAN 3.0
 #define OCEAN_CREST_FINE 0.6
 #define OCEAN_CREST_RIPPLES 0.4
+// A whitecap's patch, metres across: x + y × the wind (m/s), 3.5 m at 10 m/s, 5.75 m at 25; and
+// the share of the foam's texture's spread its breakup stands for (oceanFoam).
+#define OCEAN_FOAM_PATCH vec2(2.0, 0.15)
+#define OCEAN_FOAM_PATCH_SHARE 0.5
 // The foam's albedo, lit (Dupuy and Bruneton 2012 use 0.4, after Koepke 1984; fresh foam is
 // brighter).
 #define OCEAN_FOAM_ALBEDO 0.8
@@ -222,6 +226,24 @@ vec4 seaLayerAt(sampler2D map, int index, vec2 p, float pixel2) {
   return seaLayerRead(map, layer, uSeaLayerStats[index], index, seaLayerUv(layer, p), seaLayerLod(layer, pixel2));
 }
 
+// The share of a layer's height variance a read keeps, from the share of its slope variance
+// it loses to the mips (`lost` of `total`): its waves span about SEA_LAYER_SPAN in wavenumber
+// (the tiles are that far apart) on a k⁻³ spectrum, filtered from the shortest up, so the
+// heights, mostly the longest waves', hold on long after the slopes go (0.87 at half of them).
+#define SEA_LAYER_SPAN 6.5
+float seaHeightKept(float lost, float total) {
+  float f = clamp(lost / max(total, 1e-12), 0.0, 1.0);
+  float r2 = SEA_LAYER_SPAN * SEA_LAYER_SPAN;
+  return clamp((r2 - pow(SEA_LAYER_SPAN, 2.0 * f)) / (r2 - 1.0), 0.0, 1.0);
+}
+
+// As oceanWaves last found it: the spread of the crests (`crest.x`, in their standard
+// deviations) the pixel cannot show: 0 up close, where it shows all of them, 1 where it shows
+// none (filtered out, or faded far off and where two of a Scenery's charts meet). The foam is
+// the share of the pixel the crests stand over their threshold, those it shows and those it
+// does not together (oceanFoam).
+float oceanCrestUnresolved = 1.0;
+
 // The waves at `p` of the wave plane (+Y up), from the sea state's layers, each filtered to
 // the pixel: the normal, with the slope and height for the foam; `crest` the finer layers'
 // heights over their spread, as [0, 1] (x all but the longest, y the finest), the foam's
@@ -239,6 +261,7 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   oceanSlick = 0.0;
   oceanOpenHeight = 0.0;
   oceanBreakLimit = 1.0;
+  oceanCrestUnresolved = 1.0;
   float pixel2 = seaPixel2(p);
   float s2 = uSteepness * uSteepness;
   float detailGain2 = uSeaDetail.x * uSeaDetail.x;
@@ -280,6 +303,8 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   vec4 l1 = seaLayerAt(uSeaSurface1, 1, p, pixel2);
   vec4 l2 = seaLayerAt(uSeaSurface2, 2, p, pixel2);
   oceanOpenHeight = (l0.z + l1.z + l2.z) * detail;
+  float kept1 = seaHeightKept(l1.w, uSeaLayerStats[1].x);
+  float kept2 = seaHeightKept(l2.w, uSeaLayerStats[2].x);
   l0 *= vec4(vec3(shallow.x), shallow2.x);
   l1 *= vec4(vec3(shallow.y), shallow2.y);
   l2 *= vec4(vec3(shallow.z), shallow2.z);
@@ -290,10 +315,15 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   // their spread as they stand here, cut by the depth: the foam's texture keeps its look in
   // shallow water, and the whitecaps answer the depth by their share (oceanBreakLimit).
   float crestHeight = l1.z + l2.z;
-  float crestVariance = shallow2.y * uSeaLayerStats[1].y + shallow2.z * uSeaLayerStats[2].y;
-  float zCrestFine = l2.z * inversesqrt(max(shallow2.z * uSeaLayerStats[2].y, 1e-8));
+  float crestVariance1 = shallow2.y * uSeaLayerStats[1].y;
+  float crestVariance2 = shallow2.z * uSeaLayerStats[2].y;
+  float crestVariance = crestVariance1 + crestVariance2;
+  // How much of their spread the pixel shows (seaHeightKept), for the foam (oceanCrestUnresolved).
+  float keptCrest = (crestVariance1 * kept1 + crestVariance2 * kept2) / max(crestVariance, 1e-8);
+  float zCrestFine = l2.z * inversesqrt(max(crestVariance2, 1e-8));
   #if SEA_LAYERS > 3
   vec4 l3 = seaLayerAt(uSeaSurface3, 3, p, pixel2);
+  float kept3 = seaHeightKept(l3.w, uSeaLayerStats[3].x);
   oceanOpenHeight += l3.z * detail;
   // The finest layer (7.3 m on medium) answers the local wind by half (it lies mostly above
   // the short waves).
@@ -323,10 +353,13 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   // one, else the ripples, else the 47 m layer itself.
   #if SEA_LAYERS > 3
   float zDetail = l3.z * inversesqrt(max(shallow2.w * uSeaLayerStats[3].y, 1e-8));
+  float keptDetail = kept3;
   #elif defined(SEA_DETAIL)
   float zDetail = ripples.z * inversesqrt(max(fineVariance, 1e-8));
+  float keptDetail = seaHeightKept(ripples.w, uSeaLayerStats[SEA_FINEST].x);
   #else
   float zDetail = zCrestFine;
+  float keptDetail = kept2;
   #endif
   // What the pixel resolves of the layers' slopes: all of them less what its mips filter out.
   float resolved = max(total - sum.w, 0.0);
@@ -343,7 +376,10 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   #else
   float crestRipples = 0.0;
   #endif
-  float zCrest = (crestHeight * inversesqrt(max(crestVariance, 1e-8)) + crestFine * zCrestFine + crestRipples * zDetail) * inversesqrt(1.0 + crestFine * crestFine + crestRipples * crestRipples);
+  float crestWeights = 1.0 + crestFine * crestFine + crestRipples * crestRipples;
+  float zCrest = (crestHeight * inversesqrt(max(crestVariance, 1e-8)) + crestFine * zCrestFine + crestRipples * zDetail) * inversesqrt(crestWeights);
+  // The share of that spread the pixel shows, each part by what its mips keep of it.
+  float keptZ = (keptCrest + crestFine * crestFine * kept2 + crestRipples * crestRipples * keptDetail) / crestWeights;
   // ⚠️ Tuning (uFoamGrain.z): narrowed toward the crest lines, where the crests' slope along the
   // wind is nil, lowered by its size there in standard deviations (a half-normal, centred and
   // rescaled so as much of the sea stays over the threshold): long along a crest, thin across.
@@ -353,8 +389,19 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   // the side its foam trails on as the crest runs on.
   oceanCrestAlong = dot(crestSlope, wind) * inversesqrt(max(0.5 * crestSlopeVariance, 1e-10));
   float narrow = uFoamGrain.z;
-  if(narrow > 0.0)
-    zCrest = (zCrest - narrow * (abs(oceanCrestAlong) - 0.7978846)) * inversesqrt(1.0 + narrow * narrow * 0.3633802);
+  if(narrow > 0.0) {
+    // As filtered, the slope keeps the share of its spread the mips leave (their `w` the rest):
+    // its half-normal centred on its own mean, so the crests' mean stays put.
+    float keptSlope = clamp(1.0 - (l1.w + l2.w) / max(crestSlopeVariance, 1e-10), 0.0, 1.0);
+    float narrow2 = narrow * narrow * 0.3633802;
+    zCrest = (zCrest - narrow * (abs(oceanCrestAlong) - 0.7978846 * sqrt(keptSlope))) * inversesqrt(1.0 + narrow2);
+    keptZ = (keptZ + narrow2 * keptSlope) / (1.0 + narrow2);
+  }
+  // Faded far off and where two of a Scenery's charts meet, as the slopes are: the spread it
+  // loses goes to what the pixel does not show, so the foam keeps its share there.
+  float keptFade = smoothstep(0.0, 0.5, detail);
+  zCrest *= sqrt(keptFade);
+  oceanCrestUnresolved = sqrt(clamp(1.0 - keptZ * keptFade, 0.0, 1.0));
   crest = clamp(0.5 + vec2(zCrest, zDetail) / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);
   return normalize(vec3(-slope.x, 1.0, -slope.y));
 }
@@ -535,20 +582,85 @@ vec4 oceanStraight(vec4 layer) {
 }
 
 // --- Foam: whitecaps on the wind sea's highest crests -------------------------
+// How many standard deviations up a normal leaves `share` (0 to 1) of it above: its upper tail
+// inverted (Abramowitz and Stegun 26.2.23), either side of the middle.
+float oceanTailZ(float share) {
+  float s = clamp(min(share, 1.0 - share), 1e-6, 0.5);
+  float t = sqrt(-2.0 * log(s));
+  float z = t - (2.515517 + 0.802853 * t + 0.010328 * t * t) / (1.0 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
+  return share > 0.5 ? -z : z;
+}
+
 // The share of the sea whitecaps cover (Monahan and O'Muircheartaigh 1980: 3.84e-6·U^3.41, about
 // 1 % at 10 m/s and 10 % at 20 m/s; uFoamAmount 0.5 as measured), as the coverage that leaves
 // that share of the crests' texture (oceanWaves' `crest`) over oceanFoam's threshold. In the surf
 // zone by what the breaking limit leaves of the waves (oceanBreakLimit, after oceanWaves).
-float oceanWindFoam() {
-  float share = min(3.84e-6 * pow(max(uWindSpeed, 0.0), 3.41) * 2.0 * uFoamAmount, 0.5) * oceanBreakLimit;
+// `scale` takes a share of that cover: the share that breaks afresh where the foam's life is
+// drawn (OCEAN_FOAM_LIFE), the rest being the foam it leaves.
+float oceanWindFoamShare(float scale) {
+  float share = min(3.84e-6 * pow(max(uWindSpeed, 0.0), 3.41) * 2.0 * uFoamAmount, 0.5) * oceanBreakLimit * scale;
   if(share <= 1e-5)
     return 0.0;
-  // How many standard deviations up only that share of the crests stands: the normal's
-  // upper tail inverted (Abramowitz and Stegun 26.2.23).
-  float t = sqrt(-2.0 * log(share));
-  float z = t - (2.515517 + 0.802853 * t + 0.010328 * t * t) / (1.0 + 1.432788 * t + 0.189269 * t * t + 0.001308 * t * t * t);
-  return clamp(0.5 - z / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);
+  return clamp(0.5 - oceanTailZ(share) / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);
 }
+
+float oceanWindFoam() {
+  return oceanWindFoamShare(1.0);
+}
+
+#ifdef OCEAN_FOAM_LIFE
+// --- The foam's life (SeaFoamLife) -------------------------------------------------
+// A square of the wave plane about the camera: r fresh foam, the trail a breaking crest leaves,
+// g old foam, thin, gathered into streaks along the wind. Where it holds, only a share of the
+// whitecaps' cover breaks afresh (OCEAN_FOAM_ACTIVE), the rest being the foam it holds.
+uniform sampler2D uFoamLife;
+// xy: the square's corner in the wave plane (m); z: its size (m); w: how much it holds (0 none,
+// as the camera rises past where its foam would show).
+uniform vec4 uFoamLifeArea;
+// The share of the whitecaps' cover that breaks afresh where the foam's life holds.
+#define OCEAN_FOAM_ACTIVE 0.47
+// How opaque fresh foam is where it is thickest, and old foam.
+#define OCEAN_FOAM_FRESH 0.7
+#define OCEAN_FOAM_OLD 0.3
+
+// The foam's life at `p`: x fresh, y old, z how much of it holds there: all of it inside the
+// square's middle, fading out over its outer 30 %, where the whitecaps' mean takes over, and as
+// much as the texel has come into its life since the square moved onto it (b, SeaFoamLife).
+vec3 oceanFoamLifeAt(vec2 p) {
+  vec2 uv = (p - uFoamLifeArea.xy) / uFoamLifeArea.z;
+  vec2 edge = min(uv, 1.0 - uv);
+  float hold = uFoamLifeArea.w * smoothstep(0.0, 0.3, min(edge.x, edge.y));
+  if(hold <= 0.0)
+    return vec3(0.0);
+  vec3 life = textureLod(uFoamLife, uv, 0.0).rgb;
+  return vec3(life.rg, hold * life.b);
+}
+
+// The whitecaps' cover at a point where the foam's life holds by `hold`: a share of it there.
+float oceanWindFoamWithLife(float hold) {
+  return hold > 0.0 ? mix(oceanWindFoam(), oceanWindFoamShare(OCEAN_FOAM_ACTIVE), hold) : oceanWindFoam();
+}
+
+// `opacity` (the foam drawn, oceanFoam's) with the foam's life `life` (oceanFoamLifeAt) over
+// it. Both kinds are drawn as a share of a fine lace (smooth noise in two octaves, the finest
+// waves' texture in it up close), their thickness the threshold: fresh foam, just broken, all
+// of it, opening into holes as it thins; old foam a thin lace at most OCEAN_FOAM_OLD. So its
+// edges are the lace's, a pixel's, whatever the square's texels, and once the lace is below a
+// pixel (`texel`, m) its mean is drawn, the same thickness, as the foam fades by `foamFar`.
+#define OCEAN_FOAM_LACE 1.2
+float oceanFoamLifeOver(float opacity, vec3 life, vec2 crest, vec2 p, float texel, float foamFar) {
+  if(life.z <= 0.0 || life.x + life.y <= 0.002)
+    return opacity;
+  vec2 q = p / OCEAN_FOAM_LACE;
+  float n = 0.55 * oceanNoise(q) + 0.3 * oceanNoise(mat2(0.8, -0.6, 0.6, 0.8) * q * 2.7 + 31.7) + 0.15 * crest.y;
+  float sharp = 1.0 - smoothstep(0.5, 2.0, texel / OCEAN_FOAM_LACE);
+  float edge = 0.04 + 0.1 * (1.0 - sharp);
+  float fresh = OCEAN_FOAM_FRESH * mix(life.x, smoothstep(1.0 - life.x - edge, 1.0 - life.x + edge, n), sharp);
+  float old = OCEAN_FOAM_OLD * mix(life.y, smoothstep(1.0 - life.y - edge, 1.0 - life.y + edge, n), sharp);
+  float add = (1.0 - (1.0 - fresh) * (1.0 - old)) * life.z * (1.0 - foamFar * uFoamLook.x);
+  return 1.0 - (1.0 - opacity) * (1.0 - clamp(add, 0.0, 1.0));
+}
+#endif
 
 // --- Surf: where the waves break on a shore ------------------------------------
 // The parts nobody has information to tune, so constants rather than knobs.
@@ -702,12 +814,13 @@ float oceanContactFoam(vec2 p, float t) {
   return foam;
 }
 
-// How much foam a `coverage` draws, before its distance fade. The coverage is thresholded
-// against the foam's texture, the wind sea's crests (oceanWaves' `crest`), with the
-// threshold's transition width tracking the pixel footprint: edges stay crisp (and get crisper
-// as the camera approaches) yet remain anti-aliased at distance. The finest waves break it up
-// further up close. `foamFar` -> 1 once the foam's detail is sub-pixel, where the share of
-// the texture over the threshold is drawn instead: an even tint, none without coverage.
+// How much foam a `coverage` draws, before its distance fade: the share of the pixel the wind
+// sea's crests (oceanWaves' `crest`, the foam's texture) stand over the threshold the coverage
+// sets. Those the pixel shows and those it does not (oceanCrestUnresolved) together: up close,
+// where it shows all of them, a crisp edge (and crisper as the camera approaches); further off a
+// soft brightening over the crests it still shows; then an even tint, as much foam at every
+// distance, none without coverage. The finest waves break it up further up close. `foamFar` -> 1
+// once the foam's detail is sub-pixel.
 float oceanFoam(vec2 crest, vec2 p, float texel, float coverage, out float foamFar) {
   float foamTex = crest.x;
 
@@ -736,11 +849,20 @@ float oceanFoam(vec2 crest, vec2 p, float texel, float coverage, out float foamF
   // Edge softness: crisp and anti-aliased at distance, wider up close (uFoamShape.y) so the
   // foam's fringe feathers into the water rather than a hard cut-out.
   float edge = clamp(fwidth(foamTex) + 0.01, 0.01, 0.5) + closeness * uFoamShape.y;
-  float near = smoothstep(foamT - edge, foamT + edge, foamTex);
-  // Sub-pixel: the share of the texture (a standard normal over ±OCEAN_CREST_SPAN) over the
-  // threshold, its tail as a logistic.
-  float far = smoothstep(0.0, 0.05, coverage) / (1.0 + exp(-3.4 * OCEAN_CREST_SPAN * (coverage - 0.5)));
-  float foam = mix(near, far, foamFar);
+  // The crests the pixel does not show, a normal of their spread there, and the edge (a
+  // smoothstep `edge` each side is as soft as a normal of edge / √5), in standard deviations:
+  // the share over the threshold, as a logistic. A whitecap is no solid crest top but a ragged
+  // patch a few metres across (OCEAN_FOAM_PATCH, larger as the wind rises), full of holes, which
+  // the froth and grain draw up close: once a pixel spans one, that breakup is also what the
+  // pixel does not show (OCEAN_FOAM_PATCH_SHARE of the texture's spread, the crests it shows the
+  // rest), so the whitecaps soften into a mottled brightening, as much foam all the same.
+  float patchSize = OCEAN_FOAM_PATCH.x + OCEAN_FOAM_PATCH.y * max(uWindSpeed, 0.0);
+  float patchLost = OCEAN_FOAM_PATCH_SHARE * smoothstep(0.5 * patchSize, 2.0 * patchSize, texel);
+  float edgeSpread = edge * 2.0 * OCEAN_CREST_SPAN;
+  float spread = sqrt((1.0 - patchLost) * oceanCrestUnresolved * oceanCrestUnresolved + patchLost + edgeSpread * edgeSpread * 0.2);
+  float zShown = (foamTex - 0.5) * 2.0 * OCEAN_CREST_SPAN * sqrt(1.0 - patchLost);
+  float over = zShown - (foamT - 0.5) * 2.0 * OCEAN_CREST_SPAN;
+  float foam = smoothstep(0.0, 0.05, coverage) / (1.0 + exp(-1.702 * over / max(spread, 1e-4)));
 
   // Up close the finest waves modulate the fill, so it reads as clumpy froth, not a sheet.
   float froth = mix(1.0, 1.0 - uFoamShape.z + uFoamShape.z * crest.y, closeness);

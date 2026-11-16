@@ -218,6 +218,12 @@ export type OceanWaterProps = {
    * default) as modelled, more for more.
    */
   crestLight?: number;
+  /**
+   * Whether the whitecaps live on: the foam a breaking crest leaves trails behind it, drifts
+   * downwind, fades, and is gathered by the wind into streaks, in a square about the camera.
+   * Default by `quality`: on for high and ultra (a pass reading the waves over 512² texels).
+   */
+  foamLife?: boolean;
   /** The foam's feature frequency, per metre. Default 0.05. */
   detailScale?: number;
   /** @deprecated the fine ripples are the sea's finest layer; ignored */
@@ -373,6 +379,7 @@ export function applyOceanWaterProps(
   material.fresnelPower = props.fresnelPower ?? null;
   material.sparkle = props.sparkle ?? null;
   material.crestLight = props.crestLight ?? 1;
+  material.foamLife = props.foamLife ?? null;
   if (props.detailScale !== undefined) material.detailScale = props.detailScale;
   if (props.detailStrength !== undefined)
     material.detailStrength = props.detailStrength;

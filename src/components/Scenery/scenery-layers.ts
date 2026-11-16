@@ -73,6 +73,7 @@ export function sceneryLayerDefines(
         'OCEAN_CONTACT_COUNT',
         'OCEAN_SPARKLE',
         'OCEAN_FRESNEL_POWER',
+        'OCEAN_FOAM_LIFE',
       ])
         if (switches[key] !== undefined) defines[key] = switches[key];
     }

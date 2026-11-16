@@ -1,6 +1,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
-import { IUniform, Vector4 } from 'three';
+import { IUniform, Vector3, Vector4 } from 'three';
 import { releaseMaterial } from '../../rendering/precompile';
 import {
   createOceanContactRegistry,
@@ -20,6 +20,9 @@ import { ChunkDepthMap } from './chunk-depth-map';
 import { StackWater } from './chunk-defs';
 import { ChunkFenceUniforms } from './chunk-material';
 import { CHUNK_MATERIAL_LINGER } from './chunk-resources';
+
+// The way the camera looks, for the whitecaps' life.
+const lookScratch = new Vector3();
 
 /** What a {@link ChunkStackProps.water} sea is drawn and sampled with. */
 export type StackWaterMaterials = {
@@ -167,14 +170,23 @@ export function useStackWater(
 
   // The waves at the enclosing Weather's pace.
   const step = useWeatherStep();
-  useFrame(({ gl: renderer, scene }, delta) => {
+  useFrame(({ gl: renderer, scene, camera }, delta) => {
     const waveStep = step(delta);
     if (!materials) return;
     // Its waves on the weather's clock while it draws the weather's sea; its walls with it.
     materials.surface.step(waveStep);
     // The sky it reflects and the sun it glints with: the scene's, its own where given.
     materials.surface.updateSky(renderer, scene);
-    materials.surface.renderWaves(renderer);
+    // The whitecaps' life about the camera, in the surface's wave plane (world X/Z), from its
+    // height over the water's level, ahead of it the way it looks.
+    const look = camera.getWorldDirection(lookScratch);
+    materials.surface.renderWaves(
+      renderer,
+      camera,
+      camera.position.y - materials.surface.water.level,
+      { x: camera.position.x, y: camera.position.z },
+      { x: look.x, y: look.z },
+    );
     materials.volume.time = materials.surface.time;
     if (materials.face) materials.face.time = materials.surface.time;
 

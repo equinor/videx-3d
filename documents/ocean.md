@@ -39,11 +39,26 @@ and no ripples; `ultra` finer tiles. The `<Scenery>`'s sea (`SceneryOcean`) take
 for show; 1 is as the spectrum gives them. Whitecaps (`foamAmount`, default 0.5) cover the
 share of the sea measured at sea for the wind (about 1 % at 10 m/s, 10 % at 20 m/s) on the
 wind sea's highest crests: narrowed toward the crest lines into streaks, a soft grained rim,
-lit by the sky toward the wave's normal and the sun (albedo 0.8). Its shaping is still open
+lit by the sky toward the wave's normal and the sun (albedo 0.8). Each pixel draws the share of
+it that crests over the threshold cover, those it shows and those too small for it alike: crisp
+patches up close, a mottled brightening further off (a whitecap is a ragged patch a few metres
+across, `OCEAN_FOAM_PATCH`, larger as the wind rises), an even tint toward the horizon, as much
+foam at every distance, with no hand-over to tune. Its shaping is still open
 to tuning (`foamTuning`, ⚠️ to be settled and removed; defaults dialled in on the sea bench
 2026-11-13, at 0–3 % of the `Scenery`'s sea on the A1000 over the flat foam before).
 `waveCount`, `directionalSpread`, `detailStrength` and the `tonal*`
 props are deprecated and ignored.
+
+**Foam with a life** (`foamLife`, default on at `high` and `ultra`; built 2026-11-16). A breaking
+crest leaves its foam behind it: a square of the sea ahead of the camera (`SeaFoamLife`, 512²
+texels, six times the camera's height across, 512 m to 2 km, gone from 1 km up) is run a step
+each frame on the sea's clock. Fresh foam (2 s) trails the crests that broke and leaves a thin
+old foam, lasting longer as the wind rises (8–40 s), drifting downwind at 3 % of the wind and
+gathered into streaks across it from about Beaufort 4. Where it holds, 47 % of the whitecaps'
+cover breaks afresh (`SEA_FOAM_ACTIVE`), so as much foam shows in all as without it (measured:
+2.6 % of the pixels against 3.0 % at 15 m/s). The square is snapped to its texels; it grows
+at once as the camera climbs but shrinks only well below the next size down; and sea it moves
+onto eases into its life over 5 s, so neither its edge nor bare sea shows as the camera turns.
 
 Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed`, `windDirection`,
 `gusts` and `swells` left out are the weather's: its wind's speed, the way it blows toward and
@@ -191,10 +206,18 @@ Use `useOceanContact` to spread foam where an object meets the water (see the
 `Tanker` component for a full example). Both are no-ops outside an `<Ocean>`. With more
 footprints than the material draws (`contactCount`, 8), those nearest the camera are drawn.
 
-⚠️ The `OceanSampler` reads the waves in the Ocean's own plane. A `Scenery`'s sea far from
-the field draws them in charts fixed on the Earth instead (`OceanCharts`, see
-[world.md, 4d](./world.md#4d-the-waves-far-off-built-2026-10-27)); a sampler for it is
-still to come.
+Under a `Scenery`, anywhere on its globe (built 2026-11-16): its sea far from the field is
+drawn in charts fixed on the Earth (`OceanCharts`, see
+[world.md, 4d](./world.md#4d-the-waves-far-off-built-2026-10-27)), and its sampler reads them
+there (`OceanSampler.heightAtWorld`, `stillSeaAt`; `chartedSeaHeights`): a point is taken along
+up onto the still sea, into the chart it lies in, its waves kept by how far it lies from where
+two charts meet, as the drawn ones are. `useBuoyancy` then samples in the world and poses the
+object in its parent's frame, whose +Y it takes for up there (a `Wgs84Position`, a
+`TrackLayer`'s group). Past the stage's disc the plane's own heights (`getHeightAt`) part from
+the drawn waves' by metres (the chart is stereographic, the plane the map's: 11 m 108 km out),
+so a `Scenery`'s floating objects read the world's everywhere. A contact footprint given in a
+frame of its own (`OceanContact.frame`) is taken through the world into the plane the sea draws
+its foam in.
 
 ## Water over a chunk stack
 

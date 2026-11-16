@@ -14,6 +14,7 @@ import {
 import type { WeatherGusts } from '../../../sdk/weather/wind-field';
 import { SceneryArgsFeatures } from '../../../storybook/components/scenery-features';
 import {
+  foamLifeOf,
   sceneryArgs,
   sceneryPropsFromArgs,
   sceneryReliefFrame,
@@ -141,6 +142,8 @@ type SeaBenchArgs = {
   sparkle: number;
   /** how much light through the crests both seas draw (`crestLight`): 0 none, 1 as modelled */
   crestLight: number;
+  /** the whitecaps' life (`foamLife`), both seas: by the quality, or on or off */
+  foamLife: 'auto' | 'on' | 'off';
   /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
   fresnelPower: number;
   /** the stand-alone sea's scene lit by the studio HDR too (`scene.environment`), which it then reflects */
@@ -208,6 +211,7 @@ const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   seaOptics: args.optics,
   seaSparkle: args.sparkle,
   seaCrestLight: args.crestLight,
+  seaFoamLife: args.foamLife,
   seaFresnelPower: args.fresnelPower,
 });
 
@@ -276,6 +280,7 @@ const StandAlone = ({
         fresnelPower={sky.seaFresnelPower > 0 ? sky.seaFresnelPower : undefined}
         sparkle={sky.seaSparkle}
         crestLight={sky.seaCrestLight}
+        foamLife={foamLifeOf(sky.seaFoamLife)}
       />
     </>
   );
@@ -674,6 +679,13 @@ const meta = {
       description:
         'The sun’s light through the waves’ crests (`crestLight`), both seas, with the sun behind them: a turquoise glow high on the waves, from the water’s own colour and clarity. 0 none, 1 as modelled (the default).',
     },
+    foamLife: {
+      table: { category: 'Conditions' },
+      control: { type: 'inline-radio' },
+      options: ['auto', 'on', 'off'],
+      description:
+        'The whitecaps’ life (`foamLife`), both seas: the foam a breaking crest leaves trails behind it, drifts downwind, fades, and is gathered by the wind into streaks, about the camera. AUTO: as the quality (high and ultra). Recompiles as it turns on or off.',
+    },
     fresnelPower: {
       table: { category: 'Conditions' },
       control: { type: 'range', min: 0, max: 8, step: 0.1 },
@@ -743,7 +755,7 @@ const meta = {
     foamFarFade: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description:
-        'The share of the foam lost once below a pixel (far off): 0 keeps it, the sea whitening evenly. Default 0.85.',
+        'The share of the foam lost once below a pixel (far off): 0 keeps its mean, the sea paling evenly as the wind rises. Default 0 (0.85 until 2026-11-16).',
       table: { category: 'Foam (tuning)' },
     },
     foamOpacity: {
@@ -873,7 +885,7 @@ const meta = {
     foamEdge: 0.1,
     foamFroth: 0.45,
     foamFalloff: 0.6,
-    foamFarFade: 0.85,
+    foamFarFade: 0,
     foamOpacity: 1,
     foamLit: 1,
     foamLift: 0.5,
@@ -890,6 +902,7 @@ const meta = {
     displacement: false,
     sparkle: 0,
     crestLight: 1,
+    foamLife: 'auto',
     fresnelPower: 0,
     skyEnvironment: false,
     stage: true,

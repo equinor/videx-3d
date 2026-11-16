@@ -950,9 +950,9 @@ that followed the camera would have made the sea depend on the camera's path.
 - **Next, for data-driven waves:** a field of wind (speed and direction) by latitude and
   longitude, read where each pixel's waves are drawn, scaling the wave set's amplitudes
   (and their slope variance for the glint); the wave set itself stays the same everywhere,
-  so the waves never tear where the wind turns. A CPU sampler of the sky's sea for floating
-  objects far off (the Ocean's `OceanSampler` is the field's plane's) takes `OceanCharts`
-  the same way.
+  so the waves never tear where the wind turns. The floating objects far off ride the waves
+  drawn there: the `Scenery`'s sampler reads `OceanCharts` the same way (built 2026-11-16,
+  [ocean.md](./ocean.md#floating-objects-buoyancy)).
 - **The clouds:** the still clouds' deck, its pattern laid on the field's plane, streaked far
   off; it is gone, for the 3D clouds (`SceneryClouds`, [clouds.md](./clouds.md)), which need
   no charts: their pattern is read in a frame fixed to the Earth, one field from sea level to

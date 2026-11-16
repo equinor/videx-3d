@@ -544,10 +544,21 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   float foamFar;
   // The surf where the waves break on a shore (oceanShoreFoam), as the Ocean's.
   float shoreFoam = oceanShoreFoam(wave.shoreDepth, wave.shoreWidth, wave.shoreAlign, p, texel);
-  float coverage = max(max(oceanWindFoam(), oceanContactFoam(p, uTime)), shoreFoam);
+  // Where the foam's life holds (its square in the camera's chart, wave.p), a share of the
+  // whitecaps breaks afresh, the rest is the foam it holds, as the Ocean's.
+  #ifdef OCEAN_FOAM_LIFE
+  vec3 foamLife = oceanFoamLifeAt(wave.p);
+  float windFoam = oceanWindFoamWithLife(foamLife.z);
+  #else
+  float windFoam = oceanWindFoam();
+  #endif
+  float coverage = max(max(windFoam, oceanContactFoam(p, uTime)), shoreFoam);
   float shoreWeight = shoreFoam / max(coverage, 1e-4);
   float foamBlend = oceanFoam(wave.crest, wave.p, texel, coverage, foamFar);
   float foamOpacity = foamBlend * (1.0 - clamp(mix(foamFar * uFoamLook.x, oceanShoreFade(foamFar), shoreWeight), 0.0, 1.0));
+  #ifdef OCEAN_FOAM_LIFE
+  foamOpacity = oceanFoamLifeOver(foamOpacity, foamLife, wave.crest, wave.p, texel, foamFar);
+  #endif
   // Lit, the foam takes the sky's light toward the wave's normal (a second look at the sky, so
   // only where there is foam) and the sun's as the glint has it; unlit, it is dimmed by night.
   vec3 foamSky = vec3(0.0);

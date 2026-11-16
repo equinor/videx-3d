@@ -217,7 +217,14 @@ void main() {
   }
 
   // Foam: wind-driven whitecaps, then the foam the contacts and the shore add.
+  // Where the foam's life holds, a share of the whitecaps breaks afresh: the rest is the foam
+  // it holds, laid over below.
+  #ifdef OCEAN_FOAM_LIFE
+  vec3 foamLife = oceanFoamLifeAt(worldXZ);
+  float foamCoverage = oceanWindFoamWithLife(foamLife.z);
+  #else
   float foamCoverage = oceanWindFoam();
+  #endif
 
   // Foam stirred up where floating objects touch the water. How much each object
   // generates is supplied per-contact (uContactB.w intensity) — driven CPU-side
@@ -255,6 +262,9 @@ void main() {
   // real pixel is mostly sea bed showing through a shoal. That is a saturated teal
   // band exactly where the foam was asked to disappear.
   float foamOpacity = foamBlend * (1.0 - foamFade);
+  #ifdef OCEAN_FOAM_LIFE
+  foamOpacity = oceanFoamLifeOver(foamOpacity, foamLife, crest, worldXZ, texel, foamFar);
+  #endif
   // From below, the foam is the underside's own light, already in the water's. Lit by the sky
   // toward its normal, all round (a second look at the sky, so only where there is foam).
   if(!underside && foamOpacity > 0.001)

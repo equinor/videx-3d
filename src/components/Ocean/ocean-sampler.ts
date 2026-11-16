@@ -1,6 +1,8 @@
 import { useFrame } from '@react-three/fiber';
-import { createContext, RefObject, useContext } from 'react';
-import { Object3D, Vector3 } from 'three';
+import { createContext, RefObject, useContext, useState } from 'react';
+import { Object3D, Vector2, Vector3 } from 'three';
+import type { Globe } from '../../sdk/projection/globe';
+import type { OceanCharts } from '../../sdk/projection/ocean-charts';
 import { OceanMaterial } from './ocean-material';
 
 /**
@@ -24,6 +26,55 @@ export interface OceanSampler {
   getHeightAt(x: number, z: number): number;
   /** Significant wave height (m) of the current sea state. */
   readonly significantHeight: number;
+  /**
+   * The water's height over the still sea at world `point`, along the sea's up there (the
+   * still sea's point is {@link stillSeaAt}'s): a `Scenery`'s, anywhere on its globe, in the
+   * charts its sea is drawn in (`OceanCharts`). Absent where the waves lie in one plane (an
+   * `Ocean`'s, a `ChunkStack`'s): there, {@link getHeightAt}.
+   */
+  heightAtWorld?(point: Vector3): number;
+  /** The still sea's point under (or over) world `point`, along the sea's up there, into `target`. With {@link heightAtWorld}. */
+  stillSeaAt?(point: Vector3, target: Vector3): Vector3;
+}
+
+/** What {@link chartedSeaHeights} reads a sea drawn in charts on a globe by. */
+export type ChartedSea = {
+  globe: Globe;
+  charts: OceanCharts;
+  /** the waves' height at chart point `x`, `z` over still water `depth` deep (`SeaState.heightAtDepth`) */
+  heightAt: (x: number, z: number, depth: number) => number;
+  /** the still water's depth under the still sea's world point */
+  depthAt: (point: Vector3) => number;
+};
+
+/**
+ * The world-space half of an {@link OceanSampler} for a sea drawn in charts on a globe (a
+ * `Scenery`'s, `OceanCharts`): a point is taken along up onto the still sea, into the chart
+ * it lies in (as `ocean-charts.glsl` takes it), and its waves are kept by how far it lies
+ * from where two charts meet, as the drawn ones are. Over the field, the field's chart: what
+ * the plane's sampler gives, to within millimetres.
+ */
+export function chartedSeaHeights(
+  sea: ChartedSea,
+): Required<Pick<OceanSampler, 'heightAtWorld' | 'stillSeaAt'>> {
+  const up = new Vector3();
+  const still = new Vector3();
+  const coords = new Vector2();
+  const stillSeaAt = (point: Vector3, target: Vector3) => {
+    const { globe } = sea;
+    globe.upAt(point, up);
+    return target.copy(point).addScaledVector(up, -globe.altitude(point));
+  };
+  return {
+    stillSeaAt,
+    heightAtWorld(point: Vector3): number {
+      stillSeaAt(point, still);
+      const { chart, keep } = sea.charts.chartAt(still);
+      if (keep <= 0) return 0;
+      sea.charts.coords(chart, still, coords);
+      return keep * sea.heightAt(coords.x, coords.y, sea.depthAt(still));
+    },
+  };
 }
 
 /**
@@ -163,12 +214,21 @@ export type BuoyancyOptions = {
  *
  * No-op when there is no enclosing `<Ocean>` (the object keeps its static pose).
  * Allocation-free and only a handful of cheap samples per frame.
+ *
+ * Under a `Scenery` (a sampler with {@link OceanSampler.heightAtWorld}) the points are taken
+ * into the world and read on the sea drawn there, anywhere on its globe, and the pose is
+ * the parent's: its +Y is taken for the sea's up, as a `Wgs84Position` or `UtmPosition`
+ * placing it on the globe gives, and its heave is over the still sea under it.
  */
 export function useBuoyancy(
   ref: RefObject<Object3D | null>,
   options: BuoyancyOptions,
 ): void {
   const sampler = useOceanSampler();
+  const [scratch] = useState(() => ({
+    world: new Vector3(),
+    still: new Vector3(),
+  }));
 
   useFrame((_, delta) => {
     const obj = ref.current;
@@ -177,6 +237,12 @@ export function useBuoyancy(
     const points = options.points;
     const n = points.length;
     if (n === 0) return;
+
+    // On a globe's sea: the points read in the world, the pose in the parent's frame.
+    const parent = obj.parent;
+    const onGlobe = !!parent && !!sampler.heightAtWorld && !!sampler.stillSeaAt;
+    if (onGlobe) parent.updateWorldMatrix(true, false);
+    const { world } = scratch;
 
     const yaw = obj.rotation.y;
     const cos = Math.cos(yaw);
@@ -202,7 +268,11 @@ export function useBuoyancy(
       // object's local X/Z, then sample the surface there.
       const wx = ox + px * cos + pz * sin;
       const wz = oz - px * sin + pz * cos;
-      const h = sampler.getHeightAt(wx, wz);
+      const h = onGlobe
+        ? sampler.heightAtWorld!(
+            world.set(wx, obj.position.y, wz).applyMatrix4(parent!.matrixWorld),
+          )
+        : sampler.getHeightAt(wx, wz);
       sx += px;
       sz += pz;
       sh += h;
@@ -218,7 +288,15 @@ export function useBuoyancy(
     const b = denomZ > 1e-6 ? (n * szh - sz * sh) / denomZ : 0;
     const c = (sh - a * sx - b * sz) / n;
 
-    const targetY = c;
+    // On a globe's sea the heights are over the still sea: its height in the parent's frame
+    // under the object, added.
+    let level = 0;
+    if (onGlobe) {
+      world.copy(obj.position).applyMatrix4(parent!.matrixWorld);
+      const still = sampler.stillSeaAt!(world, scratch.still);
+      level = parent!.worldToLocal(still).y;
+    }
+    const targetY = level + c;
     const targetPitch = Math.atan(a); // about +Z: bow up when surface rises fore
     const targetRoll = -Math.atan(b); // about +X
 

@@ -71,7 +71,14 @@ GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
 - **Whitecaps** (`oceanWindFoam`, `oceanFoam`): the share of the sea the wind's whitecaps
   cover (Monahan and O'Muircheartaigh 1980, 3.84·10⁻⁶·U^3.41; `foamAmount` 0.5 as measured),
   as a threshold on the wind sea's crests in standard deviations (all but the longest layer,
-  broken up by the finest and the ripples); sub-pixel, the share itself. No noise of its own.
+  broken up by the finest and the ripples). No noise of its own. Filtered, not switched: each
+  pixel draws the share of it over the threshold, the crests' spread it cannot show
+  (`oceanCrestUnresolved`, from the mips' slope variance through `seaHeightKept`, and once a
+  pixel spans a whitecap's patch half the texture's spread for its breakup) taken as a normal
+  about what it shows. Until 2026-11-16 the crest texture was cut where resolved and swapped for
+  its mean below a pixel; seen tilted, the whitecaps went from strong to gone across one band.
+  Cutting the filtered crests rescaled to their full spread instead gave pixel-sized specks that
+  flickered as the view moved, and a pixel-noise sea from altitude in a gale.
 
 ## Measured (2026-11-12, NVIDIA RTX A1000, 1920 × 1080 at 1)
 
@@ -267,8 +274,9 @@ weather the bake eases toward it as it does for the wind.
 - **Refraction**: waves turning to the shore and slowing as they shoal (see Shallow water).
 - **Glitter**: the ripples no layer draws only widen the glint, so it is a smooth patch where
   the sea sparkles.
-- **Into the sea**: the `Scenery`'s far charts for floating objects, the whitecaps' life
-  (streaks downwind, decay). The weather's swell and one sea state shared under a `Weather`
-  were built 2026-11-15 (`WeatherSea`, [ocean.md](./ocean.md)).
+- **Into the sea**: the whitecaps' life was built 2026-11-16 (`SeaFoamLife`, below 1 km;
+  [ocean.md](./ocean.md)); the streaks a gale draws, seen from higher up, are not. The weather's
+  swell and one sea state shared under a `Weather` were built 2026-11-15 (`WeatherSea`,
+  [ocean.md](./ocean.md)).
 - **The gusts elsewhere**: the clouds (gust fronts under showers), and a field fixed to the
   globe for the sea seen from orbit.

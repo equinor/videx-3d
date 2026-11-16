@@ -164,6 +164,7 @@ export const Ocean = forwardRef(
       fresnelPower,
       sparkle,
       crestLight,
+      foamLife,
       detailScale,
       detailStrength,
       seaBedColor,
@@ -250,6 +251,7 @@ export const Ocean = forwardRef(
     const contactRegistry = useMemo(createOceanContactRegistry, []);
     // The camera in the ocean's own frame, where its floating children report their footprints.
     const [viewFrom] = useState(() => new Vector3());
+    const [lookFrom] = useState(() => new Vector3());
     // The surface's height in that frame: how high the camera is over it.
     const surfaceY = useMemo(() => {
       if (!geometry.boundingBox) geometry.computeBoundingBox();
@@ -386,6 +388,7 @@ export const Ocean = forwardRef(
         fresnelPower,
         sparkle,
         crestLight,
+        foamLife,
         detailScale,
         detailStrength,
         opacity,
@@ -422,6 +425,7 @@ export const Ocean = forwardRef(
       fresnelPower,
       sparkle,
       crestLight,
+      foamLife,
       detailScale,
       detailStrength,
       opacity,
@@ -505,8 +509,17 @@ export const Ocean = forwardRef(
         const view = group
           ? group.worldToLocal(viewFrom.copy(camera.position))
           : camera.position;
-        // Layers too fine to show from the camera's height are not baked.
-        material.renderWaves(gl, camera, view.y - surfaceY);
+        // Layers too fine to show from the camera's height are not baked; the whitecaps'
+        // life runs about the camera in the surface's wave plane, world X/Z, ahead of it the
+        // way it looks.
+        const look = camera.getWorldDirection(lookFrom);
+        material.renderWaves(
+          gl,
+          camera,
+          view.y - surfaceY,
+          { x: camera.position.x, y: camera.position.z },
+          { x: look.x, y: look.z },
+        );
 
         // Collect the registered floating-object footprints and upload them as
         // contact foam, the nearest the camera when there are more than it draws.

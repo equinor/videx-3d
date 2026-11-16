@@ -548,11 +548,13 @@ identity, so a ship there is drawn exactly as flat; beyond it, it floats on the 
 transverse Mercator does not (90° from its meridian); only at the disc's antipode is the turn
 ill defined. Without a globe with a frame (a `Scenery` alone), flat on `frame`.
 
-- **Waves far off:** `useBuoyancy` and the sea's contact foam take the object's X/Z and
-  heading as the scene's, exact over the disc; far from it they follow the flat wave field,
-  not the waves drawn there (see [world.md, 4d](./world.md#4d-the-waves-far-off-built-2026-10-27)), which shows
-  only close up — where a `World` anchored at the target (`useTargetAnchor`) has the ship on
-  its disc again.
+- **Waves far off:** `useBuoyancy` reads the waves drawn under the object anywhere on the
+  globe: under a `Scenery` its sampler takes a point along up onto the still sea, into the
+  chart the sea is drawn in there (`OceanCharts`, `chartedSeaHeights`), and the pose is the
+  object's group's, whose +Y is up there. Its contact foam (a `Tanker` names its group as the
+  footprint's `frame`) is taken through the world into the plane the sea draws it in. Checked
+  399 km out: the ship rides ±0.2 m about the still sea, its foam at its waterline
+  (2026-11-16).
 - **Cost:** two `Globe.geodetic` and one `upAt` a track a frame. Each track is an object of
   its own: for thousands, instance them.
 

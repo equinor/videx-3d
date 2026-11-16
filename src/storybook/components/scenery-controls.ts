@@ -162,6 +162,8 @@ export type SceneryArgs = {
   seaSparkle: number;
   /** how much light through the crests is drawn (`crestLight`): 0 none, 1 as modelled */
   seaCrestLight: number;
+  /** the whitecaps' life (`foamLife`): by the quality, or on or off */
+  seaFoamLife: 'auto' | 'on' | 'off';
   seaDetailFadeStart: number;
   seaDetailFadeEnd: number;
   // Subsurface
@@ -296,6 +298,7 @@ export const sceneryArgs: SceneryArgs = {
   seaFresnelPower: 0,
   seaSparkle: 0,
   seaCrestLight: 1,
+  seaFoamLife: 'auto',
   seaDetailFadeStart: 15000,
   seaDetailFadeEnd: 60000,
   subsurfaceFollowSun: sceneryDefaults.subsurface.light.followSun,
@@ -523,6 +526,11 @@ export const skyStarsFromArgs = (args: SceneryArgs): SkyStars | false =>
   args.stars && { brightness: args.starBrightness, latitude: args.sunLatitude };
 
 /** The swell of {@link SceneryArgs}, as a weather has it: none at no height. */
+/** A story's `foamLife` choice as the prop: `auto` leaves it to the quality. */
+export const foamLifeOf = (
+  choice: 'auto' | 'on' | 'off',
+): boolean | undefined => (choice === 'auto' ? undefined : choice === 'on');
+
 export const swellFromArgs = (args: SceneryArgs): WeatherSwell[] =>
   args.swellHeight > 0
     ? [
@@ -584,6 +592,7 @@ export const sceneryOceanFromArgs = (
   fresnelPower: args.seaFresnelPower > 0 ? args.seaFresnelPower : undefined,
   sparkle: args.seaSparkle,
   crestLight: args.seaCrestLight,
+  foamLife: foamLifeOf(args.seaFoamLife),
   detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
 });
 
@@ -728,6 +737,7 @@ const ADVANCED = new Set<string>([
   'seaFresnelPower',
   'seaSparkle',
   'seaCrestLight',
+  'seaFoamLife',
   'seaDetailFadeStart',
   'seaDetailFadeEnd',
   'abyssCeiling',
@@ -1133,6 +1143,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     SEA,
     'The sun’s light through the waves’ crests (`crestLight`), with the sun behind them: a turquoise glow high on the waves, from the water’s own colour and clarity. 0 none, 1 as modelled (the default), more for more.',
   ),
+  seaFoamLife: {
+    control: { type: 'inline-radio' },
+    options: ['auto', 'on', 'off'],
+    table: { category: SEA },
+    description:
+      'The whitecaps’ life (`foamLife`): the foam a breaking crest leaves trails behind it, drifts downwind, fades, and is gathered by the wind into streaks, about the camera. AUTO: as the quality (high and ultra). Recompiles as it turns on or off.',
+  },
   seaDetailFadeStart: range(
     0,
     200000,

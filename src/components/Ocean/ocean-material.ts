@@ -53,6 +53,7 @@ import {
   weatherGustsOf,
 } from '../../sdk/weather/wind-field';
 import { SeaWaveBake } from './sea-wave-bake';
+import { SeaFoamLife } from './sea-foam-life';
 import type { WeatherSea } from '../Weather/weather-sea';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
@@ -193,6 +194,12 @@ export type OceanContact = {
    * pushes the most water). Default `0`.
    */
   endFalloff?: number;
+  /**
+   * The frame `x`, `z` and `heading` are in, when it is not the sea's (an object placed on a
+   * globe, `Wgs84Position`): under a `Scenery` the footprint is taken from it into the plane
+   * the sea's contact foam is drawn in. Default the sea's own frame.
+   */
+  frame?: Object3D | null;
 };
 
 /**
@@ -266,7 +273,10 @@ export type OceanFoamTuning = {
   froth?: number;
   /** where thin foam turns opaque, up close; 0.6 */
   falloff?: number;
-  /** the share of the foam lost once below a pixel; 0.85 */
+  /**
+   * the share of the foam lost once below a pixel; 0 (its mean drawn, the far sea paling as
+   * the wind rises; 0.85 until 2026-11-16, which left far whitecaps all but gone)
+   */
   farFade?: number;
   /** the most foam covers; 1 */
   opacity?: number;
@@ -301,7 +311,7 @@ export type OceanDebugView = (typeof OCEAN_DEBUG_VIEWS)[number];
 // [breakup, edge, froth, falloff], [farFade, opacity, lit, lift] and [grain, grainScale,
 // narrow] as drawn by default (dialled in on the sea bench, 2026-11-13).
 const OCEAN_FOAM_SHAPE_DEFAULT = [0.8, 0.1, 0.45, 0.6] as const;
-const OCEAN_FOAM_LOOK_DEFAULT = [0.85, 1, 1, 0.5] as const;
+const OCEAN_FOAM_LOOK_DEFAULT = [0, 1, 1, 0.5] as const;
 const OCEAN_FOAM_GRAIN_DEFAULT = [0.45, 0.06, 1] as const;
 
 /**
@@ -326,6 +336,8 @@ export const OCEAN_SURFACE_UNIFORMS = [
   'uSunGlintSpread',
   'uSparkle',
   'uCrestLight',
+  'uFoamLife',
+  'uFoamLifeArea',
   'uFoamColor',
   'uFoamAmount',
   'uFoamShape',
@@ -380,6 +392,17 @@ export const OCEAN_SPARKLE_DEFAULT: Record<SeaQuality, number> = {
   medium: 0,
   high: 1,
   ultra: 1,
+};
+
+/**
+ * Whether each quality draws the whitecaps' life by default ({@link OceanMaterial.foamLife}):
+ * from high up, where its pass (the waves read over a square about the camera) is spent.
+ */
+export const OCEAN_FOAM_LIFE_DEFAULT: Record<SeaQuality, boolean> = {
+  low: false,
+  medium: false,
+  high: true,
+  ultra: true,
 };
 // The defines the scene's sky sets (setSky).
 const OCEAN_SKY_DEFINES = [
@@ -452,6 +475,10 @@ export class OceanMaterial extends ShaderMaterial {
   private _ownGlintSpread = false;
   // What the sky's defines were last set for (setSky).
   private _skyKey = '';
+  // The whitecaps' life (foamLife), made as it is first run, and the seconds the clock has run
+  // since it last was.
+  private _foamLife: SeaFoamLife | null = null;
+  private _foamSeconds = 0;
 
   constructor(parameters: OceanMaterialParameters = {}) {
     const {
@@ -501,6 +528,8 @@ export class OceanMaterial extends ShaderMaterial {
         ...(sea.detail ? { SEA_DETAIL: '' } : {}),
         // The sun's glitter, where it is drawn (sparkle).
         ...(OCEAN_SPARKLE_DEFAULT[quality] > 0 ? { OCEAN_SPARKLE: '' } : {}),
+        // The whitecaps' life, where it is drawn (foamLife).
+        ...(OCEAN_FOAM_LIFE_DEFAULT[quality] ? { OCEAN_FOAM_LIFE: '' } : {}),
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
@@ -596,6 +625,9 @@ export class OceanMaterial extends ShaderMaterial {
         uSparkle: new Uniform(OCEAN_SPARKLE_DEFAULT[quality] ?? 0),
         // Light through the crests (crestLight), as modelled.
         uCrestLight: new Uniform(1),
+        // The foam's life (foamLife, SeaFoamLife): its square and where it lies.
+        uFoamLife: new Uniform<Texture | null>(null),
+        uFoamLifeArea: new Uniform(new Vector4(0, 0, 1, 0)),
 
         uFoamColor: new Uniform(new Color('#ffffff')),
         uFoamAmount: new Uniform(0.5),
@@ -802,6 +834,9 @@ export class OceanMaterial extends ShaderMaterial {
     const run = dt > 0 && dt < 3600;
     if (run) travel.x += speed * dt;
     else travel.x = speed * value;
+    // The foam's life runs as the clock does; a jump starts it over.
+    if (run) this._foamSeconds += dt;
+    else if (dt !== 0) this._foamLife?.reset();
     this.syncSea();
     if (this._drawsShared) {
       this._sea!.advance();
@@ -832,11 +867,19 @@ export class OceanMaterial extends ShaderMaterial {
    * nearest a pixel is finest), a layer whose whole tile a pixel there spans (with a margin,
    * {@link SEA_BAKE_PIXEL_MARGIN}) is left as it was: the surface reads none of it, only its
    * variance. From high up that is all but the longest layers, or all of them.
+   *
+   * With the whitecaps' life on ({@link foamLife}), `at`, the camera's point in the wave plane
+   * (the plane the surface reads its waves in: world X/Z for an `Ocean`, the camera's chart for
+   * a `Scenery`), runs it a step about there, ahead of it the way it looks (`ahead`, in the wave
+   * plane, as long as the look is level: `SeaFoamStep.ahead`); without it (or a camera) it is
+   * not drawn.
    */
   renderWaves(
     renderer: WebGLRenderer,
     camera?: Camera,
     distance?: number,
+    at?: { x: number; y: number } | null,
+    ahead?: { x: number; y: number } | null,
   ): void {
     const pixel =
       camera && distance !== undefined
@@ -873,6 +916,55 @@ export class OceanMaterial extends ShaderMaterial {
       stats.detail.offset[0],
       stats.detail.offset[1],
     );
+    this.runFoamLife(renderer, camera, distance, at, ahead);
+  }
+
+  // A step of the whitecaps' life about `at`, after the waves it reads are baked.
+  private runFoamLife(
+    renderer: WebGLRenderer,
+    camera: Camera | undefined,
+    distance: number | undefined,
+    at: { x: number; y: number } | null | undefined,
+    ahead: { x: number; y: number } | null | undefined,
+  ): void {
+    if (!this.foamLife) return;
+    this._foamLife ??= new SeaFoamLife(this.uniforms, this.defines);
+    const seconds = this._foamSeconds;
+    this._foamSeconds = 0;
+    if (!camera || !at || distance === undefined) {
+      this._foamLife.hide();
+      return;
+    }
+    this._foamLife.update(renderer, {
+      at,
+      ahead,
+      height: Math.abs(distance),
+      seconds,
+      windSpeed: this.uniforms.uWindSpeed.value as number,
+      windDirection: this.uniforms.uWindDirection.value as Vector2,
+    });
+  }
+
+  /**
+   * Whether the whitecaps live on: the foam a breaking crest leaves trailing behind it, drifting
+   * downwind and fading, the old foam gathered by the wind into streaks, in a square about the
+   * camera run a step each frame ({@link renderWaves}, `SeaFoamLife`). A pass reading the waves
+   * over 512² texels, so null takes its quality's ({@link OCEAN_FOAM_LIFE_DEFAULT}: high and
+   * ultra). Turning it on or off compiles it again.
+   */
+  get foamLife(): boolean {
+    return 'OCEAN_FOAM_LIFE' in this.defines;
+  }
+  set foamLife(value: boolean | null) {
+    const on = value ?? OCEAN_FOAM_LIFE_DEFAULT[this.quality] ?? false;
+    if (on === this.foamLife) return;
+    if (on) this.defines.OCEAN_FOAM_LIFE = '';
+    else {
+      delete this.defines.OCEAN_FOAM_LIFE;
+      this._foamLife?.dispose();
+      this._foamLife = null;
+    }
+    this.needsUpdate = true;
   }
 
   /**
@@ -1578,6 +1670,8 @@ export class OceanMaterial extends ShaderMaterial {
   dispose(): void {
     super.dispose();
     this._ownBake.dispose();
+    this._foamLife?.dispose();
+    this._foamLife = null;
     if (this._scene) sceneWaterBody(this._scene).release(this);
   }
 }
