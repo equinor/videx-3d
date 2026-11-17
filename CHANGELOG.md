@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.4](https://github.com/equinor/videx-3d/compare/v3.4.3...v3.4.4) (2026-11-13)
+
+
+### Bug Fixes
+
+* annotations anchor and connector lines do not update on visibility change ([#311](https://github.com/equinor/videx-3d/issues/311)) ([cf257bf](https://github.com/equinor/videx-3d/commit/cf257bfe66316162f2dca9e6659563d6977babf1))
+
 ## [3.4.3](https://github.com/equinor/videx-3d/compare/v3.4.2...v3.4.3) (2026-10-26)
 
 
