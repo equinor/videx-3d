@@ -33,8 +33,7 @@ level where the ground lifts the camera over it, its horizon level (`SceneryDebu
   longitude, unset for the anchor) and radius (km).
 - **Global:** each level on or off, and the weather systems' seed.
 
-`cloudTerrain` turns the ground's part off (see "Over the ground"), and `showEnvironment` shows
-the environment's bake, as in StageDebug.
+`showEnvironment` shows the environment's bake, as in StageDebug.
 
 ## Decided (2026-11-04)
 
@@ -303,6 +302,8 @@ in two passes, from the air's motion:
    isobars, anticlockwise about the lows in the north, fading toward the equator where the trade
    winds blow from the east; about a low's centre it turns no faster than a solid body would
    (`FLOW_TURN`), or the small tropical lows wound their moisture into rings like a target's.
+   Over the ground (see "Over the ground") it is steered: slower over land, and turned along the
+   ridges it would blow up.
 2. **The cloud** (`shaders/cloud-map.glsl`): each texel's air traced back along the wind some
    2000 km (36 midpoint steps), reading where it came from. Its moisture there, drawn out into
    filaments along the way; its warmth, whose level where polar air meets warm is a front, which
@@ -352,7 +353,7 @@ high up, so the range stops at 2^−1.5.
   instead of the generator, or its pressure centres into the wind. It moves with the clock (see
   "Motion").
 
-**Over the ground** (`terrain`, on by default). The ground is the `Scenery`'s
+**Over the ground** (always, where there is one: no option since 2026-11-17). The ground is the `Scenery`'s
 (`SceneryGround`, `scenery-ground.ts`, `shaders/ground-terrain.glsl`), shared with the sea, which
 reads how deep it is from it (`GroundMap`, `sceneGroundMap`): the clouds read its maps
 (`CloudGround`). With a `GeoRelief` in the `World`, it takes the ground from its tiles (the
@@ -370,22 +371,26 @@ channel of its own.
   again once the camera's foot is 30 km from its middle, below 300 km up, and drawn into the one
   not in use; and for the sea's shallows, close to the camera, a square 30 km across (some 60 m
   to a texel) from tiles of 0.18°, below 30 km up. The clouds read the first two.
-- **The layers rise** with the ground's broad height (0.8 of it, over some 110 km): the same
-  rise about the scene and in the far weather, so the two agree. A view's runs through a layer
-  are as tall as the rise along that view (read at five places along each), not the highest
-  ground's anywhere: stepping through the rise over Everest drew the clouds over the sea as a
-  thin veil from space.
-- **In a local weather** the layers gain cover up the slopes the weather's wind blows up (0.3 of
-  cover at 0.4 m/s of lift and more) and lose it down them; a layer with no cover gains none.
-- **The view ends where it meets the ground** (the map about the camera's, eased into the
-  Earth's toward its sides; read only below the highest ground), so what stands in a layer is
-  veiled by the cloud in front of it and hides the cloud behind. Marched through to the sea, as
-  before, the ground drawn in front of the clouds' depth showed through them: over Greenland
-  from 1.3 km, the ice sheet's edge as a dark line across the cloud. In a valley narrower than
-  the map's 400 m the camera may lie under its smoothed ground: the ground is let down to the
-  camera near by, fading by 5 km.
-- **What it costs:** a cube map read a step (the rise and slopes), and below the highest ground
-  one or two more (the ground); within the noise of the frame's time on the Iris Xe (±0.5 ms).
+- **The low level rises** with the ground's broad height (0.8 of it, over some 220 km), so a layer
+  meant 1000 m up does not lie on a plateau (Greenland's ice); the middle and high levels keep
+  their heights, and mountains rise through them. The same rise about the scene and in the far
+  weather, so the two agree. A view's runs through the low level are as tall as the rise along
+  that view (read at five places along each), not the highest ground's anywhere: stepping through
+  the rise over Everest drew the clouds over the sea as a thin veil from space. Along a view the
+  rise is read every 20 km, or every tenth of the distance where that is farther, in a straight
+  line between (`CLOUD_TERRAIN_REREAD`).
+- **A view does not end where it meets the ground** (2026-11-17): mountains rise through the
+  clouds, and the scene's own depth hides what lies behind the relief. Until then it did, the
+  ground read at every turn below the highest ground, so a thin veil of cloud in front of steep
+  ground stayed drawn (marched through, the ice sheet's edge over Greenland had shown as a dark
+  line across the cloud from 1.3 km). The shadows still start their rays at the ground.
+- **What it costs** (2026-11-17, the march alone at `medium` in a global weather): every level
+  rising over the ground read at every turn, the view ending where it met the ground, took 9–23 %
+  of the march by the view (taken out entirely). As it is now the march is 10–24 % faster than
+  then (−4.6 to −9.5 ms of 50–66 ms, seven poses from 300 m to 200 km up), its look the same but
+  where mountains stand in the clouds.
+- A local weather's levels no longer gain cover up the slopes its wind blows up (removed
+  2026-11-17: a local weather's alone, for a read of the slopes every step).
 - **The cloud map waits** for the Earth's map, so it is not drawn twice; a new drawing of it (the
   `World`'s frame changed) draws the cloud map again.
 
@@ -968,8 +973,9 @@ the GPU.
    not the relief's ground (a platform in stratus) takes the clouds' front depth, so cloud
    behind it is drawn over it where it stands in cloud.
 7. **Streets:** cumulus do not line up in streets along a fresh wind.
-8. **The ground:** it does not deflect the map's wind, nor do the clouds' bases follow it finer
-   than some 110 km (a cap cloud on a single peak, a fog filling a valley); the terrain is the
+8. **The ground:** it does not deflect the map's wind, nor does the low level's base follow it
+   finer than some 220 km (a cap cloud on a single peak, a fog filling a valley; the middle and
+   high levels do not follow it at all); the terrain is the
    relief's as loaded, the demo's coarse world layer where no finer one lies (some 20 km; the
    map about the camera reads the finest there is).
 9. **A global weather's controls** without data: only its seed, and each level on or off.

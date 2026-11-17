@@ -111,8 +111,6 @@ export type SceneryCloudsTemporal = 'off' | 'still' | 'moving';
 export type SceneryCloudsDebug = {
   view?: 'cost' | 'unlit' | 'map';
   air?: boolean;
-  /** Being chosen (2026-11-09), then removed: the ground steers the weather systems' wind (slower over land, turned along the ridges it would blow up). Default true */
-  steer?: boolean;
   /** Being chosen (2026-11-09), then removed: a global weather's level looks as its place along its chain of types (true) or as the chain's first type. Default true */
   types?: boolean;
   /** Being chosen, then removed: the low cloud's thickness sets how deep and dense a global weather's cloud is (true), or its type alone. Default true */
@@ -207,13 +205,6 @@ export type SceneryCloudsProps = {
   resolution?: number;
   /** what they show instead of themselves, to see how they are made. Default none */
   debug?: SceneryCloudsDebug;
-  /**
-   * the ground they lie over: a `GeoRelief` in the enclosing `World` (its tiles' loader). Their
-   * levels rise over high ground, a view ends where it meets it, a local weather gains cover
-   * where its wind blows up the ground, and a global weather's systems are lifted, dried in the
-   * lee and steered by it. false: the sea's level everywhere. Default true
-   */
-  terrain?: boolean;
   /**
    * a local weather's clouds lit from light maps — for each level, how much of its cloud lies
    * toward the light from anywhere in it, drawn a few rows a frame and faded in — rather than
@@ -667,7 +658,6 @@ export const sceneryDefaults = {
     seed: 0,
     quality: 'medium' as SceneryCloudsQuality,
     dominance: 0.8,
-    terrain: true,
     lightMap: false,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },

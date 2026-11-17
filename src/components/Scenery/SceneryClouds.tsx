@@ -92,7 +92,6 @@ export const SceneryClouds = ({
   quality = sceneryDefaults.clouds.quality,
   resolution,
   debug = NO_DEBUG,
-  terrain = sceneryDefaults.clouds.terrain,
   lightMap = sceneryDefaults.clouds.lightMap,
   temporal,
 }: SceneryCloudsProps) => {
@@ -138,10 +137,10 @@ export const SceneryClouds = ({
     [gl, volume],
   );
 
-  // The ground: the scenery's (its World's relief), while `terrain`.
+  // The ground: the scenery's (its World's relief), where there is one.
   useEffect(() => {
-    volume?.terrain.set(registry?.ground ?? null, terrain);
-  }, [volume, registry, terrain]);
+    volume?.terrain.set(registry?.ground ?? null);
+  }, [volume, registry]);
 
   const colorHex = toHex(color);
   const named = typeof layers === 'string' ? cloudLayersOf(layers) : layers;
@@ -194,7 +193,6 @@ export const SceneryClouds = ({
   const windFrom = weather?.wind?.from;
   const debugView = debug.view;
   const debugAir = debug.air;
-  const debugSteer = debug.steer;
 
   // The light maps' program, compiled once they are asked for (`lightMap`): lit as marched until
   // then, so the default compiles nothing more.
@@ -278,7 +276,6 @@ export const SceneryClouds = ({
       debug: {
         view: debugView,
         air: debugAir,
-        steer: debugSteer,
       },
     });
   }, [
@@ -298,7 +295,6 @@ export const SceneryClouds = ({
     temporal,
     debugView,
     debugAir,
-    debugSteer,
     lit,
     mode,
     drawnMode,

@@ -564,8 +564,8 @@ export class SceneryGround {
 
 /**
  * The 3D clouds' view of a {@link SceneryGround}: what their march reads of the ground
- * (cloud-march.glsl), in the frame fixed on the Earth, while they rise over it; none while
- * not. Its {@link version} changes with what they read.
+ * (cloud-march.glsl), in the frame fixed on the Earth, which they rise over; none without one.
+ * Its {@link version} changes with what they read.
  */
 export class CloudGround {
   /** what the march reads (cloud-march.glsl) */
@@ -580,41 +580,35 @@ export class CloudGround {
     uCloudTerrain: new Uniform(new Vector4()),
   };
   private ground: SceneryGround | null = null;
-  private on = false;
-  // Bumped as the ground or its use changes.
+  // Bumped as the ground changes.
   private serial = 0;
 
-  /** The ground to rise over (`on`), or none. */
-  set(ground: SceneryGround | null, on: boolean) {
-    if (ground === this.ground && on === this.on) return;
+  /** The ground to rise over, or none. */
+  set(ground: SceneryGround | null) {
+    if (ground === this.ground) return;
     this.ground = ground;
-    this.on = on;
     this.serial++;
-    if (!this.shown) this.clear();
-  }
-
-  private get shown(): SceneryGround | null {
-    return this.on ? this.ground : null;
+    if (!ground) this.clear();
   }
 
   /** counts what was drawn of it: what was made of the last (the cloud map, the light) is stale */
   get version(): number {
-    return this.serial + (this.shown?.version ?? 0);
+    return this.serial + (this.ground?.version ?? 0);
   }
 
   /** Whether the clouds should wait for it: until the Earth's heights are drawn. */
   get waiting(): boolean {
-    return this.shown?.waiting ?? false;
+    return this.ground?.waiting ?? false;
   }
 
   /** What the cloud map is drawn over (see `SceneryGround.mapTerrain`). */
   get mapTerrain(): CloudMapTerrain | null {
-    return this.shown?.mapTerrain ?? null;
+    return this.ground?.mapTerrain ?? null;
   }
 
   /** Take what has been drawn of the ground. In the frame loop. */
   update() {
-    const ground = this.shown;
+    const ground = this.ground;
     if (!ground) return;
     const view = ground.cloudView;
     const u = this.uniforms;

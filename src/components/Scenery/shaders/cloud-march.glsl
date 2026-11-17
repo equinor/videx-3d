@@ -234,23 +234,21 @@ uniform vec3 uCloudDetail;
 #define CLOUD_LEAST 1e-3
 // The most the lumps' noise reaches, in its deviations (cloudDensity): both reads at 1.
 #define CLOUD_LUMPS_MOST ((1.0 - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y * 1.41421356)
-// The ground (as the 3D clouds' first march had it, abaecc83): the share of its broad height the
-// low level rises by, as cloud bases rise over high ground (the middle level by half as much, the
-// high one, of ice near the tropopause, not at all: cloudRiseOf), read at the level of its map
-// (some 110 km) that also gives the broad slopes; where a view's runs are tightened to the rise
-// along them, how many places along each run it is read at and how much spare (metres) is left
-// either side; how fast (m/s) the wind blowing up those slopes lifts the air for a local
-// weather's level to gain all of y more cover (down them, to lose it); and near the camera, how
-// far under the ground about it (its map's, smoothed: in a narrow valley) the camera may lie
-// before the ground there is let down to it (metres), and over what distance from the camera
-// that fades (world units).
+// The ground (CloudTerrain): the share of its broad height the low level rises by, as cloud bases
+// rise over high ground, so a level meant to lie 1000 m up does not lie on a plateau (Greenland's
+// ice). The middle and high levels keep their heights, and mountains rise through them; nor does
+// a view end where it meets the ground: the scene's own depth hides what lies behind the relief
+// (cloudRiseOf). Read at the level of its map some 220 km across, the broad lie of the land, and
+// along a view only every CLOUD_TERRAIN_REREAD (x metres, or y of the distance where that is
+// farther), taken in a straight line between: read every turn, finer, with the view ending where it
+// met the ground, the ground was 9–23 % of the march (RTX A1000, 2026-11-17). Where a view's runs
+// are tightened to the rise along them, how many places along each run it is read at and how much
+// spare (metres) is left either side.
 #define CLOUD_TERRAIN_RISE 0.8
-#define CLOUD_TERRAIN_LOD 2.5
+#define CLOUD_TERRAIN_LOD 3.5
+#define CLOUD_TERRAIN_REREAD vec2(20000.0, 0.1)
 #define CLOUD_TERRAIN_ALONG 5
 #define CLOUD_TERRAIN_SPARE 100.0
-#define CLOUD_UPSLOPE vec2(0.4, 0.3)
-#define CLOUD_TERRAIN_SLACK 30.0
-#define CLOUD_TERRAIN_SLACK_FADE vec2(1000.0, 5000.0)
 
 // The view, set once by main: from the camera (world: its offset from the sphere's centre, and
 // its height over the sea), its way (world, and on the field's frame), how its clouds are lit
@@ -269,13 +267,9 @@ float gDepthSum = 0.0;
 float gWeight = 0.0;
 float gFront = -1.0;
 float gCost = 0.0;
-// The ground (set by main): whether there is any, how far the camera lets it down near by
-// (CLOUD_TERRAIN_SLACK), whether the view has met it (nothing beyond is marched), and the broad
-// ground under the step being marched (cloudTerrainBroad: its height, and its slopes east and
-// north), read once a step.
+// The ground (set by main): whether there is any, and the broad ground's height under the step
+// being marched (cloudTerrainBroad's x).
 bool gTerrain = false;
-float gSlack = 0.0;
-bool gEnded = false;
 vec4 gBroad = vec4(0.0);
 
 // A cloud level (the uniforms' `l`th). In a global weather, its shell's base and top, its
@@ -340,20 +334,10 @@ float cloudGround(vec3 upEarth) {
   return mix(near, earth, smoothstep(0.85, 1.0, edge));
 }
 
-// How high over the ground the point `p` (on the field's frame) `t` along the view lies, the
-// ground let down near the camera (gSlack): far over it where there is none or where `p` lies
-// over the highest.
-float cloudOverGround(vec3 p, float t) {
-  float altitude = cloudAltitudeOf(p);
-  if(!gTerrain || altitude > uCloudTerrain.y)
-    return max(altitude, 1.0) + 1e4;
-  float slack = gSlack * (1.0 - smoothstep(CLOUD_TERRAIN_SLACK_FADE.x, CLOUD_TERRAIN_SLACK_FADE.y, t));
-  return altitude - cloudGround(cloudUpEarthOf(p)) + slack;
-}
-
-// The share of the ground's broad height level `kind`'s shell rises by: by its channel (0 low).
+// The share of the ground's broad height level `kind`'s shell rises by: the low level's alone (its
+// channel, 0); the middle and high levels keep their heights, and mountains rise through them.
 float cloudRiseOf(vec4 kind) {
-  return CLOUD_TERRAIN_RISE * max(1.0 - 0.5 * kind.z, 0.0);
+  return kind.z < 0.5 ? CLOUD_TERRAIN_RISE : 0.0;
 }
 
 // Where to read the cover a column needs for `share` under cloud from a row of
@@ -503,32 +487,14 @@ bool cloudPlace(inout CloudLevel L, vec3 p, float extent) {
 #endif
 
 // Level `L` at `p` (on the field's frame) over the broad ground under the step (gBroad), read
-// over `extent` (m): placed (cloudPlace; none there: false), its shell raised by its share of the
-// ground's height (cloudRiseOf), and in a local weather more of its cover where its wind blows up
-// the ground and less where down it (CLOUD_UPSLOPE), the cover its columns need taken from its
-// type's quantiles as a global weather's is. A global weather's map has the ground's lift and its
-// lee already (cloud-map.glsl).
+// over `extent` (m): placed (cloudPlace; none there: false), and its shell raised by its share of
+// the ground's height (cloudRiseOf). A global weather's map has the ground's lift and its lee
+// already (cloud-map.glsl).
 bool cloudSet(inout CloudLevel L, vec3 p, float extent) {
   if(!cloudPlace(L, p, extent))
     return false;
-  if(!gTerrain)
-    return true;
-  L.shell.xy += cloudRiseOf(L.kind) * gBroad.x;
-#if !defined(CLOUD_GLOBAL)
-  if(L.wind.w > 0.0 && L.cover > 0.0) {
-    vec3 upEarth = cloudUpEarthOf(p);
-    vec3 axis = abs(upEarth.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-    vec3 east = normalize(cross(axis, upEarth));
-    vec3 north = cross(upEarth, east);
-    float lift = L.wind.w * dot(L.wind.xyz, east * gBroad.y + north * gBroad.z);
-    float upslope = clamp(lift / CLOUD_UPSLOPE.x, -1.0, 1.0);
-    if(abs(upslope) > 0.01) {
-      float gain = CLOUD_UPSLOPE.y * upslope * (upslope > 0.0 ? smoothstep(0.0, 0.1, L.cover) : 1.0);
-      int row = int(L.kind.x);
-      L.need = cloudNeedOf(L, clamp(L.cover + gain, 0.0, 1.0), row, row, 0.0);
-    }
-  }
-#endif
+  if(gTerrain)
+    L.shell.xy += cloudRiseOf(L.kind) * gBroad.x;
   return true;
 }
 
@@ -1042,14 +1008,17 @@ void cloudMarchRuns(int count) {
   float end = -1.0;
   float near = 50.0;
   float grow = 0.0;
-  // Where the march is (its field's point, its altitude and its height over the ground there), the
-  // extinction the last steps found, and the stretch ahead to look into (none: walking).
+  // Where the march is (its field's point and its altitude), the extinction the last steps found,
+  // and the stretch ahead to look into (none: walking).
   float t = 0.0;
   vec2 fieldA = vec2(0.0);
   float altitudeA = 0.0;
-  float overA = 0.0;
   float rho = 0.0;
   float look = 0.0;
+  // The broad ground along a run of the level that rises over it (cloudRiseOf): its height read at
+  // two places along the view (x and y) in z and w, taken in a straight line between, and read on
+  // as the march passes y (CLOUD_TERRAIN_REREAD); y under x for none.
+  vec4 broadAlong = vec4(0.0, -1.0, 0.0, 0.0);
   // The level as placed for the last step (cloudSet), and which level that was; and whether the
   // step is walked again because the last crossed the deck (see above).
   CloudLevel P = cloudLevel(0);
@@ -1075,7 +1044,11 @@ void cloudMarchRuns(int count) {
       vec3 a = cloudFieldPoint(gD, t);
       fieldA = cloudFieldOf(a);
       altitudeA = cloudAltitudeOf(a);
-      overA = cloudOverGround(a, t);
+      broadAlong = vec4(0.0, -1.0, 0.0, 0.0);
+      if(gTerrain && cloudRiseOf(uCloudKinds[l]) > 0.0) {
+        float next = t + max(CLOUD_TERRAIN_REREAD.x, CLOUD_TERRAIN_REREAD.y * t);
+        broadAlong = vec4(t, next, cloudTerrainBroad(cloudUpEarthOf(a)).x, cloudTerrainBroad(cloudUpEarthOf(cloudFieldPoint(gD, next))).x);
+      }
     }
     // A step's length from here (see above): through cloud, and through clear air past what the
     // last steps found.
@@ -1100,19 +1073,7 @@ void cloudMarchRuns(int count) {
     float to = t + len;
     if(to > end - 0.25 * len)
       to = end;
-    // Into the ground: the stretch ends where it meets it (between the two ends' heights over it),
-    // and the view with it.
     vec3 b = cloudFieldPoint(gD, to);
-    float overB = cloudOverGround(b, to);
-    bool meets = overB < 0.0;
-    if(meets) {
-      to = t + (to - t) * max(overA, 0.0) / (max(overA, 0.0) - overB);
-      if(to - t <= 1.0) {
-        gEnded = true;
-        break;
-      }
-      b = cloudFieldPoint(gD, to);
-    }
     vec2 fieldB = cloudFieldOf(b);
     float altitudeB = cloudAltitudeOf(b);
     len = to - t;
@@ -1122,8 +1083,13 @@ void cloudMarchRuns(int count) {
 #if !defined(CLOUD_GLOBAL)
     gEdgeNoise = cloudEdgeNoise(cloudFieldOf(uCloudCamera + o));
 #endif
-    if(gTerrain)
-      gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + o));
+    if(broadAlong.y >= broadAlong.x) {
+      if(mid > broadAlong.y) {
+        float next = mid + max(CLOUD_TERRAIN_REREAD.x, CLOUD_TERRAIN_REREAD.y * mid);
+        broadAlong = vec4(broadAlong.y, next, broadAlong.w, cloudTerrainBroad(cloudUpEarthOf(cloudFieldPoint(gD, next))).x);
+      }
+      gBroad.x = mix(broadAlong.z, broadAlong.w, clamp((mid - broadAlong.x) / max(broadAlong.y - broadAlong.x, 1.0), 0.0, 1.0));
+    }
     CloudLevel S = cloudLevel(l);
     bool found = false;
     if(skim) {
@@ -1174,11 +1140,6 @@ void cloudMarchRuns(int count) {
     deckAgain = false;
     fieldA = fieldB;
     altitudeA = altitudeB;
-    overA = overB;
-    if(meets) {
-      gEnded = true;
-      break;
-    }
   }
 }
 
@@ -1206,7 +1167,7 @@ void cloudBakeRuns(int count) {
 #if !defined(CLOUD_GLOBAL)
     gEdgeNoise = cloudEdgeNoise(cloudFieldOf(uCloudCamera + o));
 #endif
-    if(gTerrain)
+    if(gTerrain && cloudRiseOf(uCloudKinds[l]) > 0.0)
       gBroad = cloudTerrainBroad(cloudUpEarthOf(uCloudCamera + o));
     CloudLevel P = cloudLevel(l);
     if(!cloudSet(P, uCloudCamera + o, foot))
@@ -1398,12 +1359,8 @@ void main() {
   }
 #endif
 
-  // The ground, on the globe: the levels rise over it, and the view ends where it meets it. Under
-  // the ground about it (its map's, smoothed: in a narrow valley), the camera lets it down by as
-  // much near by.
+  // The ground, on the globe: the low level rises over it (cloudRiseOf).
   gTerrain = uCloudTerrain.x > 0.5 && globeOn();
-  if(gTerrain && height < uCloudTerrain.y + CLOUD_TERRAIN_SLACK)
-    gSlack = max(cloudGround(cloudUpEarthOf(uCloudCamera)) - height + CLOUD_TERRAIN_SLACK, 0.0);
 
   // Each level's runs along the view, within the local weather's radius: two at most a level
   // (before the view dips under its base and after it comes back up), marched front to back.

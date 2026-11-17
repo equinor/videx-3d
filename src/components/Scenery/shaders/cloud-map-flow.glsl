@@ -1,7 +1,7 @@
 // The weather systems' wind and pressure over the whole Earth (scenery-cloud-map.ts): the first
 // of the cloud map's two passes, small (a texel some 80 km), which the second traces the air
 // back through (cloud-map.glsl). Fixed on the Earth, z toward the north pole. Over the ground
-// (uMapTerrainOn, CloudMapTerrain.steer) the wind is steered by it: slowed over land, and what of
+// (uMapTerrainOn) the wind is steered by it: slowed over land, and what of
 // it would blow up high, steep ground turned along it, so the air the second pass traces flows
 // round the mountain ranges and the fronts bend about them.
 //

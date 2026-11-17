@@ -72,8 +72,6 @@ export type CloudMap = {
   readonly time: number;
   /** the ground's height and slopes over the Earth (`CloudTerrain`), null for none */
   readonly terrain: Texture | null;
-  /** whether the ground steers the weather systems' wind (`CloudMapTerrain.steer`) */
-  readonly steer: boolean;
   /** its seed, its terrain's and its time: what it is shared by */
   readonly key: string;
   /** its seed and its terrain's: maps of the same weather at other times share it */
@@ -89,21 +87,18 @@ export type CloudMap = {
 };
 
 /**
- * What a cloud map is drawn over: a `CloudTerrain`'s Earth map, and which drawing of it; and
- * whether the ground steers the weather systems' wind (`cloud-map-flow.glsl`): slower over land,
- * turned along the ridges it would blow up.
+ * What a cloud map is drawn over: a `CloudTerrain`'s Earth map, and which drawing of it. It
+ * steers the weather systems' wind (`cloud-map-flow.glsl`): slower over land, turned along the
+ * ridges it would blow up.
  */
 export type CloudMapTerrain = {
   texture: Texture;
   version: number;
-  steer?: boolean;
 };
 
 /** The key the cloud maps for `seed` over `terrain` share, at any time. */
 export const cloudMapKey = (seed: number, terrain: CloudMapTerrain | null) =>
-  terrain
-    ? `${seed}:${terrain.texture.uuid}:${terrain.version}${terrain.steer ? ':steer' : ''}`
-    : `${seed}`;
+  terrain ? `${seed}:${terrain.texture.uuid}:${terrain.version}` : `${seed}`;
 
 /** The strips a cloud map is drawn in (`bakeCloudMap`): the wind's six faces, then the cloud's. */
 export const CLOUD_MAP_STRIPS = STRIPS;
@@ -158,7 +153,6 @@ function createMap(
     seed,
     time,
     terrain: terrain?.texture ?? null,
-    steer: !!terrain?.steer,
     key: `${cloudMapKey(seed, terrain)}@${time}`,
     base: cloudMapKey(seed, terrain),
     systems: weatherSystemCentresAt(seed, time),
@@ -362,7 +356,7 @@ export function bakeCloudMap(
   flowUniforms.uMapSeed.value = map.seed;
   flowUniforms.uMapSize.value = FLOW_SIZE;
   flowUniforms.uMapTerrain.value = map.terrain;
-  flowUniforms.uMapTerrainOn.value = map.terrain && map.steer ? 1 : 0;
+  flowUniforms.uMapTerrainOn.value = map.terrain ? 1 : 0;
   setSystems(flowUniforms, map.systems);
   for (const [u, size] of [
     [uniforms, CLOUD_MAP_SIZE],

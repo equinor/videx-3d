@@ -1674,17 +1674,13 @@ void main() {
     // (none begun while it comes in: one without it would be drawn again at once); nothing drawn
     // until the first is.
     if (settings.global) {
-      const terrain = this.terrain.mapTerrain;
       const drawn = this.terrain.waiting
         ? this.weather.ready
         : this.weather.update(
             renderer,
             settings.global.seed,
             this.time,
-            terrain && {
-              ...terrain,
-              steer: settings.debug.steer !== false,
-            },
+            this.terrain.mapTerrain,
           );
       if (!drawn) {
         this.marchDrawn = false;

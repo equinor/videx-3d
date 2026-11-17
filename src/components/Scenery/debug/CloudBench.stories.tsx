@@ -104,7 +104,7 @@ type CloudBenchArgs = {
   temporal: 'quality' | SceneryCloudsTemporal;
   ownResolution: boolean;
   resolution: number;
-  /** none: the sea's level everywhere; loaded: the relief's ground, not drawn; drawn: and drawn */
+  /** none: no relief (the sea's level everywhere); loaded: the relief as the ground, not drawn; drawn: and drawn */
   ground: 'none' | 'loaded' | 'drawn';
   /** the sky drawn behind them */
   sky: boolean;
@@ -182,7 +182,6 @@ const CloudBenchStory = (args: CloudBenchArgs) => {
             quality={args.quality}
             temporal={args.temporal === 'quality' ? undefined : args.temporal}
             resolution={args.ownResolution ? args.resolution : undefined}
-            terrain={args.ground !== 'none'}
             lightMap={args.lightMap}
             debug={{
               view: args.debugView === 'none' ? undefined : args.debugView,
@@ -440,7 +439,7 @@ const meta = {
       control: { type: 'inline-radio' },
       options: ['none', 'loaded', 'drawn'],
       description:
-        'NONE: the sea’s level everywhere. LOADED: the relief as the clouds’ ground, not drawn. DRAWN: and drawn.',
+        'NONE: no relief, the sea’s level everywhere. LOADED: the relief as the clouds’ ground, not drawn. DRAWN: and drawn.',
     },
     sky: {
       control: { type: 'boolean' },
