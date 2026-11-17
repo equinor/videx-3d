@@ -9,7 +9,9 @@
 // patches twice, here and a few times broader. Integer hashes, so every GPU makes the same.
 //
 // Out, slice by slice: (patches, masses, patches², masses²) at the texel's middle, so the
-// mipmaps give what a footprint holds: each one's mean and spread. With COVER_SAMPLE, at two
+// mipmaps give what a footprint holds: each one's mean and spread. Drawn into two volumes: the
+// march's keeps (patches, masses), the other all four for the spread (COVER_SPREAD), let go of
+// once that is read. With COVER_SAMPLE, at two
 // points scattered over the tile: the patches and the masses at the first, the patches at the
 // second (the broad read's, which lies elsewhere in the tile), for the distribution. With
 // COVER_SPREAD, the volume drawn read at the middles of texels scattered over each level of its

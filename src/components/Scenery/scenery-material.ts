@@ -319,7 +319,7 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyOceanReliefReach: new Uniform(0),
         uSkyOceanClouds: new Uniform<CubeTexture | null>(null),
         uSkyOceanCloudsOn: new Uniform(0),
-        // What the sea reflects of them away from where they were filmed (setOceanCloudReflection).
+        // What the sea reflects of them away from where they were baked (setOceanCloudReflection).
         uSkyOceanCloudBase: new Uniform(0),
         uSkyOceanCloudMap: new Uniform<CubeTexture | null>(null),
         uSkyOceanCloudEarth: new Uniform(new Matrix3()),
@@ -1225,7 +1225,7 @@ export class SceneryMaterial extends ShaderMaterial {
 
   /**
    * What the sea reflects of what draws itself in the sky away from where {@link oceanClouds}
-   * was filmed (`ScenerySkyReflection`): the film blurred as much as reading it by direction
+   * was baked (`ScenerySkyReflection`): the bake blurred as much as reading it by direction
    * alone blows its clouds up from over the sea, and far off the weather's own cover. Null for
    * neither.
    */

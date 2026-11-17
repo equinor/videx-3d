@@ -468,7 +468,7 @@ bool skyOceanSurfaceHides() {
   return uSkyOceanWater > 0.5 && uSkyOceanBuried < 0.5 && uSkyOceanCutawayShape.y <= 0.0 && skyOceanCameraAltitude() > 0.0 && uSkyOceanDepth * min(e.x, min(e.y, e.z)) >= SKY_OCEAN_HIDDEN;
 }
 
-// The film's (uSkyOceanClouds) coarsest level: its side, CUBE_SIZE in scenery-clouds.ts, is 128.
+// The clouds' bake's (uSkyOceanClouds) coarsest level: its side, BAKE_SIZE in scenery-clouds.ts, is 128.
 #define SKY_OCEAN_CLOUD_LODS 7.0
 // The least cloud base its blur is reckoned from (world units).
 #define SKY_OCEAN_CLOUD_BASE 100.0
@@ -477,11 +477,11 @@ bool skyOceanSurfaceHides() {
 #define SKY_OCEAN_CLOUD_LEVELS vec3(0.9, 0.6, 0.25)
 
 // The clouds the sea reflects along `r` at `world` (`up` there, `texel` world units per pixel),
-// premultiplied, over `sky`, the sky it reflects there. The film (uSkyOceanClouds), read by
+// premultiplied, over `sky`, the sky it reflects there. Their bake (uSkyOceanClouds), read by
 // direction alone, shows them as from the scene: from over the sea point it blows them up by
 // its height over the point against their base, one cloud across half the sea from high up;
 // so read as blurred as that, on its mips. Far from the scene, where the weather is another's,
-// the cover the weather systems give there (uSkyOceanCloudMap), coloured as the film's clouds
+// the cover the weather systems give there (uSkyOceanCloudMap), coloured as the baked clouds
 // overhead are on average (with none there, a grey as bright as the sky).
 vec4 skyOceanReflectedClouds(vec3 r, vec3 sky, vec3 world, vec3 up, float texel) {
   float over = max(dot(cameraPosition - world, up), 0.0);

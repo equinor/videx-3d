@@ -30,7 +30,7 @@ uniform mat3 uSkyEnvRotation;
 // by world direction, and their lowest base over the sea.
 uniform samplerCube uSkyClouds;
 uniform float uSkyCloudBase;
-// The film's coarsest level (its side is 128: scenery-clouds.ts), a texel's angle at its finest
+// The clouds' bake's coarsest level (its side is 128: scenery-clouds.ts), a texel's angle at its finest
 // (radians), and the least base its blur is reckoned from (world units).
 #define OCEAN_SKY_CLOUD_LODS 7.0
 #define OCEAN_SKY_CLOUD_TEXEL 0.0123
@@ -105,7 +105,7 @@ vec3 oceanSky(vec3 dir, float roughness, float over) {
   sky += uSunColor * pow(sun, 64.0) * 0.6;
   #endif
   #ifdef OCEAN_SKY_CLOUDS
-  // Their film read by direction alone blows them up by the height they are seen from against
+  // Their bake read by direction alone blows them up by the height they are seen from against
   // their base (as the Scenery's sea reads it, sky-ocean.glsl), and as blurred as the
   // reflection's lobe (GGX alpha, in radians) is wide against a texel.
   float lift = log2(max(over / max(uSkyCloudBase, OCEAN_SKY_CLOUD_BASE), 1.0));

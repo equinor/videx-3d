@@ -23,6 +23,7 @@ import { CloudsRenderer } from '../../components/Scenery/scenery-clouds';
 import type { CameraManager } from '../../sdk/managers/CameraManager';
 import { showAb, type AbImage, type AbStats } from './ab-viewer';
 import {
+  frameWithin,
   hookedWebGL,
   indicate,
   median,
@@ -39,7 +40,7 @@ import { registerVidex3d } from './videx3d';
  * `window.videx3d.cloudBench` in a story that renders `<CloudBenchBridge />` (the
  * `debug/Scenery/Cloud Bench` story, and the Clouds spike). Storybook only.
  *
- * - {@link CloudBench.pass}: each pass alone (march, shadows, film), the loop held, back to back.
+ * - {@link CloudBench.pass}: each pass alone (march, shadows, bake), the loop held, back to back.
  * - {@link CloudBench.frames}: frames as they run, each step of the clouds' frame timed apart.
  * - {@link CloudBench.ab}: variants of the march's program or uniforms against it, interleaved.
  * - {@link CloudBench.count}: the march's loop turns per pixel.
@@ -87,7 +88,14 @@ export type BenchConditions = {
   drawingBuffer: [number, number];
   /** the clouds' image (their march's target) */
   cloudImage: [number, number];
-  quality: { resolution: number; steps: number; lightSamples: number } | null;
+  quality: {
+    resolution: number;
+    steps: number;
+    lightSamples: number;
+    shapeReads: number;
+  } | null;
+  /** how the march reuses the last frames (`temporal`): `frames` times what it draws */
+  temporal: string | null;
   weather: 'local' | 'global' | null;
   levels: number;
   pose: ReturnType<CameraManager['pose']> | null;
@@ -116,13 +124,14 @@ export type PassResult = {
   ms: {
     march: number;
     shadow: number | null;
-    film: number | null;
+    /** what the bakes see of them, all six faces (`CloudsRenderer.bake`) */
+    bake: number | null;
     coverMap: number | null;
   };
   rounds: {
     march: number[];
     shadow: number[];
-    film: number[];
+    bake: number[];
     coverMap: number[];
   };
 };
@@ -170,7 +179,12 @@ export type BenchVariant = {
    * RGBA image of the march's size: the variant reads it as `uniform sampler2D uCloudPrepass`. Its
    * time is counted in the variant's.
    */
-  prepass?: { edits?: [string, string][]; defines?: BenchVariant['defines'] };
+  prepass?: {
+    edits?: [string, string][];
+    defines?: BenchVariant['defines'];
+    /** its image's size as a share of the march's (default 1) */
+    scale?: number;
+  };
 };
 
 export type AbOptions = {
@@ -184,13 +198,29 @@ export type AbOptions = {
    * run, 0.5–1.1× from their second on)
    */
   settle?: number;
+  /**
+   * a march (edited as its `edits` and `defines` say) to compare the march and every variant
+   * against, untimed: a much finer one says how far each is from converged
+   * (`AbResult.reference`, each variant's `vsReference`)
+   */
+  reference?: Pick<BenchVariant, 'edits' | 'defines'>;
+};
+
+/** How far one march's image is from another's (premultiplied RGBA, float). */
+export type ImageDifference = {
+  /** the mean difference, per channel */
+  diff: number;
+  /** the share of the clouds' pixels (either's alpha over 0.01) off by over 0.02 in any channel */
+  off: number;
 };
 
 export type AbResult = {
   conditions: BenchConditions;
+  /** the march against {@link AbOptions.reference}; null without one */
+  reference: ImageDifference | null;
   /** each variant: the march's and its GPU ms (medians of interleaved rounds), the median of
-   * each round's ratio of the two, and the mean difference of its image (premultiplied RGBA,
-   * per channel) from the march's */
+   * each round's ratio of the two, how far its image is from the march's ({@link ImageDifference})
+   * and from the reference's (null without one) */
   variants: Record<
     string,
     {
@@ -198,6 +228,8 @@ export type AbResult = {
       variant: number;
       ratio: number;
       diff: number;
+      off: number;
+      vsReference: ImageDifference | null;
       rounds: [number, number][];
     }
   >;
@@ -217,6 +249,9 @@ export type CountResult = {
 };
 
 type TimerExt = { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number };
+
+// How long timings may take to come back from the GPU before a measurement gives up (ms).
+const QUERY_WAIT = 10000;
 
 /**
  * GPU time of a frame's stretches, back to back: one TIME_ELAPSED query open at a time, each
@@ -310,15 +345,21 @@ const COUNT_EDITS: [string, string][] = [
 ];
 
 type VolumeInternals = {
+  temporal: string;
   target: WebGLRenderTarget;
   marchScene: Scene;
   marchMaterial: ShaderMaterial;
   shadowScene: Scene;
   shadowTarget: WebGLRenderTarget;
-  filmedVersion: number;
+  bakedVersion: number;
   sky: { syncCamera: (camera: Camera) => void };
   settings: {
-    quality: { resolution: number; steps: number; lightSamples: number };
+    quality: {
+      resolution: number;
+      steps: number;
+      lightSamples: number;
+      shapeReads: number;
+    };
     global: unknown;
     levels: unknown[];
   } | null;
@@ -375,6 +416,7 @@ export function createCloudBench(
       drawingBuffer: [ctx.drawingBufferWidth, ctx.drawingBufferHeight],
       cloudImage: v ? [v.target.width, v.target.height] : [0, 0],
       quality: settings ? { ...settings.quality } : null,
+      temporal: v ? v.temporal : null,
       weather: settings ? (settings.global ? 'global' : 'local') : null,
       levels: settings?.levels.length ?? 0,
       pose: manager()?.pose() ?? null,
@@ -394,8 +436,8 @@ export function createCloudBench(
     try {
       if (held) {
         state.setFrameloop('never');
-        await nextFrame();
-        await nextFrame();
+        await frameWithin();
+        await frameWithin();
       }
       const hooked = hookedWebGL();
       if (hooked.length > 0)
@@ -427,10 +469,15 @@ export function createCloudBench(
     gl.shadowMap.autoUpdate = shadows;
   };
 
-  // GPU ms of `run`, `reps` times back to back: their median.
+  // GPU ms of `run`, `reps` times back to back: their median. Throws rather than wait for ever
+  // on a timer another profiler holds open, or on queries that never come back (QUERY_WAIT).
   const timeOf = async (run: () => void, reps: number): Promise<number> => {
     const ctx = context();
     const ext = timer();
+    if (ctx.getQuery(ext.TIME_ELAPSED_EXT, ctx.CURRENT_QUERY))
+      throw new Error(
+        'cloud bench: a GPU timer is already open (another profiler?)',
+      );
     const queries: WebGLQuery[] = [];
     for (let i = 0; i < reps; i++) {
       const query = ctx.createQuery()!;
@@ -440,9 +487,17 @@ export function createCloudBench(
       queries.push(query);
     }
     const ms: number[] = [];
+    const deadline = performance.now() + QUERY_WAIT;
     for (const query of queries) {
-      while (!ctx.getQueryParameter(query, ctx.QUERY_RESULT_AVAILABLE))
+      while (!ctx.getQueryParameter(query, ctx.QUERY_RESULT_AVAILABLE)) {
+        if (performance.now() > deadline) {
+          for (const q of queries) ctx.deleteQuery(q);
+          throw new Error(
+            `cloud bench: GPU timings did not come back in ${QUERY_WAIT} ms (context lost: ${ctx.isContextLost()}, error: ${ctx.getError()})`,
+          );
+        }
         await sleep(4);
+      }
       if (!ctx.getParameter(ext.GPU_DISJOINT_EXT))
         ms.push(ctx.getQueryParameter(query, ctx.QUERY_RESULT) / 1e6);
       ctx.deleteQuery(query);
@@ -481,7 +536,7 @@ export function createCloudBench(
       const out = {
         march: [] as number[],
         shadow: [] as number[],
-        film: [] as number[],
+        bake: [] as number[],
         coverMap: [] as number[],
       };
       const shadowDrawn = real.shadow !== null;
@@ -507,11 +562,11 @@ export function createCloudBench(
             ),
           );
         }
-        out.film.push(
+        out.bake.push(
           await timeOf(
             () => {
-              v.filmedVersion = -1;
-              real.film(gl, position);
+              v.bakedVersion = -1;
+              real.bake(gl, position);
             },
             Math.max(2, reps >> 1),
           ),
@@ -520,19 +575,19 @@ export function createCloudBench(
       // Its own march's uniforms as they were.
       aimMarch(v, camera);
       drawMarch(v, camera);
-      const film = median(out.film);
+      const bake = median(out.bake);
       return {
         conditions: conditions(),
         ms: {
           march: round2(median(out.march)),
           shadow: shadowDrawn ? round2(median(out.shadow)) : null,
-          film: film > 0 ? round2(film) : null,
+          bake: bake > 0 ? round2(bake) : null,
           coverMap: coverDrawn ? round2(median(out.coverMap)) : null,
         },
         rounds: {
           march: out.march.map(round2),
           shadow: out.shadow.map(round2),
-          film: out.film.map(round2),
+          bake: out.bake.map(round2),
           coverMap: out.coverMap.map(round2),
         },
       };
@@ -570,7 +625,7 @@ export function createCloudBench(
           target[key] = original;
         });
       };
-      wrap(real, 'film', 'film');
+      wrap(real, 'bake', 'bake');
       wrap(real, 'updateShadow', 'shadow');
       wrap(real, 'updateTerrain', 'terrain');
       wrap(real.lightMaps, 'update', 'lightMaps');
@@ -736,6 +791,27 @@ export function createCloudBench(
       depthBuffer: true,
     });
 
+  const differenceOf = (a: Float32Array, b: Float32Array): ImageDifference => {
+    let sum = 0;
+    let cloudPixels = 0;
+    let off = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      let most = 0;
+      for (let c = 0; c < 4; c++) {
+        const d = Math.abs(a[i + c] - b[i + c]);
+        sum += d;
+        most = Math.max(most, d);
+      }
+      if (Math.max(a[i + 3], b[i + 3]) <= 0.01) continue;
+      cloudPixels++;
+      if (most > 0.02) off++;
+    }
+    return {
+      diff: Math.round((sum / a.length) * 1e5) / 1e5,
+      off: cloudPixels > 0 ? Math.round((off / cloudPixels) * 1e4) / 1e4 : 0,
+    };
+  };
+
   const runnable = (material: ShaderMaterial) => {
     const program = (
       renderer().properties.get(material) as {
@@ -759,22 +835,40 @@ export function createCloudBench(
         .material as ShaderMaterial;
       const readback = readable(v);
       const out: AbResult['variants'] = {};
+      let against: ImageDifference | null = null;
       try {
         await warm(v, camera, options.warmup ?? 2000);
         aimMarch(v, camera);
         const baseImage = imageOf(v.marchScene, readback, camera);
+        // The reference's image, untimed.
+        let referenceImage: Float32Array | null = null;
+        if (options.reference) {
+          const reference = variantScene(v, options.reference);
+          try {
+            referenceImage = imageOf(reference.scene, readback, camera);
+            runnable(reference.material);
+          } finally {
+            reference.material.dispose();
+          }
+          against = differenceOf(baseImage, referenceImage);
+        }
         for (const [name, variant] of Object.entries(variants)) {
           // With a prepass: its image, drawn before the variant each time, read by it.
+          const prepassScale = variant.prepass?.scale ?? 1;
           const before = variant.prepass
             ? {
                 ...variantScene(v, variant.prepass),
-                target: new WebGLRenderTarget(v.target.width, v.target.height, {
-                  type: FloatType,
-                  format: RGBAFormat,
-                  depthBuffer: false,
-                  minFilter: NearestFilter,
-                  magFilter: NearestFilter,
-                }),
+                target: new WebGLRenderTarget(
+                  Math.max(Math.ceil(v.target.width * prepassScale), 1),
+                  Math.max(Math.ceil(v.target.height * prepassScale), 1),
+                  {
+                    type: FloatType,
+                    format: RGBAFormat,
+                    depthBuffer: false,
+                    minFilter: NearestFilter,
+                    magFilter: NearestFilter,
+                  },
+                ),
               }
             : null;
           // Read as `uCloudPrepass`.
@@ -803,10 +897,7 @@ export function createCloudBench(
               await timeOf(() => drawVariant(v.target), 4);
               back();
             }
-            let diff = 0;
-            for (let i = 0; i < image.length; i++)
-              diff += Math.abs(image[i] - baseImage[i]);
-            diff /= image.length;
+            const { diff, off } = differenceOf(image, baseImage);
             const pairs: [number, number][] = [];
             for (let r = 0; r < rounds; r++) {
               const a = await timeOf(() => drawMarch(v, camera), reps);
@@ -824,7 +915,11 @@ export function createCloudBench(
               // between plateaus (11.3, 13.6, 17–18, 22, 29 ms for one march, 2026-11-10).
               ratio:
                 Math.round(median(pairs.map(p => p[1] / p[0])) * 1000) / 1000,
-              diff: Math.round(diff * 1e5) / 1e5,
+              diff,
+              off,
+              vsReference: referenceImage
+                ? differenceOf(image, referenceImage)
+                : null,
               rounds: pairs,
             };
           } finally {
@@ -837,7 +932,11 @@ export function createCloudBench(
       } finally {
         readback.dispose();
       }
-      return { conditions: conditions(), variants: out };
+      return {
+        conditions: conditions(),
+        reference: against,
+        variants: out,
+      };
     });
 
   const count = () =>

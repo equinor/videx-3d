@@ -1,11 +1,8 @@
 // The 3D clouds' shape volume (scenery-cloud-noise.ts), a slice at a time: a tileable cube,
-// each texel worked out once per page. Integer hashes, so every GPU makes the same noise.
-//   r  Perlin-Worley: gradient noise at 4, 8 and 16 cells, its low end lifted into the
-//      billows of g (GPU Pro 7, "Real-time volumetric cloudscapes"); the lumps
-//      (cloud-march.glsl, cloudDensity) read only this
-//   g  Worley at 4, 8 and 16 cells, inverted (1 in a billow's core)
-//   b  Worley at 8, 16 and 32 cells, inverted
-//   a  Worley at 16 and 32 cells, inverted
+// each texel worked out once per page. Integer hashes, so every GPU makes the same noise. One
+// channel: Perlin-Worley, gradient noise at 4, 8 and 16 cells, its low end lifted into the
+// billows of Worley at 4, 8 and 16 cells, inverted (1 in a billow's core) (GPU Pro 7,
+// "Real-time volumetric cloudscapes"); the lumps (cloud-march.glsl, cloudDensity) read it.
 
 precision highp float;
 precision highp int;
@@ -68,10 +65,8 @@ void main() {
   float w4 = cloudWorley(p, 4.0, 11u);
   float w8 = cloudWorley(p, 8.0, 12u);
   float w16 = cloudWorley(p, 16.0, 13u);
-  float w32 = cloudWorley(p, 32.0, 14u);
   float perlin = cloudPerlin(p, 4.0, 1u) * 0.5714 + cloudPerlin(p, 8.0, 2u) * 0.2857 + cloudPerlin(p, 16.0, 3u) * 0.1429;
   perlin = clamp(0.5 + 0.75 * perlin, 0.0, 1.0);
   float billows = w4 * 0.625 + w8 * 0.25 + w16 * 0.125;
-  float perlinWorley = billows + perlin * (1.0 - billows);
-  gl_FragColor = vec4(perlinWorley, billows, w8 * 0.625 + w16 * 0.25 + w32 * 0.125, w16 * 0.75 + w32 * 0.25);
+  gl_FragColor = vec4(billows + perlin * (1.0 - billows), 0.0, 0.0, 1.0);
 }

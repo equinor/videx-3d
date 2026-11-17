@@ -50,7 +50,7 @@ export type SceneSkySource = {
    * {@link environment} holds them, by world direction, premultiplied, with mipmaps; null for none
    */
   clouds: CubeTexture | null;
-  /** those clouds' lowest base over the sea (world units): their film is blurred by the height they are seen from over it */
+  /** those clouds' lowest base over the sea (world units): their bake is blurred by the height they are seen from over it */
   cloudBase: number;
   /** its light; null for none (a material keeps its own) */
   sun: SceneSkySun | null;

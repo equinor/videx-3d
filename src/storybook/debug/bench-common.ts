@@ -25,6 +25,27 @@ export function stat(values: number[]): Stat {
 
 export const nextFrame = () =>
   new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+
+/**
+ * The next animation frame, or an error after `ms`: none comes while the page is hidden or its
+ * window covered, and a measurement waiting on one would wait for ever.
+ */
+export const frameWithin = (ms = 3000) =>
+  new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `no animation frame in ${ms} ms: the page is hidden or its window covered`,
+          ),
+        ),
+      ms,
+    );
+    requestAnimationFrame(() => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
 export const sleep = (ms: number) =>
   new Promise<void>(resolve => setTimeout(resolve, ms));
 

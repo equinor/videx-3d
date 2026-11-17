@@ -83,8 +83,12 @@ export type SkyStars = {
 };
 
 /**
- * How much a {@link SceneryCloudsProps}'s clouds spend for how they look, from `'low'` (a
- * laptop's integrated GPU, some 2 ms) to `'ultra'` (powerful GPUs).
+ * How much a {@link SceneryCloudsProps}'s clouds spend for how they look (`CLOUDS_QUALITY`),
+ * from `'low'` (a laptop's integrated GPU) to `'ultra'` (powerful GPUs). `'medium'` takes some
+ * 5–6.5 ms a frame at 1920 × 1080 on a laptop's RTX A1000 as the camera moves about the clouds.
+ * Low and medium read the clouds' shape once a step, high and ultra twice: a march program each,
+ * compiled off the main thread as the quality switches to it, the clouds drawn as they were
+ * meanwhile.
  */
 export type SceneryCloudsQuality = 'low' | 'medium' | 'high' | 'ultra';
 
@@ -192,7 +196,7 @@ export type SceneryCloudsProps = {
   seed?: number;
   /**
    * how much they spend for how they look (`CLOUDS_QUALITY`): the share of the screen's
-   * resolution they are marched at, and how finely. Every pixel is marched every frame. Default
+   * resolution they are marched at, how finely, and how much of it a frame (`temporal`). Default
    * `'medium'`
    */
   quality?: SceneryCloudsQuality;
@@ -221,8 +225,9 @@ export type SceneryCloudsProps = {
   lightMap?: boolean;
   /**
    * how they reuse what they marched over the last frames (see
-   * {@link SceneryCloudsTemporal}): the march costs a quarter as much while the clock runs
-   * (`'still'`) or the camera moves too (`'moving'`). Default `'off'`
+   * {@link SceneryCloudsTemporal}), instead of the quality's: the march costs a quarter as much
+   * while the clock runs (`'still'`) or the camera moves too (`'moving'`). Default the quality's:
+   * `'still'`
    */
   temporal?: SceneryCloudsTemporal;
 };
@@ -664,7 +669,6 @@ export const sceneryDefaults = {
     dominance: 0.8,
     terrain: true,
     lightMap: false,
-    temporal: 'off' as SceneryCloudsTemporal,
   },
   air: { scaleHeight: 8000, visibility: 60000, haze: 0.75, hazeHeight: 1500 },
   colors: {

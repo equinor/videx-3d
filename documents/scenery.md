@@ -365,7 +365,7 @@ exact, but 200 km out what they place stands 3 km over the sea
 MeshPhysical materials) and `lightProbe` into a `LightProbe` (lights every
 `lights: true` material). Both default on. ⚠️ With both, MeshStandard materials receive
 the sky's diffuse light from each. An `Ocean` or a `ChunkStack`'s sea in the scene reflects
-the air's bake, the 3D clouds' film and the scene light's sun or moon, which the scenery
+the air's bake, the 3D clouds' bake and the scene light's sun or moon, which the scenery
 publishes for them each frame (`sceneSky`; [ocean.md, One sky](./ocean.md#basic-usage)).
 
 The bakes are made once for each zone the camera can be in — the air over the sea, the
@@ -383,8 +383,8 @@ at least every `capture.maxWait` (default 1000 ms). The scene's light probe ease
 each new bake of its zone over a fraction of a second, so the light does not step as the
 sun moves; another zone's is swapped in at once. The environment map is swapped in.
 
-With clouds (`SceneryClouds`), the air's bakes take them too, filmed from where the
-air is filmed and drawn over the sky; the sea reflects them (blurred from high up, and far off
+With clouds (`SceneryClouds`), the air's bakes take them too, baked from where the
+air is baked and drawn over the sky; the sea reflects them (blurred from high up, and far off
 the weather's own cover); the directional light and the
 sea's glint are dimmed by the share of the light they let through, so overcast takes the sun
 and lights the scene with grey bakes alone; and their shadows lie on the sea and the relief

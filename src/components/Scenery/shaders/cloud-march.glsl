@@ -25,6 +25,12 @@
 #include ./cloud-field.glsl
 #include ./cloud-light.glsl
 
+// Reads of the shape volume a step through cloud takes (cloudDensity): the march's quality's
+// (CloudsQualityLevel.shapeReads, its own program); 2 in the programs that read none of it.
+#ifndef CLOUD_SHAPE_READS
+#define CLOUD_SHAPE_READS 2
+#endif
+
 // The march's steps (cloudMarchRuns): x its steps along a run at the quality (for the cost
 // view), y how many steps up a level's depth, z the optical depth a step through cloud hides,
 // w the angle a pixel of the clouds' image spans (radians).
@@ -40,7 +46,7 @@ uniform int uCloudDebug;
 uniform float uCloudDerivative;
 // 1 hazed by the air between them and the camera, 0 not.
 uniform float uCloudAir;
-// The cover volume (CloudCoverVolume): (patches, masses, patches², masses²), with mipmaps,
+// The cover volume (CloudCoverVolume): (patches, masses), with mipmaps,
 // repeating every way, read on the Earth's curved surface where each column stands
 // (cloudFootOf), so the clouds are fixed to the Earth and keep their shape anywhere on it. Laid
 // on the plane touching the Earth at the weather's middle instead (a 2D map, 2026-11-09), they
@@ -781,15 +787,20 @@ float cloudDensity(CloudLevel L, vec3 o, float w, bool lumps) {
       return 0.0;
     // Read twice, the second turned and CLOUD_LUMP_BROADER times broader, at equal weight: one
     // tiling's period showed as a grid over a whole deck. In 3D where the point lies, fixed on
-    // the Earth.
-    float broader = tile * CLOUD_LUMP_BROADER;
+    // the Earth. Once at the lower qualities (CLOUD_SHAPE_READS 1: plainer, as stable; a sixth
+    // less of the march), its deviation from the mean as the two's sum has it.
     vec3 at = L.turn * (uCloudFieldEarth * o) * CLOUD_LUMP_TILES;
     vec3 q = at + L.lump;
-    vec3 q2 = CLOUD_LUMPS_TURN * at / CLOUD_LUMP_BROADER + L.lump2;
     float lod = max(log2(max(w, 1.0) * CLOUD_SHAPE_TEXELS / tile), 0.0);
+#if CLOUD_SHAPE_READS > 1
+    float broader = tile * CLOUD_LUMP_BROADER;
+    vec3 q2 = CLOUD_LUMPS_TURN * at / CLOUD_LUMP_BROADER + L.lump2;
     float lod2 = max(log2(max(w, 1.0) * CLOUD_SHAPE_TEXELS / broader), 0.0);
     float n = textureLod(uCloudShape, q, lod).r + textureLod(uCloudShape, q2, lod2).r;
     n = (0.5 * n - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y * 1.41421356;
+#else
+    float n = (textureLod(uCloudShape, q, lod).r - CLOUD_PERLIN_WORLEY.x) / CLOUD_PERLIN_WORLEY.y;
+#endif
     mean += L.look.y * keep * n;
   }
   float share = fade * cloudNormalCdf((mean - need - apart) * scale);
@@ -838,15 +849,29 @@ float cloudLightFromMap(CloudLevel L, vec3 p, float h, float h1, float across) {
   return max(tau, 0.0);
 }
 
+// The light's crossing of each level over the points lit along this pixel's view (cloudLight):
+// where it crossed its shell's middle, and its optical depth there (w; under 0 for none yet). A
+// crossing is read over a quarter of its length at least, so the crossings of points lit close
+// together read the same cloud: within CLOUD_CROSS_REUSE of that footprint of the last read, it
+// is taken as read (2026-11-16: global weather 6–15 % less of the march, local the same; the
+// image as a march four times finer has it). Only the second and third levels drawn are crossed
+// (the lowest is under every other), each its own slot: kept in arrays indexed by level,
+// Direct3D left them in indexable registers and a local weather's march took 10–25 % longer.
+// Cleared for each pixel (their initialisers).
+#define CLOUD_CROSS_REUSE 0.5
+vec4 gCrossSecond = vec4(0.0, 0.0, 0.0, -1.0);
+vec4 gCrossThird = vec4(0.0, 0.0, 0.0, -1.0);
+
 // The light the point `o` from the camera, in level `l` placed as `L`, scatters toward it, seen
 // over a footprint `w` wide (m). The optical depth toward the light (gWay): through its own level
 // in uCloudLightSamples stretches, the first a cloud's skin (CLOUD_LIGHT_SKIN), the rest growing
 // geometrically up to its top or CLOUD_LIGHT_REACH clouds' sizes (or from its light maps:
-// `lightMap`); then across each level over it, where the light crosses its middle. Each stretch is
-// read once at its middle over a footprint of its own length (half of it; a quarter of a crossing),
-// or `w` where wider, through cloudDensity: like the view's own, what the light passes is the same
-// however the view's steps fall. One loop over all of them, with a uniform count, so the density's
-// reads are compiled into it once.
+// `lightMap`); then across each level over it, where the light crosses its middle (the last
+// point's crossing again where it lies close: gCrossSecond, gCrossThird). Each stretch is read
+// once at its middle over a footprint of its own length (half of it; a quarter of a crossing), or
+// `w` where wider, through cloudDensity: like the view's own, what the light passes is the same
+// however the view's steps fall. One loop over all of them, with a uniform count, so the
+// density's reads are compiled into it once.
 vec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {
   vec3 p = uCloudCamera + o;
   float altitude = cloudAltitudeOf(p);
@@ -873,6 +898,7 @@ vec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {
     if(j >= own + over)
       break;
     CloudLevel K = L;
+    int crossing = -1;
     vec3 q = o;
     float len = 0.0;
     float foot = w;
@@ -883,13 +909,25 @@ vec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {
       before = d;
       d *= grow;
     } else {
-      K = cloudLevel(l + 1 + j - own);
+      int c = l + 1 + j - own;
+      K = cloudLevel(c);
+      vec3 middle = o + gWay * ((0.5 * (K.shell.x + K.shell.y) - altitude) / rising);
+      float across = max(w, 0.25 * (K.shell.y - K.shell.x) / rising);
+      vec4 last = c == 1 ? gCrossSecond : gCrossThird;
+      if(last.w >= 0.0 && distance(middle, last.xyz) < CLOUD_CROSS_REUSE * across) {
+        tau += last.w;
+        continue;
+      }
+      if(c == 1)
+        gCrossSecond = vec4(middle, 0.0);
+      else
+        gCrossThird = vec4(middle, 0.0);
+      crossing = c;
 #if defined(CLOUD_GLOBAL)
       // As the weather systems have it where the light crosses its shell's middle: read at the
       // middle of the whole shell, it was over the top of a place's lower cloud, and the shadow
       // came and went in sharp straight edges where that cloud's top passed it.
-      vec3 crossing = o + gWay * ((0.5 * (K.shell.x + K.shell.y) - altitude) / rising);
-      if(!cloudPlace(K, uCloudCamera + crossing, max(w, 0.25 * (K.shell.y - K.shell.x) / rising)))
+      if(!cloudPlace(K, uCloudCamera + middle, across))
         continue;
 #endif
       // Raised over the broad ground under the point, as the level lit is.
@@ -899,8 +937,12 @@ vec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {
       q = o + gWay * ((0.5 * (K.shell.x + K.shell.y) - altitude) / rising);
       foot = max(w, 0.25 * len);
     }
-    if(len > 1.0)
-      tau += cloudDensity(K, q, foot, false) * len;
+    float stretch = len > 1.0 ? cloudDensity(K, q, foot, false) * len : 0.0;
+    if(crossing == 1)
+      gCrossSecond.w = stretch;
+    else if(crossing == 2)
+      gCrossThird.w = stretch;
+    tau += stretch;
   }
   return cloudLit(gLighting, h, tau);
 }
@@ -1140,12 +1182,15 @@ void cloudMarchRuns(int count) {
   }
 }
 
-#if defined(CLOUD_FILM)
-// The film's view (CloudsRenderer.film: the scene's bakes of the air and the sea's
+#if defined(CLOUD_BAKE)
+// What the bakes see (CloudsRenderer.bake: the scene's bakes of the air and the sea's
 // reflection, blurred in both): each run through a level read once at its middle over a footprint
-// of half its length (or the pixel's cone, where wider), and lit there. Marching the film as the
-// view is marched took 3–4 ms a face (Iris Xe, 2026-11-10).
-void cloudFilmRuns(int count) {
+// of half its length (or the pixel's cone, where wider) — its own cover's mean and spread along
+// it, no lumps — and lit there through a cloud's skin toward the light (CLOUD_LIGHT_SKIN) as
+// dense as that read says: not marched toward the light, nor across the levels over it. Lit as
+// the view is (cloudLight), its program took as long to compile as the march's (6.8 s, RTX A1000,
+// uncached) and the six faces 3.4 ms; this, 1.4 ms (2026-11-16).
+void cloudBakeRuns(int count) {
   for(int r = 0; r < 2 * CLOUD_LEVELS_MOST; r++) {
     if(r >= count || gTransmit < 0.01)
       break;
@@ -1167,8 +1212,14 @@ void cloudFilmRuns(int count) {
     if(!cloudSet(P, uCloudCamera + o, foot))
       continue;
     float sigma = cloudDensity(P, o, foot, false);
-    if(sigma > 0.0)
-      cloudAdd(from, len, sigma, cloudLight(P, l, o, foot));
+    if(sigma <= 0.0)
+      continue;
+    vec3 p = uCloudCamera + o;
+    float altitude = cloudAltitudeOf(p);
+    float h = clamp((altitude - P.shell.x) / max(P.shell.y - P.shell.x, 1.0), 0.0, 1.0);
+    float toTop = max(P.shell.y - altitude, 0.0) / max(cloudRisingAt(p), 0.05);
+    float toward = sigma * min(CLOUD_LIGHT_SKIN * uCloudScale, toTop);
+    cloudAdd(from, len, sigma, cloudLit(gLighting, h, toward));
   }
 }
 #endif
@@ -1425,8 +1476,8 @@ void main() {
   // Lit as where the view first meets cloud.
   gLighting = cloudLightingAt(dir, cloudUpAt(count > 0 ? max(runs[0].x, 0.0) : 0.0));
   gWay = vec3(dot(gLighting.way, uCloudFrameE), dot(gLighting.way, uCloudFrameN), dot(gLighting.way, uCloudFrameM));
-#if defined(CLOUD_FILM)
-  cloudFilmRuns(count);
+#if defined(CLOUD_BAKE)
+  cloudBakeRuns(count);
 #else
   cloudMarchRuns(count);
 #endif

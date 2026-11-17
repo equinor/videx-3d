@@ -1,9 +1,10 @@
 import {
   Camera,
   LinearFilter,
-  LinearMipmapLinearFilter,
+  LinearMipmapNearestFilter,
   Mesh,
   NoBlending,
+  RedFormat,
   RepeatWrapping,
   Scene,
   ShaderMaterial,
@@ -39,13 +40,20 @@ type Shared = CloudNoiseVolumes & { users: number };
 const volumes = new WeakMap<WebGLRenderer, Shared>();
 
 const createVolume = (size: number) => {
+  // One channel: the lumps read only the Perlin-Worley (cloud-noise-volume.glsl). As RGBA8 every
+  // read fetched four times what it used: the march took 1.2–1.85 times as long about the
+  // clouds (RTX A1000, 2026-11-16), its image the same.
   const target = new WebGL3DRenderTarget(size, size, size, {
     depthBuffer: false,
     generateMipmaps: false,
+    format: RedFormat,
   });
   const texture = target.texture;
   texture.wrapS = texture.wrapT = texture.wrapR = RepeatWrapping;
-  texture.minFilter = LinearMipmapLinearFilter;
+  // From the nearest mipmap, not blended between two: a read fetches 8 texels, not 16. The march
+  // took 6 % less (3.7 of 61 ms, RTX A1000, 2026-11-17), and moving about, the lumps were not
+  // seen to pop, flicker or morph.
+  texture.minFilter = LinearMipmapNearestFilter;
   texture.magFilter = LinearFilter;
   return target;
 };

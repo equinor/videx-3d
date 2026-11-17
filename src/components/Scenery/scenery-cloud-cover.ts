@@ -9,6 +9,7 @@ import {
   OrthographicCamera,
   RepeatWrapping,
   RGBAFormat,
+  RGFormat,
   Scene,
   ShaderMaterial,
   Uniform,
@@ -53,15 +54,21 @@ const camera = new OrthographicCamera();
  * The clouds' cover volume (`cloud-cover-volume.glsl`): a tile of noise repeating every way, of
  * how much each column is clouded over, read on the Earth's curved surface where each column
  * stands, so the clouds are fixed to the Earth and keep their shape anywhere on the globe. Broad
- * patches and rounded masses apart — (patches, masses, patches², masses²) in half floats with
- * mipmaps — so a read gives the mean of what a footprint holds, for any weight of the masses
- * against the patches (a level's look). Drawn on the GPU a few slices a frame when its seed
- * changes, with a few thousand of its values sampled and read back (without stalling) for their
- * distribution ({@link statistics}), and as many of its mipmaps' texels for the spread each level
- * averages away ({@link spread}). Some 19 MB.
+ * patches and rounded masses apart — (patches, masses) in half floats with mipmaps — so a read
+ * gives the mean of what a footprint holds, for any weight of the masses against the patches (a
+ * level's look). Drawn on the GPU a few slices a frame when its seed changes, with a few thousand
+ * of its values sampled and read back (without stalling) for their distribution
+ * ({@link statistics}), and as many of its mipmaps' texels for the spread each level averages
+ * away ({@link spread}). Some 9 MB; 27 MB while it is drawn.
  */
 export class CloudCoverVolume {
+  /** what the march reads: (patches, masses), with mipmaps */
   readonly target: WebGL3DRenderTarget;
+  // Drawn alongside it with their squares, (patches, masses, patches², masses²), for the spread
+  // each level of the mipmaps averages away (COVER_SPREAD), and let go of once that is read back.
+  // Read by the march as one RGBA volume, its squares were fetched for nothing: the frame took
+  // 1.5 % longer (RTX A1000, 2026-11-17).
+  private readonly moments: WebGL3DRenderTarget;
   private readonly samples: WebGLRenderTarget;
   private readonly spreadSamples: WebGLRenderTarget;
   private readonly material: ShaderMaterial;
@@ -81,16 +88,21 @@ export class CloudCoverVolume {
 
   constructor() {
     const size = CLOUD_COVER_VOLUME_SIZE;
-    this.target = new WebGL3DRenderTarget(size, size, size, {
-      type: HalfFloatType,
-      format: RGBAFormat,
-      depthBuffer: false,
-      generateMipmaps: false,
-    });
-    const texture = this.target.texture;
-    texture.wrapS = texture.wrapT = texture.wrapR = RepeatWrapping;
-    texture.minFilter = LinearMipmapLinearFilter;
-    texture.magFilter = LinearFilter;
+    const volume = (format: typeof RGFormat | typeof RGBAFormat) => {
+      const target = new WebGL3DRenderTarget(size, size, size, {
+        type: HalfFloatType,
+        format,
+        depthBuffer: false,
+        generateMipmaps: false,
+      });
+      const texture = target.texture;
+      texture.wrapS = texture.wrapT = texture.wrapR = RepeatWrapping;
+      texture.minFilter = LinearMipmapLinearFilter;
+      texture.magFilter = LinearFilter;
+      return target;
+    };
+    this.target = volume(RGFormat);
+    this.moments = volume(RGBAFormat);
     this.samples = new WebGLRenderTarget(SAMPLES, SAMPLES, {
       type: FloatType,
       format: RGBAFormat,
@@ -137,7 +149,10 @@ export class CloudCoverVolume {
       ...common,
       name: 'scenery-cloud-cover-volume-spread',
       defines: { COVER_SPREAD: '', COVER_SPREAD_ROWS: SPREAD_ROWS },
-      uniforms: { ...uniforms, uCoverVolume: new Uniform(texture) },
+      uniforms: {
+        ...uniforms,
+        uCoverVolume: new Uniform(this.moments.texture),
+      },
     });
     this.mesh = new Mesh(createSceneryGeometry(), this.material);
     this.mesh.frustumCulled = false;
@@ -213,12 +228,15 @@ export class CloudCoverVolume {
     const last = Math.min(this.slice + VOLUME_SLICES, size);
     for (; this.slice < last; this.slice++) {
       u.uCoverSlice.value = this.slice;
-      // Its mipmaps once, after the last slice.
-      this.target.texture.generateMipmaps = this.slice === size - 1;
-      renderer.setRenderTarget(this.target, this.slice);
-      renderer.render(scene, camera);
+      // Their mipmaps once, after the last slice.
+      const lastSlice = this.slice === size - 1;
+      for (const target of [this.moments, this.target]) {
+        target.texture.generateMipmaps = lastSlice;
+        renderer.setRenderTarget(target, this.slice);
+        renderer.render(scene, camera);
+        target.texture.generateMipmaps = false;
+      }
     }
-    this.target.texture.generateMipmaps = false;
     const done = this.slice >= size;
     if (done) {
       this.mesh.material = this.sampleMaterial;
@@ -264,8 +282,11 @@ export class CloudCoverVolume {
           spread,
         )
         .then(() => {
-          if (this.key === key && !this.disposed)
-            this.lost = lostSpread(spread);
+          if (this.key !== key || this.disposed) return;
+          this.lost = lostSpread(spread);
+          // Its squares are read: let go of until the seed changes (drawn into again, three
+          // makes it anew).
+          this.moments.dispose();
         })
         .catch(error => console.warn('SceneryClouds: no cover spread', error));
     }
@@ -275,6 +296,7 @@ export class CloudCoverVolume {
   dispose() {
     this.disposed = true;
     this.target.dispose();
+    this.moments.dispose();
     this.samples.dispose();
     this.spreadSamples.dispose();
     this.material.dispose();

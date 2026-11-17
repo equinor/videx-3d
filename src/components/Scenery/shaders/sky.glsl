@@ -316,7 +316,7 @@ uniform float uSkyOceanStageOpen;
 // reflects it over the sky (SceneryMaterial.oceanClouds).
 uniform samplerCube uSkyOceanClouds;
 uniform float uSkyOceanCloudsOn;
-// What the sea reflects of it away from where it was filmed (skyOceanReflectedClouds,
+// What the sea reflects of it away from where it was baked (skyOceanReflectedClouds,
 // SceneryMaterial.setOceanCloudReflection): the lowest clouds' base (world units); the weather
 // far off, a cube map fixed on the Earth of the share under cloud (r low, b middle, a high),
 // and world directions into its frame; how far the cover far off follows it (x, 0 for none),

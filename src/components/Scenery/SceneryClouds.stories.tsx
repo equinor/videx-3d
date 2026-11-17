@@ -127,8 +127,8 @@ type CloudsArgs = {
   steer: boolean;
   /** a local weather's clouds lit from light maps (`lightMap`) */
   lightMap: boolean;
-  /** how the march reuses the last frames' (`temporal`) */
-  temporal: SceneryCloudsTemporal;
+  /** how the march reuses the last frames' (`temporal`): 'quality' as the quality has it */
+  temporal: 'quality' | SceneryCloudsTemporal;
   /** a sky to fill the levels' controls and the wind from, or 'custom' */
   preset: PresetArg;
   /** the level the panel's level and look controls set */
@@ -574,10 +574,11 @@ function cloudRows(args: CloudsArgs): SceneryDebugRow[] {
       ],
     },
     {
-      // Being chosen: how the march reuses the last frames (TEMPORAL).
+      // How the march reuses the last frames (TEMPORAL): the quality's, or one of its own.
       label: 'temporal',
       buttons: (
         [
+          ['quality', 'As the quality has it: still'],
           ['off', 'Every pixel marched every frame'],
           [
             'still',
@@ -733,7 +734,7 @@ const CloudsStory = (args: CloudsArgs) => {
               seed={args.volumeSeed}
               terrain={args.cloudTerrain}
               lightMap={args.lightMap}
-              temporal={args.temporal}
+              temporal={args.temporal === 'quality' ? undefined : args.temporal}
               debug={{
                 view: args.debugView === 'none' ? undefined : args.debugView,
                 air: args.debugAir,
@@ -897,9 +898,9 @@ const meta = {
     },
     temporal: {
       control: { type: 'inline-radio' },
-      options: ['off', 'still', 'moving'],
+      options: ['quality', 'off', 'still', 'moving'],
       description:
-        'Being chosen: how the march reuses the last frames’ (`temporal`). OFF: every pixel every frame. STILL: a quarter of the pixels a frame while the camera holds still, the rest as marched up to three frames before; all as it moves. MOVING: a quarter a frame however it moves, the rest moved to where their clouds lie now.',
+        'How the march reuses the last frames’ (`temporal`). QUALITY: as the quality has it (STILL). OFF: every pixel every frame. STILL: a quarter of the pixels a frame while the camera holds still, the rest as marched up to three frames before; all as it moves. MOVING: a quarter a frame however it moves, the rest moved to where their clouds lie now.',
       table: { category: 'Cloud volume' },
     },
     globalThickness: {
@@ -967,7 +968,7 @@ const meta = {
       control: { type: 'select' },
       options: ['low', 'medium', 'high', 'ultra'],
       description:
-        'How much they spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen’s resolution, and how finely they are marched.',
+        'How much they spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen’s resolution, how finely they are marched, how often they read the shape (once at LOW and MEDIUM: a march program each, compiled as the quality switches, the clouds drawn as they were meanwhile), and how much of it a frame (`temporal`).',
       table: { category: 'Cloud volume' },
     },
     ownResolution: {
@@ -1038,7 +1039,7 @@ const meta = {
     cloudTerrain: true,
     steer: true,
     lightMap: false,
-    temporal: 'off',
+    temporal: 'quality',
     preset: 'scattered',
     ...presetArgs('scattered'),
     edit: 'low',

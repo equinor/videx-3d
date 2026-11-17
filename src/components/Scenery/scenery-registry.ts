@@ -74,24 +74,24 @@ export type ScenerySkyShadow = {
 export type ScenerySkyOverlay = {
   /**
    * as seen from the scene all round, by direction (world): premultiplied colour and alpha,
-   * without the sky's intensity, with its mipmaps. Drawn by {@link film}
+   * without the sky's intensity, with its mipmaps. Drawn by {@link bake}
    */
   texture: CubeTexture;
   /** draw {@link texture} as seen from `position` (world): before each bake of the air */
-  film: (renderer: WebGLRenderer, position: Vector3) => void;
+  bake: (renderer: WebGLRenderer, position: Vector3) => void;
   /** counts changes to what it looks like, but for the sky's own (the sun's): the bakes are drawn again */
   version: number;
   /** how much of the light (the sun's, or the moon's) the scene's light keeps past it, 0 to 1 */
   light: number;
   /** its shadows about the camera, read by the sea and the relief; null for none */
   shadow: ScenerySkyShadow | null;
-  /** what the sea reflects of it away from where it was filmed */
+  /** what the sea reflects of it away from where it was baked */
   reflection: ScenerySkyReflection;
 };
 
 /**
  * What the sea reflects of a {@link ScenerySkyOverlay} away from where {@link ScenerySkyOverlay.texture}
- * was filmed (sky-ocean.glsl, `skyOceanReflectedClouds`): read by direction alone, the film
+ * was baked (sky-ocean.glsl, `skyOceanReflectedClouds`): read by direction alone, the bake
  * blows its clouds up by the camera's height over the sea against their base, and far off the
  * weather is another's.
  */

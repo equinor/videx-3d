@@ -46,7 +46,7 @@ const LEAST_COVER = 0.005;
 const ALL_LEVELS = {};
 
 // The scene its own passes are compiled for: like those they are drawn in (the march's, the
-// film's, its maps'), without lights. three keys a program on the lights of the scene it is
+// bake's, its maps'), without lights. three keys a program on the lights of the scene it is
 // compiled for, ShaderMaterials too: compiled for the host's scene (a sun, a light probe), each
 // pass was compiled twice, the second time as it was first drawn, standing the page for seconds.
 const OWN_SCENE = new Scene();
@@ -58,15 +58,13 @@ const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
  * 3D clouds over a {@link Scenery}'s sky (see {@link SceneryCloudsProps} and
  * `documents/clouds.md`): a local weather's layers, one at each level, each drawn as its type
  * looks; or a global weather's weather systems over the whole Earth, each level's cover and
- * types from their map. Marched through on the globe every frame at a share of the screen's
- * resolution and drawn over the scene, so what lies in front of them hides them and they hide
- * what lies behind. Fixed to the Earth, each level drifting with its wind on the enclosing
- * `Weather`'s clock. Anywhere under the `Scenery`; it compiles its own programs and draws its
- * noise and, for a global weather, its map of the weather systems, and shows once they are
- * ready.
- *
- * Being rebuilt (2026-11-09): the scenery's bakes, its sea, its light and its shadows take none
- * of them yet.
+ * types from their map. Marched through on the globe at a share of the screen's resolution (as
+ * much of it a frame as its `quality` says) and drawn over the scene, so what lies in front of
+ * them hides them and they hide what lies behind. Fixed to the Earth, each level drifting with
+ * its wind on the enclosing `Weather`'s clock. Anywhere under the `Scenery`; it compiles its own
+ * programs and draws its noise and, for a global weather, its map of the weather systems, and
+ * shows once they are ready. The scenery's bakes of the air and its sea's reflection take them
+ * in, its light is dimmed by them, and their shadows fall on the sea and the relief.
  *
  * @example
  * <Weather weather={weatherPresetOf('scattered')}>
@@ -96,7 +94,7 @@ export const SceneryClouds = ({
   debug = NO_DEBUG,
   terrain = sceneryDefaults.clouds.terrain,
   lightMap = sceneryDefaults.clouds.lightMap,
-  temporal = sceneryDefaults.clouds.temporal,
+  temporal,
 }: SceneryCloudsProps) => {
   const registry = useContext(SceneryRegistryContext);
   const gl = useThree(state => state.gl);
@@ -144,9 +142,6 @@ export const SceneryClouds = ({
   useEffect(() => {
     volume?.terrain.set(registry?.ground ?? null, terrain);
   }, [volume, registry, terrain]);
-  useEffect(() => {
-    if (volume) volume.temporal = temporal;
-  }, [volume, temporal]);
 
   const colorHex = toHex(color);
   const named = typeof layers === 'string' ? cloudLayersOf(layers) : layers;
@@ -226,18 +221,22 @@ export const SceneryClouds = ({
   }, [gl, camera, volume, lightMap]);
   const lit = lightMap && lightReady;
 
-  // The mode drawn, local or global: switched once the other mode's programs (the march's, its
-  // film's and its shadows', and a global weather's maps') are compiled off the main thread, the
-  // clouds drawn as they were meanwhile. Compiled by the first frame drawn with them, they stood
-  // the page for 9–13 s on Iris Xe.
-  const mode = global ? 'global' : 'local';
+  // The programs drawn, the weather's mode's (local or global) and the quality's reads of the
+  // shape (a march program each): switched once those (the march's, its bake's and its shadows',
+  // and a global weather's maps') are compiled off the main thread, the clouds drawn as they were
+  // meanwhile. Compiled by the first frame drawn with them, they stood the page for 9–13 s on
+  // Iris Xe.
+  const weatherMode = global ? 'global' : 'local';
+  const shapeReads = cloudsQuality(quality).shapeReads;
+  const mode = `${weatherMode} ${shapeReads}`;
   const [drawnMode, setDrawnMode] = useState(mode);
   useLayoutEffect(() => {
     if (!volume || mode === drawnMode) return;
     let current = true;
+    const isGlobal = weatherMode === 'global';
     const meshes = [
-      ...volume.programsOf(mode === 'global'),
-      ...(mode === 'global' ? volume.weatherGenerators(gl) : []),
+      ...volume.programsOf(isGlobal, shapeReads),
+      ...(isGlobal ? volume.weatherGenerators(gl) : []),
     ];
     const waits = meshes
       .map(mesh => precompile(gl, mesh, camera, OWN_SCENE, 'offscreen'))
@@ -250,7 +249,7 @@ export const SceneryClouds = ({
     return () => {
       current = false;
     };
-  }, [gl, camera, volume, mode, drawnMode]);
+  }, [gl, camera, volume, mode, drawnMode, weatherMode, shapeReads]);
 
   useLayoutEffect(() => {
     if (!volume || mode !== drawnMode) return;
@@ -274,7 +273,7 @@ export const SceneryClouds = ({
       density,
       color: new Color(colorHex),
       seed,
-      quality: cloudsQuality(quality, { resolution }),
+      quality: cloudsQuality(quality, { resolution, temporal }),
       lightMap: lit,
       debug: {
         view: debugView,
@@ -296,6 +295,7 @@ export const SceneryClouds = ({
     seed,
     quality,
     resolution,
+    temporal,
     debugView,
     debugAir,
     debugSteer,
@@ -332,10 +332,7 @@ export const SceneryClouds = ({
       precompile(gl, volume.composite, camera, scene, 'scene', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
-      precompile(gl, volume.still, camera, OWN_SCENE, 'offscreen', {
-        priority: PRECOMPILE_PRIORITY.background,
-      }),
-      precompile(gl, volume.filmMesh, camera, OWN_SCENE, 'offscreen', {
+      precompile(gl, volume.bakeMesh, camera, OWN_SCENE, 'offscreen', {
         priority: PRECOMPILE_PRIORITY.background,
       }),
       precompile(gl, volume.rebuild, camera, OWN_SCENE, 'offscreen', {
@@ -372,11 +369,11 @@ export const SceneryClouds = ({
     volume.composite.visible = drawn && registry.view.clouds;
     // Its ground as the scenery has drawn it so far.
     if (drawn) volume.updateTerrain();
-    // The scene's light: what is filmed of them, the share of the light they let through, their
-    // shadows and what the sea reflects of them.
-    volume.filmable = drawn;
+    // The scene's light: what the bakes see of them, the share of the light they let through,
+    // their shadows and what the sea reflects of them.
+    volume.shows = drawn;
     volume.updateLight(gl, delta);
-    volume.updateFilm();
+    volume.updateBakes();
     volume.updateShadow(gl, state.camera);
     volume.updateReflection();
   });

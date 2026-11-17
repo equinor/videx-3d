@@ -32,7 +32,10 @@ import { World } from '../../World/World';
 import { Scenery, type SceneryLayer } from '../Scenery';
 import { SceneryClouds } from '../SceneryClouds';
 import { CLOUDS_QUALITY } from '../scenery-clouds';
-import type { SceneryCloudsQuality } from '../scenery-model';
+import type {
+  SceneryCloudsQuality,
+  SceneryCloudsTemporal,
+} from '../scenery-model';
 
 // The 3D clouds alone, to time them (documents/clouds.md, "Measuring"): a bare Scenery (no sky
 // drawn behind them, no sea, stage, hollow, bakes or relief unless asked for) and its
@@ -97,13 +100,15 @@ type CloudBenchArgs = {
   preset: SkyPreset;
   systemsSeed: number;
   quality: SceneryCloudsQuality;
+  /** how the march reuses the last frames: 'quality' as the quality has it */
+  temporal: 'quality' | SceneryCloudsTemporal;
   ownResolution: boolean;
   resolution: number;
   /** none: the sea's level everywhere; loaded: the relief's ground, not drawn; drawn: and drawn */
   ground: 'none' | 'loaded' | 'drawn';
   /** the sky drawn behind them */
   sky: boolean;
-  /** the Scenery's bakes (its environment and light probe), which film the clouds */
+  /** the Scenery's bakes (its environment and light probe), which take in the clouds */
   bakes: boolean;
   lightMap: boolean;
   weatherPaused: boolean;
@@ -175,6 +180,7 @@ const CloudBenchStory = (args: CloudBenchArgs) => {
         >
           <SceneryClouds
             quality={args.quality}
+            temporal={args.temporal === 'quality' ? undefined : args.temporal}
             resolution={args.ownResolution ? args.resolution : undefined}
             terrain={args.ground !== 'none'}
             lightMap={args.lightMap}
@@ -219,7 +225,7 @@ const conditionsText = (c: BenchConditions) =>
     `${c.viewport.join('×')} css @${c.pixelRatio} → ${c.drawingBuffer.join('×')}, clouds ${c.cloudImage.join('×')}`,
     `${c.weather ?? '—'}, ${c.levels} levels` +
       (c.quality
-        ? `, res ${c.quality.resolution} steps ${c.quality.steps} light ${c.quality.lightSamples}`
+        ? `, res ${c.quality.resolution} steps ${c.quality.steps} light ${c.quality.lightSamples} shape ×${c.quality.shapeReads}`
         : ''),
     ...(c.hookedWebGL.length > 0
       ? [`⚠ WebGL hooked: ${c.hookedWebGL.join(', ')} (CPU times off)`]
@@ -227,7 +233,7 @@ const conditionsText = (c: BenchConditions) =>
   ].join('\n');
 
 const passText = (r: PassResult) =>
-  `march ${r.ms.march} ms, shadow ${r.ms.shadow ?? '—'}, film ${r.ms.film ?? '—'}, cover map ${r.ms.coverMap ?? '—'}\n` +
+  `march ${r.ms.march} ms, shadow ${r.ms.shadow ?? '—'}, bake ${r.ms.bake ?? '—'}, cover map ${r.ms.coverMap ?? '—'}\n` +
   `  march rounds ${r.rounds.march.join(' ')}`;
 
 const framesText = (r: FramesResult) =>
@@ -419,6 +425,12 @@ const meta = {
       control: { type: 'inline-radio' },
       options: ['low', 'medium', 'high', 'ultra'],
     },
+    temporal: {
+      control: { type: 'inline-radio' },
+      options: ['quality', 'off', 'still', 'moving'],
+      description:
+        'How the march reuses the last frames (`temporal`). QUALITY: as the quality has it. `pass` times the full march whatever this is; `frames` times what is drawn.',
+    },
     ownResolution: { control: { type: 'boolean' } },
     resolution: {
       control: { type: 'range', min: 0.25, max: 1, step: 0.05 },
@@ -437,7 +449,7 @@ const meta = {
     bakes: {
       control: { type: 'boolean' },
       description:
-        'The Scenery’s environment and light probe, which film the clouds as they change.',
+        'The Scenery’s environment and light probe, which bake the clouds as they change.',
     },
     lightMap: { control: { type: 'boolean' } },
     weatherPaused: { control: { type: 'boolean' } },
@@ -458,6 +470,7 @@ const meta = {
     preset: 'scattered',
     systemsSeed: 0,
     quality: 'medium',
+    temporal: 'quality',
     ownResolution: false,
     resolution: CLOUDS_QUALITY.medium.resolution,
     ground: 'none',

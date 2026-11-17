@@ -49,7 +49,10 @@ the environment's bake, as in StageDebug.
 - **Clouds between the camera and the data** will be an option of several modes (as real
   clouds, cleared toward a focus point, thinned as the camera climbs over them); its default is
   to be picked once they can be seen side by side. Not built yet.
-- **Budget:** at most 2 ms of GPU on an Intel Iris Xe laptop at 1 megapixel.
+- **Budget:** at most 2 ms of GPU on an Intel Iris Xe laptop at 1 megapixel (2026-11-04).
+  Revised 2026-11-16: `medium` is to keep to some 5–6 ms a frame on a laptop's RTX A1000 at
+  1920 × 1080 as the camera moves (see "Quality"; met about the clouds, not yet far off); the
+  Iris Xe is no longer the reference, its clock too unsteady to tune by.
 
 ## The weather
 
@@ -237,11 +240,14 @@ read's octaves running on into the fine one's (`cloudCoverAt`, `CLOUD_COVER_PATC
 
 **The lumps.** A shape volume, drawn on the GPU slice by slice once per renderer
 (`scenery-cloud-noise.ts`, `cloud-noise-volume.glsl`, integer hashes so every GPU makes the
-same): 128³ of Perlin-Worley noise, the cover's tile over some 17 of its tiles
-(`VOLUME_LUMP_TILES`), read twice where a point lies (the second tiling 1.618 times broader,
-turned: `CLOUD_LUMP_BROADER`), so a cloud's sides and top are lumps rather than the cover's
-outline extruded. They move the cover by their own standard deviations (measured:
-`CLOUD_PERLIN_WORLEY`) times the look's `lumps`, either way, so the cover stays the weather's.
+same): 128³ of Perlin-Worley noise in one channel (R8: RGBA8 fetched four times what the march
+used), read from the nearest of its mipmaps (blending two cost 6 % of the march, and moving about
+nothing popped), the cover's tile over some 17 of its tiles (`VOLUME_LUMP_TILES`), read twice
+where a point lies at `high` and `ultra` (the second tiling 1.618 times broader, turned:
+`CLOUD_LUMP_BROADER`) and once at `low` and `medium` (`CLOUD_SHAPE_READS`: plainer, as stable),
+so a cloud's sides and top are lumps rather than the cover's outline extruded. They move the
+cover by their own standard deviations (measured: `CLOUD_PERLIN_WORLEY`) times the look's
+`lumps`, either way, so the cover stays the weather's.
 
 **The same clouds at every distance** (2026-11-11). What a point holds and how it is lit are
 functions of where it lies and of the footprint it is seen over — the pixel's cone where it lies,
@@ -473,6 +479,37 @@ the view reaches (as the weather systems' map about the camera does), its texels
 crossings as wide as a texel. It would blur the high clouds' shadows on the low ones as much, or
 take finer maps in cascades about the camera, drawn anew as the clock runs. Not built.
 
+**Lighter far off, the same clouds** (2026-11-16; RTX A1000, 1920 × 1080, a global weather at
+`medium` from 200 km up, the march alone, interleaved against it, and against a march with every
+step a quarter as long and four times the turns, which today's was within 1.7 % of the clouds'
+pixels over 0.02 off). Kept:
+
+- **A crossing read again is taken as read** (`gCrossSecond`, `gCrossThird`): the light's
+  crossing of a level over a point lit is read over a quarter of the crossing at least, so the
+  points lit close together along a view cross the same cloud; within half that footprint of the
+  last crossing read, its optical depth is taken again. A global weather's march 6–15 % less
+  (from 200 km up and below the clouds), a local one's the same, the image the same. Kept in arrays
+  indexed by level, Direct3D left them in indexable registers and a local weather's march took
+  10–25 % longer: a slot each for the second and third levels drawn.
+
+Tried, not kept:
+
+- **One sample toward the light through its own level where the footprint spans its reach:**
+  14–24 % slower everywhere (its branch cost more than it saved), and 10 % of the pixels over
+  0.02 off from 200 km up.
+- **The light of the last point lit taken again within half a footprint:** 18–25 % less far off,
+  but the light changes faster up a deck than across it: 36–76 % of the clouds' pixels over 0.02
+  off.
+- **A deck's steps no shorter than a share of the pixel's footprint** (a quarter, a half): 4–5
+  times faster from 200 km up and 8–10 times for the whole Earth, but 70–85 % of the clouds'
+  pixels over 0.02 off (by 0.03–0.09 on average from 200 km up): the decks' tops and their light
+  falling off into them are no longer resolved. Near the clouds it changed nothing, and ran 13–24
+  % slower. A choice for a quality, if a coarser look far off is wanted.
+
+Far off the march is left to its quality (see "Quality") and to how it reuses frames: `'still'`
+marches a quarter of the pixels a frame once the camera holds still, `'moving'` (not a
+quality's default: it trails) also as it moves.
+
 **What the march reads baked (2026-11-10).** Reads that change only with the clock are baked:
 
 - **A local weather's cover** (`CloudCoverMap`, `scenery-cloud-cover-map.ts`, `CLOUD_COVER_MAP`):
@@ -498,8 +535,8 @@ take finer maps in cascades about the camera, drawn anew as the clock runs. Not 
 (`CloudsRenderer.render`): at a pixel ratio of 2, `medium` marched each CSS pixel, 4 times
 the work for little to see (1280 × 720 CSS at 2: 33.8 ms against 11.3).
 
-**Reusing frames** (`temporal`: `'off'` by default, `'still'` or `'moving'`; `renderParts`,
-`cloud-rebuild.glsl`). With `temporal` on, the march draws one pixel of each 2 × 2 block a
+**Reusing frames** (`temporal`: the quality's by default, `'off'`, `'still'` or `'moving'`;
+`renderParts`, `cloud-rebuild.glsl`). With `temporal` on, the march draws one pixel of each 2 × 2 block a
 frame (a part, each in turn, the diagonals first), each part into an image of its own, its rays
 through exactly the full image's pixels it stands for, with their footprint, so a part holds what
 the full march would there; the full image is rebuilt from the four. `'still'` does so while the
@@ -529,30 +566,61 @@ the camera moved, this frame's pixels too, from all four parts' nearest samples 
 nearest sample of any part instead, 8.8 %. Neither kept (2026-11-11).
 
 **Quality** (`quality`, `CLOUDS_QUALITY`; default `'medium'`). Each level sets the share of
-the screen's resolution in CSS pixels the clouds' image is drawn at, its steps and its samples
-toward the light (`resolution` given overrides the quality's). The steps lay out a run of a dense
-level (a thin one takes fewer, down to a quarter): the longest stretch the march looks ahead
-over; 0.4 of them go up a level's depth (`LAYER_STEPS`), and a step through cloud hides an optical
-depth of 32 over them (`STEP_DEPTH`; see "The march").
+the screen's resolution in CSS pixels the clouds' image is drawn at, its steps, its samples
+toward the light, its reads of the shape volume and how it reuses frames (`resolution` and
+`temporal` given override the quality's). The steps lay out a run of a dense level (a thin one
+takes fewer, down to a quarter): the longest stretch the march looks ahead over; 0.4 of them go
+up a level's depth (`LAYER_STEPS`), and a step through cloud hides an optical depth of 32 over
+them (`STEP_DEPTH`; see "The march"). The reads of the shape are a march program each
+(`CLOUD_SHAPE_READS`): what a quality leaves out is code taken out, not a uniform's branch past
+it, as the code a march holds costs it however rarely it runs (see "Measured"). Counts of loops
+stay uniforms (Direct3D unrolls a loop of a constant count).
 
-| | share | steps | light samples |
-| --- | --- | --- | --- |
-| `low` | 0.35 | 24 | 2 |
-| `medium` | 0.5 | 32 | 2 |
-| `high` | 0.75 | 48 | 3 |
-| `ultra` | 1 | 64 | 4 |
+| | share | steps | light samples | shape reads | `temporal` |
+| --- | --- | --- | --- | --- | --- |
+| `low` | 0.25 | 16 | 1 | 1 | `'still'` |
+| `medium` | 0.5 | 32 | 2 | 1 | `'still'` |
+| `high` | 0.75 | 48 | 3 | 2 | `'still'` |
+| `ultra` | 1 | 64 | 4 | 2 | `'still'` |
+
+`'moving'` for `low` and `medium` (a quarter of the pixels a frame as the camera moves) left
+trails behind the clouds as it moved, and was dropped (2026-11-16): every quality marches every
+pixel as the camera moves and a quarter a frame once it holds still.
+
+Measured 2026-11-16 on an RTX A1000 (Chrome, ANGLE D3D11) at 1920 × 1080 and a pixel ratio of 1,
+the bench's `frames` turning the camera 0.05° a frame, GPU ms a frame: scattered cumulus (local)
+and a global weather, over, along and under them; in brackets, a global weather from 200 km up.
+`low` 2.7–3.7 (5.1) and `medium` 5.3–6.5 (11.5) with `'moving'`, `high` 19–30 (104), `ultra`
+48–55 (271: the full march). Until
+then every level marched every pixel every frame (`low` was 0.35/24/2): `medium` took 15.8–17.3
+ms a frame about cumulus (A1000, the same frames) and 39 ms from 200 km up; with `'moving'`,
+the same look as it holds still, 5.3–6.5 and 11.5. `medium`'s budget there is 5–6 ms as the
+camera moves: met with `'moving'` about the clouds, not far off; with `'still'` for every quality
+since, not as the camera moves. Its share of the resolution is what shows most: 0.4 of it
+(3.8–5.2 ms, 6.7 from 200 km up) was visibly softer, and not kept.
+
+Since (2026-11-17): the shape read once at `low` and `medium`, the shape volume read from its
+nearest mipmap, and the cover volume the march reads two channels (RG16F) rather than four. The
+march, timed on its own at `medium` with every pixel marched (1280 × 653): a global weather seen
+along its low clouds from 1.7 km up, 56.5 ms against 65.3 (−13.5 %); a local `fair` sky seen from
+under it, 16.4 against 19.5 (−16 %).
+
+⚠️ With a quarter of the pixels a frame, the A1000 runs too few at once to be busy: below
+`medium`, a frame costs about as long as its slowest rays, not its pixels (`low` at a quarter of
+`medium`'s pixels and half its steps took 45–75 % of its time). A smaller GPU, running fewer
+pixels at once, gains more from fewer.
 
 - **Unchanged:** nothing is marched while nothing it is marched from has changed since
   (`marchUnchanged`: the camera, its sub-pixel jitter aside, the image's size, the clock, what
   is drawn into its maps and the values of the uniforms its program reads): its image is laid
   over the scene again as it is, and a still view with the clock held costs the composite
   alone. With `temporal` on, a quarter of it a frame (see "Reusing frames").
-- **Off** (`enabled` false): nothing is marched, filmed or shadowed, nor are its ground and
+- **Off** (`enabled` false): nothing is marched, baked or shadowed, nor are its ground and
   its map of the weather drawn; its programs stay compiled. On again, the map is drawn anew
   (a few strips a frame) once the weather has moved on from the one it had. Unmounted, it
   lets go of all of it.
 - **Local to global and back** (`programsOf`): each mode has programs of its own for the march,
-  its film and its shadows (`CLOUD_GLOBAL`), made as first needed and kept. A switch waits for
+  its bake and its shadows (`CLOUD_GLOBAL`), made as first needed and kept. A switch waits for
   the other mode's, and for a global weather's map generators, to compile off the main thread
   (`precompile`), the clouds drawn as they were meanwhile; switched once the first time, either
   way is at once. Going local lets go of the weather systems' maps (some 70 MB) but keeps what
@@ -562,6 +630,11 @@ depth of 32 over them (`STEP_DEPTH`; see "The march").
   the longest frame 6–8 s (2026-11-11, every compile uncached). Now the first switch to global
   waits some 19 s uncached (1.8 s with the browser's program cache warm), its frames at most
   0.14 s (0.36 s warm); each switch after it takes 0.15–0.4 s, none of its frames over 0.08 s.
+  The march has a program for each count of the shape's reads as well (`CLOUD_SHAPE_READS`; its
+  bake and shadows read none, so are the mode's alone): a quality switching between them waits
+  for its march the same way (`SceneryClouds`'s drawn mode is the weather's and the reads'),
+  22.5 s uncached on the A1000 with the clouds drawn at the quality they had meanwhile, its
+  longest frame 0.32 s; back again, 65 ms.
 - **Compiled for the scene they are drawn in** (`OWN_SCENE` in `SceneryClouds.tsx`): its own
   passes draw in scenes of their own without lights, and three keys every program on the lights
   of the scene it is compiled for. Compiled for the host's scene (its sun and light probe), each
@@ -588,7 +661,7 @@ CPU, by where the march reads its patterns: the march's own work is the same.
   once it has moved a tenth of their reach or the clouds have lived 2 % of their lifetime
   (`SHADOW_LIVED`: some 25 s of weather for cumulus). **The bakes** of the air and the sea's
   reflection are drawn again once the lowest clouds have drifted a quarter of a cloud or lived
-  a quarter of their lifetime, no sooner than 3 s after the last (`updateFilm`).
+  a quarter of their lifetime, no sooner than 3 s after the last (`updateBakes`).
 - **The weather systems travel** (`weatherSystemCentresAt`, `weatherSystemDrift`): each with the
   flow that steers it, east at 12 m/s in the storm tracks and west at 5 in the trades, lows
   heading poleward at 2; each deepens and fills over its life (lows 3–6 days, tropical ones
@@ -675,19 +748,24 @@ the zone, `background`, `debug.hide`).
 (`ScenerySkyOverlay`, through its registry, from the renderer itself):
 
 - **In the bakes:** before each bake of the air (the environment map and the light probe), the
-  clouds are filmed as seen from where the air is filmed (100 m over the sea at the disc's
-  centre): a cube map 128² a face, each face drawn once at half that, a still, and drawn over
-  the sky in the bake (`CloudsRenderer.film`). Each run through a level is taken whole
-  (`filmWhole`, `CLOUD_FILM`, `cloudFilmRuns`): one stretch read over all of it (the cover's mean
-  and spread along it, no lumps) and lit once at its middle, toward the light as the march
-  lights. Blurred as the bakes and the sea read it, it needs no more: marched as the view is,
-  its rays along the layers to the horizon took 3–4 ms a face, 3.8–6.7 ms the six; taken whole,
-  0.6–1.1 ms (Iris Xe, 1280 × 720, 2026-11-10). The light probe's six faces are read back
+  clouds are baked as seen from where the air is baked (100 m over the sea at the disc's
+  centre): a cube map 128² a face, drawn straight into each face and over the sky in the bake
+  (`CloudsRenderer.bake`, `CLOUD_BAKE`, `cloudBakeRuns`). Each run through a level is read once
+  over all of it (their own cover's mean and spread along it, no lumps) and lit at its middle
+  through a cloud's skin toward the light (`CLOUD_LIGHT_SKIN`) as dense as that read says, not
+  marched toward the light nor across the levels over it. Blurred as the bakes and the sea read
+  it, it needs no more. Until 2026-11-16 the clouds were filmed: each face marched at half the
+  side (64²) by the march's own program with its light (`cloudLight`, one sample toward the
+  light), then laid into the face by a composite of its own. The film took 3.4 ms the six faces
+  (CPU and GPU, RTX A1000) and its program 2.5–3 s to compile uncached; the bake 1.4 ms and
+  2.0 s, and the film's composite is gone. Lit the same way, a scattered sky and its cirrus look
+  as they did; an overcast seen from under it is greyer, without the sun's glow through it that
+  the film's light gave. The light probe's six faces are read back
   behind one fence (`readFloatTargetAsync`, `cubeFacesToSphericalHarmonics`): three's
   `LightProbeGenerator` asked for each face's readable format first, a synchronous round trip
-  that stood the page 59 ms at each bake. Filmed again only once their version changes, the
+  that stood the page 59 ms at each bake. Baked again only once their version changes, the
   place moves or the sun has turned half a
-  degree (`FILM_TURN`): the bakes film twice, the environment's and the probe's, and again at
+  degree (`BAKE_TURN`): the scenery bakes twice, the environment and the probe, and again at
   each step of a sun on the weather's clock. Under
   overcast the environment and the probe turn grey, and what reflects them dims. A change to
   the clouds (their settings, the map drawn, their showing at all, the light's share moving)
@@ -699,11 +777,11 @@ the zone, `background`, `debug.hide`).
   (`SceneryMaterial.oceanClouds`), read by the reflection's direction alone: it shows the
   clouds as from the scene, so from high over a sea point it blew them up by the camera's
   height over the point against their base (some 200 times from 400 km: one cloud across half
-  the sea). The film has its mipmaps, and the sea reads it as blurred as that
+  the sea). The bake has its mipmaps, and the sea reads it as blurred as that
   (`skyOceanReflectedClouds`, from `ScenerySkyReflection`): over the field from near the sea,
-  as filmed. Far from the field (100 to 400 km off), in a global weather, it reflects the cloud
+  as baked. Far from the field (100 to 400 km off), in a global weather, it reflects the cloud
   map's cover at the sea point instead (low, middle and high, as much as 0.9, 0.6 and 0.25 of
-  the sky each), coloured as the film's clouds overhead are on average, with none a grey as
+  the sky each), coloured as the baked clouds overhead are on average, with none a grey as
   bright as the sky. The bakes still light the sea with the field's light.
 - **The sun's light:** the scene's directional light, and the sea's glint with it, are scaled
   by the share of the light the layers let through about the scene (`cloudsLight`):
@@ -753,10 +831,76 @@ Every result carries the conditions it was taken under; compare only those that 
   (`settle`). Earlier findings here that a change "saved nothing" or cost more may have been
   either of these.
 - `ab`'s `diff` (the mean difference of a variant's image, per channel) tells a change that only
-  moved the time from one that changed what is drawn, whose time then moved with what it drew.
+  moved the time from one that changed what is drawn, whose time then moved with what it drew;
+  its `off`, the share of the clouds' pixels over 0.02 off in any channel. Given a `reference`
+  (a march edited to be finer, untimed), it says how far the march and each variant are from it
+  (`reference`, `vsReference`): a variant as far from it as the march is changed nothing that
+  matters.
 - A browser hook that wrapped `drawArrays` with a `getError` before and after each draw (from a
   debugging session, not the repository) took 88 % of the page's main thread; the bench warns when
   WebGL's methods are not the browser's own.
+- **On the RTX A1000 (2026-11-16).** Measured in a Chrome of its own (`--remote-debugging-port`,
+  driven by Playwright over CDP), which draws on the discrete GPU; repeated runs agreed to 1–5 %
+  while it was cool. After an hour of runs it dropped to its P5 state (some 1,400 MHz against
+  2,100, power and thermal limits set: `nvidia-smi`), and every time read 1.5–2.5 times longer:
+  compare only runs taken together, and `ab`'s ratios across them.
+- ⚠️ A GPU timer spans the GPU's idle time between draws too: what draws several passes from the
+  CPU (the bake's six faces) read 7–11 ms on `pass` and took 1.4 ms, CPU and GPU together, timed
+  around it with a `finish`. Time those so.
+- `pass` and `ab` give up with an error, rather than wait for ever, on timings that do not come
+  back or a page that draws no frames (hidden, or its window covered).
+- **Live and labelled (2026-11-17).** A variant judged on the story itself, in its own Chrome on
+  the discrete GPU, at a view saved with its args: A and B swapped in the running page in
+  interleaved rounds, each labelled in the window as it is drawn, timed only once the clouds are
+  drawn and ready (shown, their maps drawn, their program linked) and the GPU's time has held
+  steady; the march timed by its own GPU timer inside the frame's, a frame counted only once all
+  of its timers are back (they come back frames late: counted as they came, a frame missing some
+  read cheaper than it was). Variants that change what is drawn are switched by hand, moving the
+  view, before any are kept.
+- ⚠️ With vsync off (`--disable-gpu-vsync`, `--disable-frame-rate-limit`), frames queue without
+  end and the GPU's timers never come back. With it on, frame intervals round to its steps (17,
+  33, 50 ms): compare GPU times, not intervals.
+- ⚠️ A program the D3D compiler cannot finish brings Chrome's GPU process down
+  (`STATUS_ACCESS_VIOLATION`; three of those and Chrome stops using the GPU until restarted):
+  compile a doubtful variant first in a Chrome of its own, over GLSL taken from the page.
+
+**Where the march's time goes** (2026-11-17, `medium`, every pixel marched, 1280 × 653; the
+march alone, 61–63 ms, from 1.7 km up along a global weather's low clouds; each part taken out,
+which saves that, or done twice, which costs about one more of it):
+
+| part | | the march |
+| --- | --- | --- |
+| the light (`cloudLight`), all of it | taken out | −22.4 ms |
+| its samples through its own level and across the levels over it, together | taken out | −19.7 ms |
+| its samples through its own level | taken out | −8.4 ms |
+| its crossings of the levels over it | taken out | −6.3 ms |
+| `cloudLit` (direct · e^−τ and the sky over it instead) | simplified | −1.0 ms |
+| a step's density (`cloudDensity`) | twice | +13.2 ms |
+| the cover volume's reads | twice | +12.3 ms |
+| the shape volume's reads | twice | +11.7 ms |
+| the look ahead through clear air (`cloudSet`, `cloudMaybe`) | twice | +6.9 ms |
+| a step's placing by the weather systems' maps (`cloudSet`) | twice | +6.5 ms |
+| the maps' two drawings read once (as one blended a frame would) | simplified | −0.5 ms |
+
+A pixel there turns the loop 62 times, takes 28.5 steps and lights 17 points. Under a local
+`fair` sky (18.9 ms; 16 turns, 5.4 steps and 0.08 points lit a pixel) the light's samples taken
+out still saved 4.7 ms: the code a march holds costs it whether it runs or not (its registers,
+how many pixels run at once). So: the light's sample loop is a third of the march, its
+reads of the volumes more than its arithmetic, and what a quality does without is to be compiled
+out.
+
+Taken again live (2026-11-17), against earlier verdicts:
+
+- The light's crossings of the levels over a point taken as read where the last crossing lies
+  close (`CLOUD_CROSS_REUSE`): the frame 3 % shorter at a global view, kept.
+- Lighting every other step, the one between from its neighbours: 3 % longer, not kept.
+- One light sample where a pixel spans half the light's reach: no change at a global view (it
+  is taken there, but little); not kept.
+- A prepass at a quarter of the size, the march starting where it found the first step: its
+  program never finished compiling (over 180 s, where the march's takes 65 s cold); the look
+  ahead it would spare is 3 of 19 ms under a `fair` sky. Not built.
+- Candidates for lower qualities, to be judged moving the view first: the light's crossings
+  of the levels over it taken out, a lighter density for the light's samples.
 
 **The march** (2026-11-11), measured on the bench at 1280 × 720, `medium`, against the
 same march with every step a tenth as long and no cap on its turns (`uCloudStepScale` 0.1):
@@ -810,14 +954,14 @@ the GPU.
    systems' mean drift by latitude does, so a cyclone's spiral does not turn as it travels. The
    map is redrawn only every few hours of weather under a fast timelapse on a laptop. Some
    flicker is left while moving fast.
-5. **The noise:** the shape volume is RGBA (8 bits), of which the march reads only r: one channel
-   would be a quarter of its memory and of what its reads fetch, and its g, b and a need not be
-   worked out.
+5. **The noise:** done (2026-11-16, 11-17). The shape volume is one channel (R8), read from its
+   nearest mipmap, and once a step at `low` and `medium`; the cover volume the march reads is
+   two (RG16F), its squares kept only until the spread is measured.
 6. **The light:** the scene's light is dimmed by the cloud over the scene (a local weather's
    layers, a global one's map read back there) even far from it (the shadows there are the
    right ones, so this shows only on
    what the shadows do not reach: the host's own objects, and past the shadows' square). A
-   local weather's film, read by direction, puts its clouds in the sea's reflection even past
+   local weather's bake, read by direction, puts its clouds in the sea's reflection even past
    its radius. The
    shadows are not on what the host draws (wellbores, a chunk's columns), nor on the stage's
    own seabed under the water. An object inside a layer that is
@@ -831,16 +975,19 @@ the GPU.
 9. **A global weather's controls** without data: only its seed, and each level on or off.
     Proposed: a share of the Earth under cloud (the systems' lift threshold, so the map's mean
     cover follows it), how stormy (the lows' depth and number), and named climates as presets.
-10. **The march:** its time is to be measured again. Near cumulus are crisp (a type's `softness`
+10. **The march:** near cumulus are crisp (a type's `softness`
     softens them). A global weather's skip of clear air places the level at a stretch's middle,
     which is no bound there: it misses little at 2,885 km and 3.75 km, and from 20 km up leaves the far band a little
     off (above, "The march"). Far off the time is the steps through each deck, some 13 to a
     crossing, each lit, the light running the density through its level and across those over it
-    (above, "Seen from afar"). In a local weather the march is 8–9 % of the clouds' pixels over
+    (above, "Seen from afar"): from 200 km up, a global weather's `medium` takes some 33 steps a
+    pixel and lights 18 of them, against 2 and none about the clouds. Steps no shorter than the
+    footprint would cut it four to ten times far off, at a coarser look (above, "Lighter far
+    off"). In a local weather the march is 8–9 % of the clouds' pixels over
     0.02 off one with steps four times finer from 3 and 20 km up, skipping or not: how it
     converges there is to be looked at. From high up the light's crossings of the levels over each
     point lit (each placed by the weather systems' map) are a third of the march (above, "Seen from
-    afar"). Toward the horizon cloud edges step in the Earth story: the clouds change that
+    afar"; a crossing read again is now taken as read). Toward the horizon cloud edges step in the Earth story: the clouds change that
     much from one of the image's rows to the next (2 × 2 CSS pixels at `medium`), filtered or not
     (from 1,856 km up, 36 % of the top fifth's neighbouring rows over 0.2 of opacity apart, 34 %
     with four rows marched for each and averaged, the same opacity on average): the image's grid

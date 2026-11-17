@@ -259,8 +259,8 @@ export class SceneryBaker {
   }
 
   /**
-   * What draws itself in the sky (the 3D clouds): filmed and drawn over the sky in the bakes
-   * of the air from now on; null for none.
+   * What draws itself in the sky (the 3D clouds): baked as seen from where the air is and drawn
+   * over the sky in the bakes of the air from now on; null for none.
    */
   setOverlay(overlay: ScenerySkyOverlay | null) {
     this.overlay = overlay;
@@ -485,7 +485,7 @@ export class SceneryBaker {
   }
 
   // The sky from where its zone is seen, or the subsurface. The air with what draws itself in
-  // the sky (setOverlay) over it, filmed from there first.
+  // the sky (setOverlay) over it, baked from there first.
   private film(renderer: WebGLRenderer, zone: SceneryZone, camera: CubeCamera) {
     if (zone === 'subsurface') {
       camera.position.set(0, 0, 0);
@@ -504,7 +504,7 @@ export class SceneryBaker {
     const overlay = zone === 'air' ? this.overlay : null;
     this.overlayMesh.visible = overlay !== null;
     if (overlay) {
-      overlay.film(renderer, camera.position);
+      overlay.bake(renderer, camera.position);
       this.overlayMaterial.uniforms.uOverlay.value = overlay.texture;
     }
     camera.update(renderer, this.scene);

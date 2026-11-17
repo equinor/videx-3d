@@ -102,31 +102,74 @@ export type CloudsQualityLevel = {
   steps: number;
   /** stretches toward the light from each point lit: its skin, then the rest */
   lightSamples: number;
+  /**
+   * reads of the shape volume a step through cloud takes: 2, the second turned and broader so no
+   * tile's period shows over a deck; 1, its lumps as stable but plainer, a sixth less of the march
+   * (2026-11-17). A march program of its own (`CLOUD_SHAPE_READS`), compiled as the quality
+   * switches to it: as a uniform's branch the second read's code stayed in, and the code a march
+   * holds costs it however rarely it runs
+   */
+  shapeReads: 1 | 2;
+  /** how the march reuses what it drew over the last frames */
+  temporal: SceneryCloudsTemporal;
 };
 
 /**
- * The qualities a `SceneryClouds` draws at (`quality`): every pixel of their image marched
- * every frame, so what they cost depends only on what is in view (`documents/clouds.md`,
- * "Quality").
+ * The qualities a `SceneryClouds` draws at (`quality`), so what they cost depends only on what
+ * is in view (`documents/clouds.md`, "Quality"). Each marches every pixel while the camera
+ * moves, and a quarter of them a frame while it holds still with the clock running
+ * (`temporal: 'still'`). Low and medium read the shape once a step, high and ultra twice
+ * (`shapeReads`: a march program each, compiled as the quality switches to it).
  *
  * @group Components
  */
 export const CLOUDS_QUALITY: Readonly<
   Record<SceneryCloudsQuality, CloudsQualityLevel>
 > = {
-  low: { resolution: 0.35, steps: 24, lightSamples: 2 },
-  medium: { resolution: 0.5, steps: 32, lightSamples: 2 },
-  high: { resolution: 0.75, steps: 48, lightSamples: 3 },
-  ultra: { resolution: 1, steps: 64, lightSamples: 4 },
+  low: {
+    resolution: 0.25,
+    steps: 16,
+    lightSamples: 1,
+    shapeReads: 1,
+    temporal: 'still',
+  },
+  medium: {
+    resolution: 0.5,
+    steps: 32,
+    lightSamples: 2,
+    shapeReads: 1,
+    temporal: 'still',
+  },
+  high: {
+    resolution: 0.75,
+    steps: 48,
+    lightSamples: 3,
+    shapeReads: 2,
+    temporal: 'still',
+  },
+  ultra: {
+    resolution: 1,
+    steps: 64,
+    lightSamples: 4,
+    shapeReads: 2,
+    temporal: 'still',
+  },
 };
 
-/** `quality`'s level, with a `resolution` of its own instead of the quality's. */
+/** `quality`'s level, with a `resolution` and a `temporal` of its own instead of the quality's. */
 export function cloudsQuality(
   quality: SceneryCloudsQuality,
-  { resolution }: { resolution?: number } = {},
+  {
+    resolution,
+    temporal,
+  }: { resolution?: number; temporal?: SceneryCloudsTemporal } = {},
 ): CloudsQualityLevel {
   const level = CLOUDS_QUALITY[quality] ?? CLOUDS_QUALITY.medium;
-  return { ...level, resolution: resolution ?? level.resolution };
+  return {
+    ...level,
+    resolution: resolution ?? level.resolution,
+    temporal: temporal ?? level.temporal,
+  };
 }
 
 /**
@@ -311,21 +354,17 @@ const PLACE_TOP = 15000;
 // The light maps reach this much past a local weather's radius at most (m): a ray toward a low
 // light leaves a level's base that far out from the cloud it lights at its top.
 const LIGHT_MARGIN = 25000;
-// The film for the bakes of the air and the sea's reflection (ScenerySkyOverlay.texture): texels
-// a face, each face marched once at this share of them, a still (no frames before it), coarser
-// than the view's: its samples toward the light, and its share of each level's steps. Blurred in
-// the bakes and the sea, a face of 64² costs as long as its slowest ray: the view's march took
-// 49 ms for the six (Iris Xe), this 19.
-const FILM_SIZE = 128;
-const FILM_MARCH = 0.5;
-const FILM_LIGHT_SAMPLES = 1;
-const FILM_STEPS = 0.5;
-// The film is drawn again once the sun has turned this far since (1 − its cosine: half a degree).
-const FILM_TURN = 4e-5;
-// As the clock runs, the film is due again (version) once the lowest level's clouds have drifted
-// or formed and faded this share of a cloud since, at most this often (wall ms).
-const FILM_SHARE = 0.25;
-const FILM_LONGEST = 3000;
+// What the bakes of the air and the sea's reflection see of them (ScenerySkyOverlay.texture):
+// texels a face, each texel's view through each level read once and lit without a march toward
+// the light (cloud-march.glsl, CLOUD_BAKE), blurred in the bakes and the sea.
+const BAKE_SIZE = 128;
+// Baked again once the sun has turned this far since (1 − its cosine: half a degree).
+const BAKE_TURN = 4e-5;
+// As the clock runs, the bake is due again (version) once the lowest level's clouds have drifted
+// or formed and faded this share of a cloud since, at most this often (wall ms): what is due is
+// the scenery's bakes of the air (its environment's prefiltering, its light probe's read back).
+const BAKE_SHARE = 0.25;
+const BAKE_LONGEST = 3000;
 // The scene's light eases toward the share the clouds let through over this long (s); the bakes
 // are due again once it has moved this much.
 const LIGHT_EASE = 0.4;
@@ -675,10 +714,10 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   private marchNames: string[] = [];
 
   /**
-   * How the march reuses what it drew over the last frames (`SceneryCloudsTemporal`):
-   * `'off'` every pixel every frame; else one pixel of each 2 × 2 block a frame (a part, each in
-   * turn), each part into an image of its own, the full image rebuilt from the four
-   * (cloud-rebuild.glsl).
+   * How the march reuses what it drew over the last frames (`SceneryCloudsTemporal`; the
+   * quality's, set by {@link set}): `'off'` every pixel every frame; else one pixel of each 2 × 2
+   * block a frame (a part, each in turn), each part into an image of its own, the full image
+   * rebuilt from the four (cloud-rebuild.glsl).
    */
   temporal: SceneryCloudsTemporal = 'off';
   /** the interleaved march's rebuild (`temporal`): compile it before it draws */
@@ -714,7 +753,7 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   light = 1;
   /** their shadows about the camera (updateShadow); null for none */
   shadow: ScenerySkyShadow | null = null;
-  /** what the sea reflects of them away from where they were filmed (updateReflection) */
+  /** what the sea reflects of them away from where they were baked (updateReflection) */
   readonly reflection: ScenerySkyReflection = {
     base: 0,
     map: null,
@@ -724,41 +763,37 @@ export class CloudsRenderer implements ScenerySkyOverlay {
     near: REFLECTION_NEAR,
     far: REFLECTION_FAR,
   };
-  /** the film's composite, each face's march laid into it (`film`): compile it before it films */
-  readonly still: Mesh;
-  /**
-   * The film's march: each run through a level taken whole (CLOUD_FILM: 0.6–1.1 ms the six
-   * faces), or (false) marched as the view is (3.8–6.7 ms; Iris Xe, 2026-11-10). Compile
-   * {@link filmMesh} before it films.
-   */
-  filmWhole = true;
-  private readonly filmMarchScene = new Scene();
 
-  // The march's own defines and uniforms, which its film and its shadows share: each mode's
+  // The march's own defines and uniforms, which its bake and its shadows share: each mode's
   // programs read the same uniform objects, set once for all of them.
   private readonly geometry = createSceneryGeometry();
   private readonly marchDefines: Record<string, unknown>;
   private readonly marchUniforms: Record<string, IUniform>;
   private readonly shadowUniforms: Record<string, IUniform>;
-  // The march's, its film's and its shadows' programs for a local weather and for a global one
-  // (CLOUD_GLOBAL), each made the first time it is asked for and kept, and those drawn. Flipping
-  // the define on one set instead, the next draw compiled the other mode's three, and three let
-  // go of the mode left: each switch stood the page for 9–13 s (Iris Xe, 2026-11-11).
-  private readonly modes: { local?: CloudsPrograms; global?: CloudsPrograms } =
-    {};
+  // The bake's and the shadows' programs for a local weather and for a global one
+  // (CLOUD_GLOBAL), the march's for each with each count of reads of the shape
+  // (CLOUD_SHAPE_READS: the bake and the shadows read none), each made the first time it is asked
+  // for and kept, and those drawn. Flipping the define on one set instead, the next draw compiled
+  // the other mode's three, and three let go of the mode left: each switch stood the page for
+  // 9–13 s (Iris Xe, 2026-11-11).
+  private readonly modes: {
+    local?: CloudsModePrograms;
+    global?: CloudsModePrograms;
+  } = {};
+  private readonly marches = new Map<string, Mesh>();
   private programs: CloudsPrograms;
 
   /** the march, drawn into the clouds' own image as the composite is drawn: its mode's ({@link programsOf}) */
   get march(): Mesh {
     return this.programs.march;
   }
-  /** the march's program: its uniforms are every mode's, its film's and, with more, its shadows' */
+  /** the march's program: its uniforms are every mode's, its bake's and, with more, its shadows' */
   get marchMaterial(): ShaderMaterial {
     return this.programs.march.material as ShaderMaterial;
   }
-  /** the film's own march (`filmWhole`), its mode's: compile it before it films */
-  get filmMesh(): Mesh {
-    return this.programs.film;
+  /** what the bakes see of them ({@link bake}), its mode's: compile it before it bakes */
+  get bakeMesh(): Mesh {
+    return this.programs.bake;
   }
   /** the shadows' pass (`updateShadow`), its mode's: compile it before it draws */
   get shadowMesh(): Mesh {
@@ -776,28 +811,26 @@ export class CloudsRenderer implements ScenerySkyOverlay {
     u.value = samples;
     this.shadowDrawn.valid = false;
   }
-  private readonly filmTarget = new WebGLCubeRenderTarget(FILM_SIZE, {
+  private readonly bakeTarget = new WebGLCubeRenderTarget(BAKE_SIZE, {
     type: HalfFloatType,
     generateMipmaps: true,
     minFilter: LinearMipmapLinearFilter,
   });
-  private readonly filmCamera = new CubeCamera(1, 1e7, this.filmTarget);
-  private readonly filmScene = new Scene();
-  private readonly stillImage = createImage();
-  private readonly stillMaterial: ShaderMaterial;
-  // What the film was last drawn for: where, at which version (the clouds' drift and lives
-  // counted in it: updateFilm) and with the sun where (within FILM_TURN). The bakes film twice,
-  // the environment's and the probe's, from the same place, and again as the sun moves on the
+  private readonly bakeCamera = new CubeCamera(1, 1e7, this.bakeTarget);
+  private readonly bakeScene = new Scene();
+  // What the bake was last drawn for: where, at which version (the clouds' drift and lives
+  // counted in it: updateBakes) and with the sun where (within BAKE_TURN). The scenery bakes
+  // twice, its environment and its probe, from the same place, and again as the sun moves on the
   // weather's clock: in a few minutes, what lights the clouds hardly changes.
-  private readonly filmedAt = new Vector3(NaN, NaN, NaN);
-  private filmedVersion = -1;
-  private readonly filmedSun = new Vector3();
-  // Whether they show (filmable); when the film was last due as the clock ran (weather seconds,
+  private readonly bakedAt = new Vector3(NaN, NaN, NaN);
+  private bakedVersion = -1;
+  private readonly bakedSun = new Vector3();
+  // Whether they show (`shows`); when the bake was last due as the clock ran (weather seconds,
   // and wall ms); the light last told the bakes; the weather's and the ground's versions counted;
   // whether the cover is drawn (render).
   private shown = false;
-  private filmTime = 0;
-  private filmWall = 0;
+  private bakeTime = 0;
+  private bakeWall = 0;
   private lightTold = 1;
   private weatherSeen = -1;
   private terrainSeen = -1;
@@ -937,9 +970,9 @@ export class CloudsRenderer implements ScenerySkyOverlay {
       uCloudShadowSamples: new Uniform(SHADOW_SAMPLES),
     };
     // A local weather's programs until set says otherwise.
-    this.programs = this.modeOf(false);
+    this.programs = this.programsFor(false, CLOUDS_QUALITY.medium.shapeReads);
     this.marchScene.add(this.programs.march);
-    this.filmMarchScene.add(this.programs.film);
+    this.bakeScene.add(this.programs.bake);
     this.shadowScene.add(this.programs.shadow);
 
     this.compositeMaterial = createCompositeMaterial(
@@ -1028,18 +1061,6 @@ void main() {
     splitMesh.layers.enableAll();
     this.splitScene.add(splitMesh);
 
-    // The film: each face's march laid into it, as a still, without the sky's intensity.
-    this.stillMaterial = createCompositeMaterial(
-      'scenery-clouds-still',
-      this.stillImage,
-      new Uniform(1),
-    );
-    this.still = new Mesh(geometry, this.stillMaterial);
-    this.still.frustumCulled = false;
-    this.still.onBeforeRender = (renderer, _scene, camera) =>
-      this.renderStill(renderer, camera);
-    this.filmScene.add(this.still);
-
     // A global weather's cover over the scene: its newer map read at the scene's up, over some
     // 40 km (its third level), into one texel read back (readSceneCover).
     this.sceneCoverMaterial = new ShaderMaterial({
@@ -1070,6 +1091,7 @@ void main() {
   /** Draw `settings` from the next frame on. */
   set(settings: CloudsSettings) {
     this.settings = settings;
+    this.temporal = settings.quality.temporal;
     this.marchDrawn = false;
     this.settingsSerial++;
     const u = this.marchMaterial.uniforms;
@@ -1085,18 +1107,20 @@ void main() {
     this.version++;
 
     const global = settings.global;
-    // The mode's programs drawn: compiled first (programsOf), the switch compiles nothing.
-    const programs = this.modeOf(!!global);
-    if (programs !== this.programs) {
-      const was = this.programs;
-      this.marchScene.remove(was.march);
-      this.filmMarchScene.remove(was.film);
-      this.shadowScene.remove(was.shadow);
+    // The mode's and the quality's programs drawn: compiled first (programsOf), the switch
+    // compiles nothing.
+    const programs = this.programsFor(!!global, settings.quality.shapeReads);
+    if (programs.march !== this.programs.march) {
+      this.marchScene.remove(this.programs.march);
       this.marchScene.add(programs.march);
-      this.filmMarchScene.add(programs.film);
-      this.shadowScene.add(programs.shadow);
-      this.programs = programs;
     }
+    if (programs.bake !== this.programs.bake) {
+      this.bakeScene.remove(this.programs.bake);
+      this.shadowScene.remove(this.programs.shadow);
+      this.bakeScene.add(programs.bake);
+      this.shadowScene.add(programs.shadow);
+    }
+    this.programs = programs;
     // A local weather's maps let go of, what draws them kept.
     if (!global) this.weather.clear();
     (u.uCloudGlobal.value as Vector4).set(
@@ -1188,59 +1212,85 @@ void main() {
   }
 
   /**
-   * The march's, its film's and its shadows' programs for a local weather or a global one
-   * (`global`), made the first time: compile them before {@link set} switches to that mode, or
-   * the first frame drawn with them compiles them, standing the page for seconds.
+   * The march's, its bake's and its shadows' programs for a local weather or a global one
+   * (`global`) and a quality's reads of the shape (`shapeReads`), made the first time: compile
+   * them before {@link set} switches to them, or the first frame drawn with them compiles them,
+   * standing the page for seconds.
    */
-  programsOf(global: boolean): readonly Mesh[] {
-    const programs = this.modeOf(global);
-    return [programs.march, programs.film, programs.shadow];
+  programsOf(global: boolean, shapeReads: 1 | 2): readonly Mesh[] {
+    const programs = this.programsFor(global, shapeReads);
+    return [programs.march, programs.bake, programs.shadow];
   }
 
-  private modeOf(global: boolean): CloudsPrograms {
+  private programsFor(global: boolean, shapeReads: 1 | 2): CloudsPrograms {
     const mode = global ? 'global' : 'local';
-    return (this.modes[mode] ??= this.makePrograms(global));
+    const { bake, shadow } = (this.modes[mode] ??=
+      this.makeModePrograms(global));
+    const key = `${mode} ${shapeReads}`;
+    let march = this.marches.get(key);
+    if (!march) {
+      march = this.makeMarch(global, shapeReads);
+      this.marches.set(key, march);
+    }
+    return { march, bake, shadow };
   }
 
-  // A mode's programs: the march's own code on its uniforms (the same objects), its film's runs
-  // taken whole (CLOUD_FILM) and its shadows' main the pass's (CLOUD_SHADOW). Each drawn with
-  // whatever layers the camera has on.
-  private makePrograms(global: boolean): CloudsPrograms {
-    const defines = global
+  private modeDefines(global: boolean): Record<string, unknown> {
+    return global
       ? { ...this.marchDefines, CLOUD_GLOBAL: '' }
       : { ...this.marchDefines };
-    const mesh = (material: ShaderMaterial) => {
-      const drawn = new Mesh(this.geometry, material);
-      drawn.frustumCulled = false;
-      drawn.layers.enableAll();
-      return drawn;
-    };
-    // Every pixel writes its depth: the distance to the clouds' front.
-    const marched = {
-      vertexShader,
-      fragmentShader: marchShader,
-      uniforms: this.marchUniforms,
-      depthTest: true,
-      depthFunc: AlwaysDepth,
-      depthWrite: true,
-      blending: NoBlending,
+  }
+
+  private programMesh(material: ShaderMaterial): Mesh {
+    const drawn = new Mesh(this.geometry, material);
+    drawn.frustumCulled = false;
+    drawn.layers.enableAll();
+    return drawn;
+  }
+
+  // The march's own code on its uniforms (the same objects), as the mode and the quality's reads
+  // of the shape say. Every pixel writes its depth: the distance to the clouds' front.
+  private makeMarch(global: boolean, shapeReads: 1 | 2): Mesh {
+    return this.programMesh(
+      new ShaderMaterial({
+        name: 'scenery-clouds-march',
+        vertexShader,
+        fragmentShader: marchShader,
+        defines: { ...this.modeDefines(global), CLOUD_SHAPE_READS: shapeReads },
+        uniforms: this.marchUniforms,
+        depthTest: true,
+        depthFunc: AlwaysDepth,
+        depthWrite: true,
+        blending: NoBlending,
+      }),
+    );
+  }
+
+  // A mode's bake, its runs each read once and lit without a march toward the light (CLOUD_BAKE),
+  // and its shadows, main the pass's (CLOUD_SHADOW). Each drawn with whatever layers the camera
+  // has on.
+  private makeModePrograms(global: boolean): CloudsModePrograms {
+    const defines = this.modeDefines(global);
+    // Into each face of the bake as its camera sees it: premultiplied, without the sky's intensity.
+    const bake = this.programMesh(
+      new ShaderMaterial({
+        name: 'scenery-clouds-bake',
+        vertexShader,
+        fragmentShader: marchShader,
+        defines: { ...defines, CLOUD_BAKE: '' },
+        uniforms: this.marchUniforms,
+        depthTest: false,
+        depthWrite: false,
+        blending: NoBlending,
+      }),
+    );
+    bake.onBeforeRender = (_renderer, _scene, camera) => {
+      this.sky.syncCamera(camera);
+      this.updateCamera(camera, BAKE_SIZE);
     };
     return {
-      march: mesh(
-        new ShaderMaterial({
-          name: 'scenery-clouds-march',
-          defines,
-          ...marched,
-        }),
-      ),
-      film: mesh(
-        new ShaderMaterial({
-          name: 'scenery-clouds-film',
-          defines: { ...defines, CLOUD_FILM: '' },
-          ...marched,
-        }),
-      ),
-      shadow: mesh(
+      bake,
+      shadow: this.programMesh(
         new ShaderMaterial({
           name: 'scenery-clouds-shadow',
           vertexShader,
@@ -1977,111 +2027,71 @@ void main() {
     return this.placeMap.generator(this.marchMaterial);
   }
 
-  /** as seen from the scene all round (`film`): premultiplied colour and alpha, with mipmaps */
+  /** as the bakes see them from the scene all round (`bake`): premultiplied colour and alpha, with mipmaps */
   get texture(): CubeTexture {
-    return this.filmTarget.texture;
+    return this.bakeTarget.texture;
   }
 
   /**
-   * Whether they show (enabled, cloudy, compiled): what {@link film} films, and what takes the
+   * Whether they show (enabled, cloudy, compiled): what {@link bake} draws, and what takes the
    * light ({@link updateLight}). A change is a change to what they look like.
    */
-  get filmable(): boolean {
+  get shows(): boolean {
     return this.shown;
   }
-  set filmable(value: boolean) {
+  set shows(value: boolean) {
     if (value === this.shown) return;
     this.shown = value;
     this.version++;
   }
 
   /**
-   * Film the clouds as seen from `position` (world) into {@link texture}, all round: each face
-   * marched once, a still, at FILM_MARCH of its texels. Clear while they do not show. For a
-   * `Scenery`'s bakes of the air (`ScenerySkyOverlay`), and the sea's reflection.
+   * Draw them as seen from `position` (world) into {@link texture}, all round: each texel's view
+   * through each level read once, lit without a march toward the light (CLOUD_BAKE). Clear while
+   * they do not show. For a `Scenery`'s bakes of the air (`ScenerySkyOverlay`), and the sea's
+   * reflection.
    */
-  film(renderer: WebGLRenderer, position: Vector3) {
-    // Filmed already as it is, from there.
+  bake(renderer: WebGLRenderer, position: Vector3) {
+    // Baked already as it is, from there.
     const sun = this.sky.sunDirection;
     if (
-      this.filmedAt.distanceToSquared(position) < 1 &&
-      this.filmedVersion === this.version &&
-      this.filmedSun.dot(sun) > 1 - FILM_TURN
+      this.bakedAt.distanceToSquared(position) < 1 &&
+      this.bakedVersion === this.version &&
+      this.bakedSun.dot(sun) > 1 - BAKE_TURN
     )
       return;
-    this.filmedAt.copy(position);
-    this.filmedVersion = this.version;
-    this.filmedSun.copy(sun);
+    this.bakedAt.copy(position);
+    this.bakedVersion = this.version;
+    this.bakedSun.copy(sun);
+    const settings = this.settings;
+    const drawn =
+      this.shown &&
+      !!settings &&
+      settings.levels.length > 0 &&
+      this.levelsReady &&
+      (!settings.global || this.weather.ready);
+    if (drawn) this.generate(renderer);
+    this.programs.bake.visible = drawn;
     const autoClear = renderer.autoClear;
     const clearAlpha = renderer.getClearAlpha();
     renderer.getClearColor(clearColor);
     renderer.autoClear = true;
     renderer.setClearColor(0x000000, 0);
-    this.still.visible = this.shown && this.settings !== null;
-    this.filmCamera.position.copy(position);
-    this.filmCamera.updateMatrixWorld();
-    this.filmCamera.update(renderer, this.filmScene);
+    this.bakeCamera.position.copy(position);
+    this.bakeCamera.updateMatrixWorld();
+    this.bakeCamera.update(renderer, this.bakeScene);
     renderer.setClearColor(clearColor, clearAlpha);
     renderer.autoClear = autoClear;
   }
 
-  // The march for one of the film's faces, `camera` its, as the still composite is drawn into it:
-  // FILM_MARCH of its texels, into an image of its own, so the frame's own (and what it was
-  // marched from) is left as it is.
-  private renderStill(renderer: WebGLRenderer, camera: Camera) {
-    const settings = this.settings;
-    if (!settings || settings.levels.length === 0 || !this.levelsReady) return;
-    if (settings.global && !this.weather.ready) return;
-    this.generate(renderer);
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    const side = Math.max(Math.round(FILM_SIZE * FILM_MARCH), 8);
-    if (this.stillImage.width !== side) this.stillImage.setSize(side, side);
-    this.sky.syncCamera(camera);
-    this.updateCamera(camera, side);
-    // Coarser than the view's, set back after.
-    const u = this.marchMaterial.uniforms;
-    const samples = u.uCloudLightSamples.value as number;
-    const shells = u.uCloudShells.value as Vector4[];
-    const steps = shells.map(shell => shell.w);
-    u.uCloudLightSamples.value = Math.min(samples, FILM_LIGHT_SAMPLES);
-    shells.forEach(shell => {
-      shell.w = Math.max(Math.round(shell.w * FILM_STEPS), 4);
-    });
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    const shadows = renderer.shadowMap.autoUpdate;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    renderer.shadowMap.autoUpdate = false;
-    renderer.setRenderTarget(this.stillImage);
-    renderer.render(
-      this.filmWhole ? this.filmMarchScene : this.marchScene,
-      camera,
-    );
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
-    renderer.shadowMap.autoUpdate = shadows;
-    u.uCloudLightSamples.value = samples;
-    shells.forEach((shell, k) => {
-      shell.w = steps[k];
-    });
-    (this.stillMaterial.uniforms.uCloudImageSize.value as Vector2).set(
-      side,
-      side,
-    );
-  }
-
   /**
-   * As the clock runs and the weather or the ground come in: mark what was filmed of them stale
+   * As the clock runs and the weather or the ground come in: mark what was baked of them stale
    * ({@link version}: the bakes of the air and the sea's reflection are drawn again) once the
    * lowest level's clouds have drifted or formed and faded a share of a cloud since
-   * (FILM_SHARE), at most every few seconds; and at once as the weather's maps or the ground are
+   * (BAKE_SHARE), at most every few seconds; and at once as the weather's maps or the ground are
    * drawn anew. In the frame loop.
    */
-  updateFilm() {
+  updateBakes() {
     if (this.weather.version !== this.weatherSeen) {
       this.weatherSeen = this.weather.version;
       this.version++;
@@ -2090,22 +2100,22 @@ void main() {
       this.terrainSeen = this.terrain.version;
       this.version++;
     }
-    const elapsed = Math.abs(this.time - this.filmTime);
+    const elapsed = Math.abs(this.time - this.bakeTime);
     const lowest = this.settings?.levels[0];
     if (elapsed === 0 || !this.shown || !lowest) {
-      this.filmTime = this.time;
+      this.bakeTime = this.time;
       return;
     }
     const now = performance.now();
-    if (now - this.filmWall < FILM_LONGEST) return;
+    if (now - this.bakeWall < BAKE_LONGEST) return;
     const breadth = LIFE_SIZE * this.settings!.scale * lowest.look.scale;
     const drifted = this.levelWinds[0].length() * elapsed;
     if (
-      drifted > FILM_SHARE * breadth ||
-      elapsed > FILM_SHARE * Math.max(lowest.look.lifetime, 1)
+      drifted > BAKE_SHARE * breadth ||
+      elapsed > BAKE_SHARE * Math.max(lowest.look.lifetime, 1)
     ) {
-      this.filmTime = this.time;
-      this.filmWall = now;
+      this.bakeTime = this.time;
+      this.bakeWall = now;
       this.version++;
     }
   }
@@ -2356,16 +2366,17 @@ void main() {
     this.lightMaps.dispose(release);
     this.coverMap.dispose(release);
     this.placeMap.dispose(release);
-    this.filmTarget.dispose();
-    this.stillImage.dispose();
+    this.bakeTarget.dispose();
     this.shadowTarget.dispose();
     this.sceneCoverTarget.dispose();
     for (const part of this.parts) part.dispose();
-    const programs = [this.modes.local, this.modes.global].flatMap(mode =>
-      mode ? [mode.march, mode.film, mode.shadow] : [],
-    );
+    const programs = [
+      ...[this.modes.local, this.modes.global].flatMap(mode =>
+        mode ? [mode.bake, mode.shadow] : [],
+      ),
+      ...this.marches.values(),
+    ];
     for (const material of [
-      this.stillMaterial,
       this.sceneCoverMaterial,
       this.rebuildMaterial,
       this.splitMaterial,
@@ -2383,8 +2394,10 @@ void main() {
 
 const fract = (x: number) => x - Math.floor(x);
 
-// One mode's programs (CloudsRenderer.programsOf): the march's, its film's and its shadows'.
-type CloudsPrograms = { march: Mesh; film: Mesh; shadow: Mesh };
+// The programs drawn (CloudsRenderer.programsOf): the march's (its mode's and its quality's), its
+// bake's and its shadows' (its mode's: CloudsModePrograms).
+type CloudsPrograms = { march: Mesh; bake: Mesh; shadow: Mesh };
+type CloudsModePrograms = { bake: Mesh; shadow: Mesh };
 
 // The renderer's properties of a material: the program it was linked into (three's own).
 type MarchProperties = {

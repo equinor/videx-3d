@@ -17,6 +17,7 @@ describe('cloudsQuality', () => {
       expect(more.resolution).toBeGreaterThanOrEqual(less.resolution);
       expect(more.steps).toBeGreaterThan(less.steps);
       expect(more.lightSamples).toBeGreaterThanOrEqual(less.lightSamples);
+      expect(more.shapeReads).toBeGreaterThanOrEqual(less.shapeReads);
     }
   });
 
@@ -27,6 +28,14 @@ describe('cloudsQuality', () => {
   it('takes a resolution of its own and keeps the rest', () => {
     const level = cloudsQuality('low', { resolution: 0.8 });
     expect(level).toEqual({ ...CLOUDS_QUALITY.low, resolution: 0.8 });
+  });
+
+  it('takes a temporal of its own and keeps the rest', () => {
+    const level = cloudsQuality('high', { temporal: 'off' });
+    expect(level).toEqual({ ...CLOUDS_QUALITY.high, temporal: 'off' });
+    expect(cloudsQuality('high', { temporal: undefined })).toEqual(
+      CLOUDS_QUALITY.high,
+    );
   });
 });
 
