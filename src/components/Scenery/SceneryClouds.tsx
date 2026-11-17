@@ -148,10 +148,11 @@ export const SceneryClouds = ({
   // Local with layers of its own, without a weather, or as the weather is; else global.
   const local =
     named || !weather ? (weather?.local ?? {}) : (weather.local ?? null);
-  // A global weather's systems: the weather's seed, else the clouds' own.
-  const systemsSeed = weatherSystemsOf(weather, {
+  // A global weather's systems: the weather's (its seed, else the clouds' own), its cover and
+  // decks as it or its preset says.
+  const systems = weatherSystemsOf(weather, {
     seed: weather?.systems?.seed ?? seed,
-  }).seed;
+  });
   const localKey = local
     ? JSON.stringify({
         latitude: local.latitude,
@@ -183,7 +184,9 @@ export const SceneryClouds = ({
   const global: CloudsGlobal | null = local
     ? null
     : {
-        seed: systemsSeed,
+        seed: systems.seed,
+        cover: systems.cover,
+        decks: systems.decks,
         dominance,
         types: debug.types ?? true,
         thickness: debug.thickness ?? true,

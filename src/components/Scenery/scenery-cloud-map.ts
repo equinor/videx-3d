@@ -52,8 +52,8 @@ void main() {
  * how thick it is (g), and cloud at the middle level (b) and the high (a), traced back along
  * their wind (`cloud-map-flow.glsl`, its own smaller cube map), and lifted and dried by the
  * ground they cross (`terrain`, a `CloudTerrain`'s Earth map). Drawn on the GPU a strip at a
- * time ({@link bakeCloudMap}), once per renderer, seed and terrain, and shared by everything
- * drawing with them.
+ * time ({@link bakeCloudMap}), once per renderer, weather ({@link CloudMapWeather}) and terrain,
+ * and shared by everything drawing with them.
  */
 export type CloudMap = {
   readonly target: WebGLCubeRenderTarget;
@@ -68,13 +68,22 @@ export type CloudMap = {
   /** the weather systems' wind (xyz, fixed on the Earth) and pressure (w) */
   readonly flow: WebGLCubeRenderTarget;
   readonly seed: number;
+  /** the share of the full weather's cloud it lays (`WeatherSystems.cover`) */
+  readonly cover: number;
+  /** how much of its cloud lies in decks and sheets (`WeatherSystems.decks`) */
+  readonly decks: number;
+  /**
+   * how much each level's lift is lowered for its {@link cover} (x low, y middle, z high), and
+   * the share of the cells' and the trades' weight cut (w): {@link cloudMapLiftOf}
+   */
+  readonly lift: Vector4;
   /** the weather's time it is drawn at (seconds): the systems as they are then (`weatherSystemCentresAt`) */
   readonly time: number;
   /** the ground's height and slopes over the Earth (`CloudTerrain`), null for none */
   readonly terrain: Texture | null;
-  /** its seed, its terrain's and its time: what it is shared by */
+  /** its weather's, its terrain's and its time: what it is shared by */
   readonly key: string;
-  /** its seed and its terrain's: maps of the same weather at other times share it */
+  /** its weather's and its terrain's: maps of the same weather at other times share it */
   readonly base: string;
   /** the weather systems it is drawn about */
   readonly systems: readonly WeatherSystemCentre[];
@@ -96,9 +105,61 @@ export type CloudMapTerrain = {
   version: number;
 };
 
-/** The key the cloud maps for `seed` over `terrain` share, at any time. */
-export const cloudMapKey = (seed: number, terrain: CloudMapTerrain | null) =>
-  terrain ? `${seed}:${terrain.texture.uuid}:${terrain.version}` : `${seed}`;
+/** The weather a cloud map is drawn of: its systems' seed, cover and decks (`WeatherSystems`). */
+export type CloudMapWeather = {
+  seed: number;
+  cover: number;
+  decks: number;
+};
+
+/** The key the cloud maps of `weather` over `terrain` share, at any time. */
+export const cloudMapKey = (
+  { seed, cover, decks }: CloudMapWeather,
+  terrain: CloudMapTerrain | null,
+) => {
+  const own = `${seed}/${cover}/${decks}`;
+  return terrain ? `${own}:${terrain.texture.uuid}:${terrain.version}` : own;
+};
+
+// How far each level's lift (cloud-map.glsl) is lowered for a cover (WeatherSystems.cover): rows
+// of the cover, then the low, middle and high level's, measured (2026-11-17, seed 0 over the
+// demo's relief) so each level's mean cover over the Earth is that share of the full weather's
+// (1: 23 % low, 12 % middle, 13 % high), with the cells' and the trades' weight cut by as much.
+// Another seed at another time keeps within some 0.03 of the share from 0.25 up, the high level
+// a little over and the others under.
+const COVER_LIFT: readonly (readonly [number, number, number, number])[] = [
+  [0, 6, 6, 6],
+  [0.02, 2.55, 1.23, 1.38],
+  [0.0625, 1.89, 0.94, 1.11],
+  [0.125, 1.48, 0.73, 0.93],
+  [0.25, 1.02, 0.48, 0.71],
+  [0.375, 0.73, 0.33, 0.55],
+  [0.5, 0.52, 0.23, 0.4],
+  [0.625, 0.35, 0.16, 0.27],
+  [0.75, 0.21, 0.1, 0.17],
+  [0.875, 0.1, 0.05, 0.08],
+  [1, 0, 0, 0],
+];
+
+/**
+ * Into `target`: how far the cloud map lowers each level's lift (x low, y middle, z high) for
+ * `cover`, a share of the full weather's cloud (`COVER_LIFT`), and the share of the
+ * cells' and the trades' weight it cuts (w), so they cover about that share too.
+ */
+export function cloudMapLiftOf(cover: number, target = new Vector4()): Vector4 {
+  const c = Math.min(Math.max(cover, 0), 1);
+  let i = 0;
+  while (i < COVER_LIFT.length - 2 && COVER_LIFT[i + 1][0] < c) i++;
+  const [c0, ...a] = COVER_LIFT[i];
+  const [c1, ...b] = COVER_LIFT[i + 1];
+  const t = c1 > c0 ? (c - c0) / (c1 - c0) : 0;
+  return target.set(
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+    1 - c,
+  );
+}
 
 /** The strips a cloud map is drawn in (`bakeCloudMap`): the wind's six faces, then the cloud's. */
 export const CLOUD_MAP_STRIPS = STRIPS;
@@ -115,7 +176,7 @@ type Shared = {
 const shared = new WeakMap<WebGLRenderer, Shared>();
 
 function createMap(
-  seed: number,
+  weather: CloudMapWeather,
   terrain: CloudMapTerrain | null,
   time: number,
   own: Shared,
@@ -150,12 +211,15 @@ function createMap(
     typesTarget,
     types: typesTarget.texture,
     flow,
-    seed,
+    seed: weather.seed,
+    cover: weather.cover,
+    decks: weather.decks,
+    lift: cloudMapLiftOf(weather.cover),
     time,
     terrain: terrain?.texture ?? null,
-    key: `${cloudMapKey(seed, terrain)}@${time}`,
-    base: cloudMapKey(seed, terrain),
-    systems: weatherSystemCentresAt(seed, time),
+    key: `${cloudMapKey(weather, terrain)}@${time}`,
+    base: cloudMapKey(weather, terrain),
+    systems: weatherSystemCentresAt(weather.seed, time),
     generators: [own.flowGenerator, own.generator, own.typesGenerator],
     strips: 0,
     get ready() {
@@ -213,6 +277,8 @@ function sharedOf(renderer: WebGLRenderer): Shared {
         uMapFlow: new Uniform<CubeTexture | null>(null),
         uMapTerrain: new Uniform<Texture | null>(null),
         uMapTerrainOn: new Uniform(0),
+        uMapLift: new Uniform(new Vector4()),
+        uMapDecks: new Uniform(1),
       }),
       typesGenerator: createGenerator(
         'scenery-cloud-map-types',
@@ -221,6 +287,8 @@ function sharedOf(renderer: WebGLRenderer): Shared {
           uMapFlow: new Uniform<CubeTexture | null>(null),
           uMapTerrain: new Uniform<Texture | null>(null),
           uMapTerrainOn: new Uniform(0),
+          uMapLift: new Uniform(new Vector4()),
+          uMapDecks: new Uniform(1),
         },
         { CLOUD_MAP_TYPES: 1 },
       ),
@@ -254,20 +322,20 @@ export function releaseCloudMapGenerators(renderer: WebGLRenderer) {
 }
 
 /**
- * `renderer`'s cloud map for `seed` over `terrain` at the weather's `time`, made (not drawn yet)
- * the first time: let go with {@link releaseCloudMap}.
+ * `renderer`'s cloud map of `weather` over `terrain` at the weather's `time`, made (not drawn
+ * yet) the first time: let go with {@link releaseCloudMap}.
  */
 export function acquireCloudMap(
   renderer: WebGLRenderer,
-  seed: number,
+  weather: CloudMapWeather,
   terrain: CloudMapTerrain | null = null,
   time = 0,
 ): CloudMap {
   const own = sharedOf(renderer);
-  const key = `${cloudMapKey(seed, terrain)}@${time}`;
+  const key = `${cloudMapKey(weather, terrain)}@${time}`;
   let map = own.maps.get(key);
   if (!map) {
-    map = createMap(seed, terrain, time, own);
+    map = createMap(weather, terrain, time, own);
     own.maps.set(key, map);
   }
   map.users++;
@@ -367,6 +435,8 @@ export function bakeCloudMap(
     u.uMapFlow.value = map.flow.texture;
     u.uMapTerrain.value = map.terrain;
     u.uMapTerrainOn.value = map.terrain ? 1 : 0;
+    (u.uMapLift.value as Vector4).copy(map.lift);
+    u.uMapDecks.value = map.decks;
   }
   const { target, typesTarget } = map;
   const perFace = CLOUD_MAP_SIZE / STRIP_ROWS;

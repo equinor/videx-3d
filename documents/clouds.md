@@ -31,7 +31,9 @@ level where the ground lifts the camera over it, its horizon level (`SceneryDebu
   thickness and the wind, to change from there (`custom` once one is changed by hand); a level's
   cover or type changed sets its heights to the type's typical ones. The middle (latitude and
   longitude, unset for the anchor) and radius (km).
-- **Global:** each level on or off, and the weather systems' seed.
+- **Global:** each level on or off, the weather systems' seed, and how much weather they lay
+  (`systemsPreset`, or a cover and decks of their own, `systemsOwn`); the panel's `systems` row
+  switches the preset.
 
 `showEnvironment` shows the environment's bake, as in StageDebug.
 
@@ -68,8 +70,9 @@ metres, peak `period` in seconds, the bearing it comes `from`, and its `spread`)
   `WEATHER_LOCAL_RADIUS`, 100 km), the cover thinning out over its outer fifth. A level with no
   layer has no cloud.
 - **Global** (no `local`): the weather systems over the whole Earth, the scene included
-  (`systems: WeatherSystems`, its `seed`; see "The weather far off"). Its layers are not drawn:
-  a global weather is not one grade of cloud. The clouds' `levels` turn each level on or off.
+  (`systems: WeatherSystems`: its `seed`, and how much weather it lays, `preset`, `cover` and
+  `decks`; see "The weather far off", "How much weather"). Its layers are not drawn: a global
+  weather is not one grade of cloud. The clouds' `levels` turn each level on or off.
 
 `weatherPreset(cover, type, wind)` makes a local one with one layer from a report's words:
 `clear`, `few`, `scattered`, `broken` and `overcast` (METAR's oktas; `CLOUD_COVER_OKTAS`), at the
@@ -335,12 +338,14 @@ to thin at the edges rather than jumping between the parts' thicknesses, which s
 edges. A see-through veil showed the layer's own coverage tile through it as a crosshatch from
 high up, so the range stops at 2^−1.5.
 
-- **Made once per seed** (`WeatherSystems.seed`, else the clouds' `seed`) and terrain on the GPU:
+- **Made once per weather** (`WeatherSystems.seed`, else the clouds' `seed`; its cover and
+  decks) and terrain on the GPU:
   the wind's six faces whole, then the cloud a strip of 32 rows of a face at a time (some 1–2 ms
   of GPU each): 16 strips a frame for the first map, which the clouds wait for (some half a
-  second, after the terrain's Earth when there is a relief), and one a frame for another seed's
-  or a new drawing of the terrain's, drawn while the clouds still show the old (some three
-  seconds). Each strip is followed by the same rows of the type map (`CloudMap.types`, half as
+  second, after the terrain's Earth when there is a relief), and one a frame for another seed's,
+  cover's or decks', or a new drawing of the terrain's, drawn while the clouds still show the old
+  (some three seconds); one being drawn of a weather switched away from before it was drawn is
+  let go. Each strip is followed by the same rows of the type map (`CloudMap.types`, half as
   many texels a side: some 25 % more GPU time a strip; 8 MB a drawing with its mips).
 - **Where it holds:** a global weather's, everywhere, the scene included; a local weather draws
   none.
@@ -352,6 +357,32 @@ high up, so the range stops at 2^−1.5.
 - **Data** would come in through the same map: a forecast's cloud fractions drawn into it
   instead of the generator, or its pressure centres into the wind. It moves with the clock (see
   "Motion").
+
+**How much weather** (`WeatherSystems.preset`, `cover`, `decks`; 2026-11-17): a lighter sky than
+all the systems lay, drawn into the same map (`uMapLift`, `uMapDecks`), so the march reads it as
+it reads any other and costs nothing more a frame.
+
+- **`cover`** (0 to 1): the share of the full weather's cloud at each level. Each level's lift
+  is lowered (its edge further in: the systems smaller, the gaps between them wider) and the
+  cells' and the trades' weight cut by as much. How far is a table (`COVER_LIFT`,
+  `cloudMapLiftOf`), measured so each level's mean cover over the Earth is that share of the
+  full weather's (seed 0: 23 % low, 12 % middle, 13 % high); another seed at another time keeps
+  within some 0.03 of it from 0.25 up.
+- **`decks`** (0 to 1): how much of the cloud lies in decks and sheets. Each level's place along
+  its chain of types is drawn toward its heaped end (stratus toward cumulus, altostratus toward
+  altocumulus, a cirrostratus veil toward cirrus), and the low cloud thinned, to 0.4 of its
+  thickness at 0.
+- **Presets** (`WEATHER_SYSTEMS_PRESETS`): `high` all of it (cover 1, decks 1: the map as it
+  was), `medium` cover 0.6, decks 0.35, `low` cover 0.35, decks 0. A cover or decks left out is
+  the preset's; a component's own preset before the weather's own cover or decks
+  (`weatherSystemsOf`).
+- **What it costs** (the march alone at the clouds' `medium`, against `high`, with the first
+  presets' values, cover 0.75 and decks 0.5 at `medium`, 0.5 and 0.2 at `low`; RTX A1000): less
+  where the view looks down or across over the clouds (`low` 0.2 of it at 1.6 km in the low
+  level, 0.7 from 6 and 200 km up), more from under them and level in a layer (1.2–1.4): broken
+  cloud lets the view on to more of it. From 12 km looking up 20°, twice as much (10 to 20 ms),
+  thin cirrus no longer hiding the levels under it. The dearest of the six views tried came to
+  some 53 ms at `low` against 60 at `high`; the lowered presets were not measured again.
 
 **Over the ground** (always, where there is one: no option since 2026-11-17). The ground is the `Scenery`'s
 (`SceneryGround`, `scenery-ground.ts`, `shaders/ground-terrain.glsl`), shared with the sea, which
@@ -978,9 +1009,9 @@ the GPU.
    high levels do not follow it at all); the terrain is the
    relief's as loaded, the demo's coarse world layer where no finer one lies (some 20 km; the
    map about the camera reads the finest there is).
-9. **A global weather's controls** without data: only its seed, and each level on or off.
-    Proposed: a share of the Earth under cloud (the systems' lift threshold, so the map's mean
-    cover follows it), how stormy (the lows' depth and number), and named climates as presets.
+9. **A global weather's controls** without data: its seed, how much weather (a preset of its
+    cover and decks, above "How much weather"), and each level on or off. Proposed: how stormy
+    (the lows' depth and number), and named climates as presets.
 10. **The march:** near cumulus are crisp (a type's `softness`
     softens them). A global weather's skip of clear air places the level at a stretch's middle,
     which is no bound there: it misses little at 2,885 km and 3.75 km, and from 20 km up leaves the far band a little

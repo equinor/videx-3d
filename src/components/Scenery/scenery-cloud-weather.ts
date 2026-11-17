@@ -14,6 +14,7 @@ import {
   type CloudMap,
   cloudMapKey,
   type CloudMapTerrain,
+  type CloudMapWeather,
   releaseCloudMap,
   releaseCloudMapGenerators,
 } from './scenery-cloud-map';
@@ -45,10 +46,10 @@ export type CloudWeatherUniforms = {
 /**
  * A global weather's maps of the weather systems for the 3D clouds (`scenery-cloud-map.ts`):
  * the two drawings it blends between as the clock runs (older and newer), and one being drawn
- * meanwhile, a few strips a frame — the next ahead, or anew for another seed, other ground or a
- * jump of the clock. The march reads the older and the newer each where its cloud has drifted
- * to since it was drawn, and the older gives way to the newer place by place
- * (`documents/clouds.md`, "Motion").
+ * meanwhile, a few strips a frame — the next ahead, or anew for another weather (its seed, cover
+ * or decks), other ground or a jump of the clock. The march reads the older and the newer each
+ * where its cloud has drifted to since it was drawn, and the older gives way to the newer place
+ * by place (`documents/clouds.md`, "Motion").
  */
 export class CloudWeather {
   private renderer: WebGLRenderer | null = null;
@@ -78,7 +79,7 @@ export class CloudWeather {
   }
 
   /**
-   * What draws `renderer`'s cloud maps, the same for every seed, held until {@link dispose}:
+   * What draws `renderer`'s cloud maps, the same for every weather, held until {@link dispose}:
    * compile them before {@link update}.
    */
   generators(renderer: WebGLRenderer): readonly Mesh[] {
@@ -87,13 +88,13 @@ export class CloudWeather {
   }
 
   /**
-   * Draw more of the maps for `seed` over `terrain` at the clock's `time` with `renderer`, a
+   * Draw more of the maps of `weather` over `terrain` at the clock's `time` with `renderer`, a
    * few strips a frame, and draw with them once done; until then, with the ones before.
    * Whether there is a map to draw with.
    */
   update(
     renderer: WebGLRenderer,
-    seed: number,
+    weather: CloudMapWeather,
     time: number,
     terrain: CloudMapTerrain | null = null,
   ): boolean {
@@ -109,25 +110,28 @@ export class CloudWeather {
     this.paceTime = time;
     this.paceWall = wall;
 
-    const base = cloudMapKey(seed, terrain);
+    const base = cloudMapKey(weather, terrain);
     const newer = this.newer;
     const fresh =
       !newer ||
       newer.base !== base ||
       time > newer.time + JUMP ||
       time < (this.older ?? newer).time - SPAN;
+    // One being drawn of a weather no longer asked for (switched back before it was drawn) let go,
+    // or it would take over once drawn.
+    if (this.next && this.next.base !== base) this.dropNext();
     if (fresh) {
       // Drawn anew at the time now, and shown alone once drawn.
-      if (!this.fresh || this.next?.base !== base) this.dropNext();
+      if (!this.fresh) this.dropNext();
       if (!this.next) {
-        this.next = acquireCloudMap(renderer, seed, terrain, time);
+        this.next = acquireCloudMap(renderer, weather, terrain, time);
         this.fresh = true;
       }
     } else if (!this.next && this.pace > 0 && newer.time < time + this.span()) {
       // The next one ahead, while the clock runs on toward the newer.
       this.next = acquireCloudMap(
         renderer,
-        seed,
+        weather,
         terrain,
         newer.time + this.span(),
       );

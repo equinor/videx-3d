@@ -48,11 +48,13 @@ import {
   cloudLayersByLevel,
   SKY_PRESETS,
   WEATHER_LOCAL_RADIUS,
+  WEATHER_SYSTEMS_PRESETS,
   type CloudLayer,
   type CloudLevel,
   type CloudType,
   type SkyPreset,
   type WeatherState,
+  type WeatherSystemsPreset,
 } from '../../sdk/weather/weather';
 import { GeoRelief } from '../Layers/GeoRelief';
 import { Weather } from '../Weather/Weather';
@@ -113,6 +115,14 @@ type CloudsArgs = {
   weatherMode: 'local' | 'global';
   /** a global weather's systems (`WeatherSystems.seed`) */
   systemsSeed: number;
+  /** how much weather the systems lay (`WeatherSystems.preset`) */
+  systemsPreset: WeatherSystemsPreset;
+  /** a cover and decks of the systems' own instead of the preset's */
+  systemsOwn: boolean;
+  /** the share of the full weather's cloud (`WeatherSystems.cover`) */
+  systemsCover: number;
+  /** how much of it lies in decks and sheets (`WeatherSystems.decks`) */
+  systemsDecks: number;
   /** a global weather's levels drawn (`levels`) */
   globalLow: boolean;
   globalMid: boolean;
@@ -222,7 +232,13 @@ function weatherFromArgs(args: CloudsArgs): WeatherState {
   if (args.weatherMode === 'global')
     return {
       ...sceneryWeatherFromArgs(args),
-      systems: { seed: args.systemsSeed },
+      systems: {
+        seed: args.systemsSeed,
+        preset: args.systemsPreset,
+        ...(args.systemsOwn
+          ? { cover: args.systemsCover, decks: args.systemsDecks }
+          : {}),
+      },
     };
   return {
     ...sceneryWeatherFromArgs(args),
@@ -514,9 +530,9 @@ function cloudViews(args: CloudsArgs): SceneryDebugButton[] {
   }));
 }
 
-// The panel's rows of the story's own: the weather (local, global, or the clouds off), its clock
-// (pause, its rates) and whether the sun runs on it, how the march reuses the last frames, how the
-// sun lights the clouds, the ground under them, and the frame's statistics.
+// The panel's rows of the story's own: the weather (local, global, or the clouds off), how much
+// weather a global one's systems lay, its clock (pause, its rates) and whether the sun runs on
+// it, how the march reuses the last frames, and the frame's statistics.
 function cloudRows(args: CloudsArgs): SceneryDebugRow[] {
   return [
     {
@@ -541,6 +557,28 @@ function cloudRows(args: CloudsArgs): SceneryDebugRow[] {
           click: () => update({ cloudsEnabled: false }),
         },
       ],
+    },
+    {
+      // How much weather a global weather's systems lay (SYSTEMS PRESET), their own cover and
+      // decks left off.
+      label: 'systems',
+      buttons: (
+        Object.keys(WEATHER_SYSTEMS_PRESETS) as WeatherSystemsPreset[]
+      ).map(systemsPreset => ({
+        label: systemsPreset,
+        title: `A global weather’s systems at ${systemsPreset}: cover ${WEATHER_SYSTEMS_PRESETS[systemsPreset].cover}, decks ${WEATHER_SYSTEMS_PRESETS[systemsPreset].decks}`,
+        on:
+          args.weatherMode === 'global' &&
+          !args.systemsOwn &&
+          args.systemsPreset === systemsPreset,
+        click: () =>
+          update({
+            weatherMode: 'global',
+            cloudsEnabled: true,
+            systemsPreset,
+            systemsOwn: false,
+          }),
+      })),
     },
     {
       label: 'time',
@@ -828,6 +866,38 @@ const meta = {
       'A global weather’s weather systems (`WeatherSystems.seed`).',
       'Weather',
     ),
+    systemsPreset: {
+      control: { type: 'inline-radio' },
+      options: Object.keys(WEATHER_SYSTEMS_PRESETS),
+      description:
+        'How much weather a global weather’s systems lay (`WeatherSystems.preset`, `WEATHER_SYSTEMS_PRESETS`): HIGH all of it; MEDIUM and LOW less cloud, broken up more.',
+      table: { category: 'Weather' },
+    },
+    systemsOwn: {
+      control: { type: 'boolean' },
+      description: 'A cover and decks of their own instead of the preset’s.',
+      table: { category: 'Weather' },
+    },
+    systemsCover: {
+      ...range(
+        0,
+        1,
+        0.05,
+        'The share of the full weather’s cloud at each level (`WeatherSystems.cover`): the systems smaller, their edges further in.',
+        'Weather',
+      ),
+      if: { arg: 'systemsOwn' },
+    },
+    systemsDecks: {
+      ...range(
+        0,
+        1,
+        0.05,
+        'How much of the cloud lies in decks and sheets, and how thick (`WeatherSystems.decks`): 0 all heaped and broken, thinner.',
+        'Weather',
+      ),
+      if: { arg: 'systemsOwn' },
+    },
     globalLow: {
       control: { type: 'boolean' },
       description: 'A global weather’s low level (`levels`).',
@@ -990,6 +1060,10 @@ const meta = {
     cloudsEnabled: true,
     weatherMode: 'local',
     systemsSeed: 0,
+    systemsPreset: 'high',
+    systemsOwn: false,
+    systemsCover: WEATHER_SYSTEMS_PRESETS.high.cover,
+    systemsDecks: WEATHER_SYSTEMS_PRESETS.high.decks,
     globalLow: true,
     globalMid: true,
     globalHigh: true,

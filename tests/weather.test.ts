@@ -16,6 +16,7 @@ import {
   oktasToCover,
   SKY_PRESETS,
   WEATHER_SYSTEMS_DEFAULTS,
+  WEATHER_SYSTEMS_PRESETS,
   weatherOceanWind,
   weatherPreset,
   weatherPresetOf,
@@ -205,9 +206,27 @@ describe('cloud levels', () => {
 describe('weather systems', () => {
   it('takes a component’s own first, then the weather’s, then the defaults', () => {
     const weather = { systems: { seed: 4 } };
-    expect(weatherSystemsOf(weather, { seed: 7 })).toEqual({ seed: 7 });
-    expect(weatherSystemsOf(weather)).toEqual({ seed: 4 });
+    expect(weatherSystemsOf(weather, { seed: 7 }).seed).toBe(7);
+    expect(weatherSystemsOf(weather).seed).toBe(4);
     expect(weatherSystemsOf(null)).toEqual(WEATHER_SYSTEMS_DEFAULTS);
+  });
+
+  it('takes a cover and decks left out from the preset, a component’s before the weather’s own', () => {
+    const { low, medium } = WEATHER_SYSTEMS_PRESETS;
+    const weather = { systems: { preset: 'medium' as const, decks: 0.9 } };
+    expect(weatherSystemsOf(weather)).toMatchObject({
+      preset: 'medium',
+      cover: medium.cover,
+      decks: 0.9,
+    });
+    expect(weatherSystemsOf(weather, { preset: 'low' })).toMatchObject({
+      preset: 'low',
+      cover: low.cover,
+      decks: low.decks,
+    });
+    expect(
+      weatherSystemsOf(weather, { preset: 'low', cover: 2 }),
+    ).toMatchObject({ cover: 1, decks: low.decks });
   });
 });
 

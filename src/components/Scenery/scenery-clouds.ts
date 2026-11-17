@@ -69,7 +69,7 @@ import {
 import { CloudCoverMap } from './scenery-cloud-cover-map';
 import { CloudLightMap } from './scenery-cloud-light';
 import { CloudPlaceMap } from './scenery-cloud-place-map';
-import { CLOUD_MAP_SIZE } from './scenery-cloud-map';
+import { CLOUD_MAP_SIZE, type CloudMapWeather } from './scenery-cloud-map';
 import { CloudGround, earthFrame } from './scenery-ground';
 import { CloudWeather } from './scenery-cloud-weather';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
@@ -451,13 +451,12 @@ export type CloudsLevel = {
 };
 
 /**
- * A global weather a {@link CloudsRenderer} draws: the weather systems' (their `seed`), each
- * level's cover from their map, kept in proportion as `dominance` says; `types` whether a level's
- * look follows its place along its chain, and `thickness` whether the low cloud's thickness sets
- * how deep and dense the cloud is.
+ * A global weather a {@link CloudsRenderer} draws: the weather systems' (their `seed`, `cover`
+ * and `decks`, `WeatherSystems`), each level's cover from their map, kept in proportion as
+ * `dominance` says; `types` whether a level's look follows its place along its chain, and
+ * `thickness` whether the low cloud's thickness sets how deep and dense the cloud is.
  */
-export type CloudsGlobal = {
-  seed: number;
+export type CloudsGlobal = CloudMapWeather & {
   dominance: number;
   types: boolean;
   thickness: boolean;
@@ -1678,7 +1677,7 @@ void main() {
         ? this.weather.ready
         : this.weather.update(
             renderer,
-            settings.global.seed,
+            settings.global,
             this.time,
             this.terrain.mapTerrain,
           );

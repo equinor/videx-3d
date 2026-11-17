@@ -4,8 +4,10 @@ import type { Vec3 } from '../../../sdk/types/common';
 import {
   SKY_PRESETS,
   WEATHER_LOCAL_RADIUS,
+  WEATHER_SYSTEMS_PRESETS,
   type SkyPreset,
   type WeatherState,
+  type WeatherSystemsPreset,
 } from '../../../sdk/weather/weather';
 import {
   sceneryArgs,
@@ -99,6 +101,8 @@ type CloudBenchArgs = {
   weatherMode: 'local' | 'global';
   preset: SkyPreset;
   systemsSeed: number;
+  /** how much weather a global weather's systems lay (`WeatherSystems.preset`) */
+  systemsPreset: WeatherSystemsPreset;
   quality: SceneryCloudsQuality;
   /** how the march reuses the last frames: 'quality' as the quality has it */
   temporal: 'quality' | SceneryCloudsTemporal;
@@ -119,7 +123,10 @@ type CloudBenchArgs = {
 function weatherOf(args: CloudBenchArgs): WeatherState {
   const { layers, wind } = SKY_PRESETS[args.preset];
   if (args.weatherMode === 'global')
-    return { wind, systems: { seed: args.systemsSeed } };
+    return {
+      wind,
+      systems: { seed: args.systemsSeed, preset: args.systemsPreset },
+    };
   return {
     wind,
     clouds: [...layers],
@@ -420,6 +427,12 @@ const meta = {
       description: 'A local weather’s sky (`SKY_PRESETS`).',
     },
     systemsSeed: { control: { type: 'number', min: 0, max: 20, step: 1 } },
+    systemsPreset: {
+      control: { type: 'inline-radio' },
+      options: Object.keys(WEATHER_SYSTEMS_PRESETS),
+      description:
+        'How much weather a global weather’s systems lay (`WeatherSystems.preset`).',
+    },
     quality: {
       control: { type: 'inline-radio' },
       options: ['low', 'medium', 'high', 'ultra'],
@@ -468,6 +481,7 @@ const meta = {
     weatherMode: 'local',
     preset: 'scattered',
     systemsSeed: 0,
+    systemsPreset: 'high',
     quality: 'medium',
     temporal: 'quality',
     ownResolution: false,

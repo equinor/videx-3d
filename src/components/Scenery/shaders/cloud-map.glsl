@@ -29,6 +29,12 @@ uniform samplerCube uMapFlow;
 // metres; the sea's level under the sea) and its slope east and north (g, b).
 uniform samplerCube uMapTerrain;
 uniform float uMapTerrainOn;
+// The weather's cover (WeatherSystems.cover, cloudMapLiftOf): how far each level's lift is
+// lowered (x low, y middle, z high), and the share of the cells' and the trades' weight cut (w).
+uniform vec4 uMapLift;
+// How much of the cloud lies in decks and sheets (WeatherSystems.decks): 1 as the systems lay
+// it, 0 all heaped and thinner.
+uniform float uMapDecks;
 
 // Steps back along the wind, and a typical step (radians), for the wind's direction's weight.
 #define MAP_TRACE 36
@@ -44,9 +50,16 @@ uniform float uMapTerrainOn;
 // Ground this high (metres, over some 55 km) is land: the sea's level lies under the sea in
 // the terrain. Broad and soft, or the coasts' 20 km texels show as stairs in the cells' edges.
 #define MAP_LAND vec2(20.0, 250.0)
+// The low cloud's thickness with no decks (uMapDecks 0), as a share of the systems'.
+#define MAP_DECKS_THIN 0.4
 
 vec4 mapFlow(vec3 d) {
   return textureLod(uMapFlow, d, 0.0);
+}
+
+// A part's weight with uMapLift.w of its range cut from below: none where it was that or less.
+float mapCut(float weight) {
+  return clamp((weight - uMapLift.w) / max(1.0 - uMapLift.w, 1e-3), 0.0, 1.0);
 }
 
 void main() {
@@ -125,7 +138,7 @@ void main() {
   // Its edge widened, too, by how fast it changes across a texel, outward only: widened both
   // ways, it pulled a full deck just under full cover wherever a front's edge crossed it, and
   // the march opened a line of holes there, stepped by fwidth's 2 × 2 texel blocks.
-  float lift = 1.9 * front + 0.3 * -p + 0.3 * -passed + 0.35 * moisture + 0.35 * streaks + 0.25 * detail + 1.5 * itcz * smoothstep(-0.8, 0.6, streaks + 0.5 * ragged) + 0.5 * polar + 0.45 * upslope - 0.6 * lee;
+  float lift = 1.9 * front + 0.3 * -p + 0.3 * -passed + 0.35 * moisture + 0.35 * streaks + 0.25 * detail + 1.5 * itcz * smoothstep(-0.8, 0.6, streaks + 0.5 * ragged) + 0.5 * polar + 0.45 * upslope - 0.6 * lee - uMapLift.x;
   float blur = fwidth(lift);
   float synoptic = smoothstep(0.5 - blur, 1.4, lift);
   float deep = smoothstep(1.0 - blur, 2.6, lift);
@@ -135,8 +148,8 @@ void main() {
   // over the sea.
   float meridional = dot(here.xyz, north) * sign(latitude) / MAP_TYPICAL_STEP;
   float outbreak = smoothstep(0.1, 0.8, -meridional);
-  float openWeight = outbreak * stormTrack * smoothstep(-0.5, 0.3, p) * smoothstep(-0.6, 0.6, mapFbm(d * 5.0, 2, 44u)) * (1.0 - 0.75 * land);
-  float closedWeight = smoothstep(-0.2, 0.5, -meridional) * exp(-mapSquare((away - 25.0) / 9.0)) * smoothstep(0.2, 0.7, p) * smoothstep(-0.5, 0.7, mapFbm(d * 3.5, 2, 45u)) * (1.0 - 0.9 * land);
+  float openWeight = mapCut(outbreak * stormTrack * smoothstep(-0.5, 0.3, p) * smoothstep(-0.6, 0.6, mapFbm(d * 5.0, 2, 44u)) * (1.0 - 0.75 * land));
+  float closedWeight = mapCut(smoothstep(-0.2, 0.5, -meridional) * exp(-mapSquare((away - 25.0) / 9.0)) * smoothstep(0.2, 0.7, p) * smoothstep(-0.5, 0.7, mapFbm(d * 3.5, 2, 45u)) * (1.0 - 0.9 * land));
   float size = exp2(0.35 * mapFbm(d * 4.0, 2, 46u));
   float walls = mapFbm(d * 60.0, 2, 47u);
   float rings = 0.0;
@@ -154,7 +167,7 @@ void main() {
 
   // The trades' fair-weather cumulus: a faint speckle, finer than the map shows one by one.
   float fair = 0.0;
-  float tradeWeight = trades * (1.0 - itcz);
+  float tradeWeight = mapCut(trades * (1.0 - itcz));
   if(tradeWeight > 0.01)
     fair = 0.45 * tradeWeight * smoothstep(0.6, 1.6, mapFbm(d * 130.0, 2, 48u));
 
@@ -163,7 +176,7 @@ void main() {
   // their hearts. Over a floor of weight, so where the cover fades it fades to thin rather than
   // jumping between the parts' thicknesses, which showed the texels' stairs.
   float weight = max(synoptic + open + closed + fair, 0.6);
-  float thickness = (synoptic * mix(0.2, 1.0, deep) + open * 0.45 + closed * 0.32 + fair * 0.12) / weight;
+  float thickness = mix(MAP_DECKS_THIN, 1.0, uMapDecks) * (synoptic * mix(0.2, 1.0, deep) + open * 0.45 + closed * 0.32 + fair * 0.12) / weight;
 
   // The cloud higher up, as the layers there take it far off. The cells and the trades' cumulus
   // keep to the low level. Altostratus at the middle level, along the fronts — a band on the
@@ -173,9 +186,9 @@ void main() {
   float lowered = smoothstep(-0.3, 0.3, 0.2 - p) * stormTrack;
   float ahead = exp(-mapSquare((warmth + 0.45) / (2.0 * band)));
   float shield = exp(-mapSquare((warmth + 0.9) / (3.5 * band)));
-  float midLift = 1.6 * ahead * lowered * smoothstep(-0.9, 0.3, streaks) + 1.2 * deep + 0.3 * moisture + 0.25 * detail - 0.5 * lee;
+  float midLift = 1.6 * ahead * lowered * smoothstep(-0.9, 0.3, streaks) + 1.2 * deep + 0.3 * moisture + 0.25 * detail - 0.5 * lee - uMapLift.y;
   float mid = smoothstep(0.5 - fwidth(midLift), 1.3, midLift);
-  float highLift = 1.5 * shield * lowered * smoothstep(-0.6, 0.6, streaks + 0.4 * ragged) + 0.9 * deep + 1.4 * itcz * smoothstep(-0.4, 0.8, streaks + ragged) + 0.6 * stormTrack * smoothstep(0.3, 1.1, streaks) + 0.2 * detail;
+  float highLift = 1.5 * shield * lowered * smoothstep(-0.6, 0.6, streaks + 0.4 * ragged) + 0.9 * deep + 1.4 * itcz * smoothstep(-0.4, 0.8, streaks + ragged) + 0.6 * stormTrack * smoothstep(0.3, 1.1, streaks) + 0.2 * detail - uMapLift.z;
   float high = smoothstep(0.45 - fwidth(highLift), 1.2, highLift);
 
 #ifdef CLOUD_MAP_TYPES
@@ -186,14 +199,15 @@ void main() {
   // air is polar, heaped again in the convergence zone's thunderstorms. Middle (altocumulus 0,
   // altostratus 1): the warm air riding up the fronts and the systems' deep hearts a sheet,
   // what weaker lift there is elsewhere in puffs. High (cirrus 0, cirrostratus 1): the shield
-  // ahead of the fronts and the deep systems' tops a veil; the anvils and the jets' streaks.
+  // ahead of the fronts and the deep systems' tops a veil; the anvils and the jets' streaks. With
+  // fewer decks (uMapDecks), each level's place drawn toward its heaped end.
   float sheets = mix(1.0 + max(deep, polar), 0.0, itcz);
-  float lowPlace = (synoptic * sheets + closed) / max(synoptic + open + closed + fair, 1e-3);
+  float lowPlace = uMapDecks * (synoptic * sheets + closed) / max(synoptic + open + closed + fair, 1e-3);
   float midSheet = 1.6 * ahead * lowered * smoothstep(-0.9, 0.3, streaks) + 1.2 * deep;
-  float midPlace = midSheet / (midSheet + max(0.3 * moisture + 0.25 * detail, 0.0) + 0.1);
+  float midPlace = uMapDecks * midSheet / (midSheet + max(0.3 * moisture + 0.25 * detail, 0.0) + 0.1);
   float highVeil = 1.5 * shield * lowered * smoothstep(-0.6, 0.6, streaks + 0.4 * ragged) + 0.9 * deep;
   float highStreaks = 1.4 * itcz * smoothstep(-0.4, 0.8, streaks + ragged) + 0.6 * stormTrack * smoothstep(0.3, 1.1, streaks) + max(0.2 * detail, 0.0) + 0.1;
-  gl_FragColor = vec4(clamp(0.5 * lowPlace, 0.0, 1.0), clamp(midPlace, 0.0, 1.0), clamp(highVeil / (highVeil + highStreaks), 0.0, 1.0), 1.0);
+  gl_FragColor = vec4(clamp(0.5 * lowPlace, 0.0, 1.0), clamp(midPlace, 0.0, 1.0), clamp(uMapDecks * highVeil / (highVeil + highStreaks), 0.0, 1.0), 1.0);
 #else
   gl_FragColor = vec4(clamp(cover, 0.0, 1.0), clamp(thickness, 0.0, 1.0), clamp(mid, 0.0, 1.0), clamp(high, 0.0, 1.0));
 #endif

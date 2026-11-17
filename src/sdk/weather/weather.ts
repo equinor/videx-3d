@@ -181,6 +181,45 @@ export type WeatherWind = {
 export type WeatherSystems = {
   /** which weather: another seed is other systems, elsewhere. Default 0 */
   seed?: number;
+  /**
+   * how much weather: its {@link cover} and {@link decks} ({@link WEATHER_SYSTEMS_PRESETS}),
+   * unless it says. `'high'` all the systems lay, `'medium'` and `'low'` less of it, broken
+   * up more: lighter skies, which cost the clouds less to draw seen from above. Default
+   * `'high'`
+   */
+  preset?: WeatherSystemsPreset;
+  /**
+   * how much of the Earth lies under cloud, as a share of what all the systems lay (1): 0.5
+   * about half as much at each level (the systems smaller, their edges further in), 0 none.
+   * Default the preset's
+   */
+  cover?: number;
+  /**
+   * how much of the cloud lies in decks and sheets (stratus, altostratus, a cirrostratus
+   * veil) and how thick, from 1 as the systems lay it to 0 all heaped and broken (cumulus,
+   * altocumulus, cirrus) and thinner. Default the preset's
+   */
+  decks?: number;
+};
+
+/**
+ * How much weather {@link WeatherSystems} lay ({@link WEATHER_SYSTEMS_PRESETS}).
+ *
+ * @group Weather
+ */
+export type WeatherSystemsPreset = 'low' | 'medium' | 'high';
+
+/**
+ * Each {@link WeatherSystemsPreset}'s cover and decks.
+ *
+ * @group Weather
+ */
+export const WEATHER_SYSTEMS_PRESETS: Readonly<
+  Record<WeatherSystemsPreset, Readonly<{ cover: number; decks: number }>>
+> = {
+  low: { cover: 0.35, decks: 0 },
+  medium: { cover: 0.6, decks: 0.35 },
+  high: { cover: 1, decks: 1 },
 };
 
 /**
@@ -270,11 +309,14 @@ export type WeatherState = {
  */
 export const WEATHER_SYSTEMS_DEFAULTS: Readonly<Required<WeatherSystems>> = {
   seed: 0,
+  preset: 'high',
+  ...WEATHER_SYSTEMS_PRESETS.high,
 };
 
 /**
  * The weather systems to draw: `own` where it says (a component's props), then the
- * weather's, then {@link WEATHER_SYSTEMS_DEFAULTS}.
+ * weather's, then {@link WEATHER_SYSTEMS_DEFAULTS}. A cover or decks left out is the preset's
+ * of the same: `own`'s preset before the weather's own cover or decks.
  *
  * @group Weather
  */
@@ -282,8 +324,26 @@ export function weatherSystemsOf(
   weather: WeatherState | null | undefined,
   own: WeatherSystems = {},
 ): Required<WeatherSystems> {
+  const theirs = weather?.systems ?? {};
+  const ownPreset = own.preset && WEATHER_SYSTEMS_PRESETS[own.preset];
+  const theirPreset = theirs.preset && WEATHER_SYSTEMS_PRESETS[theirs.preset];
+  const of = (key: 'cover' | 'decks') =>
+    Math.min(
+      Math.max(
+        own[key] ??
+          ownPreset?.[key] ??
+          theirs[key] ??
+          theirPreset?.[key] ??
+          WEATHER_SYSTEMS_DEFAULTS[key],
+        0,
+      ),
+      1,
+    );
   return {
-    seed: own.seed ?? weather?.systems?.seed ?? WEATHER_SYSTEMS_DEFAULTS.seed,
+    seed: own.seed ?? theirs.seed ?? WEATHER_SYSTEMS_DEFAULTS.seed,
+    preset: own.preset ?? theirs.preset ?? WEATHER_SYSTEMS_DEFAULTS.preset,
+    cover: of('cover'),
+    decks: of('decks'),
   };
 }
 
