@@ -348,20 +348,33 @@ void main() {
       float path = skyOceanCutawayPath(skyOceanPathBelowSurface(cameraPosition, world), skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
       color = skyOceanFog(color, path, skyOceanLightAlong(-altitude, max(-height, 0.0), path), dir);
     }
-    if(altitude > 0.0 && sea > dist)
+    // Seabed met in front of the sea, or behind it by less than 1e-4 of the distance (shallow
+    // water at the coast), writes the depth of the point 1e-4 behind where the view meets the
+    // sea: only its depth, not where it is drawn nor its colour. Behind it by less than the
+    // depth buffer tells apart, the two tied, and where the seabed won it showed without its
+    // water, speckled along every coast as the view moved (until 2026-11-17; before, only seabed
+    // in front of the sea was put behind it). That takes water shallower than some 1e-4 of the
+    // camera's height (15 m from 150 km up, 10 cm from 1 km). ⚠️ What lies between the seabed
+    // and that depth — buried less than 1e-4 of the distance under shallow seabed — would show
+    // through it (documents/tiles.md, "Land past the horizon stays behind").
+    if(altitude > 0.0 && dist < sea * 1.0001)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
     color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend, hollowAirAt(hollowIn)), lit, world);
     // Also where the land only just clears the sea: there the two depths tie, and the sea
-    // won. Where the tile holds the point the view meets the sea, its ground there decides:
-    // land in front of the sea, or open water, and the land met past it lies past the
-    // horizon, reached only under the sea where the coarse tiles' chords sag. Where it does
-    // not, land met within a couple of its cells of the sea stands for the sea's point, and
-    // past that the sea is met over open water well in front. Land past the horizon used to
-    // keep its own depth for the stage's sea to hide, but the stage leaves a few pixels at
-    // the horizon to the background, and none far off or from space.
+    // won. Land met in front of the sea clears it, however near: its own depth lay within the
+    // depth buffer's grain of the sea's, and the two fought along every coast, speckled as tiles
+    // loaded and blended (until 2026-11-17 the ground where the view met the sea, behind it,
+    // decided this too, and over open water it was left to the fight). Land met past the sea:
+    // where the tile holds the point the view meets the sea, its ground there decides: land in
+    // front of the sea, or open water, and the land met past it lies past the horizon, reached
+    // only under the sea where the coarse tiles' chords sag. Where it does not, land met within
+    // a couple of its cells of the sea stands for the sea's point, and past that the sea is met
+    // over open water well in front. Land past the horizon used to keep its own depth for the
+    // stage's sea to hide, but the stage leaves a few pixels at the horizon to the background,
+    // and none far off or from space.
     float ground = reliefTileGroundAt(cameraPosition + dir * sea);
-    bool clears = height >= 0.0 && (ground > 0.5 || (ground < -0.5 && dist - sea < 2.0 * reliefTileCell()));
+    bool clears = height >= 0.0 && (sea >= dist || ground > 0.5 || (ground < -0.5 && dist - sea < 2.0 * reliefTileCell()));
     if(water && sea < dist * 1.0001 && clears)
       gl_FragDepth = reliefDepthAt(dir, min(sea, dist) * (1.0 - RELIEF_DEPTH_TIE));
     beyond = water && seaHit.z < 0.5 && sea < dist && !clears;

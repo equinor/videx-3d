@@ -821,6 +821,28 @@ and the sea hold still against each other as the camera moves or turns.
   background, and claims nothing far off or from space, so tiles behind the Earth's bulge
   showed there as dark dashes (2026-10-27). (Judged by the fragment's own height alone, the
   UK's coast showed as bright streaks below the horizon from 300 km off.)
+- **The coast's ties with the sea (2026-11-17).** The stage's sea writes its exact depth, the
+  relief its triangles', and at the coast the two lie within what the depth buffer tells apart
+  (a logarithmic one some 1e-6 of the distance): they fought, the coast speckled as the view
+  moved by a few metres. Two rules settle them, both writing only a pixel's depth, never where
+  it is drawn nor its colour (`relief-fragment.glsl`):
+  - **Land met in front of the sea, however near, comes in front of it**: its depth is taken
+    1e-5 of the distance nearer (`RELIEF_DEPTH_TIE`), as land just behind the sea's point that
+    clears it (above) already was. Until then it was left to the depth test over open water.
+  - **Seabed met in front of the sea, or behind it by less than 1e-4 of the distance, lies
+    behind it**: its depth is taken as the point 1e-4 behind where the view meets the sea.
+    Along the view that is water shallower than some 1e-4 of the camera's height: 15 m from
+    150 km up, 1 m from 10 km, 10 cm from 1 km. Measured with a 50 m nudge from 151 km, the
+    seabed pixels shown without their water went from 4912 to 56. ⚠️ If artifacts turn up in
+    shallow water: anything drawn after the relief that lies between the seabed and that depth
+    — buried less than 1e-4 of the distance under shallow seabed, say a wellbore's top — shows
+    through the seabed there; and the band is ten times what the land's tie takes, which is
+    still some eight times the depth buffer's grain and could be used instead.
+- **Skirts are shaded as the edge they hang from (2026-11-17)**, not at their own height,
+  except where one hangs from land down under the sea (seabed there, under the water). Seen
+  through the cracks a coarser tile's straight edge leaves under its finer neighbour's as the
+  globe curves, skirts shaded deeper drew every tile's border as a dotted grid over the sea from
+  150 km up (`reliefTileSurfaceHeight`).
 
 Before the globe (2026-10-25) the sky lowered its sea beyond a flat disc, measured along
 each view's level line from where the view left the disc. Seen from far off to one side

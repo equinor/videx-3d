@@ -80,11 +80,14 @@ float reliefTileHeight() {
   return reliefTileHeightAt(vReliefTileNode);
 }
 
-// The height the pixel itself lies at: on the grid the tile's; on a skirt its own, down from
-// the tile's edge, so a skirt under the sea is seabed under the water, not the land at its
-// top drawn in front of the sea.
+// The height the pixel is judged and shaded at: on the grid the tile's; on a skirt the edge it
+// hangs from, so a crack between tiles (a coarser tile's straight edge sagging under its finer
+// neighbour's as the globe curves) shows the ground beside it, not a darker line of deeper
+// ground. Where a skirt hangs from land down under the sea, its own height: seabed under the
+// water, not the land at its top drawn in front of the sea.
 float reliefTileSurfaceHeight() {
-  return vReliefSkirt > 0.5 ? vReliefHeight : reliefTileHeight();
+  float edge = reliefTileHeight();
+  return vReliefSkirt > 0.5 && edge >= 0.0 && vReliefHeight < 0.0 ? vReliefHeight : edge;
 }
 
 // The width of the tile's cells along a meridian.
