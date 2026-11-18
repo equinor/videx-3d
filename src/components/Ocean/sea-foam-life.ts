@@ -50,6 +50,7 @@ const DRIFT = 0.03;
 const WAVE_DEFINES = [
   'SEA_LAYERS',
   'SEA_DETAIL',
+  'SEA_ANISO',
   'OCEAN_CONTACT_COUNT',
   'OCEAN_NO_GUSTS',
 ];

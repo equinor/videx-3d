@@ -34,7 +34,12 @@ much of the sea state is drawn: `medium`, sized for a mid-range laptop's integra
 layers (tiles of 2011, 307, 47 and 7.3 m, waves down to 0.23 m); `high` adds the finest
 layer's texture read again 6.4× smaller below that, for close up; `low` three coarse layers
 and no ripples; `ultra` `high` with three times the waves a layer, each band drawn fuller
-(768; see [ocean-waves.md](./ocean-waves.md)). `low` also leaves out of the shading, compiled out
+(768; see [ocean-waves.md](./ocean-waves.md)). `high` and `ultra` also read the layers
+anisotropically (`SeaQualitySpec.anisotropy`, `SEA_ANISO`: at most 4 and 8 taps along a
+pixel's footprint), so the waves stay sharp toward grazing instead of blurring into a mirror;
+the layers hold their slopes' second moments, so what the filter loses still comes back as
+roughness. At 4× it costs `high`'s stage surface about 9 % from 30 m up, 5 % at 2 m
+(2026-11-18, A1000). `low` also leaves out of the shading, compiled out
 (`OCEAN_QUALITY_DEFINES`): the weather's gusts and slicks (the mean's roughness everywhere),
 the light through the crests and, in a `<Scenery>`'s sea, the sky's twilight and the sun's
 halo in the reflection (its gradient alone, in the daylight where the camera is). Measured on

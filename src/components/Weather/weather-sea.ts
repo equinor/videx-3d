@@ -90,7 +90,10 @@ export class WeatherSea {
   bakeOf(quality: SeaQuality): SeaWaveBake | null {
     const sea = this.seaOf(quality);
     if (!sea) return null;
-    sea.bake ??= new SeaWaveBake(sea.state.layers);
+    sea.bake ??= new SeaWaveBake(
+      sea.state.layers,
+      SEA_QUALITY[quality].anisotropy,
+    );
     return sea.bake;
   }
 

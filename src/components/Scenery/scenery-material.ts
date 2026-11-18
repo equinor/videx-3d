@@ -81,6 +81,7 @@ const NO_STAGE = [1, 1, -1, -1] as const;
 export const SCENERY_SEA_DEFINES = [
   'SEA_LAYERS',
   'SEA_DETAIL',
+  'SEA_ANISO',
   'OCEAN_CONTACT_COUNT',
   ...OCEAN_SHADING_DEFINES,
 ];
@@ -850,9 +851,14 @@ export class SceneryMaterial extends ShaderMaterial {
   switchesVersion = 0;
 
   private setSwitch(name: string, on: boolean) {
-    if (on === (this.switches[name] !== undefined)) return;
-    if (on) this.switches[name] = '';
-    else delete this.switches[name];
+    this.setSwitchValue(name, on ? '' : undefined);
+  }
+
+  // A switch with a value (undefined: off).
+  private setSwitchValue(name: string, value: unknown) {
+    if (this.switches[name] === value) return;
+    if (value === undefined) delete this.switches[name];
+    else this.switches[name] = value;
     this.switchesVersion++;
   }
 
@@ -1105,6 +1111,7 @@ export class SceneryMaterial extends ShaderMaterial {
       this.switchesVersion++;
     }
     this.setSwitch('SEA_DETAIL', water.seaState.detail !== null);
+    this.setSwitchValue('SEA_ANISO', water.defines.SEA_ANISO);
     // Its shading as the water's: what its quality leaves out, its glitter, its Fresnel and
     // its whitecaps' life (`sparkle`, `fresnelPower`, `foamLife`).
     for (const name of OCEAN_SHADING_DEFINES)

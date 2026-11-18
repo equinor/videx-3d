@@ -216,24 +216,24 @@ float oceanFbm(vec2 p) {
   return sum / max(norm, 1e-4);
 }
 
-// The squared size on the wave plane of the pixel at `p`, its longer side. ⚠️ Derivatives.
-float seaPixel2(vec2 p) {
-  vec2 dx = dFdx(p);
-  vec2 dy = dFdy(p);
-  return max(dot(dx, dx), dot(dy, dy));
-}
-
-// A layer's mip for a pixel `pixel2` (seaPixel2) across: from the texels it spans. The turn
-// into the tile keeps lengths, so this is the mip the tile point's own derivatives give.
+// A layer's mip for a pixel `pixel2` across (squared, on the wave plane, its longer side): from
+// the texels it spans. The turn into the tile keeps lengths, so this is the mip the tile point's
+// own derivatives give.
 float seaLayerLod(vec4 layer, float pixel2) {
   float texels = layer.x * layer.w;
   return 0.5 * log2(max(pixel2 * texels * texels, 1e-8));
 }
 
-// One layer at `p`, filtered to a pixel `pixel2` (seaPixel2) across.
-vec4 seaLayerAt(sampler2D map, int index, vec2 p, float pixel2) {
+// One layer at `p`, filtered to the pixel there, `dx` and `dy` its derivatives on the wave
+// plane: along its footprint (SEA_ANISO), else over its longer side.
+vec4 seaLayerAt(sampler2D map, int index, vec2 p, vec2 dx, vec2 dy) {
   vec4 layer = uSeaLayers[index];
-  return seaLayerRead(map, layer, uSeaLayerStats[index], index, seaLayerUv(layer, p), seaLayerLod(layer, pixel2));
+  vec2 uv = seaLayerUv(layer, p);
+  #ifdef SEA_ANISO
+  return seaLayerReadGrad(map, layer, uSeaLayerStats[index], index, uv, vec2(0.0), seaLayerUv(layer, dx), seaLayerUv(layer, dy));
+  #else
+  return seaLayerRead(map, layer, uSeaLayerStats[index], index, uv, seaLayerLod(layer, max(dot(dx, dx), dot(dy, dy))));
+  #endif
 }
 
 // The share of a layer's height variance a read keeps, from the share of its slope variance
@@ -272,7 +272,10 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   oceanOpenHeight = 0.0;
   oceanBreakLimit = 1.0;
   oceanCrestUnresolved = 1.0;
-  float pixel2 = seaPixel2(p);
+  // The pixel's footprint on the wave plane, and its longer side squared.
+  vec2 dpx = dFdx(p);
+  vec2 dpy = dFdy(p);
+  float pixel2 = max(dot(dpx, dpx), dot(dpy, dpy));
   float s2 = uSteepness * uSteepness;
   float detailGain2 = uSeaDetail.x * uSeaDetail.x;
   float limit;
@@ -312,9 +315,9 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   // What that adds to the slopes drawn, and to all of them: the mean less these is the mean.
   float gustSlope = 0.0;
   float gustTotal = 0.0;
-  vec4 l0 = seaLayerAt(uSeaSurface0, 0, p, pixel2);
-  vec4 l1 = seaLayerAt(uSeaSurface1, 1, p, pixel2);
-  vec4 l2 = seaLayerAt(uSeaSurface2, 2, p, pixel2);
+  vec4 l0 = seaLayerAt(uSeaSurface0, 0, p, dpx, dpy);
+  vec4 l1 = seaLayerAt(uSeaSurface1, 1, p, dpx, dpy);
+  vec4 l2 = seaLayerAt(uSeaSurface2, 2, p, dpx, dpy);
   oceanOpenHeight = (l0.z + l1.z + l2.z) * detail;
   float kept1 = seaHeightKept(l1.w, uSeaLayerStats[1].x);
   float kept2 = seaHeightKept(l2.w, uSeaLayerStats[2].x);
@@ -335,7 +338,7 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   float keptCrest = (crestVariance1 * kept1 + crestVariance2 * kept2) / max(crestVariance, 1e-8);
   float zCrestFine = l2.z * inversesqrt(max(crestVariance2, 1e-8));
   #if SEA_LAYERS > 3
-  vec4 l3 = seaLayerAt(uSeaSurface3, 3, p, pixel2);
+  vec4 l3 = seaLayerAt(uSeaSurface3, 3, p, dpx, dpy);
   float kept3 = seaHeightKept(l3.w, uSeaLayerStats[3].x);
   oceanOpenHeight += l3.z * detail;
   // The finest layer (7.3 m on medium) answers the local wind by half (it lies mostly above
@@ -353,7 +356,11 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   // gain (heights by the gain over the scale), on its own hex cells, sliding under them
   // downwind; by the local wind.
   #ifdef SEA_DETAIL
+  #ifdef SEA_ANISO
+  vec4 ripples = seaLayerReadGrad(uSeaFinest, uSeaDetailLayer, uSeaLayerStats[SEA_FINEST], SEA_LAYERS, seaLayerUv(uSeaDetailLayer, p), uSeaDetail.yz, seaLayerUv(uSeaDetailLayer, dpx), seaLayerUv(uSeaDetailLayer, dpy));
+  #else
   vec4 ripples = seaLayerReadShifted(uSeaFinest, uSeaDetailLayer, uSeaLayerStats[SEA_FINEST], SEA_LAYERS, seaLayerUv(uSeaDetailLayer, p), uSeaDetail.yz, seaLayerLod(uSeaDetailLayer, pixel2));
+  #endif
   float rippleGain = uSeaDetail.x * sqrt(gustRough) * limit;
   float rippleGain2 = rippleGain * rippleGain;
   float detailGainHere2 = detailGain2 * limit * limit;

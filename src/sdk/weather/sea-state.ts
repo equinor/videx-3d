@@ -71,6 +71,12 @@ export type SeaQualitySpec = {
   layers: readonly SeaLayerSpec[];
   /** the finest layer read again {@link SEA_DETAIL_SCALE} times smaller ({@link SeaState.detail}) */
   detail: boolean;
+  /**
+   * the most the layers' tiles are filtered along a pixel's footprint (anisotropic filtering):
+   * sharper waves toward grazing, where a filter over the footprint's longer axis blurs them
+   * into a mirror. Default 1: over the longer axis
+   */
+  anisotropy?: number;
 };
 
 /** What each {@link SeaQuality} draws. */
@@ -84,7 +90,7 @@ export const SEA_QUALITY: Readonly<Record<SeaQuality, SeaQualitySpec>> = {
     detail: false,
   },
   medium: { layers: SEA_LAYERS_MEDIUM, detail: false },
-  high: { layers: SEA_LAYERS_MEDIUM, detail: true },
+  high: { layers: SEA_LAYERS_MEDIUM, detail: true, anisotropy: 4 },
   // High's bands with three times the waves: a band's spectrum sampled more finely. Its tiles
   // at 256 texels (384 waves) widened each band fourfold for 1.5 times the waves, which left
   // a missing octave between the layers and fewer, stronger waves (2026-11-18).
@@ -95,6 +101,7 @@ export const SEA_QUALITY: Readonly<Record<SeaQuality, SeaQualitySpec>> = {
       waves: 768,
     })),
     detail: true,
+    anisotropy: 8,
   },
 };
 

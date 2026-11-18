@@ -34,7 +34,8 @@ export type SeaBakedLayer = {
  * Draws a `SeaState`'s layers into tiling textures each frame: every wave of a layer's
  * table summed per texel (a direct sum, not an FFT: a few hundred waves a layer), with
  * mipmaps, so a surface reads a layer in one filtered fetch and the slopes a pixel cannot show
- * come back as variance.
+ * come back as variance. `anisotropy` is the most a read filters along a pixel's footprint
+ * (`SeaQualitySpec.anisotropy`), 1 for none.
  */
 export class SeaWaveBake {
   readonly layers: SeaBakedLayer[];
@@ -44,7 +45,7 @@ export class SeaWaveBake {
   private readonly material: RawShaderMaterial;
   private readonly fullscreen = new FullscreenRenderer();
 
-  constructor(layers: readonly SeaLayer[]) {
+  constructor(layers: readonly SeaLayer[], anisotropy = 1) {
     this.targets = layers.map(
       layer =>
         new WebGLRenderTarget(layer.texels, layer.texels, {
@@ -54,6 +55,7 @@ export class SeaWaveBake {
           wrapT: RepeatWrapping,
           minFilter: LinearMipmapLinearFilter,
           magFilter: LinearFilter,
+          anisotropy,
           generateMipmaps: true,
           depthBuffer: false,
           stencilBuffer: false,

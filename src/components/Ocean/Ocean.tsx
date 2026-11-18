@@ -77,9 +77,9 @@ export type OceanProps = CommonComponentProps &
     /**
      * How much of the sea it draws: `low` three coarse layers, the mean's roughness everywhere
      * (no gusts or slicks) and no light through the crests; `medium` (the default, sized for a
-     * mid-range laptop) four layers; `high` the detail octave below them, the sun's glitter and
-     * the whitecaps' life; `ultra` three times the waves a layer (`SEA_QUALITY`,
-     * `OCEAN_QUALITY_DEFINES`).
+     * mid-range laptop) four layers; `high` the detail octave below them, the sun's glitter,
+     * the whitecaps' life and the waves filtered along the view (sharper toward the horizon);
+     * `ultra` three times the waves a layer (`SEA_QUALITY`, `OCEAN_QUALITY_DEFINES`).
      * ⚠️ Compile-time: another quality is another material.
      */
     quality?: SeaQuality;

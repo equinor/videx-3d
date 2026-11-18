@@ -528,7 +528,7 @@ export class OceanMaterial extends ShaderMaterial {
       { windSpeed: 10, windDirection: [1, 0] },
       { layers: spec.layers, detail: spec.detail },
     );
-    const bake = new SeaWaveBake(sea.layers);
+    const bake = new SeaWaveBake(sea.layers, spec.anisotropy);
     const layerUniforms: Record<string, IUniform> = {};
     for (let i = 0; i < OCEAN_MAX_SEA_LAYERS; i++)
       layerUniforms[`uSeaSurface${i}`] = new Uniform<Texture | null>(
@@ -555,6 +555,10 @@ export class OceanMaterial extends ShaderMaterial {
       defines: {
         SEA_LAYERS: sea.layers.length,
         ...(sea.detail ? { SEA_DETAIL: '' } : {}),
+        // The layers filtered along a pixel's footprint, at most this much (anisotropy).
+        ...((spec.anisotropy ?? 1) > 1
+          ? { SEA_ANISO: spec.anisotropy!.toFixed(1) }
+          : {}),
         // The sun's glitter, where it is drawn (sparkle).
         ...(OCEAN_SPARKLE_DEFAULT[quality] > 0 ? { OCEAN_SPARKLE: '' } : {}),
         // The whitecaps' life, where it is drawn (foamLife).

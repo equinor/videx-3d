@@ -69,6 +69,16 @@ vec2 seaLayerUv(vec4 layer, vec2 p) {
   return vec2(layer.y * p.x + layer.z * p.y, -layer.z * p.x + layer.y * p.y) * layer.x;
 }
 
+// Three shifted copies of a layer (`a`, `b`, `c`, read at its hex cells' offsets) blended by the
+// cells' weights `w`, variance-preserving (Σ wᵢ·xᵢ / √Σ wᵢ²): x, y its slope, z its height, w
+// the slope variance the reads lost to the filter.
+vec4 seaHexBlend(vec4 a, vec4 b, vec4 c, vec3 w) {
+  float w2 = dot(w, w);
+  vec3 mean = (w.x * a.xyz + w.y * b.xyz + w.z * c.xyz) * inversesqrt(w2);
+  vec3 spread = max(vec3(a.w - dot(a.xy, a.xy), b.w - dot(b.xy, b.xy), c.w - dot(c.xy, c.xy)), vec3(0.0));
+  return vec4(mean, dot(w * w, spread) / w2);
+}
+
 // A layer at tile point `uv`, read at mip `lod` as three shifted copies blended over hexagonal
 // cells (sea-hex.glsl), so the tile never repeats: x, y its slope, z its height, w the slope
 // variance the mip spans. Past its coarsest mip all of the layer lies below the pixel: its
@@ -81,15 +91,29 @@ vec4 seaLayerReadShifted(sampler2D map, vec4 layer, vec2 stats, int index, vec2 
   vec3 w;
   seaHexTiles(uv, index, o1, o2, o3, w);
   uv += shift;
-  vec4 a = textureLod(map, uv + o1, lod);
-  vec4 b = textureLod(map, uv + o2, lod);
-  vec4 c = textureLod(map, uv + o3, lod);
-  // Variance-preserving: Σ wᵢ·xᵢ / √Σ wᵢ².
-  float w2 = dot(w, w);
-  vec3 mean = (w.x * a.xyz + w.y * b.xyz + w.z * c.xyz) * inversesqrt(w2);
-  vec3 spread = max(vec3(a.w - dot(a.xy, a.xy), b.w - dot(b.xy, b.xy), c.w - dot(c.xy, c.xy)), vec3(0.0));
-  return vec4(mean, dot(w * w, spread) / w2);
+  return seaHexBlend(textureLod(map, uv + o1, lod), textureLod(map, uv + o2, lod), textureLod(map, uv + o3, lod), w);
 }
+
+#ifdef SEA_ANISO
+// The same filtered along the pixel's footprint, `dx` and `dy` the tile point's derivatives:
+// at most SEA_ANISO taps along its longer axis (the textures' anisotropy), so the waves stay
+// sharp toward grazing. Each tap's second moments (w) average as the filter takes them, so
+// what it loses still comes back as variance. Past the coarsest mip by the mip the filter
+// reads: the longer axis over SEA_ANISO, never finer than the shorter.
+vec4 seaLayerReadGrad(sampler2D map, vec4 layer, vec2 stats, int index, vec2 uv, vec2 shift, vec2 dx, vec2 dy) {
+  float texels2 = layer.w * layer.w;
+  float x2 = dot(dx, dx) * texels2;
+  float y2 = dot(dy, dy) * texels2;
+  float lod = 0.5 * log2(max(max(max(x2, y2) / (SEA_ANISO * SEA_ANISO), min(x2, y2)), 1e-8));
+  if(lod >= log2(layer.w))
+    return vec4(0.0, 0.0, 0.0, stats.x);
+  vec2 o1, o2, o3;
+  vec3 w;
+  seaHexTiles(uv, index, o1, o2, o3, w);
+  uv += shift;
+  return seaHexBlend(textureGrad(map, uv + o1, dx, dy), textureGrad(map, uv + o2, dx, dy), textureGrad(map, uv + o3, dx, dy), w);
+}
+#endif
 
 vec4 seaLayerRead(sampler2D map, vec4 layer, vec2 stats, int index, vec2 uv, float lod) {
   return seaLayerReadShifted(map, layer, stats, index, uv, vec2(0.0), lod);

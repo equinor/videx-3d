@@ -593,7 +593,7 @@ const meta = {
       control: { type: 'inline-radio' },
       options: ['low', 'medium', 'high', 'ultra'],
       description:
-        'The sea’s `quality` (`SEA_QUALITY`, `OCEAN_QUALITY_DEFINES`): LOW three coarse layers, no gusts or slicks, no crest light, the sky’s gradient alone in the reflection; MEDIUM four layers, down to 0.23 m waves; HIGH ripples below that, to about 4 cm, the sun’s glitter and the whitecaps’ life; ULTRA three times the waves a layer.',
+        'The sea’s `quality` (`SEA_QUALITY`, `OCEAN_QUALITY_DEFINES`): LOW three coarse layers, no gusts or slicks, no crest light, the sky’s gradient alone in the reflection; MEDIUM four layers, down to 0.23 m waves; HIGH ripples below that, to about 4 cm, the sun’s glitter, the whitecaps’ life and the waves filtered along the view (4×); ULTRA three times the waves a layer, filtered 8×.',
     },
     optics: {
       table: { category: 'Bench' },

@@ -27,7 +27,9 @@ GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
   `SEA_QUALITY` (`SeaQualitySpec`): `low` the three long layers at 64², `high` `medium` and the
   detail octave, `ultra` `high` with 768 waves a layer (its 256² tiles with 384 waves until
   2026-11-18 widened each band fourfold for 1.5 times the waves: a missing octave between the
-  layers, fewer and stronger waves, a smoother and more regular sea than `high`'s).
+  layers, fewer and stronger waves, a smoother and more regular sea than `high`'s). `high` and
+  `ultra` read their tiles anisotropically (`anisotropy` 4 and 8: `SeaWaveBake`'s textures,
+  `SEA_ANISO`).
 - **The pool**: each layer draws at most 256 waves (`ultra` 768), the steepest its spectrum
   asks for (amplitude × wavenumber, their slope); each has a fixed random amplitude factor
   (Rayleigh) and phase. Chosen by height until 2026-11-18, the strongest were each band's
