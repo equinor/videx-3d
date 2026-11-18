@@ -77,6 +77,15 @@ export class TileStreamer<T> {
     return this.resident.get(key)?.tile;
   }
 
+  /**
+   * Whether the tile is `loading` or `queued` (wanted at the last {@link update}, its turn
+   * to come); null if neither: in, back without a tile or failed, or not wanted.
+   */
+  pending(key: number): 'loading' | 'queued' | null {
+    if (this.loading.has(key)) return 'loading';
+    return this.queue.some(entry => entry.key === key) ? 'queued' : null;
+  }
+
   /** What the tiles in may hold together, in bytes, from now on: a smaller budget lets go at the next update. */
   setBudget(bytes: number) {
     this.budget = bytes;

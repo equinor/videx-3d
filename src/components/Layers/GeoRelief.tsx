@@ -130,8 +130,9 @@ export type GeoReliefProps = {
   onSampler?: (sampler: ReliefSampler | null) => void;
   /**
    * Told how its tiles load whenever that changes, for a progress display (see
-   * `ProgressStore.source`): a run from when one is waited for until none is; once more with
-   * no items when it goes away.
+   * `ProgressStore.source`): a run from when a tile with nothing drawn in its place is waited
+   * for until none is (tiles that only sharpen what is drawn are not waited for); once more
+   * with no items when it goes away.
    */
   onProgress?: (report: ProgressReport) => void;
   /** the texts of its progress (see {@link RELIEF_PROGRESS_LABELS}) */

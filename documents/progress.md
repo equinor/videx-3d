@@ -91,8 +91,12 @@ each `videx-progress-popup__card` in its `__stack`. The bar is decorative
 - **`Scenery.onProgress`** reports two items: `shaders`, its programs compiled of those it
   waits for (the stand-in, its own, its stages', its bakes' and the cliffs'), and with a
   tiled relief `relief`, its stages' tiles loaded of those wanted. The relief runs from
-  when a tile is waited for to when none is, so moving the camera starts a short run: a
-  popup's `delay` keeps those from flashing it. Its texts are `SCENERY_PROGRESS_LABELS`,
+  when a tile with nothing drawn in its place (neither it nor a tile above it in) is waited
+  for to when none is: tiles that only sharpen ground already drawn are not waited for, so
+  moving the camera about loaded ground starts no run, and the first load's run ends once
+  every part of the view has a tile, however coarse, the detail sharpening after it. Until
+  2026-11-18 every tile counted and each move started a short run, which a popup's `delay`
+  only partly hid. Its texts are `SCENERY_PROGRESS_LABELS`,
   overridable through `progressLabels`. See [scenery.md](./scenery.md#performance) for why its
   shaders take long the first time.
 - Anything of the host's own can report through a source as well.

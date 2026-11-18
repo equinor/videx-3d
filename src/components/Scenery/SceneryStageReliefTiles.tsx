@@ -46,7 +46,11 @@ import {
   geoTileWidth,
   GeoTileView,
 } from '../../sdk/tiles/geo-tile-globe';
-import { tileAddress, tileParent } from '../../sdk/tiles/tile-keys';
+import {
+  tileAddress,
+  tileNearestIn,
+  tileParent,
+} from '../../sdk/tiles/tile-keys';
 import { tileCoarserEdges, TILE_EDGE_SIDES } from '../../sdk/tiles/tile-edges';
 import { TileStreamer } from '../../sdk/tiles/tile-streamer';
 import {
@@ -531,11 +535,9 @@ export const SceneryStageReliefTiles = ({
     );
     // The ground over a geographic tile: from the finest tile in over it, whose range holds it.
     const rangeAt = (key: number): [number, number] | null => {
-      for (let at = key; ; at = tileParent(at)) {
-        const tile = streamer.get(at);
-        if (tile) return [tile.min, tile.max];
-        if (tileAddress(at)[0] === 0) return null;
-      }
+      const at = tileNearestIn(key, k => streamer.get(k) !== undefined);
+      const tile = at === null ? undefined : streamer.get(at);
+      return tile ? [tile.min, tile.max] : null;
     };
     // The ground at a point, from the finest tile in there, on its triangles.
     const heightAt = (longitude: number, latitude: number): number | null => {
@@ -557,6 +559,9 @@ export const SceneryStageReliefTiles = ({
       tileAt,
       split: new Set<number>(),
       overviewSplit: new Set<number>(),
+      // The tiles waited for with nothing drawn in their place, and how many such came in
+      // (see the frame loop's report of the loading).
+      awaited: { keys: new Set<number>(), settled: 0 },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pinnedSquares reads refs
   }, [generate, sourceKey, textures, slots, pins]);
@@ -1145,6 +1150,11 @@ export const SceneryStageReliefTiles = ({
             layout,
           })
         : null;
+    const wanted = [
+      ...(pinning ? pinning.want : []),
+      ...selection.want,
+      ...(overviewSelection ? overviewSelection.want : []),
+    ];
     streamer.update(
       [
         ...selection.draw,
@@ -1156,11 +1166,7 @@ export const SceneryStageReliefTiles = ({
           ? [...overviewSelection.draw, ...overviewSelection.split]
           : []),
       ],
-      [
-        ...(pinning ? pinning.want : []),
-        ...selection.want,
-        ...(overviewSelection ? overviewSelection.want : []),
-      ],
+      wanted,
     );
     if (overviewSelection) indexOverview(overviewSelection.draw);
     if (streaming.resident.pinnedIn) {
@@ -1168,7 +1174,36 @@ export const SceneryStageReliefTiles = ({
       setSamplerVersion(version => version + 1);
     }
     if (loadingRef.current) {
-      const { settled, loading, queued } = streamer.stats;
+      // What a progress display waits for: the tiles wanted with nothing drawn in their place
+      // (neither they nor a tile above them in), prefetches aside. A tile under one that is in
+      // only sharpens what is drawn: moving about ground already loaded waits for none. Until
+      // 2026-11-18 every tile loaded counted, and each move showed a run. One counts as
+      // settled once something there is in; one no longer wanted, or back without a tile, is
+      // let go uncounted.
+      const awaited = streaming.awaited;
+      const isIn = (key: number) => (slotOf.get(key) ?? -1) >= 0;
+      const holes = new Set<number>();
+      for (const { key, priority } of wanted)
+        if (priority >= 0 && tileNearestIn(key, isIn) === null) holes.add(key);
+      for (const key of awaited.keys) {
+        if (tileNearestIn(key, isIn) !== null) {
+          awaited.keys.delete(key);
+          awaited.settled++;
+        } else if (!holes.has(key)) awaited.keys.delete(key);
+      }
+      let loading = 0;
+      let queued = 0;
+      for (const key of holes) {
+        const state = streamer.pending(key);
+        if (state === null) {
+          awaited.keys.delete(key);
+          continue;
+        }
+        awaited.keys.add(key);
+        if (state === 'loading') loading++;
+        else queued++;
+      }
+      const settled = awaited.settled;
       const told = `${settled}|${loading}|${queued}`;
       if (told !== loadingTold.current) {
         loadingTold.current = told;

@@ -46,8 +46,9 @@ export const RELIEF_PROGRESS_LABELS: ReliefProgressLabels = {
 };
 
 /**
- * A relief's tiles as they load: those that came back since it began, with a tile or none,
- * and those loading and waiting.
+ * A relief's tiles as a progress display waits for them: those with nothing drawn in their
+ * place (neither they nor a tile above them in), the ones that came in since it began, and
+ * those loading and waiting. Tiles that only sharpen ground already drawn are not counted.
  *
  * @group Components
  */
@@ -102,8 +103,9 @@ export function createSceneryProgress(
 /**
  * @internal
  * What a relief reports: its tiles as they load (`loading`), a run of loading from when one
- * is waited for to when none is, counted from what had come in when it began. Reports only
- * when something it shows changed; no items while nothing is known yet.
+ * with nothing drawn in its place is waited for to when none is, counted from what had come
+ * in when it began. Reports only when something it shows changed; no items while nothing is
+ * known yet.
  */
 export function createReliefProgress(
   report: (report: ProgressReport) => void,
