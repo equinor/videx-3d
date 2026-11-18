@@ -1047,7 +1047,9 @@ export class SceneryMaterial extends ShaderMaterial {
 
   /**
    * The hollow under the seabed is drawn (`SceneryAbyssProps.hollow`): the void confined to a
-   * gap in the crust about the field. A uniform: nothing recompiles.
+   * gap in the crust about the field, its lid the hollow's, curved down inside the rim. Set once
+   * the hollow can be drawn, its textures baked and the sky's programs compiled: until then the
+   * void is the plain void. A uniform: nothing recompiles.
    */
   get hollow(): boolean {
     return this.uniforms.uSkyHollow.value.x > 0.5;

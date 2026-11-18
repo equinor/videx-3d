@@ -317,9 +317,10 @@ vec3 skyOceanVoid(vec3 dir) {
 }
 
 // Whether the sea has a seabed at `p`: everywhere while it is on; peeled, only around the
-// hollow's opening (hollow.glsl), where the crust stays whole.
+// hollow's opening (hollow.glsl), where the crust stays whole, whether the hollow is drawn yet
+// or not.
 bool skyOceanSeabedAt(vec3 p) {
-  return uSkyOceanSeabed > 0.5 || (uSkyHollow.x > 0.5 && hollowInside(p) <= 0.0);
+  return uSkyOceanSeabed > 0.5 || (uSkyHollow.y > 0.5 && hollowInside(p) <= 0.0);
 }
 
 // How much of what lies beyond the seabed it hides at `bedPoint` where the cutaway covers

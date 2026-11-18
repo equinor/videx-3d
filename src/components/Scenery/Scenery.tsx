@@ -638,7 +638,11 @@ export const Scenery = ({
   const hollowOn = (hasAbyss || hasOcean) && hollowLook !== null;
   const hollowOpen = hollowOn && hasOcean && !oceanSeabed;
   const [hollow] = useState(() => new SceneryHollowParts(material));
-  useEffect(() => () => hollow.dispose(), [hollow]);
+  // A layout effect, as its bake's below: when both run again (React's Fast Refresh), every
+  // cleanup comes before every setup, so what this lets go is baked again, not after.
+  useLayoutEffect(() => () => hollow.dispose(), [hollow]);
+  // Its rock and cliffs are baked (SceneryHollowParts.makeTextures).
+  const [hollowBaked, setHollowBaked] = useState(false);
   // The radius the rim grip left (SceneryHollow.handle), kept until `radius` changes.
   const hollowDragged = useRef<number | null>(null);
   const hollowRadius = () => hollowDragged.current ?? hollowLook?.radius ?? 0;
@@ -689,12 +693,11 @@ export const Scenery = ({
   }, [hollowHandleOn, material, gl, scene, getThree]);
   // Uniforms only: nothing recompiles, and the bakes take the seabed whole, so nothing bakes.
   useLayoutEffect(() => {
-    material.hollow = hollowOn;
     material.hollowOpen = hollowOpen;
     if (!hollowLook) return;
     material.hollowRadius = hollowDragged.current ?? hollowLook.radius;
     hollow.setLook(hollowLook);
-  }, [material, hollow, hollowOn, hollowOpen, hollowLook]);
+  }, [material, hollow, hollowOpen, hollowLook]);
   const [probe] = useState(() => new LightProbe());
   const [lightTarget] = useState(() => new Object3D());
   // The sea's water: never drawn, the sky's sea shares its uniforms.
@@ -841,7 +844,14 @@ export const Scenery = ({
 
   // The hollow's rock and cliffs, baked once their programs compile.
   useLayoutEffect(() => {
-    hollow.makeTextures(gl, progress.compiles.track());
+    let current = true;
+    hollow.makeTextures(gl, progress.compiles.track()).then(baked => {
+      if (current) setHollowBaked(baked);
+    });
+    return () => {
+      current = false;
+      setHollowBaked(false);
+    };
   }, [hollow, gl, progress]);
 
   const [standInReady, setStandInReady] = useState(false);
@@ -970,6 +980,14 @@ export const Scenery = ({
 
   // Whether what the sky draws is compiled; until then the stand-in is drawn instead.
   const [ready, setReady] = useState(false);
+  // The hollow can be drawn: its rock and cliffs baked and the sky's programs, its own among
+  // them, compiled. Until then the void is the plain void, in its own grey, which the stand-in
+  // draws too; then the hollow's lid, curved inside the rim, and the rock black past its walls.
+  // Uniforms only: nothing recompiles.
+  const hollowDrawn = hollowOn && hollowBaked && ready;
+  useLayoutEffect(() => {
+    material.hollow = hollowDrawn;
+  }, [material, hollowDrawn]);
   // Stages hand over their parts, compiled with the sky's own (see SceneryOceanState.stage).
   const stages = useRef(new Set<Object3D>());
   const [stageVersion, setStageVersion] = useState(0);
@@ -1288,10 +1306,11 @@ export const Scenery = ({
     material.abyss = hasAbyss || hasOcean;
     material.abyssLevel = hasOcean ? oceanLevel - oceanDepth : abyssLevel;
     // The hollow is all of the void there is: past its walls and under its floor, the rock is
-    // black below the horizon, and the void's lid overhead recedes into black.
+    // black below the horizon, and the void's lid overhead recedes into black. Until it is
+    // drawn, the void's own grey, which the stand-in draws too.
     material.abyssCeilingColor = abyssCeiling;
-    material.abyssHorizonColor = hollowOn ? 0x000000 : abyssHorizon;
-    material.abyssDepthColor = hollowOn ? 0x000000 : abyssDepth;
+    material.abyssHorizonColor = hollowDrawn ? 0x000000 : abyssHorizon;
+    material.abyssDepthColor = hollowDrawn ? 0x000000 : abyssDepth;
     material.abyssFadeDistance = abyssFadeDistance;
     material.abyssTransition = abyssTransition;
     material.abyssDarkening = abyssDarkening;
@@ -1319,7 +1338,7 @@ export const Scenery = ({
     abyssDepthDetail,
     abyssDepthDetailScale,
     abyssFalloff,
-    hollowOn,
+    hollowDrawn,
   ]);
 
   // Not baked: the bakes keep a level horizon. Inside a World, the World's `globe` says.
@@ -1840,10 +1859,8 @@ export const Scenery = ({
       });
       const belowBed = height < material.abyssLevel || material.oceanBuried;
       const hollowShown =
-        hollowOn &&
+        hollowDrawn &&
         drawn &&
-        ready &&
-        hollow.ready &&
         (voidOpen || belowBed) &&
         (inHollow || !belowBed) &&
         !debug?.hide?.includes('abyss') &&

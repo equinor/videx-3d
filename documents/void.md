@@ -28,7 +28,11 @@ dark, dull rock that gives scale and depth.
   seabed are cut away inside the rim and kept whole around it, so the opening is a hole in the
   ground, not a missing ground.
 - **Real geometry with baked textures**, no ray marching: walls and floor are meshes, shaded
-  from two textures baked once on the GPU.
+  from two textures baked once on the GPU. Until both are baked and the sky's programs compiled
+  the hollow is not drawn, and the void is the plain void: its grey lid overhead and grey depths
+  below, as the stand-in draws them while the sky compiles. Until 2026-11-18 the void turned to
+  the hollow's at once: the stand-in, and inside the rim the void's view down (its lid curving
+  away to the far side of the globe), were black below the horizon until the hollow came in.
 - **Nothing re-bakes or recompiles** when the seabed is peeled, the camera flies into the
   hollow, or any of its look changes: those are uniforms. The bakes (environment, light probe)
   never see the hollow or the peel (`scenery-baker.ts` overrides both).
@@ -174,7 +178,7 @@ seabed changes nothing overhead. The relief draws it near the field, the backgro
 
 - **Past the walls**, under the seabed, the camera is in the rock: the hollow is not drawn, the
   hollow's own lid is overhead (as inside the rim) and the void below the horizon is black
-  (`Scenery` sets the plain void's horizon and depth colours black while the hollow is on).
+  (`Scenery` sets the plain void's horizon and depth colours black once the hollow is drawn).
 - **Under the floor**, the hollow and its lid stay drawn, seen through the rock: each view is
   dimmed by the length of rock it crosses under the floor, by e every 30 km
   (`HOLLOW_ROCK_FADE`), never below 15% (`HOLLOW_ROCK_KEPT`). The path is zero at the floor, so

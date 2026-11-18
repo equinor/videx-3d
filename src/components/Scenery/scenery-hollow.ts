@@ -755,7 +755,7 @@ export class SceneryHollowParts {
   private spheres: Sphere[] = [];
   private rock: RockTexture | null = null;
   private cliff: CliffTexture | null = null;
-  private baked = false;
+  private baking: Promise<boolean> | null = null;
   private built = '';
   // The embers' pulse: seconds drawn so far, and how far it dims (SceneryHollowLook.pulse).
   private clock = 0;
@@ -804,27 +804,29 @@ export class SceneryHollowParts {
 
   /**
    * Bake what it is shaded with, on `renderer`'s GPU, once: its rock and its cliffs, each once
-   * its program has compiled. Until both are in it is not {@link ready}.
+   * its program has compiled. Until both are in it is not to be drawn. Resolves `true` once
+   * they are, `false` if disposed of first; called again, the same promise.
    */
   makeTextures(
     renderer: WebGLRenderer,
     onProgress?: (done: number, total: number) => void,
-  ) {
-    if (this.rock) return;
+  ): Promise<boolean> {
+    if (this.baking) return this.baking;
     this.rock = createRockTexture(renderer, { onProgress });
     this.cliff = createCliffTexture(renderer, { onProgress });
     const u = this.sky.uniforms;
     u.uHollowRock.value = this.rock.texture;
     u.uHollowRockSlope.value = this.rock.slopeScale;
     u.uHollowCliff.value = this.cliff.texture;
-    Promise.all([this.rock.ready, this.cliff.ready]).then(([rock, cliff]) => {
-      this.baked = rock && cliff;
-    });
-  }
-
-  /** Its textures are baked: until then it is not drawn. */
-  get ready() {
-    return this.baked;
+    const baking: Promise<boolean> = Promise.all([
+      this.rock.ready,
+      this.cliff.ready,
+    ]).then(
+      // Disposed of meanwhile: it is a later bake's to say.
+      ([rock, cliff]) => this.baking === baking && rock && cliff,
+    );
+    this.baking = baking;
+    return baking;
   }
 
   /** Its look; a uniform upload. */
@@ -954,7 +956,7 @@ export class SceneryHollowParts {
     this.rock = null;
     this.cliff?.dispose();
     this.cliff = null;
-    this.baked = false;
+    this.baking = null;
     this.sky.uniforms.uHollowRock.value = null;
     this.sky.uniforms.uHollowCliff.value = null;
   }
