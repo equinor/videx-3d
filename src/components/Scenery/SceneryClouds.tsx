@@ -373,7 +373,8 @@ export const SceneryClouds = ({
     volume.shows = drawn;
     volume.updateLight(gl, delta);
     volume.updateBakes();
-    volume.updateShadow(gl, state.camera);
+    // Not drawn where nothing reads them (below the seabed); drawn anew once read again.
+    if (registry.view.shadows) volume.updateShadow(gl, state.camera);
     volume.updateReflection();
   });
 

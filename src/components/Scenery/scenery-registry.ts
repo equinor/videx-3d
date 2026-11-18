@@ -48,6 +48,8 @@ export type SceneryFeatures = {
 export type SceneryView = {
   /** the clouds: the sky is drawn and ready, the camera's zone shows it, and they are not hidden (`SceneryDebug.hide`) */
   clouds: boolean;
+  /** shadows of what draws itself in the sky are read: the scene's light is the sky's (not below the seabed) */
+  shadows: boolean;
   /** the scenery's `renderOrder`: its sea's surface draws at the next one */
   renderOrder: number;
 };

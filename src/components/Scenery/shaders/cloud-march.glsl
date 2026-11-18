@@ -1283,9 +1283,11 @@ uniform int uCloudShadowSamples;
 
 // The share of the light (the sun's, or the moon's) that reaches the ground under a texel of the
 // square through the levels: across each, as it rises over the broad ground there, toward the
-// light in uCloudShadowSamples stretches, each placed (cloudSet) and read as the march's own
-// toward the light are (cloudLight), no narrower than a texel. The march's own code, so the
-// shadows are the clouds'. None where the light is under the horizon.
+// light in uCloudShadowSamples stretches, each placed (cloudSet) and read with the lumps the
+// view's march reads where the footprint resolves them (no narrower than a texel), so the
+// shadows are the clouds drawn. Read without them until 2026-11-18, a broken field's clouds
+// averaged into a faint haze: fair cumulus covering a fifth of the sky shaded 1% of the sea,
+// letting 60% of the light through at most. None where the light is under the horizon.
 void main() {
   gTerrain = uCloudTerrain.x > 0.5 && globeOn();
   vec2 st = gl_FragCoord.xy / uCloudShadowSize * 2.0 - 1.0;
@@ -1323,7 +1325,7 @@ void main() {
       vec3 q = g + gWay * (from + (float(k) + 0.5) * len);
       CloudLevel S = L;
       if(cloudSet(S, q, extent))
-        tau += cloudDensity(S, q - uCloudCamera, extent, false) * len;
+        tau += cloudDensity(S, q - uCloudCamera, extent, true) * len;
     }
   }
   gl_FragColor = vec4(exp(-tau), 0.0, 0.0, 1.0);

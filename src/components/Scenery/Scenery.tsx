@@ -625,7 +625,7 @@ export const Scenery = ({
     () => ({
       material,
       set: setFeature,
-      view: { clouds: false, renderOrder: 0 },
+      view: { clouds: false, shadows: false, renderOrder: 0 },
       overlay,
       ground: sceneryGround,
     }),
@@ -1785,12 +1785,15 @@ export const Scenery = ({
       );
     }
     // Where the sea and the relief read the clouds' shadows, their share of the light there
-    // in place of the share it was dimmed to: the sky's light's, not the subsurface's.
+    // in place of the share it was dimmed to: the sky's light's, not the subsurface's. Not
+    // drawn where none read them.
+    const shadowStrength = skyOverlay && sunLight ? 1 - toSubsurface : 0;
     material.setCloudShadow(
       skyOverlay?.shadow ?? null,
       lightThrough,
-      skyOverlay && sunLight ? 1 - toSubsurface : 0,
+      shadowStrength,
     );
+    registry.view.shadows = shadowStrength > 0;
 
     // The cutaway's own work (SceneryCutaway), by this frame's height, zone and matrices.
     // Without one nothing is cut.

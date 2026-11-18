@@ -35,8 +35,13 @@ export type CloudLightMapInputs = {
   half: number;
   /** the texel wanted (m): the finest level's cover texel */
   texel: number;
-  /** everything it is drawn from but the clock: drawn anew once it changes */
+  /** everything it is drawn from but the clock and the light: the drawing under way is dropped once it changes */
   key: string;
+  /**
+   * the light's way: drawn anew once it changes, but the drawing under way finishes first, so
+   * a light that keeps turning (a timelapse) is followed a drawing behind rather than never
+   */
+  light: string;
   /** the weather's clock (s) */
   time: number;
   /** drawn anew after the clock has run on this far (weather seconds): the clouds form and fade */
@@ -48,6 +53,7 @@ export type CloudLightMapInputs = {
 // What a map holds: what it was drawn from, at what time, and its size.
 type Held = {
   key: string;
+  light: string;
   time: number;
   size: number;
   levels: number;
@@ -67,7 +73,10 @@ const camera = new OrthographicCamera();
  *
  * Two drawings: the one shown, and the next, drawn a few rows a frame (TEXELS_A_FRAME), then
  * faded in over FADE. A new one once what it is drawn from changes (`key`: the settings, the
- * light's way, the ground) or the clock has run on (`refresh`: the clouds form and fade); each
+ * ground; the drawing under way is dropped), the light's way does (`light`: the drawing under
+ * way finishes first, so a light that keeps turning is followed a drawing behind; until
+ * 2026-11-18 it was dropped too, and in a timelapse the clouds kept the light they had when it
+ * started) or the clock has run on (`refresh`: the clouds form and fade); each
  * read where the wind has carried its clouds since its time, and its rows drawn over several
  * frames all of that time, so drift costs nothing.
  */
@@ -150,6 +159,7 @@ export class CloudLightMap {
     );
     const want = {
       key: inputs.key,
+      light: inputs.light,
       size,
       levels: inputs.levels,
       half: inputs.half,
@@ -162,12 +172,15 @@ export class CloudLightMap {
       held.half === want.half;
     const shown = this.newer >= 0 ? this.held[this.newer] : null;
     const fading = this.fadeShare() < 1;
-    // A drawing begun, or begun again for what it is drawn from now.
+    // A drawing begun, or begun again for what it is drawn from now; one for an earlier light
+    // finishes.
     if (this.drawing && !same(this.drawing)) this.drawing = null;
     if (
       !this.drawing &&
       !fading &&
-      (!same(shown) || Math.abs(inputs.time - shown!.time) > inputs.refresh)
+      (!same(shown) ||
+        shown!.light !== want.light ||
+        Math.abs(inputs.time - shown!.time) > inputs.refresh)
     )
       this.drawing = {
         ...want,
@@ -275,6 +288,7 @@ export class CloudLightMap {
     const index = drawing.target;
     const held: Held = {
       key: drawing.key,
+      light: drawing.light,
       time: drawing.time,
       size: drawing.size,
       levels: drawing.levels,

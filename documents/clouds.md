@@ -773,7 +773,11 @@ camera, with mipmaps, so a far point reads them as coarsely as it reads the cove
 finest level's cover texel, at most 1024 a side.
 
 A map is drawn anew when the settings, the light's way (to 0.06°) or the ground change, or when
-the clock has run on by a twentieth of the shortest lifetime. It is drawn 64k texels a frame
+the clock has run on by a twentieth of the shortest lifetime. A change to the settings or the
+ground drops the drawing under way; a change to the light's way lets it finish first, so a light
+that keeps turning (a timelapse) is followed a drawing behind, some half a second (until
+2026-11-18 it was dropped too, never finished, and the clouds kept the light they had when the
+light began to turn). It is drawn 64k texels a frame
 (1.1 ms on an Iris Xe), and its rows drawn over several frames all show the drawing's time: each
 is drawn where the wind has carried those clouds since. Done, it fades in over the one before
 in half a second, and each map is read where the wind has carried its clouds since its time, so
@@ -850,19 +854,30 @@ the zone, `background`, `debug.hide`).
 - **Shadows** on the sea and the relief: a map of the share of the light that reaches the
   ground (512², 8 bits) over a square about the camera's foot, from 20 km to 200 km from its
   middle to its sides (8 times the camera's height), marched toward the light from the ground
-  (the terrain's, under the relief) across each layer in 2 samples (`SHADOW_SAMPLES`; 8 cost
-  1.3–3.0 ms a drawing, 2 cost 0.3–1.0, alike enough for shadows), with the march's own
+  (the terrain's, under the relief) across each layer in 8 samples (`SHADOW_SAMPLES`), each read
+  with the lumps the view's march reads where a texel resolves them, with the march's own
   coverage, weather and terrain (`cloud-march.glsl` under `CLOUD_SHADOW`: one source,
-  so the shadows are the clouds'). Drawn again only once the camera's foot is a tenth of the
-  reach from its middle, the light has turned 1°, or the clouds, the terrain or the globe
+  so the shadows are the clouds'): 0.5 ms a drawing (RTX A1000). Until 2026-11-18 it read 2
+  samples without the lumps: a broken field's clouds averaged into a faint haze, fair cumulus
+  covering a fifth of the sky shading 1% of the sea and letting 60% of the light through at most;
+  now their cores let none through. ⚠️ The square's texel grows with the camera's height (79 m
+  from near the sea, 140 m from 2 km), and where it no longer resolves the lumps small clouds'
+  shadows fade again. Drawn again only once the camera's foot is a tenth of the
+  reach from its middle, the light has turned 2° (1° until 2026-11-18: 7 drawings a second in a
+  timelapse), or the clouds, the terrain or the globe
   changed, or the clouds have drifted a tenth of it or lived a fiftieth of their lifetime; none
-  at rest. Between, the map is
+  at rest, nor where nothing reads them (below the seabed). Between, the map is
   carried with the lowest level's wind. The sea
   and the relief scale the dimmed light (`cloud-shadow.glsl`) by the map's share over the share
   it was dimmed to, so a sunlit patch is lit by the whole sun and a shaded one by what gets
   through; toward the square's sides, and past it, the dimmed light stands. In shadow the
-  sea's glint goes and its water darkens by half its own colour's share of the sun
-  (`SKY_OCEAN_SUN_SHARE`); the relief's direct light (`sceneBlinnPhongShaded`), land only (the
+  sea's glint goes and its water's own light loses the sun's share of the daylight
+  (`skySunShare`: some 85% with the sun high, 60% at 10°), while the sky it reflects stays: the
+  shadows show darkest looking down, where the sea reflects little, and fade toward the horizon,
+  as on a real sea (under a full shadow, 0.65 of the light looking down from 40 m, 0.8 from 2 km
+  through the unshaded haze, none past 5° below the horizon). Until 2026-11-18 only the glint
+  went, and a shadow showed only where the sun glinted. In shadow too goes the relief's direct
+  light (`sceneBlinnPhongShaded`), land only (the
   seabed is lit through the water). None from over 400 km up, nor below the seabed (the
   subsurface's light); not on what the host draws (it takes the dimmed light).
 

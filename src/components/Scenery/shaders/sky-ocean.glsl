@@ -508,8 +508,13 @@ vec4 skyOceanReflectedClouds(vec3 r, vec3 sky, vec3 world, vec3 up, float texel)
 vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float blend, vec3 world) {
   vec3 normal = wave.normal;
   float night = mix(SKY_NIGHT_LEVEL, 1.0, uSkyDaylight);
-  // Under the clouds' shadow (cloud-shadow.glsl) the glint goes.
-  float shade = skyCloudShadow(world);
+  // The share of the light reaching the sea here through the clouds (cloud-shadow.glsl). Under
+  // their shadow the glint goes, and the water's own light loses the sun's share of the daylight
+  // (skySunShare): the darker sea a shadow shows, most from above, where the surface reflects
+  // little of the sky.
+  float through = skyCloudLightAt(world);
+  float shade = skyCloudShadowFrom(through);
+  float waterShade = 1.0 - skySunShare(dot(uSkySunDirection, wave.up)) * (1.0 - through);
 
   vec3 V = -dir;
   float ndvAA;
@@ -541,7 +546,9 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // stands over the sea's horizon there (skyLightFrom).
   float glint = skyLightFrom(normalize(uSunDirection), uSkyUp, wave.up) * shade;
   vec4 surface = vec4(reflected * uReflectionIntensity * roughFresnel + oceanGlint(normal, V, glint, wave.rough, p, texel), fresnel);
-  surface = waterLayerOver(surface, skyOceanWaterUnder(wave.depth, wave.up, dir, wave.flatness));
+  vec4 water = skyOceanWaterUnder(wave.depth, wave.up, dir, wave.flatness);
+  water.rgb *= waterShade;
+  surface = waterLayerOver(surface, water);
   // The sun's (or the moon's) light through the crests, out of the water toward the eye, as the
   // glint has it.
   if(uSkyOceanWater > 0.5)

@@ -384,15 +384,17 @@ const LIGHT_SLANT: Readonly<Record<CloudType, number>> = {
 };
 // The shadows: texels a side; the square's reach to its sides, from the least to the most, the
 // camera's height over the sea times the last; drawn again once the camera's foot or the clouds
-// have moved this share of it, the light has turned (1 − its cosine), or the lowest level's
-// clouds have lived this share of their lifetime; none from higher up than this (m).
+// have moved this share of it, the light has turned (1 − its cosine: 2°; at 1° a timelapse drew
+// them 7 times a second), or the lowest level's clouds have lived this share of their lifetime;
+// none from higher up than this (m).
 const SHADOW_SIZE = 512;
-// Samples across each level toward the light, a texel of the shadows (cloud-march.glsl):
-// 2 cost 0.3–1.0 ms a drawing, 8 cost 1.3–3.0 (Iris Xe, 2026-11-10), alike enough for shadows.
-const SHADOW_SAMPLES = 2;
+// Samples across each level toward the light, a texel of the shadows (cloud-march.glsl), each
+// read over half its stretch or a texel: 2 averaged a fair cumulus with the clear air about it
+// (its darkest texel let 63% of the sun through, 2026-11-18); 8 read it over a texel.
+const SHADOW_SAMPLES = 8;
 const SHADOW_REACH = [20000, 200000, 8] as const;
 const SHADOW_MOVE = 0.1;
-const SHADOW_TURN = 1.5e-4;
+const SHADOW_TURN = 6e-4;
 const SHADOW_LIVED = 0.02;
 const SHADOW_HIGHEST = 400000;
 // The sea reflects the scene's own clouds out to this far from its middle, and a global weather's
@@ -1945,13 +1947,8 @@ void main() {
       levels: levels.length,
       half: settings.local.radius + Math.min(deepest / rising, LIGHT_MARGIN),
       texel: finest,
-      key: [
-        this.settingsSerial,
-        way.x.toFixed(3),
-        way.y.toFixed(3),
-        way.z.toFixed(3),
-        this.terrain.version,
-      ].join(','),
+      key: [this.settingsSerial, this.terrain.version].join(','),
+      light: [way.x.toFixed(3), way.y.toFixed(3), way.z.toFixed(3)].join(','),
       time: this.time,
       refresh: MathUtils.clamp(shortest / 20, 30, 600),
       winds: this.levelWinds,

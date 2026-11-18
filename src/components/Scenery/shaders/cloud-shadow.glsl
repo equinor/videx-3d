@@ -32,12 +32,26 @@ float skyCloudLightAt(vec3 world) {
   return mix(1.0, through, uSkyCloudShadowLight.y);
 }
 
-// What to scale the scene's (already dimmed) light by at `world`, for the clouds' shadow there:
-// the share of the light there (skyCloudLightAt) over the share the light was dimmed to. 1
-// without shadows, and past the square.
-float skyCloudShadow(vec3 world) {
+// What to scale the scene's (already dimmed) light by where `through` of the light reaches the
+// ground (skyCloudLightAt): that share over the share the light was dimmed to. 1 without
+// shadows, and past the square.
+float skyCloudShadowFrom(float through) {
   if(uSkyCloudShadowPlace.w <= 0.0 || uSkyCloudShadowLight.y <= 0.0)
     return 1.0;
   float dimmed = mix(1.0, max(uSkyCloudShadowLight.x, 1e-3), uSkyCloudShadowLight.y);
-  return skyCloudLightAt(world) / dimmed;
+  return through / dimmed;
+}
+
+// What to scale the scene's (already dimmed) light by at `world`, for the clouds' shadow there
+// (skyCloudShadowFrom).
+float skyCloudShadow(vec3 world) {
+  return skyCloudShadowFrom(skyCloudLightAt(world));
+}
+
+// How much of the daylight on the level is the sun's own, the rest the sky's, for its
+// elevation's sine `sine`: some 85% with the sun high, 60% at 10°, none once it has set
+// (clear air). What a cloud's shadow takes from the light on the sea's water.
+#define SKY_SUN_SHARE 0.85
+float skySunShare(float sine) {
+  return SKY_SUN_SHARE * (1.0 - exp(-max(sine, 0.0) / 0.14));
 }
