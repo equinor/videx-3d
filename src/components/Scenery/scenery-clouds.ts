@@ -116,10 +116,11 @@ export type CloudsQualityLevel = {
 
 /**
  * The qualities a `SceneryClouds` draws at (`quality`), so what they cost depends only on what
- * is in view (`documents/clouds.md`, "Quality"). Each marches every pixel while the camera
- * moves, and a quarter of them a frame while it holds still with the clock running
- * (`temporal: 'still'`). Low and medium read the shape once a step, high and ultra twice
- * (`shapeReads`: a march program each, compiled as the quality switches to it).
+ * is in view (`documents/clouds.md`, "Quality"). Low and medium march a quarter of the pixels a
+ * frame however the camera moves (`temporal: 'moving'`); high and ultra every pixel while it
+ * moves, and a quarter a frame while it holds still with the clock running (`'still'`). Low and
+ * medium read the shape once a step, high and ultra twice (`shapeReads`: a march program each,
+ * compiled as the quality switches to it).
  *
  * @group Components
  */
@@ -131,14 +132,14 @@ export const CLOUDS_QUALITY: Readonly<
     steps: 16,
     lightSamples: 1,
     shapeReads: 1,
-    temporal: 'still',
+    temporal: 'moving',
   },
   medium: {
     resolution: 0.5,
     steps: 32,
     lightSamples: 2,
     shapeReads: 1,
-    temporal: 'still',
+    temporal: 'moving',
   },
   high: {
     resolution: 0.75,
@@ -1019,6 +1020,7 @@ export class CloudsRenderer implements ScenerySkyOverlay {
         uCloudPhase: new Uniform(0),
         uCloudImageSize: new Uniform(new Vector2(1, 1)),
         uCloudPartSize: new Uniform(new Vector2(1, 1)),
+        uCloudDebug: new Uniform(0),
       },
       depthTest: true,
       depthFunc: AlwaysDepth,
@@ -1206,6 +1208,8 @@ void main() {
           : settings.debug.view === 'map'
             ? 3
             : 0;
+    this.rebuildMaterial.uniforms.uCloudDebug.value =
+      settings.debug.view === 'temporal' ? 1 : 0;
     u.uCloudAir.value = settings.debug.air === false ? 0 : 1;
     (u.uCloudColor.value as Color).copy(settings.color);
   }

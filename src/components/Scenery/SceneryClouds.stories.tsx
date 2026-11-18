@@ -154,7 +154,7 @@ type CloudsArgs = {
   ownResolution: boolean;
   resolution?: number;
   volumeSeed: number;
-  debugView: 'none' | 'cost' | 'unlit' | 'map';
+  debugView: 'none' | 'cost' | 'unlit' | 'map' | 'temporal';
   /** the air's haze between the clouds and the camera */
   debugAir: boolean;
   /** how far on to jump the weather's clock (minutes): the clouds drift with the wind */
@@ -610,25 +610,40 @@ function cloudRows(args: CloudsArgs): SceneryDebugRow[] {
     {
       // How the march reuses the last frames (TEMPORAL): the quality's, or one of its own.
       label: 'temporal',
-      buttons: (
-        [
-          ['quality', 'As the quality has it: still'],
-          ['off', 'Every pixel marched every frame'],
+      buttons: [
+        ...(
           [
-            'still',
-            'A quarter of the pixels a frame while the camera holds still; all as it moves',
-          ],
-          [
-            'moving',
-            'A quarter a frame however the camera moves, the rest moved to where their clouds lie now',
-          ],
-        ] as const
-      ).map(([temporal, title]) => ({
-        label: temporal,
-        title,
-        on: args.temporal === temporal,
-        click: () => update({ temporal }),
-      })),
+            [
+              'quality',
+              'As the quality has it: moving at low and medium, still at high and ultra',
+            ],
+            ['off', 'Every pixel marched every frame'],
+            [
+              'still',
+              'A quarter of the pixels a frame while the camera holds still; all as it moves',
+            ],
+            [
+              'moving',
+              'A quarter a frame however the camera moves, the rest moved to where their clouds lie now',
+            ],
+          ] as const
+        ).map(([temporal, title]) => ({
+          label: temporal,
+          title,
+          on: args.temporal === temporal,
+          click: () => update({ temporal }),
+        })),
+        {
+          label: 'sources',
+          title:
+            'Where each pixel came from (DEBUG VIEW temporal): this frame’s march as it is, an older one’s where it was green, moved blue turning red the more this frame’s held it, this frame’s between its pixels yellow',
+          on: args.debugView === 'temporal',
+          click: () =>
+            update({
+              debugView: args.debugView === 'temporal' ? 'none' : 'temporal',
+            }),
+        },
+      ],
     },
     {
       label: 'stats',
@@ -929,7 +944,7 @@ const meta = {
       control: { type: 'inline-radio' },
       options: ['quality', 'off', 'still', 'moving'],
       description:
-        'How the march reuses the last frames’ (`temporal`). QUALITY: as the quality has it (STILL). OFF: every pixel every frame. STILL: a quarter of the pixels a frame while the camera holds still, the rest as marched up to three frames before; all as it moves. MOVING: a quarter a frame however it moves, the rest moved to where their clouds lie now.',
+        'How the march reuses the last frames’ (`temporal`). QUALITY: as the quality has it (MOVING at low and medium, STILL at high and ultra). OFF: every pixel every frame. STILL: a quarter of the pixels a frame while the camera holds still, the rest as marched up to three frames before; all as it moves. MOVING: a quarter a frame however it moves, the rest moved to where their clouds lie now.',
       table: { category: 'Cloud volume' },
     },
     globalThickness: {
@@ -1017,9 +1032,9 @@ const meta = {
     volumeSeed: range(0, 20, 1, 'Picks another pattern.'),
     debugView: {
       control: { type: 'inline-radio' },
-      options: ['none', 'cost', 'unlit', 'map'],
+      options: ['none', 'cost', 'unlit', 'map', 'temporal'],
       description:
-        'COST: the march’s steps along each view, blue none to red at the quality’s most. UNLIT: white, as opaque as the clouds are. MAP: a global weather’s cover where the view meets the sea, low red, middle green, high blue.',
+        'COST: the march’s steps along each view, blue none to red at the quality’s most. UNLIT: white, as opaque as the clouds are. MAP: a global weather’s cover where the view meets the sea, low red, middle green, high blue. TEMPORAL: where each pixel of an interleaved march came from (TEMPORAL still or moving): this frame’s march as it is, an older one’s where it was green, moved blue turning red the more this frame’s held it, this frame’s between its pixels yellow.',
       table: { category: 'Debug' },
     },
     debugAir: {

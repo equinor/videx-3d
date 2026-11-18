@@ -543,8 +543,8 @@ Tried, not kept:
   % slower. A choice for a quality, if a coarser look far off is wanted.
 
 Far off the march is left to its quality (see "Quality") and to how it reuses frames: `'still'`
-marches a quarter of the pixels a frame once the camera holds still, `'moving'` (not a
-quality's default: it trails) also as it moves.
+marches a quarter of the pixels a frame once the camera holds still, `'moving'` (`low`'s and
+`medium`'s) also as it moves.
 
 **What the march reads baked (2026-11-10).** Reads that change only with the clock are baked:
 
@@ -601,6 +601,13 @@ the camera moved, this frame's pixels too, from all four parts' nearest samples 
 0.6 of a pixel, 3.8 %, but the clouds were softer while it moved, and trailed; picking each pixel's
 nearest sample of any part instead, 8.8 %. Neither kept (2026-11-11).
 
+**Where each pixel came from** (`debug.view` `'temporal'`, the Clouds story's `sources` button by
+`temporal`; 2026-11-17): each rebuilt pixel tinted by its source — this frame's part as it is, an
+older part's taken where it was green, moved to where its cloud lies now blue, turning red the
+more this frame's part held it (a quarter of the colour changed, all red), and this frame's part
+between its texels, where the older part's camera did not see, yellow. To find where `'moving'`'s
+trails come from (below).
+
 **Quality** (`quality`, `CLOUDS_QUALITY`; default `'medium'`). Each level sets the share of
 the screen's resolution in CSS pixels the clouds' image is drawn at, its steps, its samples
 toward the light, its reads of the shape volume and how it reuses frames (`resolution` and
@@ -614,14 +621,23 @@ stay uniforms (Direct3D unrolls a loop of a constant count).
 
 | | share | steps | light samples | shape reads | `temporal` |
 | --- | --- | --- | --- | --- | --- |
-| `low` | 0.25 | 16 | 1 | 1 | `'still'` |
-| `medium` | 0.5 | 32 | 2 | 1 | `'still'` |
+| `low` | 0.25 | 16 | 1 | 1 | `'moving'` |
+| `medium` | 0.5 | 32 | 2 | 1 | `'moving'` |
 | `high` | 0.75 | 48 | 3 | 2 | `'still'` |
 | `ultra` | 1 | 64 | 4 | 2 | `'still'` |
 
 `'moving'` for `low` and `medium` (a quarter of the pixels a frame as the camera moves) left
-trails behind the clouds as it moved, and was dropped (2026-11-16): every quality marches every
-pixel as the camera moves and a quarter a frame once it holds still.
+trails behind the clouds as it moved, and was dropped (2026-11-16) — then brought back
+(2026-11-17) once the trails were found and stopped: they came as the camera moved along the
+view (a zoom), where only the depth moves a pixel. A clear pixel at a cloud's edge was moved by
+the depth of the cloud beside it (the nearest of this frame's texels about it) onto where the
+cloud lay in the older part's frame, and the clamp to this frame's part let it through, its
+texels holding both cloud and sky there. An older part's pixel is now taken only where its own
+cloud, carried into this frame's view by its own depth, lands within a pixel of where it is
+taken (`CLOUD_PART_LANDS`, 0.75–1.5 pixels of the full image), else this frame's part between
+its texels (yellow in `debug.view` `'temporal'`). Orbiting showed little before or since: about a
+target well off, the view turns more than it moves, and a turn moves pixels by their direction
+alone.
 
 Measured 2026-11-16 on an RTX A1000 (Chrome, ANGLE D3D11) at 1920 × 1080 and a pixel ratio of 1,
 the bench's `frames` turning the camera 0.05° a frame, GPU ms a frame: scattered cumulus (local)
@@ -631,8 +647,8 @@ and a global weather, over, along and under them; in brackets, a global weather 
 then every level marched every pixel every frame (`low` was 0.35/24/2): `medium` took 15.8–17.3
 ms a frame about cumulus (A1000, the same frames) and 39 ms from 200 km up; with `'moving'`,
 the same look as it holds still, 5.3–6.5 and 11.5. `medium`'s budget there is 5–6 ms as the
-camera moves: met with `'moving'` about the clouds, not far off; with `'still'` for every quality
-since, not as the camera moves. Its share of the resolution is what shows most: 0.4 of it
+camera moves: met with `'moving'` about the clouds, not far off (with `'still'` for every quality
+from 2026-11-16 to 11-17, not as the camera moved). Its share of the resolution is what shows most: 0.4 of it
 (3.8–5.2 ms, 6.7 from 200 km up) was visibly softer, and not kept.
 
 Since (2026-11-17): the shape read once at `low` and `medium`, the shape volume read from its

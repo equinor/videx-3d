@@ -31,6 +31,8 @@ uniform vec2 uCloudPartState[4];
 uniform int uCloudPhase;
 uniform vec2 uCloudImageSize;
 uniform vec2 uCloudPartSize;
+// 1: where each pixel came from, instead of its own colour (SceneryCloudsDebug's 'temporal').
+uniform int uCloudDebug;
 
 varying vec3 vCloudDirection;
 
@@ -39,6 +41,24 @@ varying vec3 vCloudDirection;
 // An older part is taken as it is where the view has moved its pixel less than x of a pixel of the
 // full image since it was marched, and held within this frame's part about it from y on.
 #define CLOUD_PART_HELD vec2(0.25, 1.0)
+// An older part's pixel whose own cloud, carried into this frame's view by its own depth, lands
+// x pixels of the full image from where it is taken is taken whole; from y on, not at all.
+#define CLOUD_PART_LANDS vec2(0.75, 1.5)
+// The debug view's tints (uCloudDebug): an older part taken as it was; moved, turning to the
+// held tint by how much this frame's part held it (the colour it changed, CLOUD_SOURCE_SCALE
+// of it the whole tint); and this frame's part between its texels, where the older part's
+// camera did not see. This frame's own pixels keep their colour.
+#define CLOUD_SOURCE_KEPT vec3(0.2, 1.0, 0.2)
+#define CLOUD_SOURCE_MOVED vec3(0.25, 0.45, 1.0)
+#define CLOUD_SOURCE_HELD vec3(1.0, 0.15, 0.1)
+#define CLOUD_SOURCE_FILLED vec3(1.0, 0.85, 0.1)
+#define CLOUD_SOURCE_SCALE 0.25
+
+// `color` (premultiplied) tinted by `tint`, as bright as its cloud and as opaque.
+vec4 cloudSourceTint(vec4 color, vec3 tint) {
+  float lum = color.a > 1e-3 ? dot(color.rgb / color.a, vec3(0.299, 0.587, 0.114)) : 0.0;
+  return vec4(tint * color.a * (0.35 + 0.65 * clamp(lum, 0.0, 1.0)), color.a);
+}
 
 ivec2 cloudPartOffset(int k) {
   return ivec2(k & 1, k >> 1);
@@ -92,7 +112,8 @@ void main() {
   int f = uCloudPhase;
   ivec2 own = pixel >> 1;
   if(k == f || (uCloudPartState[k].x > 0.5 && uCloudPartState[k].y < 0.5)) {
-    gl_FragColor = cloudPartTexel(k, own);
+    vec4 texel = cloudPartTexel(k, own);
+    gl_FragColor = uCloudDebug == 1 && k != f ? cloudSourceTint(texel, CLOUD_SOURCE_KEPT) : texel;
     gl_FragDepth = cloudPartDepth(k, own);
     return;
   }
@@ -110,6 +131,8 @@ void main() {
     high = max(high, texel);
   }
   float depth = near;
+  // How much this frame's part held the older part's colour; none where it was not taken.
+  float held = -1.0;
   if(uCloudPartState[k].x > 0.5) {
     // Where the cloud at that depth along this pixel's view lay in part k's view.
     float t = near < 1.0 ? exp2(near * CLOUD_DEPTH_RANGE) : CLOUD_PART_FAR;
@@ -130,7 +153,9 @@ void main() {
         // frame against 0.02 % (2026-11-11).
         vec4 moved = cloudPartAt(k, c);
         float shift = 2.0 * length(c - vec2(own));
+        vec4 filled = color;
         color = mix(moved, clamp(moved, low, high), smoothstep(CLOUD_PART_HELD.x, CLOUD_PART_HELD.y, shift));
+        held = length(color - moved);
         // Its depth as far from this frame's camera.
         float d = cloudPartNearest(k, c);
         depth = 1.0;
@@ -138,10 +163,28 @@ void main() {
           vec4 v = uCloudPartUnview[k] * vec4(ndc, 0.0, 1.0);
           vec3 p = normalize(v.xyz / v.w) * exp2(d * CLOUD_DEPTH_RANGE) + uCloudPartAt[k];
           depth = clamp(log2(max(length(p), 1.0)) / CLOUD_DEPTH_RANGE, 0.0, 0.999999);
+          // Where its own cloud lies in this frame's view: taken only where that is this pixel
+          // (CLOUD_PART_LANDS), else this frame's part between its texels. Moved by a depth not
+          // its own — at a cloud's edge, a clear pixel by the cloud beside it — it was the cloud
+          // as it lay in the older part's frame: moving along the view (a zoom), where only the
+          // depth moves a pixel, the older parts trailed the clouds' edges, the clamp to this
+          // frame's part no help where its texels hold both cloud and sky (2026-11-17).
+          vec4 now = uCloudPartView[f] * vec4(p, 1.0);
+          float off = 1e9;
+          if(now.w > 0.0)
+            off = length((now.xy / now.w * 0.5 + 0.5) * uCloudImageSize - 0.5 - vec2(pixel));
+          float keep = 1.0 - smoothstep(CLOUD_PART_LANDS.x, CLOUD_PART_LANDS.y, off);
+          color = mix(filled, color, keep);
+          if(keep < 0.5) {
+            depth = near;
+            held = -1.0;
+          }
         }
       }
     }
   }
+  if(uCloudDebug == 1)
+    color = held < 0.0 ? cloudSourceTint(color, CLOUD_SOURCE_FILLED) : cloudSourceTint(color, mix(CLOUD_SOURCE_MOVED, CLOUD_SOURCE_HELD, clamp(held / CLOUD_SOURCE_SCALE, 0.0, 1.0)));
   gl_FragColor = color;
   gl_FragDepth = depth;
 }

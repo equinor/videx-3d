@@ -106,10 +106,14 @@ export type SceneryCloudsTemporal = 'off' | 'still' | 'moving';
  * are made: `view` `'cost'` the march's iterations along each view (blue none, through green and
  * yellow, to red at the quality's most), `'unlit'` white, as opaque as they are, `'map'` a global
  * weather's map: each level's cover where the view meets the sea (low red, middle green, high
- * blue); `air` false leaves out the air's haze between them and the camera.
+ * blue), `'temporal'` where each pixel of an interleaved march ({@link SceneryCloudsTemporal})
+ * came from: this frame's march as it is, an older one's taken where it was green, moved to
+ * where its cloud lies now blue, turning red the more this frame's march held it, and this
+ * frame's between its pixels where the older one's camera did not see yellow; `air` false
+ * leaves out the air's haze between them and the camera.
  */
 export type SceneryCloudsDebug = {
-  view?: 'cost' | 'unlit' | 'map';
+  view?: 'cost' | 'unlit' | 'map' | 'temporal';
   air?: boolean;
   /** Being chosen (2026-11-09), then removed: a global weather's level looks as its place along its chain of types (true) or as the chain's first type. Default true */
   types?: boolean;
@@ -218,7 +222,7 @@ export type SceneryCloudsProps = {
    * how they reuse what they marched over the last frames (see
    * {@link SceneryCloudsTemporal}), instead of the quality's: the march costs a quarter as much
    * while the clock runs (`'still'`) or the camera moves too (`'moving'`). Default the quality's:
-   * `'still'`
+   * `'moving'` at low and medium, `'still'` at high and ultra
    */
   temporal?: SceneryCloudsTemporal;
 };

@@ -117,7 +117,7 @@ type CloudBenchArgs = {
   lightMap: boolean;
   weatherPaused: boolean;
   cloudRate: number;
-  debugView: 'none' | 'cost' | 'unlit';
+  debugView: 'none' | 'cost' | 'unlit' | 'temporal';
 };
 
 function weatherOf(args: CloudBenchArgs): WeatherState {
@@ -471,7 +471,7 @@ const meta = {
     },
     debugView: {
       control: { type: 'inline-radio' },
-      options: ['none', 'cost', 'unlit'],
+      options: ['none', 'cost', 'unlit', 'temporal'],
     },
   },
   args: {
