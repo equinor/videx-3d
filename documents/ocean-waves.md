@@ -25,11 +25,17 @@ GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
   by the golden angle, each holding the waves on its own grid, k = R·(2π/size)·(n, m), in its
   band of wavenumbers, up to 4 texels a wavelength of a 128² tile. A layer tiles exactly.
   `SEA_QUALITY` (`SeaQualitySpec`): `low` the three long layers at 64², `high` `medium` and the
-  detail octave, `ultra` 256² tiles and the octave.
-- **The pool**: each layer draws at most 256 waves, the strongest its spectrum asks for; each
-  has a fixed random amplitude factor (Rayleigh) and phase. A wave leaves the pool only once it
-  has eased out, and joins at no amplitude, so nothing pops. Each layer's targets are scaled so
-  its band keeps the spectrum's height variance.
+  detail octave, `ultra` `high` with 768 waves a layer (its 256² tiles with 384 waves until
+  2026-11-18 widened each band fourfold for 1.5 times the waves: a missing octave between the
+  layers, fewer and stronger waves, a smoother and more regular sea than `high`'s).
+- **The pool**: each layer draws at most 256 waves (`ultra` 768), the steepest its spectrum
+  asks for (amplitude × wavenumber, their slope); each has a fixed random amplitude factor
+  (Rayleigh) and phase. Chosen by height until 2026-11-18, the strongest were each band's
+  longest and its short end went undrawn: at 10 m/s nothing from 12.6 to 9.6 m, 2.5 to 1.5 m
+  nor 0.36 to 0.23 m, and 55–70 % of the bands' slope variance drawn; by slope each band is
+  drawn to its end, 61–74 %, at the same cost. A wave leaves the pool only once it has eased
+  out, and joins at no amplitude, so nothing pops. Each layer's targets are scaled so its band
+  keeps the spectrum's height variance.
 - **Over time**: a wave's length and direction never change, so neither does its speed. The
   wind only eases amplitudes toward the spectrum's, each over `response` of its own periods (3
   by default, a new wind sea in a minute or two; `SEA_RESPONSE_REALISTIC`, 900, hours). Phases

@@ -154,6 +154,24 @@ describe('SeaState', () => {
     ).toBeGreaterThan(0.9);
   });
 
+  it('draws each layer to the short end of its band, the steepest waves first', () => {
+    for (const quality of ['medium', 'ultra'] as const) {
+      const sea = new SeaState(wind(10), SEA_QUALITY[quality]);
+      for (const table of sea.layerTables()) {
+        let top = 0;
+        for (let i = 0; i < table.count; i++)
+          top = Math.max(
+            top,
+            Math.hypot(table.data[4 * i], table.data[4 * i + 1]),
+          );
+        expect(
+          top / table.layer.kMax,
+          `${quality}, ${table.layer.size} m`,
+        ).toBeGreaterThan(0.9);
+      }
+    }
+  });
+
   it('roughens its short waves in a gust and calms them in a lull, as the spectrum has them', () => {
     const factors = [0.25, 0.5, 1, 1.5, 2];
     const sea = new SeaState(wind(10), SEA_QUALITY.medium);

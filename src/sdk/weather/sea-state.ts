@@ -59,8 +59,8 @@ export const SEA_LAYERS_MEDIUM: readonly SeaLayerSpec[] = [
 /**
  * How much a sea draws of its waves: `low` its long layers on coarser tiles and no ripples,
  * `medium` down to waves a quarter of a metre long, `high` the detail octave below that, for
- * close up (to some 4 cm), `ultra` finer tiles still. `medium` is sized for a mid-range
- * laptop's integrated GPU.
+ * close up (to some 4 cm), `ultra` three times the waves a layer, each band drawn fuller.
+ * `medium` is sized for a mid-range laptop's integrated GPU.
  *
  * @group Weather
  */
@@ -85,11 +85,14 @@ export const SEA_QUALITY: Readonly<Record<SeaQuality, SeaQualitySpec>> = {
   },
   medium: { layers: SEA_LAYERS_MEDIUM, detail: false },
   high: { layers: SEA_LAYERS_MEDIUM, detail: true },
+  // High's bands with three times the waves: a band's spectrum sampled more finely. Its tiles
+  // at 256 texels (384 waves) widened each band fourfold for 1.5 times the waves, which left
+  // a missing octave between the layers and fewer, stronger waves (2026-11-18).
   ultra: {
-    layers: SEA_LAYERS_MEDIUM.map(({ size }) => ({
+    layers: SEA_LAYERS_MEDIUM.map(({ size, texels }) => ({
       size,
-      texels: 256,
-      waves: 384,
+      texels,
+      waves: 768,
     })),
     detail: true,
   },
@@ -163,6 +166,8 @@ function hash3(a: number, b: number, c: number): number {
 type Candidates = {
   kx: Float64Array;
   kz: Float64Array;
+  // the wavenumber, |(kx, kz)|
+  k: Float64Array;
   omega: Float64Array;
   // amplitude factor: Rayleigh, mean square 1, so the sea is not a regular sum
   rayleigh: Float64Array;
@@ -214,8 +219,10 @@ export type SeaStateStats = {
  * growing where it now blows and dying away where it no longer does. Phases follow the clock
  * alone, φ = φ₀ − ω·t, so two seas on the same clock and seed are the same sea.
  *
- * The pool of waves a layer draws is the strongest its spectrum asks for (and has); a wave
- * leaves only once it has eased out, and one asked for joins at no amplitude, so nothing pops.
+ * The pool of waves a layer draws is the steepest its spectrum asks for (and has): those with
+ * the most slope (amplitude × wavenumber), so each layer is drawn to its band's short end; a
+ * wave leaves only once it has eased out, and one asked for joins at no amplitude, so nothing
+ * pops.
  *
  * @group Weather
  */
@@ -324,6 +331,7 @@ export class SeaState {
     const s = Math.sin(layer.angle);
     const kx: number[] = [];
     const kz: number[] = [];
+    const ks: number[] = [];
     const rayleigh: number[] = [];
     const phase: number[] = [];
     for (let n = -reach; n <= reach; n++)
@@ -332,6 +340,7 @@ export class SeaState {
         if (k < layer.kMin || k >= layer.kMax || k === 0) continue;
         kx.push(dk * (c * n - s * m));
         kz.push(dk * (s * n + c * m));
+        ks.push(k);
         const u = Math.max(hash3(layerIndex * 7919 + n, m, this.seed), 1e-12);
         // |a| of a complex Gaussian: Rayleigh, E[r²] = 1.
         rayleigh.push(Math.sqrt(-Math.log(u)));
@@ -341,11 +350,11 @@ export class SeaState {
       }
     const count = kx.length;
     const omega = new Float64Array(count);
-    for (let i = 0; i < count; i++)
-      omega[i] = Math.sqrt(SEA_G * Math.hypot(kx[i], kz[i]));
+    for (let i = 0; i < count; i++) omega[i] = Math.sqrt(SEA_G * ks[i]);
     return {
       kx: Float64Array.from(kx),
       kz: Float64Array.from(kz),
+      k: Float64Array.from(ks),
       omega,
       rayleigh: Float64Array.from(rayleigh),
       phase: Float64Array.from(phase),
@@ -396,19 +405,22 @@ export class SeaState {
         : 0;
   }
 
-  // The strongest targets this layer has room for, strongest first: sorted as the targets change.
+  // The steepest targets this layer has room for, steepest first: sorted as the targets change.
   private wanted(l: number): number[] {
     return this.orders[l];
   }
 
-  // The strongest targets this layer has room for join; those no longer among them ease out.
+  // The steepest targets this layer has room for join (amplitude × wavenumber, their slope);
+  // those no longer among them ease out. Chosen by height, the strongest were the band's
+  // longest, and its short end went undrawn: no wave in the top third of an octave or more of
+  // each layer's band (2026-11-18), which slopes show.
   private select(l: number, spectrum: SeaSpectrum): void {
     const layer = this.layers[l];
     const cand = this.candidates[l];
     const pool = this.pools[l];
     const order = Array.from(cand.target.keys())
       .filter(i => cand.target[i] > 0)
-      .sort((a, b) => cand.target[b] - cand.target[a])
+      .sort((a, b) => cand.target[b] * cand.k[b] - cand.target[a] * cand.k[a])
       .slice(0, layer.waves);
     this.orders[l] = order;
     const wanted = new Set(order);
