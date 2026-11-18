@@ -61,10 +61,12 @@ background, environment and light probe alike.
 
 ## Sun, moon and stars
 
-The sun is a disc (`size`, an angular radius in degrees) with a broad halo (`glow`, full
+The sun is a disc (`size`, an angular radius in degrees; default 0.267, the real sun's) with
+a broad halo (`glow`, full
 down to about 3° below the horizon and gone with the twilight by 12°), a
-bright glare hugging the disc (`glare`, default 0.5) and, optionally, rays around it
-(`rays`, default 0). `shimmer: true` lets the rays brighten and fade slowly, each on
+bright glare hugging the disc (`glare`, default 0.5: its strength at the disc's edge,
+falling as the inverse square of the angle, `skyGlare`) and, optionally, rays around it
+(`rays`, default 0), both measured in the disc's radius. `shimmer: true` lets the rays brighten and fade slowly, each on
 its own cycle. Its colour and the daylight follow the elevation: red-orange on the
 horizon, orange a few degrees up and near white from 25°, and the daylight gone below
 civil twilight (−6°). At night the sky and the sea keep 4.5% of their light
@@ -79,10 +81,41 @@ its light is red), and a faint pink belt rises opposite; `twilight` scales it al
 1, 0 for none). The sea reflects it, with a broad glitter path under the low sun
 (`OceanMaterial.sunGlintSpread`), and the bakes see it.
 
+The sun and the moon are their real size by default, both about half a degree across, as
+they are from the Earth (in an eclipse the moon just covers the sun). In the default 60°
+camera that is small: a screen at a normal distance fills only some 20–27° of the eye's
+view, so everything in a 60° view, the moon too, shows a little over twice smaller than it
+would there; a 25–35° camera shows things about as big as the eye would. `discScale` on the
+`Scenery` (default 1) draws both discs, glare and rays with them, that many times bigger, as
+games do. Until 2026-11-18 their sizes were 0.75° and 0.6° by default, picked by eye, about
+2.5 times the real ones.
+
 `moon` (default on) is a full moon opposite the sun, so it is up at night. Its face is the
 real one, from an albedo map of the whole moon (see below), its north toward its axis on the
 star sphere: within 1.5° of the ecliptic's pole (`SKY_MOON_AXIS`), so it tilts as the stars
-turn. The sky has
+turn. Its disc is the real moon's size (`size`, an angular radius in degrees): 0.259 by
+default, its mean, and with an observer as far as it then is (`skyMoonSize`, 0.245 to
+0.279). It is seen through the air: the air's own light in front of it, and its light as
+the air leaves it (`skyThroughAir`: the air mass the view crosses, by real air's optical
+depth, Rayleigh, a moderately hazy sea air and ozone, about 0.3 magnitudes per air mass).
+That yellows and reddens it, cream at 10°, orange at 3°, red on the horizon, and dims it,
+to a quarter at 10°, 2% at 3° and a twenty-thousandth on the horizon. A screen shows the
+night's range from the moon to the sky, some 13 magnitudes, in about 40:1, so the dimming is
+shown as its cube root (`SKY_MOON_CONTRAST`; about as the eye judges brightness): 0.64 at
+10°, 0.27 at 3°, 0.08 at 1°, 0.03 on the horizon (`skyMoonThroughAir`). A low moon is a
+dull orange, and a setting one fades into the haze, the sooner the brighter the sky (in
+twilight before it reaches the horizon). Its glare is the sun's (`skyGlare`), `glow`
+(default 0.3) at the disc's edge, by its light at its phase (a Lambert sphere's, as
+`skyMoonShine` gives the moonlight) and dimmed with it, once it is dark (with the brighter
+stars, sun below −7° to −9°): in twilight it is lost in the sky. A reflected light glares
+as an emitted one does: a full moon at night glares about as far out as the sun by day, as
+its light over the sky behind it is about as much (some 25 times, by Stiles and Holladay's
+glare; the sun's some 17), and a crescent far less. The moonlight on the scene is seen by
+night eyes, without colour: dimmed as the disc is, in the moon's own colour
+(`skyMoonColor`). By day the disc is grey, its colour's luminance, so the blue it shows is
+the sky's in front of it, and its dark side does not show. Until 2026-11-18 the disc kept
+its own blue-white at any height and was drawn over the sky by night, by day added over
+the sky's blue; its glow was a flat halo some 12° across, from civil twilight. The sky has
 ONE directional light: the sun's while it is up, the moon's once the sun is well down
 (it fades in between −6° and −12°). `stars` (default on) come out once it is dark. They
 are no real star map, but they turn as the real ones do: about the celestial pole, which
@@ -1005,6 +1038,7 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `scenery-material.ts` | `SceneryMaterial`: the sky's own layer, the uniform objects every layer shares, and the switches they compile with |
 | `sky-star-catalogue.ts`, `sky-moon.ts`, `textures/moon.jpg` | the observer's stars as the shader's textures, and the moon's albedo map (each loaded in its own chunk) |
 | `scenery-baker.ts` | bakes the environment and light probe per zone (internal) |
+| `shaders/scenery-bake-fragment.glsl` | what the bakes film in each zone: the air, the water, the subsurface |
 | `scenery-stage.ts`, `SceneryStage.tsx` | the stage's geometry and materials |
 | `SceneryStageReliefTiles.tsx`, `scenery-relief-tiles.ts`, `SceneryStageReliefOverview.tsx`, `scenery-relief.ts`, `scenery-relief-atlas.ts` | the relief: its tiles, and its overview past the far plane, read from the same tiles through an index (see [tiles.md](./tiles.md)) |
 | `scenery-defs.ts`, `generators/scenery-relief-tile-generator.ts` | the `sceneryReliefTile` generator: the relief's tiles, for the stage, its overview and the `Minimap` |
@@ -1037,7 +1071,6 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
   registered through `SceneryOceanState.stage`; the bakes for their own program and the PMREM
   prefilter.
   The 1 × 1 target it binds for `'offscreen'` is kept on the renderer itself: kept in a
-| `shaders/scenery-bake-fragment.glsl` | what the bakes film in each zone: the air, the water, the subsurface |
   `WeakMap` keyed by the renderer, its framebuffer led back to the renderer (its context, its
   canvas, three's context-lost listener) and no unmounted `Canvas`'s renderer was let go.
 - Letting go goes through `releaseMaterial` (same file, internal) wherever a material is

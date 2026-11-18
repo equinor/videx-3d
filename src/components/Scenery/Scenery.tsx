@@ -112,6 +112,8 @@ import {
   SkyMoon,
   skyMoonlight,
   skyMoonShine,
+  skyMoonColor,
+  skyMoonSize,
   SkyObserver,
   skyObserverValid,
   SceneryOceanProps,
@@ -264,6 +266,13 @@ export type SceneryProps = {
   moon?: boolean | SkyMoon;
   /** stars at night, and with an `observer` the planets (see {@link SkyStars}). Default true */
   stars?: boolean | SkyStars;
+  /**
+   * How many times bigger than their `size` the sun's and the moon's discs are drawn, glare
+   * and rays with them, both alike, as games do. Default 1: their real size, half a degree
+   * across, which a wide camera shows small (a 60° view fills about 25° of the eye's on a
+   * screen, so everything in it, the moon too, shows a little over twice smaller than there).
+   */
+  discScale?: number;
   /** the air thinning with height, and hazing the far sea (see {@link SkyAir}). Default true */
   air?: boolean | SkyAir;
   /**
@@ -398,6 +407,7 @@ export const Scenery = ({
   sunLight = true,
   moon = true,
   stars = true,
+  discScale = sceneryDefaults.discScale,
   air = true,
   hdr,
   renderOrder = 1e9,
@@ -469,7 +479,11 @@ export const Scenery = ({
   const moonIntensity = moonOptions?.intensity ?? moonDefaults.intensity;
   const moonHex = toHex(moonOptions?.color ?? moonDefaults.color);
   const moonColor = useMemo(() => new Color(moonHex), [moonHex]);
-  const moonSize = moonOptions ? (moonOptions.size ?? moonDefaults.size) : 0;
+  // The real moon's size: with an observer, as far as it then is.
+  const moonSize = moonOptions
+    ? (moonOptions.size ??
+      (ephemeris ? skyMoonSize(ephemeris.moon.distance) : moonDefaults.size))
+    : 0;
   const moonGlow = moonOptions ? (moonOptions.glow ?? moonDefaults.glow) : 0;
   const starsOptions: SkyStars | null = stars === true ? {} : stars || null;
   const starBrightness = starsOptions
@@ -878,15 +892,23 @@ export const Scenery = ({
       moonlight:
         skyMoonlight(elevation) * (observed ? skyMoonShine(observed) : 1),
       moonPhase: observed?.illumination ?? 1,
+      // Opposite the sun without an observer.
+      moonElevation: observed ? observed.elevation : -elevation,
     };
   }, [azimuth, elevation, ephemeris, upX, upY, upZ, northX, northY, northZ]);
   const moonShine = ephemeris ? skyMoonShine(ephemeris.moon) : 1;
+  // Its light through the air: dimmer as it nears the horizon, in its own colour (seen by
+  // night eyes, as the sky's glow about it).
+  const moonLightColor = useMemo(
+    () => skyMoonColor(moonColor, state.moonElevation),
+    [moonColor, state.moonElevation],
+  );
 
   // One directional light, so nothing recompiles at dusk: the sun's fades out by
   // twilight, and only then does the moon's fade in.
   const byMoon = moonOptions !== null && state.daylight <= 0;
   const lightDirection = byMoon ? state.moonDirection : state.sunDirection;
-  const lightColor = byMoon ? moonColor : state.sunColor;
+  const lightColor = byMoon ? moonLightColor : state.sunColor;
   const lightIntensity = byMoon
     ? moonIntensity * state.moonlight
     : sunIntensity * state.daylight;
@@ -1157,14 +1179,14 @@ export const Scenery = ({
     material.daylight = state.daylight;
     material.twilight = state.twilight;
     material.moonlight = state.moonlight;
-    material.sunSize = sunSize;
+    material.sunSize = sunSize * discScale;
     material.sunGlow = sunGlow;
     material.sunTwilight = sunTwilight;
     material.sunGlare = sunGlare;
     material.sunRays = sunRays;
     material.moonDirection = state.moonDirection;
     material.moonColor = moonColor;
-    material.moonSize = moonSize;
+    material.moonSize = moonSize * discScale;
     material.moonGlow = moonGlow;
     material.moonPhase = state.moonPhase;
     // Only an observer's moon can be up by day; the one opposite the sun never is.
@@ -1229,6 +1251,7 @@ export const Scenery = ({
     moonColor,
     moonSize,
     moonGlow,
+    discScale,
     starBrightness,
     starShare,
     starLatitude,

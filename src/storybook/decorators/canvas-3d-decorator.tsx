@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { Color } from 'three';
 import { PI2 } from '../../sdk';
 import { CameraManager } from '../../sdk/managers/CameraManager';
+import { videx3dGlobe } from '../debug/globe';
+import { profileFrames } from '../debug/profile';
 import {
   getStoryArgs,
   registerVidex3d,
@@ -11,8 +13,6 @@ import {
   setStoryArgs,
   waitForStableScene,
 } from '../debug/videx3d';
-import { profileFrames } from '../debug/profile';
-import { videx3dGlobe } from '../debug/globe';
 
 /**
  * Publishes `window.videx3d` for Storybook-driven inspection.
@@ -80,7 +80,7 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
           1 * scale,
           -1 * scale,
         ],
-        fov: 60,
+        fov: Number.isFinite(parameters.fov) ? parameters.fov : 60,
       }}
       dpr={Math.min(2, pixelRatio || devicePixelRatio)}
       // No tone mapping, set once: as a `gl` prop it would undo a story's own on every re-render.

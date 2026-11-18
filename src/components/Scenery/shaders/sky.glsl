@@ -57,6 +57,10 @@ uniform float uSkyOceanTrench;
 #define SKY_MOON_DARK 0.75
 // How bright the moon shows by day, over the sky behind it.
 #define SKY_MOON_DAY 0.35
+// How much of the air's dimming of the moon the screen shows, as a power: the cube root. A
+// screen shows the night's range from the moon to the sky, some 13 magnitudes, in about 40:1;
+// and the eye's brightness goes about as the cube root of the light (Stevens).
+#define SKY_MOON_CONTRAST (1.0 / 3.0)
 // The moon's axis on the star sphere (uSkyStarFrame's): within 1.5° of the ecliptic's pole
 // (right ascension 18h, declination 66.56°).
 #define SKY_MOON_AXIS vec3(0.0, -0.39777, 0.91748)
@@ -109,6 +113,15 @@ vec3 skySunDiscRadiance(SkyLight seen) {
 
 uniform vec3 uSkySunGlare; // glare, rays, and the rays' shimmer phase in radians
 
+// The glare about a bright disc of angular radius `size`, `angle` from its centre, over its
+// strength at the disc's edge: light scattered in the eye (and the air) falls as the inverse
+// square of the angle from any bright source, reflected or not (Stiles and Holladay); full
+// over the disc. The sun's and the moon's alike.
+float skyGlare(float angle, float size) {
+  float r = max(angle, size) / max(size, 1e-6);
+  return 1.0 / (r * r);
+}
+
 // A ring of `count` rays about the sun: `around` the angle about it, `r` the distance from
 // it in disc radii, `pixel` a pixel across the rays as a fraction of their spacing.
 float skySunRayRing(float around, float r, float pixel, float count, float seed) {
@@ -126,13 +139,13 @@ float skySunRayRing(float around, float r, float pixel, float count, float seed)
   return strength * (width / w) * exp(-off * off / (w * w)) * exp(-(r - 1.0) / reach);
 }
 
-// The glare hugging the sun's disc, and its rays, `angle` from its centre (`aa` that
-// angle's change over a pixel).
+// The glare hugging the sun's disc (skyGlare), and its rays, `angle` from its centre (`aa`
+// that angle's change over a pixel).
 float skySunGlare(vec3 dir, float angle, float aa) {
-  float r = max(angle, uSkySunSize) / uSkySunSize;
-  float glare = uSkySunGlare.x / (r * r);
+  float glare = uSkySunGlare.x * skyGlare(angle, uSkySunSize);
   if(uSkySunGlare.y <= 0.0)
     return glare;
+  float r = max(angle, uSkySunSize) / uSkySunSize;
   // About the sun from its upper side, so the rays turn with neither the view nor the sun.
   vec3 side = normalize(cross(uSkySunDirection, abs(dot(uSkySunDirection, uSkyUp)) < 0.999 ? uSkyUp : uSkyNorth));
   vec3 lift = cross(side, uSkySunDirection);
@@ -250,6 +263,27 @@ float skyMoonAlbedo(vec3 normal, float aa) {
   return textureLod(uSkyMoonMap, uv, log2(max(aa * texels, 1.0))).r / SKY_MOON_MEAN;
 }
 
+// The moon's light as it reaches the eye through the air, over its light high up: by the air the
+// view crosses from the horizon as seen from `height` (skyThroughAir), none from space. Its hue
+// as the air leaves it, at the moon colour's brightest channel, dimmed by the air's dimming to
+// SKY_MOON_CONTRAST: to 0.64 at 10°, 0.27 at 3°, 0.08 at 1° and 0.03 on the horizon, so a
+// setting moon fades into the haze. On the CPU, scenery-model.ts's skyThroughAir.
+vec3 skyMoonThroughAir(float height) {
+  float sine = skyOverHorizon(dot(uSkyMoonDirection, globeCameraLook()), skyHorizon(uSkyMoonDirection));
+  vec3 through = mix(skyThroughAir(sine), vec3(1.0), skySpace(uSkyMoonDirection, height));
+  vec3 seen = uSkyMoonColor * through;
+  float peak = max(uSkyMoonColor.r, max(uSkyMoonColor.g, uSkyMoonColor.b));
+  float dimmed = pow(dot(through, vec3(0.2126, 0.7152, 0.0722)), SKY_MOON_CONTRAST);
+  return through * (peak * dimmed / max(max(seen.r, max(seen.g, seen.b)), 1e-12));
+}
+
+// The moon's light at its phase over a full moon's: a Lambert sphere's, as scenery-model.ts's
+// skyMoonShine gives the moonlight.
+float skyMoonPhaseLight() {
+  float phase = acos(clamp(2.0 * uSkyMoonPhase - 1.0, -1.0, 1.0));
+  return (sin(phase) + (PI - phase) * cos(phase)) / PI;
+}
+
 // The moon and the stars over `color`, as night falls, and by day where the sky is space, or
 // its air `gone` (over the open hollow, hollowAirGone); the moon by day too, while it can be
 // up. ⚠️ Derivatives.
@@ -279,10 +313,8 @@ vec3 skyNight(vec3 color, vec3 dir, float blend, float gone) {
   float albedo = 1.0;
   if(shown > 0.0)
     albedo = skyMoonAlbedo(normal, aa);
-  // The dark side faintly lit by the Earth, most near new moon.
-  float face = (lit + SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * (1.0 - lit)) * albedo;
-  // The air's glow about it: none where the view crosses no air.
-  float glow = uSkyMoonGlow * uSkyMoonPhase * pow(max(cosMoon, 0.0), 200.0) * (1.0 - space);
+  // Its glare, the sun's (skyGlare), by its light at its phase.
+  float glare = uSkyMoonGlow * skyMoonPhaseLight() * skyGlare(angle, uSkyMoonSize);
   // The stars come out late, once it is dark, and fade low down through more air.
   float airmass = 1.0 / (max(y, 0.0) + 0.05);
   vec3 starDir = uSkyStarFrame * dir;
@@ -299,15 +331,24 @@ vec3 skyNight(vec3 color, vec3 dir, float blend, float gone) {
     stars = vec3(uSkyStars.x * procedural * night * night * night);
   }
   stars *= exp(-0.25 * (airmass - 1.0));
-  vec3 air = color + uSkyMoonColor * glow * night * above;
+  // Its light through the air between: yellowing, then reddening and fading as it nears the
+  // horizon; its glare with it, once it is dark (in twilight it is lost in the sky).
+  vec3 through = skyMoonThroughAir(height);
+  vec3 moon = uSkyMoonColor * through;
+  float dark = skyStarSeen(2.0, sunElevation);
+  vec3 front = color;
+  vec3 air = front + moon * glare * dark * above;
   color = air + stars * uSkySunDisc * above;
-  // By night it hides the stars behind it, its dark side a shade darker than the air in
-  // front of it once they are out (in twilight it is lost in the sky); by day it is a
-  // pale disc over the sky.
-  float darkSide = mix(1.0, SKY_MOON_DARK, skyStarSeen(2.0, sunElevation));
-  vec3 dark = air * darkSide + uSkyMoonColor * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * albedo;
-  color = mix(color, mix(dark, uSkyMoonColor * albedo, lit), shown * night);
-  return color + uSkyMoonColor * face * shown * uSkyMoonDay * (1.0 - night) * SKY_MOON_DAY;
+  // By night it hides the stars behind it: its lit side seen through the air, the air's own
+  // light in front of it and its own; its dark side faintly lit by the Earth (most near new
+  // moon) and a shade darker than the air in front of it once they are out (in twilight it is
+  // lost in the sky). By day it is a pale disc over the sky, grey as the moon is (its colour's
+  // luminance): the sky in front of it gives it the sky's blue, and hides its dark side.
+  float darkSide = mix(1.0, SKY_MOON_DARK, dark);
+  vec3 shadow = air * darkSide + moon * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * albedo;
+  color = mix(color, mix(shadow, front + moon * albedo, lit), shown * night);
+  vec3 grey = vec3(dot(uSkyMoonColor, vec3(0.2126, 0.7152, 0.0722))) * through;
+  return color + grey * lit * albedo * shown * uSkyMoonDay * (1.0 - night) * SKY_MOON_DAY;
 }
 
 #if defined(SKY_ABYSS) || defined(SKY_OCEAN)

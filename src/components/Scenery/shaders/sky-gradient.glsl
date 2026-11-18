@@ -75,6 +75,11 @@ uniform vec4 uSkyStageFlat; // the disc about the scene the sea stays flat over:
 #define SKY_SUN_HORIZON vec3(1.0, 0.1559, 0.0331)
 #define SKY_SUN_LOW vec3(1.0, 0.3763, 0.0844)
 #define SKY_SUN_HIGH vec3(1.0, 0.9216, 0.8070)
+// The air's optical depth per air mass in red, green and blue (about 605, 540 and 455 nm):
+// Rayleigh, a moderately hazy sea air (aerosol optical depth 0.15 at 550 nm) and ozone. About
+// 0.3 magnitudes per air mass in green, as at sea level (skyThroughAir; scenery-model.ts's
+// SKY_AIR_DEPTH).
+#define SKY_AIR_DEPTH vec3(0.24, 0.29, 0.41)
 
 // The camera's height over the air's ground, over the globe (globeCameraHeight).
 float skyCameraHeight() {
@@ -127,6 +132,16 @@ vec3 skySunColorAt(float sine) {
   if(elevation < 6.0)
     return mix(SKY_SUN_HORIZON, SKY_SUN_LOW, smoothstep(-2.0, 6.0, elevation));
   return mix(SKY_SUN_LOW, SKY_SUN_HIGH, smoothstep(6.0, 25.0, elevation));
+}
+
+// Light through the air from an elevation whose sine is `sine`, over that from overhead: by the
+// air mass it crosses (Kasten and Young's). At 10° a quarter of it is left, cream; at 3° 2%,
+// orange; on the horizon a twenty-thousandth, red. The GLSL twin of scenery-model.ts's
+// skyThroughAir.
+vec3 skyThroughAir(float sine) {
+  float s = clamp(sine, 0.0, 1.0);
+  float mass = 1.0 / (s + 0.50572 * pow(degrees(asin(s)) + 6.07995, -1.6364));
+  return exp(-SKY_AIR_DEPTH * max(mass - 1.0, 0.0));
 }
 
 // How lit what lies at `p` is, seen from high up: by the sun over its own horizon there,

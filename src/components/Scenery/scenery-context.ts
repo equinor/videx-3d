@@ -20,6 +20,8 @@ export type SceneryState = {
   moonlight: number;
   /** share of the moon's disc lit, 0 (new) to 1 (full); always 1 without an observer */
   moonPhase: number;
+  /** the moon's elevation over the level, degrees: below 0 under the horizon */
+  moonElevation: number;
 };
 
 export const SceneryContext = createContext<SceneryState | null>(null);

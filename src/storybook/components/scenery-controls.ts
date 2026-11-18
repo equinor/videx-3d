@@ -128,6 +128,8 @@ export type SceneryArgs = {
   moonIntensity: number;
   stars: boolean;
   starBrightness: number;
+  /** the sun's and the moon's discs, this many times their real size */
+  discScale: number;
   // Sea
   skyWater: boolean;
   skySeabed: boolean;
@@ -279,6 +281,7 @@ export const sceneryArgs: SceneryArgs = {
   moonIntensity: sceneryDefaults.moon.intensity,
   stars: true,
   starBrightness: sceneryDefaults.stars.brightness,
+  discScale: sceneryDefaults.discScale,
   skyWater: true,
   skySeabed: true,
   waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
@@ -642,6 +645,7 @@ export const sceneryPropsFromArgs = (args: SceneryArgs, weather = false) =>
     observer: skyObserverFromArgs(args),
     moon: skyMoonFromArgs(args),
     stars: skyStarsFromArgs(args),
+    discScale: args.discScale,
     air:
       args.air &&
       (weather ? {} : { haze: args.airHaze, hazeHeight: args.airHazeHeight }),
@@ -848,9 +852,9 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   sunSize: range(
     0.1,
     5,
-    0.05,
+    0.01,
     SUN,
-    'Angular radius of the sun disc, in degrees.',
+    'Angular radius of the sun disc, in degrees (the real sun\u2019s 0.267).',
   ),
   sunGlow: range(0, 2, 0.05, SUN, 'Strength of the halo around the sun.'),
   sunGlare: range(
@@ -1053,6 +1057,13 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     ...range(0, 2, 0.05, SKY, 'Brightness of the stars.'),
     if: { arg: 'stars' },
   },
+  discScale: range(
+    1,
+    5,
+    0.1,
+    SKY,
+    'The sun\u2019s and the moon\u2019s discs, glare and all, this many times their real size, as games do. 1 is real: half a degree across, small in a wide view.',
+  ),
   skyWater: toggle(
     SEA,
     'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',

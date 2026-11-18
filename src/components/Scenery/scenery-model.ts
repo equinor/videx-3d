@@ -37,7 +37,7 @@ export type SkySun = {
   elevation?: number;
   /** intensity of the sky's directional light in full daylight. Default 1.5 */
   intensity?: number;
-  /** angular radius of the visible disc, in degrees. Default 0.75 */
+  /** angular radius of the visible disc, in degrees. Default 0.267, the real sun's */
   size?: number;
   /** strength of the halo around the sun. Default 0.5 */
   glow?: number;
@@ -61,9 +61,9 @@ export type SkyMoon = {
   intensity?: number;
   /** its colour, and its light's. Default `#c4cfdf` */
   color?: ColorRepresentation;
-  /** angular radius of the visible disc, in degrees. Default 0.6 */
+  /** angular radius of the visible disc, in degrees. Default the real moon's: 0.259 at its mean distance, or with an observer as far as it then is (0.245 to 0.279) */
   size?: number;
-  /** strength of the halo around the moon. Default 0.3 */
+  /** strength of its glare at night, at the disc's edge, as the sun's `glare` (by its phase's light, and dimmed with it by the air). Default 0.3 */
   glow?: number;
 };
 
@@ -648,14 +648,14 @@ export const sceneryDefaults = {
     azimuth: 200,
     elevation: 35,
     intensity: 1.5,
-    size: 0.75,
+    size: 0.267,
     glow: 0.5,
     glare: 0.5,
     rays: 0,
     shimmer: false,
     twilight: 1,
   },
-  moon: { intensity: 0.3, color: '#c4cfdf', size: 0.6, glow: 0.3 },
+  moon: { intensity: 0.3, color: '#c4cfdf', size: 0.259, glow: 0.3 },
   stars: { brightness: 1, density: 0.5, latitude: 60 },
   clouds: {
     scale: 1,
@@ -676,6 +676,7 @@ export const sceneryDefaults = {
   intensity: 1,
   horizonBlend: 0.04,
   globe: true,
+  discScale: 1,
   abyss: {
     level: 0,
     colors: { ceiling: '#2a2d32', horizon: '#4a5058', depth: '#0e1013' },
@@ -773,6 +774,16 @@ export const SKY_HDR_SUN_RADIANCE = 16;
 const SUN_HORIZON = new Color('#ff6e33');
 const SUN_LOW = new Color('#ffa552');
 const SUN_HIGH = new Color('#fff6e8');
+/**
+ * The air's optical depth per air mass in red, green and blue (about 605, 540 and 455 nm):
+ * Rayleigh, a moderately hazy sea air (aerosol optical depth 0.15 at 550 nm) and ozone.
+ * `SKY_AIR_DEPTH` in `sky-gradient.glsl`.
+ */
+const SKY_AIR_DEPTH = [0.24, 0.29, 0.41] as const;
+/** How much of the air's dimming of the moon a screen shows: its cube root (`SKY_MOON_CONTRAST` in `sky.glsl`). */
+const SKY_MOON_CONTRAST = 1 / 3;
+/** The moon's mean radius, in km. */
+const MOON_RADIUS_KM = 1737.4;
 
 /**
  * Daylight for a sun elevation in degrees: 0 below civil twilight (-6), 1 from 10 up.
@@ -947,4 +958,51 @@ export function skySunColor(elevation: number, target = new Color()) {
   return target
     .copy(SUN_LOW)
     .lerp(SUN_HIGH, MathUtils.smoothstep(elevation, 6, 25));
+}
+
+/**
+ * Light through the air from an `elevation` in degrees, over that from overhead: by the air
+ * mass it crosses (Kasten and Young's). At 10° a quarter of it is left, cream; at 3° 2%,
+ * orange; on the horizon a twenty-thousandth, red. The twin of `skyThroughAir` in
+ * `sky-gradient.glsl`.
+ */
+export function skyThroughAir(elevation: number, target = new Color()) {
+  const degrees = MathUtils.clamp(elevation, 0, 90);
+  const mass =
+    1 /
+    (Math.sin(MathUtils.degToRad(degrees)) +
+      0.50572 * Math.pow(degrees + 6.07995, -1.6364));
+  const through = Math.max(mass - 1, 0);
+  return target.setRGB(
+    Math.exp(-SKY_AIR_DEPTH[0] * through),
+    Math.exp(-SKY_AIR_DEPTH[1] * through),
+    Math.exp(-SKY_AIR_DEPTH[2] * through),
+  );
+}
+
+/**
+ * The moon's `color` as its light reaches the field from an `elevation` in degrees: dimmed by
+ * the air as its disc is (the cube root of {@link skyThroughAir}'s luminance: 0.64 at 10°,
+ * 0.27 at 3°), but not tinted: what moonlight lights is seen by night eyes, without colour.
+ * Its disc takes the air's hue too (`skyMoonThroughAir` in `sky.glsl`).
+ */
+export function skyMoonColor(
+  color: Color,
+  elevation: number,
+  target = new Color(),
+) {
+  skyThroughAir(elevation, target);
+  const dimmed = Math.pow(
+    0.2126 * target.r + 0.7152 * target.g + 0.0722 * target.b,
+    SKY_MOON_CONTRAST,
+  );
+  return target.copy(color).multiplyScalar(dimmed);
+}
+
+/**
+ * The moon's angular radius in degrees seen from `distance` km: 0.245 at its farthest, 0.279
+ * at its nearest, 0.259 at its mean distance (the default `moon.size`).
+ */
+export function skyMoonSize(distance: number) {
+  return MathUtils.radToDeg(Math.asin(Math.min(MOON_RADIUS_KM / distance, 1)));
 }

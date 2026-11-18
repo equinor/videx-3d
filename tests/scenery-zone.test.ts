@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { Color } from 'three';
 import {
   skyStarFrame,
   scenerySubsurfaceColors,
   scenerySubsurfaceLightPosition,
+  skyMoonColor,
+  skyMoonSize,
   skySunColor,
+  skyThroughAir,
   skyTwilight,
   sceneryWaterDimming,
   sceneryLidOverCamera,
@@ -120,6 +124,57 @@ describe('skySunColor', () => {
     const below = skySunColor(5.999);
     const above = skySunColor(6.001);
     expect(Math.abs(below.g - above.g)).toBeLessThan(1e-3);
+  });
+});
+
+describe('skyThroughAir', () => {
+  it('leaves all of it overhead, a quarter at 10°, 2% at 3°, reddening it the lower', () => {
+    const overhead = skyThroughAir(90);
+    expect([overhead.r, overhead.g, overhead.b]).toEqual([1, 1, 1]);
+    const luminance = (c: Color) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    // About 0.3 magnitudes per air mass, as at sea level; a low sun's colour temperatures:
+    // about 4000 K at 10°, 2000 K on the horizon.
+    const ten = skyThroughAir(10);
+    expect(luminance(ten)).toBeGreaterThan(0.2);
+    expect(luminance(ten)).toBeLessThan(0.35);
+    expect(ten.g / ten.r).toBeGreaterThan(0.75);
+    expect(ten.b / ten.r).toBeGreaterThan(0.4);
+    const three = skyThroughAir(3);
+    expect(luminance(three)).toBeGreaterThan(0.01);
+    expect(luminance(three)).toBeLessThan(0.04);
+    const horizon = skyThroughAir(0);
+    expect(horizon.g / horizon.r).toBeLessThan(0.3);
+    expect(horizon.b / horizon.r).toBeLessThan(0.01);
+    let last = -1;
+    let worst = Infinity;
+    for (let elevation = 0; elevation <= 85; elevation += 0.5) {
+      const b = skyThroughAir(elevation).b;
+      worst = Math.min(worst, b - last);
+      last = b;
+    }
+    expect(worst).toBeGreaterThan(0);
+  });
+});
+
+describe('skyMoonColor', () => {
+  it('keeps the moon’s colour, dimmed as the screen shows the air’s dimming', () => {
+    const color = new Color(0.55, 0.63, 0.74);
+    const high = skyMoonColor(color, 90);
+    expect(high.r).toBeCloseTo(color.r, 6);
+    expect(high.b).toBeCloseTo(color.b, 6);
+    const low = skyMoonColor(color, 3);
+    expect(low.r / low.b).toBeCloseTo(color.r / color.b, 6);
+    expect(low.g / low.b).toBeCloseTo(color.g / color.b, 6);
+    // The cube root of 2%.
+    expect(low.r / high.r).toBeCloseTo(0.27, 1);
+  });
+});
+
+describe('skyMoonSize', () => {
+  it('is the real moon’s angular radius at its mean, nearest and farthest', () => {
+    expect(skyMoonSize(384400)).toBeCloseTo(0.259, 3);
+    expect(skyMoonSize(356500)).toBeCloseTo(0.279, 3);
+    expect(skyMoonSize(406700)).toBeCloseTo(0.245, 3);
   });
 });
 
