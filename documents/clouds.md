@@ -737,7 +737,9 @@ them, and the same cloud as opaque near and far.
 
 **The light** (`cloudLight`, `cloudLit`; 2026-11-11). Lit where each point lies: the sun's colour
 and daylight for its elevation there (so the night side is dark and the terminator warm), the moon
-by night, and the sky above and the sea below as ambient. The optical depth toward the light is
+by night (at its phase's light, a Lambert sphere's, and dimmed by the air toward it as the scene's
+moonlight is, `skyMoonDimmed`, since 2026-11-18; before, by its share lit and undimmed to the
+horizon), and the sky above and the sea below as ambient. The optical depth toward the light is
 read through the point's own level in `uCloudLightSamples` stretches (a uniform, so Direct3D keeps
 the loop a loop): the first a cloud's skin (200 m, `CLOUD_LIGHT_SKIN`), the rest growing
 geometrically up to the level's top or six clouds' sizes (`CLOUD_LIGHT_REACH`), each read at its

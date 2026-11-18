@@ -34,15 +34,17 @@ import { SceneryStoryRendering } from '../../storybook/components/scenery-story-
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import { SKY_PRESETS, type SkyPreset } from '../../sdk/weather/weather';
 import { GeoRelief } from '../Layers/GeoRelief';
 import { Tanker } from '../Tanker/Tanker';
 import { World } from '../World/World';
 import { Scenery } from './Scenery';
+import { SceneryClouds } from './SceneryClouds';
 import { SceneryStage } from './SceneryStage';
 import { SceneryStageBounds } from './scenery-stage';
 
 // A day over the sea in a few seconds: the sun follows the clock from a date and a place,
-// and the moon, the stars and the light follow the sun.
+// and the moon, the stars, the light and a sky of clouds (`fair` by default) follow the sun.
 
 const DEPTH = 100;
 const BOUNDS: SceneryStageBounds = [-5000, -5000, 5000, 5000];
@@ -51,6 +53,7 @@ type TimelapseArgs = {
   playing: boolean;
   speed: number;
   tanker: boolean;
+  clouds: SkyPreset;
 } & SceneryArgs &
   SceneryReliefArgs &
   SceneryMinimapArgs &
@@ -92,6 +95,11 @@ const SceneryTimelapse = (args: TimelapseArgs) => {
     () => args.tanker && <Tanker position={[0, 0, -900]} />,
     [args.tanker],
   );
+  // No Weather: no wind, so they hold still, whatever the timelapse's speed.
+  const clouds = useMemo(
+    () => args.clouds !== 'clear' && <SceneryClouds layers={args.clouds} />,
+    [args.clouds],
+  );
 
   // Where the sky is seen from: the sun's place, which the relief lies about too.
   const frame = sceneryReliefFrame(args);
@@ -108,6 +116,7 @@ const SceneryTimelapse = (args: TimelapseArgs) => {
         />
         <SceneryStage boundary={BOUNDS} />
         {tanker}
+        {clouds}
       </Scenery>
       {relief && <GeoRelief {...relief} />}
       {args.minimap && (
@@ -200,6 +209,13 @@ const meta = {
         'A tanker riding the sky’s waves, with a foam collar where it meets the water: inside a `Scenery`, floating components work as inside an `Ocean`.',
       table: { category: 'Sea' },
     },
+    clouds: {
+      control: { type: 'select' },
+      options: Object.keys(SKY_PRESETS),
+      description:
+        'A sky of 3D clouds (`SKY_PRESETS`), lit by the sun and the moon as the day goes: `clear` for none. Without a `Weather` they have no wind, so they hold still, whatever the timelapse’s speed.',
+      table: { category: 'Timelapse' },
+    },
   },
   args: {
     ...sceneryArgs,
@@ -213,6 +229,7 @@ const meta = {
     // Sooner than the Scenery's own 1000, so the light keeps up with the sun.
     captureMaxWait: 250,
     tanker: true,
+    clouds: 'fair',
   },
 } satisfies Meta<typeof SceneryTimelapse>;
 

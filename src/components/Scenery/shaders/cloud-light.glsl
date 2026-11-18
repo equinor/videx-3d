@@ -65,8 +65,12 @@ CloudLighting cloudLightingAt(vec3 dir, vec3 up) {
   float twilight = smoothstep(-12.0, -3.0, elevation) * (1.0 - smoothstep(1.0, 12.0, elevation));
   float dusk = min(uSkyTwilight.x * twilight, 1.0);
   vec3 sun = mix(skySunColorAt(sine), SKY_TWILIGHT_LIGHT, dusk) * daylight * (uSkySunRadiance > 1.0 ? 2.0 : 1.0);
-  float moonUp = smoothstep(-0.02, 0.05, dot(up, uSkyMoonDirection));
-  vec3 moon = uSkyMoonColor * (1.0 - smoothstep(-12.0, -6.0, elevation)) * uSkyMoonPhase * moonUp * 0.25;
+  float moonSine = dot(up, uSkyMoonDirection);
+  float moonUp = smoothstep(-0.02, 0.05, moonSine);
+  // At its phase's light, and dimmed by the air toward it as the scene's moonlight is
+  // (skyMoonDimmed), without its tint.
+  float moonLight = skyMoonPhaseLight(uSkyMoonPhase) * skyMoonDimmed(skyThroughAir(moonSine));
+  vec3 moon = uSkyMoonColor * (1.0 - smoothstep(-12.0, -6.0, elevation)) * moonLight * moonUp * 0.25;
   CloudLighting l;
   l.way = cloudLightWay(up);
   l.direct = uCloudColor * CLOUD_SUN * (l.way == uSkySunDirection ? sun : moon);

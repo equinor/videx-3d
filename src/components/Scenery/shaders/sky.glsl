@@ -57,10 +57,6 @@ uniform float uSkyOceanTrench;
 #define SKY_MOON_DARK 0.75
 // How bright the moon shows by day, over the sky behind it.
 #define SKY_MOON_DAY 0.35
-// How much of the air's dimming of the moon the screen shows, as a power: the cube root. A
-// screen shows the night's range from the moon to the sky, some 13 magnitudes, in about 40:1;
-// and the eye's brightness goes about as the cube root of the light (Stevens).
-#define SKY_MOON_CONTRAST (1.0 / 3.0)
 // The moon's axis on the star sphere (uSkyStarFrame's): within 1.5° of the ecliptic's pole
 // (right ascension 18h, declination 66.56°).
 #define SKY_MOON_AXIS vec3(0.0, -0.39777, 0.91748)
@@ -265,23 +261,15 @@ float skyMoonAlbedo(vec3 normal, float aa) {
 
 // The moon's light as it reaches the eye through the air, over its light high up: by the air the
 // view crosses from the horizon as seen from `height` (skyThroughAir), none from space. Its hue
-// as the air leaves it, at the moon colour's brightest channel, dimmed by the air's dimming to
-// SKY_MOON_CONTRAST: to 0.64 at 10°, 0.27 at 3°, 0.08 at 1° and 0.03 on the horizon, so a
-// setting moon fades into the haze. On the CPU, scenery-model.ts's skyThroughAir.
+// as the air leaves it, at the moon colour's brightest channel, dimmed as a screen shows the
+// air's dimming (skyMoonDimmed): to 0.64 at 10°, 0.27 at 3°, 0.08 at 1° and 0.03 on the
+// horizon, so a setting moon fades into the haze. On the CPU, scenery-model.ts's skyThroughAir.
 vec3 skyMoonThroughAir(float height) {
   float sine = skyOverHorizon(dot(uSkyMoonDirection, globeCameraLook()), skyHorizon(uSkyMoonDirection));
   vec3 through = mix(skyThroughAir(sine), vec3(1.0), skySpace(uSkyMoonDirection, height));
   vec3 seen = uSkyMoonColor * through;
   float peak = max(uSkyMoonColor.r, max(uSkyMoonColor.g, uSkyMoonColor.b));
-  float dimmed = pow(dot(through, vec3(0.2126, 0.7152, 0.0722)), SKY_MOON_CONTRAST);
-  return through * (peak * dimmed / max(max(seen.r, max(seen.g, seen.b)), 1e-12));
-}
-
-// The moon's light at its phase over a full moon's: a Lambert sphere's, as scenery-model.ts's
-// skyMoonShine gives the moonlight.
-float skyMoonPhaseLight() {
-  float phase = acos(clamp(2.0 * uSkyMoonPhase - 1.0, -1.0, 1.0));
-  return (sin(phase) + (PI - phase) * cos(phase)) / PI;
+  return through * (peak * skyMoonDimmed(through) / max(max(seen.r, max(seen.g, seen.b)), 1e-12));
 }
 
 // The moon and the stars over `color`, as night falls, and by day where the sky is space, or
@@ -314,7 +302,7 @@ vec3 skyNight(vec3 color, vec3 dir, float blend, float gone) {
   if(shown > 0.0)
     albedo = skyMoonAlbedo(normal, aa);
   // Its glare, the sun's (skyGlare), by its light at its phase.
-  float glare = uSkyMoonGlow * skyMoonPhaseLight() * skyGlare(angle, uSkyMoonSize);
+  float glare = uSkyMoonGlow * skyMoonPhaseLight(uSkyMoonPhase) * skyGlare(angle, uSkyMoonSize);
   // The stars come out late, once it is dark, and fade low down through more air.
   float airmass = 1.0 / (max(y, 0.0) + 0.05);
   vec3 starDir = uSkyStarFrame * dir;

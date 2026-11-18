@@ -780,7 +780,7 @@ const SUN_HIGH = new Color('#fff6e8');
  * `SKY_AIR_DEPTH` in `sky-gradient.glsl`.
  */
 const SKY_AIR_DEPTH = [0.24, 0.29, 0.41] as const;
-/** How much of the air's dimming of the moon a screen shows: its cube root (`SKY_MOON_CONTRAST` in `sky.glsl`). */
+/** How much of the air's dimming of the moon a screen shows: its cube root (`SKY_MOON_CONTRAST` in `sky-gradient.glsl`). */
 const SKY_MOON_CONTRAST = 1 / 3;
 /** The moon's mean radius, in km. */
 const MOON_RADIUS_KM = 1737.4;

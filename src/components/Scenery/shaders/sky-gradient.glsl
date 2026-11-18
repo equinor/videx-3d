@@ -144,6 +144,25 @@ vec3 skyThroughAir(float sine) {
   return exp(-SKY_AIR_DEPTH * max(mass - 1.0, 0.0));
 }
 
+// How much of the air's dimming of the moon a screen shows, as a power: the cube root. A
+// screen shows the night's range from the moon to the sky, some 13 magnitudes, in about 40:1;
+// and the eye's brightness goes about as the cube root of the light (Stevens).
+#define SKY_MOON_CONTRAST (1.0 / 3.0)
+
+// The moon's light through `through` of the air (skyThroughAir) as a screen shows it
+// (SKY_MOON_CONTRAST): 0.64 at 10°, 0.27 at 3°, 0.08 at 1°. Its disc's, the clouds' moonlight,
+// and on the CPU the scene's (scenery-model.ts's skyMoonColor).
+float skyMoonDimmed(vec3 through) {
+  return pow(dot(through, vec3(0.2126, 0.7152, 0.0722)), SKY_MOON_CONTRAST);
+}
+
+// The moon's light with `lit` of its disc lit, over a full moon's: a Lambert sphere's, as
+// scenery-model.ts's skyMoonShine gives the moonlight.
+float skyMoonPhaseLight(float lit) {
+  float phase = acos(clamp(2.0 * lit - 1.0, -1.0, 1.0));
+  return (sin(phase) + (PI - phase) * cos(phase)) / PI;
+}
+
 // How lit what lies at `p` is, seen from high up: by the sun over its own horizon there,
 // down to the night's level, so the night side of the Earth is dark; 1 from lower down
 // (SKY_FROM_SPACE). The same for every pixel but by `p`, from the camera's uniforms.

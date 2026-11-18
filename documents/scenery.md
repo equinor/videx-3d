@@ -112,7 +112,7 @@ as an emitted one does: a full moon at night glares about as far out as the sun 
 its light over the sky behind it is about as much (some 25 times, by Stiles and Holladay's
 glare; the sun's some 17), and a crescent far less. The moonlight on the scene is seen by
 night eyes, without colour: dimmed as the disc is, in the moon's own colour
-(`skyMoonColor`). By day the disc is grey, its colour's luminance, so the blue it shows is
+(`skyMoonColor`), and so are the 3D clouds by it (`skyMoonDimmed`). By day the disc is grey, its colour's luminance, so the blue it shows is
 the sky's in front of it, and its dark side does not show. Until 2026-11-18 the disc kept
 its own blue-white at any height and was drawn over the sky by night, by day added over
 the sky's blue; its glow was a flat halo some 12° across, from civil twilight. The sky has
