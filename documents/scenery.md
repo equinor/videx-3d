@@ -386,10 +386,28 @@ publishes for them each frame (`sceneSky`; [ocean.md, One sky](./ocean.md#basic-
 The bakes are made once for each zone the camera can be in — the air over the sea, the
 water in it and, below the seabed (or the abyss level), the `subsurface` — and swapped as
 the camera crosses a level, so a moving camera never bakes. In the water the light dims
-with depth. The subsurface is baked first: its program is small and compiles on its own,
-so the scene is lit by it within moments, and a zone not yet baked borrows its maps until
-its own are swapped in. It is baked again only when its own inputs change (its panels or
-map, the frame, the environment's resolution), never with the sky.
+with depth. Every zone is filmed with one small program of its own
+(`scenery-bake-fragment.glsl`, built 2026-11-18): the light is smooth, so none of the
+background is drawn into it. The air is the sky's own surface (`skySurface`: its gradient,
+daylight, twilight and the sun's halo; the disc, the moon and the stars are the scene's
+lights') over a flat sea: the sky mirrored by Fresnel toward the horizon, the water and its
+seabed toward the nadir, and the whitecaps' mean cover. The water is its own light at the
+bake's depth, the seabed below fogged by it, and over it Snell's window onto the sky. The
+subsurface is a dark backdrop with light panels (below). It compiles in moments, whatever
+the background still compiles, so the scene is lit early; a zone not yet baked borrows the
+subsurface's maps until its own are swapped in. The subsurface is baked again only when its
+own inputs change (its panels or map, the frame, the environment's resolution), never with
+the sky.
+
+Until 2026-11-18 the air and the water filmed the background itself (sky, void, seabed,
+water and sea surface), with copies of its programs where three keyed them apart (without a
+`RenderingPipeline`, or other lights): five more programs of some 135k characters each,
+compiled cold after the sky's (the Sea Bench's air and water bakes came at ~50 s instead of
+~11 s), 4.6 ms of CPU
+a bake against 0.6 now (RTX A1000), and a frozen snapshot of the waves under the bake's
+point in every mirror-like object. The sea in a bake is read by no sea (an `Ocean`'s and a
+`ChunkStack`'s reflections are turned above the horizon): it lights what lies in the scene
+from below.
 
 The sky is baked again when it changes, once it has been still for `capture.interval`
 (default 250 ms): a slider being dragged bakes nothing on the way, so the sky follows it at
@@ -770,7 +788,7 @@ surface layer, drawing themselves. Transparent parts draw after everything. It w
   below the seabed only the void; from the air the void only while something opens the
   seabed onto it. Each shader still finds where it draws itself, so near a level both
   sides are drawn and nothing is missed.
-- The compositing is exact in linear light: in a `RenderingPipeline` and in the bakes the
+- The compositing is exact in linear light: in a `RenderingPipeline` the
   layers give what one program would (measured: identical to the last two decimals of a
   block mean in every pose). Without one, R3F draws to the canvas and three tone maps and
   encodes each layer before it is blended, so where a layer is partly see-through it
@@ -826,7 +844,8 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   each seabed part ~0.4 s. Fully cold (Chrome's and
   the driver's caches bypassed, every program at once, 2026-10-27, RTX A1000 laptop):
   ~39 s of Direct3D compiling in all, a stage's surface 10.9 s and the sea surface layer
-  ~8.5 s, twice (drawn to the screen and into the bakes, without a `RenderingPipeline`).
+  ~8.5 s, twice (drawn to the screen and into the bakes, without a `RenderingPipeline`;
+  the bakes have had a small program of their own since 2026-11-18).
 - They compile in the background where the browser has `KHR_parallel_shader_compile`:
   until the sky, its stages and its bakes are ready, a stand-in (the void's grey
   gradient, without its detail) is drawn, a stage draws nothing and nothing is
@@ -875,12 +894,11 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
 - The first frame that draws the background or a relief still stalls ~0.15–2 s
   (measured, fully cold): the driver's own compile, after Direct3D's, which nothing in
   WebGL can do ahead.
-- The bakes draw with the very programs the background's layers do, so they cost no
-  compile of their own — when both draw into a render target (a `RenderingPipeline`) and
-  with the same lights (the sky's own directional light and probe). Without one, three
-  keys a program on the output's colour space too, so the bakes take copies: those compile
-  after what is drawn, and the scenery shows before its bakes are ready (they wait for
-  theirs).
+- The bakes draw with one small program of their own (`scenery-bake-fragment.glsl`, 37k
+  characters with the sky's gradient it includes), compiled first: none of the background's
+  programs, and no copies of them. Until 2026-11-18 they filmed the background's layers,
+  sharing their programs only within a `RenderingPipeline` and with the same lights, and
+  otherwise compiling copies after what was drawn.
 - ⚠️ ANGLE on Direct3D compiles a program's pixel shader for one colour attachment,
   and again at its first draw into several. `OITRenderPass` draws into several with
   `mergeFront` or `tailSlices`, so the first frame that shows a stage's see-through
@@ -1000,15 +1018,13 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `shaders/stage-fragment.glsl`, `sky-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
 
 - The layers', the stage's and the baker's materials share the `SceneryMaterial`'s UNIFORM
-  OBJECTS, so they follow every change to it. Its features are `switches`, not its own
-  defines: each layer takes those it needs (`sceneryLayerDefines`), a stage those listed in
-  `SCENERY_SHARED_DEFINES`, and the baker copies the sky's defines and switches, IN ORDER,
-  in `sync()`, and makes its layers' copies from them.
+  OBJECTS, so they follow every change to it (the baker's but for its own and the field's
+  light, `SceneryBaker`'s overrides). Its features are `switches`, not its own defines: each
+  layer takes those it needs (`sceneryLayerDefines`), a stage those listed in
+  `SCENERY_SHARED_DEFINES`.
 - ⭐ A program is keyed on its defines' order, the `fog` flag and the number of lights
-  as well as on the source: the baker's material copies the background's defines in
-  their order, keeps `fog: true` (its scene has none) and keeps its light probe in the
-  scene without coefficients, so both share one program. `linkOcean` and the feature
-  switches are set in render, so the layers and a stage's materials are made with them.
+  as well as on the source. `linkOcean` and the feature switches are set in render, so the
+  layers and a stage's materials are made with them.
 - The layers' shaders return their colour premultiplied (its alpha how much of the layers
   before it it hides), and `sky-layer-fragment.glsl` draws it unpremultiplied, so three's
   tone mapping, colour space and fog apply as to any colour. Where the sea's floor shows the
@@ -1018,8 +1034,10 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
   it compiles as the scene draws, i.e. for the `RenderingPipeline`'s render target and
   through the `OITRenderPass`'s variants, each object when its turn in the renderer's
   queue comes (see Performance). The sky waits for its own meshes, the stages
-  registered through `SceneryOceanState.stage`, and the baker's scenes and PMREM prefilter.
+  registered through `SceneryOceanState.stage`; the bakes for their own program and the PMREM
+  prefilter.
   The 1 × 1 target it binds for `'offscreen'` is kept on the renderer itself: kept in a
+| `shaders/scenery-bake-fragment.glsl` | what the bakes film in each zone: the air, the water, the subsurface |
   `WeakMap` keyed by the renderer, its framebuffer led back to the renderer (its context, its
   canvas, three's context-lost listener) and no unmounted `Canvas`'s renderer was let go.
 - Letting go goes through `releaseMaterial` (same file, internal) wherever a material is

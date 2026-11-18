@@ -617,13 +617,19 @@ float oceanTailZ(float share) {
 }
 
 // The share of the sea whitecaps cover (Monahan and O'Muircheartaigh 1980: 3.84e-6·U^3.41, about
-// 1 % at 10 m/s and 10 % at 20 m/s; uFoamAmount 0.5 as measured), as the coverage that leaves
-// that share of the crests' texture (oceanWaves' `crest`) over oceanFoam's threshold. In the surf
-// zone by what the breaking limit leaves of the waves (oceanBreakLimit, after oceanWaves).
-// `scale` takes a share of that cover: the share that breaks afresh where the foam's life is
-// drawn (OCEAN_FOAM_LIFE), the rest being the foam it leaves.
+// 1 % at 10 m/s and 10 % at 20 m/s; uFoamAmount 0.5 as measured), in the surf zone by what the
+// breaking limit leaves of the waves (oceanBreakLimit, after oceanWaves). Its twin without the
+// surf zone: ocean-material.ts's oceanWhitecapCover.
+float oceanWhitecapCover() {
+  return min(3.84e-6 * pow(max(uWindSpeed, 0.0), 3.41) * 2.0 * uFoamAmount, 0.5) * oceanBreakLimit;
+}
+
+// The whitecaps' cover (oceanWhitecapCover) as the coverage that leaves that share of the
+// crests' texture (oceanWaves' `crest`) over oceanFoam's threshold. `scale` takes a share of
+// that cover: the share that breaks afresh where the foam's life is drawn (OCEAN_FOAM_LIFE),
+// the rest being the foam it leaves.
 float oceanWindFoamShare(float scale) {
-  float share = min(3.84e-6 * pow(max(uWindSpeed, 0.0), 3.41) * 2.0 * uFoamAmount, 0.5) * oceanBreakLimit * scale;
+  float share = oceanWhitecapCover() * scale;
   if(share <= 1e-5)
     return 0.0;
   return clamp(0.5 - oceanTailZ(share) / (2.0 * OCEAN_CREST_SPAN), 0.0, 1.0);

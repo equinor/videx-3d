@@ -1,12 +1,9 @@
 import {
-  BufferGeometry,
   Color,
   CubeCamera,
   CustomBlending,
-  DirectionalLight,
   HalfFloatType,
   IUniform,
-  LightProbe,
   Material,
   Mesh,
   OneFactor,
@@ -18,8 +15,6 @@ import {
   SphericalHarmonics3,
   Texture,
   Uniform,
-  UniformsLib,
-  UniformsUtils,
   Vector2,
   Vector3,
   Vector4,
@@ -27,29 +22,18 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
-import {
-  precompile,
-  PRECOMPILE_PRIORITY,
-  PrecompileOptions,
-} from '../../rendering/precompile';
+import { precompile, PrecompileOptions } from '../../rendering/precompile';
 import { readFloatTargetAsync } from '../../sdk/utils/read-target-async';
 import { cubeFacesToSphericalHarmonics } from '../../sdk/utils/spherical-harmonics';
+import { oceanWhitecapCover } from '../Ocean/ocean-material';
 import skyVertexShader from './shaders/sky-vertex.glsl';
-import subsurfaceFragmentShader from './shaders/subsurface-fragment.glsl';
+import bakeFragmentShader from './shaders/scenery-bake-fragment.glsl';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import {
   SCENERY_WATER_BAKE_DEPTH,
   ScenerySubsurfaceColors,
   SceneryZone,
 } from './scenery-model';
-import {
-  createSceneryLayerMaterial,
-  SCENERY_LAYER_ORDER,
-  sceneryLayerDefines,
-  sceneryLayers,
-  SceneryOverLayer,
-} from './scenery-layers';
-import { sceneryOceanDefines } from './scenery-stage';
 import type { ScenerySkyOverlay } from './scenery-registry';
 
 const PROBE_RESOLUTION = 32;
@@ -57,7 +41,13 @@ const PROBE_RESOLUTION = 32;
 const CUBE_FACES = [0, 1, 2, 3, 4, 5];
 // How far above the sea surface (or the abyss level) the air is filmed from, in world units.
 const AIR_BAKE_HEIGHT = 100;
-// After every layer of the sky, the sea's surface the last (at 1).
+// The bake's zones, as its shader numbers them (uBakeZone).
+const BAKE_ZONE: Record<SceneryZone, number> = {
+  air: 0,
+  water: 1,
+  subsurface: 2,
+};
+// Over the zone's light.
 const OVERLAY_ORDER = 2;
 
 const overlayFragmentShader = /* glsl */ `
@@ -94,13 +84,6 @@ export function sceneryBakePosition(
   return target.copy(source.up).multiplyScalar(height);
 }
 
-/** The sun a {@link SceneryBaker} lights the seabed with: as the sky's directional light. */
-export type SceneryBakerSun = {
-  direction: Vector3;
-  color: Color;
-  intensity: number;
-};
-
 /**
  * What lights the scene below the seabed: the subsurface's light panels, or a map of the
  * host's own (an equirectangular or cube texture, as for `scene.background`).
@@ -127,58 +110,47 @@ type PmremInternals = {
 const compileCamera = new PerspectiveCamera();
 
 /**
- * Films a {@link SceneryMaterial} into an environment map (for `scene.environment`) and into
- * light-probe coefficients, once per {@link SceneryZone}: the air over its sea, the water in
- * it, and the subsurface below its seabed. Internal to {@link Scenery}.
+ * Films the light of a {@link SceneryMaterial}'s sky into an environment map (for
+ * `scene.environment`) and into light-probe coefficients, once per {@link SceneryZone}: the
+ * air over its sea, the water in it, and the subsurface below its seabed. Every zone with one
+ * small program (`scenery-bake-fragment.glsl`): the sky's own surface over a flat sea, the
+ * water's light about Snell's window, the subsurface's panels. The light is smooth, so it
+ * needs none of the background's programs, and is ready within moments. Internal to
+ * {@link Scenery}.
  */
 export class SceneryBaker {
   private readonly scene = new Scene();
   private readonly geometry = createSceneryGeometry();
-  // Fog as the visible sky has it, so the two share a program: this scene has none.
-  private readonly material = new SceneryMaterial();
-  // No disc: the directional light is the sun. No stage: the light comes off the whole sea.
-  // Never buried nor in a trench, nothing cut away and the seabed whole: the zones are the sea's own.
-  // A level horizon, so climbing never needs a new bake: a few degrees' drop barely changes the light.
-  // Lights of its own: three wires a material's light uniforms to the scene it is drawn in.
-  private readonly overrides: Record<string, IUniform> = {
-    uSkySunDisc: new Uniform(0),
-    uSkyOceanStageReach: new Uniform(0),
-    uSkyOceanBuried: new Uniform(0),
-    uSkyOceanTrench: new Uniform(0),
-    uSkyOceanStageOpen: new Uniform(0),
-    uSkyOceanCutawayShape: new Uniform(new Vector3()),
-    uSkyOceanSeabedOpacity: new Uniform(1),
-    // The seabed on and the hollow off: the bakes take the seabed whole, peeled or not, so
-    // peeling it bakes nothing.
-    uSkyOceanSeabed: new Uniform(1),
-    uSkyHollow: new Uniform(new Vector4(0, 0, 0, 0)),
+  // The globe off: a flat sea under a level horizon, so climbing never needs a new bake (a few
+  // degrees' drop barely changes the light). The field's light, as the scene's lights are: the
+  // visible sky's is where the camera is (SceneryMaterial.fieldLight). Filled in before each
+  // film.
+  private readonly overrides = {
     uSkyCurvature: new Uniform(0),
-    // The globe off: a flat sea, and the waves on the field's plane. ⚠️ Their w is the switch,
-    // and a Vector4's default w is 1: with it, the globe was on with no radius, and the
-    // half of the bake's sea away from the sun lay in night.
+    // ⚠️ Its w is the switch, and a Vector4's default w is 1: with it, the globe was on with
+    // no radius, and the half of the bake's sea away from the sun lay in night (until
+    // 2026-11-05).
     uGlobe: new Uniform(new Vector4(0, 0, 0, 0)),
-    uOceanCharts: new Uniform(new Vector4(0, 0, 0, 0)),
-    uSkyDebug: new Uniform(0),
-    // The field's light, as the scene's lights are: the visible sky's is where the camera
-    // is (SceneryMaterial.fieldLight). Filled in before each film.
     uSkySunColor: new Uniform(new Color()),
     uSkyDaylight: new Uniform(1),
     uSkyTwilight: new Uniform(new Vector2()),
     uSkyMoonlight: new Uniform(0),
-    uSkyNight: new Uniform(0),
-    ...UniformsUtils.clone(UniformsLib.lights),
   };
-  // The seabed is lit as the scene lights it; the probe is the previous bake's.
-  private readonly sun = new DirectionalLight();
-  private readonly probe = new LightProbe();
-  // The background's layers over the sky (see sync), and what each was made from.
-  private readonly layers = new Map<
-    SceneryOverLayer,
-    { key: string; mesh: Mesh<BufferGeometry, ShaderMaterial> }
-  >();
-  private readonly subsurfaceScene = new Scene();
-  private readonly subsurface: ShaderMaterial;
-  private readonly subsurfaceMesh: Mesh;
+  // The bake's own (scenery-bake-fragment.glsl).
+  private readonly own = {
+    uBakeZone: new Uniform(0),
+    uBakeSea: new Uniform(new Vector4()),
+    uBakeFoamColor: new Uniform(new Color()),
+    uBakeDepth: new Uniform(SCENERY_WATER_BAKE_DEPTH),
+    uSubsurfaceTop: new Uniform(new Color()),
+    uSubsurfaceBottom: new Uniform(new Color()),
+    uSubsurfaceAbove: new Uniform(new Color()),
+    uSubsurfaceBelow: new Uniform(new Color()),
+  };
+  private readonly material: ShaderMaterial;
+  private readonly mesh: Mesh;
+  // The host's own map for the subsurface, drawn as the scene's background instead.
+  private subsurfaceMap: Texture | null = null;
   private readonly probeTarget = new WebGLCubeRenderTarget(PROBE_RESOLUTION, {
     type: HalfFloatType,
   });
@@ -213,49 +185,26 @@ export class SceneryBaker {
   private readonly overlayMesh = new Mesh(this.geometry, this.overlayMaterial);
 
   constructor(private readonly source: SceneryMaterial) {
-    // Same uniform objects as the visible sky, but for the overrides.
-    this.material.uniforms = { ...source.uniforms, ...this.overrides };
-    const mesh = new Mesh(this.geometry, this.material);
-    mesh.frustumCulled = false;
-    this.overlayMaterial.uniforms.uSkyIntensity = source.uniforms.uSkyIntensity;
-    this.overlayMesh.frustumCulled = false;
-    this.overlayMesh.renderOrder = OVERLAY_ORDER;
-    this.overlayMesh.visible = false;
-    this.scene.add(mesh, this.sun, this.probe, this.overlayMesh);
-
-    this.subsurface = new ShaderMaterial({
+    // The sky's uniform objects, so its setters drive the bakes too, but for the overrides.
+    this.material = new ShaderMaterial({
+      name: 'scenery-bake',
       vertexShader: skyVertexShader,
-      fragmentShader: subsurfaceFragmentShader,
+      fragmentShader: bakeFragmentShader,
       uniforms: {
-        uSkyUp: source.uniforms.uSkyUp,
-        uSkyNorth: source.uniforms.uSkyNorth,
-        uSkyEast: source.uniforms.uSkyEast,
-        uSubsurfaceTop: new Uniform(new Color()),
-        uSubsurfaceBottom: new Uniform(new Color()),
-        uSubsurfaceAbove: new Uniform(new Color()),
-        uSubsurfaceBelow: new Uniform(new Color()),
+        ...(source.uniforms as Record<string, IUniform>),
+        ...this.overrides,
+        ...this.own,
       },
       depthTest: false,
       depthWrite: false,
     });
-    this.subsurfaceMesh = new Mesh(this.geometry, this.subsurface);
-    this.subsurfaceMesh.frustumCulled = false;
-    this.subsurfaceScene.add(this.subsurfaceMesh);
-  }
-
-  /** Light the seabed in the bakes with the sky's sun and light probe, `null` for none. */
-  setLights(sun: SceneryBakerSun | null, probe: LightProbe | null) {
-    this.sun.visible = sun !== null;
-    if (sun) {
-      this.sun.position.copy(sun.direction);
-      this.sun.color.copy(sun.color);
-      this.sun.intensity = sun.intensity;
-    }
-    this.probe.visible = probe !== null;
-    if (probe) {
-      this.probe.sh.copy(probe.sh);
-      this.probe.intensity = probe.intensity;
-    }
+    this.mesh = new Mesh(this.geometry, this.material);
+    this.mesh.frustumCulled = false;
+    this.overlayMaterial.uniforms.uSkyIntensity = source.uniforms.uSkyIntensity;
+    this.overlayMesh.frustumCulled = false;
+    this.overlayMesh.renderOrder = OVERLAY_ORDER;
+    this.overlayMesh.visible = false;
+    this.scene.add(this.mesh, this.overlayMesh);
   }
 
   /**
@@ -269,70 +218,15 @@ export class SceneryBaker {
   /** What the `'subsurface'` zone films from now on. */
   setSubsurface(subsurface: SceneryBakerSubsurface) {
     if ('map' in subsurface) {
-      this.subsurfaceScene.background = subsurface.map;
-      this.subsurfaceMesh.visible = false;
+      this.subsurfaceMap = subsurface.map;
       return;
     }
-    this.subsurfaceScene.background = null;
-    this.subsurfaceMesh.visible = true;
-    const { uniforms } = this.subsurface;
-    uniforms.uSubsurfaceTop.value.copy(subsurface.light.top);
-    uniforms.uSubsurfaceBottom.value.copy(subsurface.light.bottom);
-    uniforms.uSubsurfaceAbove.value.copy(subsurface.light.above);
-    uniforms.uSubsurfaceBelow.value.copy(subsurface.light.below);
-  }
-
-  // Follows the visible sky's sea and abyss, which can change after this was made: its
-  // switches, and the uniforms linkOcean adds.
-  private sync() {
-    const { source, material } = this;
-    for (const name in source.uniforms) {
-      if (!(name in this.overrides))
-        material.uniforms[name] = source.uniforms[name];
-    }
-    // In the visible sky's order too: a program is keyed on the order of its defines.
-    if (JSON.stringify(material.defines) !== JSON.stringify(source.defines)) {
-      material.defines = { ...source.defines };
-      material.needsUpdate = true;
-    }
-    if (JSON.stringify(material.switches) !== JSON.stringify(source.switches)) {
-      for (const key of Object.keys(material.switches))
-        delete material.switches[key];
-      Object.assign(material.switches, source.switches);
-      material.switchesVersion++;
-    }
-
-    // The background's layers over the sky, as the visible sky draws them, each made again
-    // only when what it compiles with changes.
-    const wanted = new Set(sceneryLayers(material));
-    for (const [layer, { mesh }] of this.layers) {
-      if (
-        wanted.has(layer) &&
-        this.layerKey(layer) === this.layers.get(layer)!.key
-      )
-        continue;
-      this.scene.remove(mesh);
-      mesh.material.dispose();
-      this.layers.delete(layer);
-    }
-    for (const layer of wanted) {
-      if (layer === 'sky' || this.layers.has(layer)) continue;
-      const mesh = new Mesh(
-        this.geometry,
-        createSceneryLayerMaterial(material, layer, false),
-      );
-      mesh.frustumCulled = false;
-      mesh.renderOrder = SCENERY_LAYER_ORDER[layer];
-      this.scene.add(mesh);
-      this.layers.set(layer, { key: this.layerKey(layer), mesh });
-    }
-  }
-
-  // What a layer's copy is made from (the surface's waves are its own).
-  private layerKey(layer: SceneryOverLayer) {
-    return layer === 'surface'
-      ? JSON.stringify(sceneryOceanDefines(this.material))
-      : JSON.stringify(sceneryLayerDefines(this.material, layer));
+    this.subsurfaceMap = null;
+    const own = this.own;
+    own.uSubsurfaceTop.value.copy(subsurface.light.top);
+    own.uSubsurfaceBottom.value.copy(subsurface.light.bottom);
+    own.uSubsurfaceAbove.value.copy(subsurface.light.above);
+    own.uSubsurfaceBelow.value.copy(subsurface.light.below);
   }
 
   /** A zone's last film, before prefiltering; `null` before the first. */
@@ -341,44 +235,20 @@ export class SceneryBaker {
   }
 
   /**
-   * Compile what the sky's bakes draw with, in the background where the browser can (see
-   * `precompile`). Set the lights first: they are compiled in. `null` when all is ready
-   * already.
+   * Compile what the bakes draw with, in the background where the browser can (see
+   * `precompile`): its one small program, and with an environment of `resolution`, the
+   * prefilter every environment bake takes. `track` gives each of its compiles an
+   * `onProgress` (see `createPrecompileCount`). `null` when all is ready already.
    */
   precompile(
-    renderer: WebGLRenderer,
-    onProgress?: PrecompileOptions['onProgress'],
-  ): Promise<void> | null {
-    this.sync();
-    return precompile(
-      renderer,
-      this.scene,
-      compileCamera,
-      this.scene,
-      'offscreen',
-      { priority: PRECOMPILE_PRIORITY.last, onProgress },
-    );
-  }
-
-  /**
-   * The same for the subsurface's bake — and with an environment of `resolution`, the
-   * prefilter every environment bake takes. Small, so it is ready first. `track` gives
-   * each of its compiles an `onProgress` (see `createPrecompileCount`).
-   */
-  precompileSubsurface(
     renderer: WebGLRenderer,
     resolution: number | null,
     track?: () => PrecompileOptions['onProgress'],
   ): Promise<void> | null {
     const waits = [
-      precompile(
-        renderer,
-        this.subsurfaceScene,
-        compileCamera,
-        this.subsurfaceScene,
-        'offscreen',
-        { onProgress: track?.() },
-      ),
+      precompile(renderer, this.scene, compileCamera, this.scene, 'offscreen', {
+        onProgress: track?.(),
+      }),
       resolution === null
         ? null
         : this.precompilePmrem(renderer, resolution, track?.()),
@@ -454,9 +324,8 @@ export class SceneryBaker {
   /**
    * Film a zone and project it to spherical harmonics; the readback is asynchronous (all six
    * faces behind one fence, without three's synchronous format queries: `readFloatTargetAsync`),
-   * and resolves `null` if the baker is disposed meanwhile, or the bake is not finite: a
-   * probe lights the next bake's seabed, so one bad bake would poison every one after it.
-   * One at a time: they share a target.
+   * and resolves `null` if the baker is disposed meanwhile, or the bake is not finite. One at
+   * a time: they share a target.
    */
   lightProbe(
     renderer: WebGLRenderer,
@@ -484,22 +353,31 @@ export class SceneryBaker {
     );
   }
 
-  // The sky from where its zone is seen, or the subsurface. The air with what draws itself in
-  // the sky (setOverlay) over it, baked from there first.
+  // A zone's light from where it is seen: the air with what draws itself in the sky
+  // (setOverlay) over it, baked from there first.
   private film(renderer: WebGLRenderer, zone: SceneryZone, camera: CubeCamera) {
-    if (zone === 'subsurface') {
-      camera.position.set(0, 0, 0);
-      camera.update(renderer, this.subsurfaceScene);
-      return;
-    }
-    this.sync();
-    const { source, overrides } = this;
+    const { source, overrides, own } = this;
     const field = source.fieldLight;
     overrides.uSkySunColor.value.copy(field.sunColor);
     overrides.uSkyDaylight.value = field.daylight;
     overrides.uSkyTwilight.value.set(source.sunTwilight, field.twilight);
     overrides.uSkyMoonlight.value = field.moonlight;
-    overrides.uSkyNight.value = field.night;
+    own.uBakeZone.value = BAKE_ZONE[zone];
+    // The sea's, as its water has them (linkOcean): none until linked.
+    const sea = source.uniforms as Record<string, IUniform | undefined>;
+    own.uBakeSea.value.set(
+      source.ocean ? 1 : 0,
+      sea.uReflectionIntensity?.value ?? 1,
+      oceanWhitecapCover(
+        sea.uWindSpeed?.value ?? 0,
+        sea.uFoamAmount?.value ?? 0,
+      ) * (sea.uFoamLook?.value?.y ?? 1),
+      source.oceanWater ? 1 : 0,
+    );
+    if (sea.uFoamColor) own.uBakeFoamColor.value.copy(sea.uFoamColor.value);
+    const map = zone === 'subsurface' ? this.subsurfaceMap : null;
+    this.scene.background = map;
+    this.mesh.visible = map === null;
     sceneryBakePosition(source, zone, camera.position);
     const overlay = zone === 'air' ? this.overlay : null;
     this.overlayMesh.visible = overlay !== null;
@@ -519,8 +397,6 @@ export class SceneryBaker {
     this.geometry.dispose();
     release(this.material);
     release(this.overlayMaterial);
-    for (const { mesh } of this.layers.values()) release(mesh.material);
-    this.subsurface.dispose();
     this.probeTarget.dispose();
     for (const bake of Object.values(this.bakes)) {
       bake.cube?.dispose();

@@ -420,6 +420,19 @@ export const OCEAN_QUALITY_DEFINES: Record<SeaQuality, readonly string[]> = {
 };
 
 /**
+ * The share of the sea whitecaps cover for a wind (m/s, U10) and `foamAmount` (0.5 as measured
+ * at sea): Monahan and O'Muircheartaigh 1980, 3.84e-6·U^3.41, about 1 % at 10 m/s and 10 % at
+ * 20 m/s, at most half. The twin of `oceanWhitecapCover` in `ocean-surface.glsl`, but for the
+ * surf zone's breaking limit.
+ */
+export function oceanWhitecapCover(windSpeed: number, foamAmount: number) {
+  return Math.min(
+    3.84e-6 * Math.max(windSpeed, 0) ** 3.41 * 2 * foamAmount,
+    0.5,
+  );
+}
+
+/**
  * The defines the surface's shading compiles with besides its waves: its quality's
  * ({@link OCEAN_QUALITY_DEFINES}) and its options' (`sparkle`, `fresnelPower`, `foamLife`). A
  * material drawing an {@link OceanMaterial}'s water takes them over (a `Scenery`'s sea:

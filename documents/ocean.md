@@ -151,7 +151,8 @@ by both before each frame), in the reflection, through Snell's window from below
 foam's light:
 
 - **Under a `<Scenery>`**, the sky it publishes: the environment it bakes of the air over the
-  sea (whichever zone the camera is in: under water the surface still reflects the air), its
+  sea (the sky's own surface over a flat sea; whichever zone the camera is in: under water the
+  surface still reflects the air), its
   `environment.intensity`, the bake of its 3D clouds over that (sharper than the air's bake holds
   them, as its own sea reads it), and its sun or moon as its own sea's glint has it. The
   `<Scenery>`'s sea keeps its own sky, drawn per pixel.

@@ -948,8 +948,6 @@ export const Scenery = ({
 
   // Whether what the sky draws is compiled; until then the stand-in is drawn instead.
   const [ready, setReady] = useState(false);
-  // Whether what its bakes draw with is compiled: compiled after what it draws.
-  const [bakeReady, setBakeReady] = useState(false);
   // Stages hand over their parts, compiled with the sky's own (see SceneryOceanState.stage).
   const stages = useRef(new Set<Object3D>());
   const [stageVersion, setStageVersion] = useState(0);
@@ -1127,22 +1125,22 @@ export const Scenery = ({
     environmentResolution,
   ]);
 
-  // Its program is small and compiles on its own, so its bakes light the scene first.
-  const [subsurfaceReady, setSubsurfaceReady] = useState(false);
+  // Its program is small and compiles on its own, so the scene is lit within moments.
+  const [bakeReady, setBakeReady] = useState(false);
   useLayoutEffect(() => {
-    const pending = baker.precompileSubsurface(
+    const pending = baker.precompile(
       gl,
       hasEnvironment ? environmentResolution : null,
       progress.compiles.track,
     );
     if (!pending) {
-      setSubsurfaceReady(true);
+      setBakeReady(true);
       return;
     }
     let current = true;
-    setSubsurfaceReady(false);
+    setBakeReady(false);
     pending.then(() => {
-      if (current) setSubsurfaceReady(true);
+      if (current) setBakeReady(true);
     });
     return () => {
       current = false;
@@ -1450,17 +1448,14 @@ export const Scenery = ({
     () => baker.cubeOf(zoneInView.current),
     [baker],
   );
-  // What lights a bake's seabed: the light probe of its own zone.
-  const [bakeProbe] = useState(() => new LightProbe());
 
   // After the effects above set the defines: anything new compiles in the background while
-  // the stand-in is drawn, and the bakes wait for theirs, compiled after it.
+  // the stand-in is drawn. The bakes have their own small program (baker.precompile).
   const own = useRef<Group>(null);
   const compiling = useRef('');
   useLayoutEffect(() => {
     const group = own.current;
     if (!group) return;
-    const resolution = hasEnvironment ? environmentResolution : null;
     const layers = [abyssLayer, seaLayer, waterLayer, surfaceLayer];
     const key = [
       JSON.stringify(material.defines),
@@ -1468,27 +1463,13 @@ export const Scenery = ({
       layers.map(layer => layer?.uuid ?? '').join(','),
       surfaceLayer !== null && oceanWater,
       stageVersion,
-      resolution,
       sunLight,
       hasProbe,
       hollowOn,
     ].join('|');
     if (key === compiling.current) return;
     compiling.current = key;
-    // Which lights the bakes have is compiled in; their values are not.
-    baker.setLights(
-      sunLight
-        ? {
-            direction: lightDirection,
-            color: lightColor,
-            intensity: lightIntensity,
-          }
-        : null,
-      hasProbe ? bakeProbe : null,
-    );
-    // What is drawn first, then what only bakes: without a RenderingPipeline the bakes
-    // draw with copies of the background's programs, which wait behind it. Of the
-    // background's layers, those the camera's zone draws first, the others after them.
+    // Of the background's layers, those the camera's zone draws first, the others after them.
     const now = sceneryLayersShown(
       layerView(material.heightOf(sceneCamera.position), false),
     );
@@ -1508,24 +1489,17 @@ export const Scenery = ({
         }),
       )
       .filter(wait => wait !== null);
-    const bakes = baker.precompile(gl, progress.compiles.track());
     setReady(shown.length === 0);
-    setBakeReady(bakes === null);
     if (shown.length > 0)
       Promise.all(shown).then(() => {
         if (compiling.current === key) setReady(true);
       });
-    bakes?.then(() => {
-      if (compiling.current === key) setBakeReady(true);
-    });
     // The defines are read from the material: the props that set them are deps too.
   }, [
     gl,
     scene,
     sceneCamera,
     material,
-    baker,
-    bakeProbe,
     abyssLayer,
     seaLayer,
     waterLayer,
@@ -1533,13 +1507,8 @@ export const Scenery = ({
     layerView,
     oceanWater,
     stageVersion,
-    hasEnvironment,
-    environmentResolution,
     sunLight,
     hasProbe,
-    lightDirection,
-    lightColor,
-    lightIntensity,
     water,
     hasAbyss,
     hasOcean,
@@ -1909,26 +1878,11 @@ export const Scenery = ({
               ? 'blocked'
               : 'due'
             : 'none',
-      { sky: bakeReady, subsurface: subsurfaceReady },
+      { sky: bakeReady, subsurface: bakeReady },
       captureInterval,
       captureMaxWait,
     );
     if (next) {
-      const nextProbe = zoneProbes.current[next];
-      // There without coefficients too: its light is compiled into the bakes' programs.
-      if (nextProbe) bakeProbe.sh.copy(nextProbe);
-      else bakeProbe.sh.zero();
-      bakeProbe.intensity = probeIntensity;
-      baker.setLights(
-        sunLight
-          ? {
-              direction: lightDirection,
-              color: lightColor,
-              intensity: lightIntensity * lightThrough,
-            }
-          : null,
-        hasProbe ? bakeProbe : null,
-      );
       if (environmentDue.delete(next)) {
         baker.environment(gl, next, environmentResolution);
       }
@@ -1937,14 +1891,7 @@ export const Scenery = ({
         baker
           .lightProbe(gl, next)
           .then(sh => {
-            if (!sh) return;
-            // The first lit the zone's seabed without a probe: once more, with this one.
-            if (next !== 'subsurface' && !zoneProbes.current[next]) {
-              if (hasEnvironment) environmentDue.add(next);
-              probeDue.add(next);
-              schedule.change(performance.now());
-            }
-            zoneProbes.current[next] = sh;
+            if (sh) zoneProbes.current[next] = sh;
           })
           .finally(() => {
             probeBusy.current = false;
