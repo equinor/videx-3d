@@ -85,15 +85,17 @@ little).
 | Level | Type | What it is | Heights (base, tops) |
 | --- | --- | --- | --- |
 | low | `cumulus` | heaped, separate clouds with flat bases | 1200, 2000–3400 m |
-| low | `stratocumulus` | a lumpy deck of cells and rolls, broken by gaps | 900, 1300–1700 m |
-| low | `stratus` | an even sheet, its base undulating | 400, 900 m |
+| low | `stratocumulus` | a lumpy deck of cells and rolls, broken by gaps | 1200, 1600–2000 m |
+| low | `stratus` | an even sheet, its base undulating | 600, 1100 m |
 | low | `nimbostratus` | deep, dark, a ragged base | 600, 2600–3400 m |
 | mid | `altocumulus` | small puffs in rows across the wind | 3800, 4200–4600 m |
 | mid | `altostratus` | a thin grey sheet | 4000, 4800–5500 m |
 | high | `cirrus` | streaks of ice along the wind | 8000, 8800–9500 m |
 | high | `cirrostratus` | a milky veil | 8500, 9000–9300 m |
 
-No two levels' heights overlap. The clouds draw one layer at each level (`cloudLayersByLevel`):
+No two levels' heights overlap. The decks' were raised on 2026-11-18 (stratocumulus from 900,
+1300–1700 m; stratus from 400, 900 m): a global weather's deep sheets lay their base about 600 m
+over the sea, low for the way they looked. The clouds draw one layer at each level (`cloudLayersByLevel`):
 of two at a level, the one covering more, with a warning in development.
 
 **Skies by name** (`SkyPreset`, `SKY_PRESETS`): weather as it comes, each its layers at the
@@ -1044,4 +1046,13 @@ the GPU.
     much from one of the image's rows to the next (2 × 2 CSS pixels at `medium`), filtered or not
     (from 1,856 km up, 36 % of the top fifth's neighbouring rows over 0.2 of opacity apart, 34 %
     with four rows marched for each and averaged, the same opacity on average): the image's grid
-    scaled up, not the march.
+    scaled up, not the march. The far band, a layer seen grazing far off, flickers and steps as
+    the view moves, with `temporal` or without. Tried (2026-11-17, 11-18) and not kept, each judged
+    live: the cover read over the pixel's footprint stretched along the view (by 1 / sin of the
+    view's slope to the layer: steady far off, but near clouds washed out; for the view's reads
+    alone, near ones kept, hardly steadier; over the square root of it, no steadier); the cover
+    volume filtered anisotropically along the view (`textureGrad`, 16×: flickered, the shading
+    lost); a softer composite over the band (a vertical tent where the depth changes fast between
+    rows: no gain); and the band accumulated over frames, its rays shifted within their pixels
+    each frame and blended into a history moved to where its cloud lies (no visible gain).
+    Not tried: more steps for runs that graze a layer, a full-resolution march of the band.

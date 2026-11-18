@@ -394,8 +394,8 @@ export const CLOUD_TYPE_HEIGHTS: Readonly<
   Record<CloudType, { base: number; top: readonly [number, number] }>
 > = {
   cumulus: { base: 1200, top: [2000, 3400] },
-  stratocumulus: { base: 900, top: [1300, 1700] },
-  stratus: { base: 400, top: [900, 900] },
+  stratocumulus: { base: 1200, top: [1600, 2000] },
+  stratus: { base: 600, top: [1100, 1100] },
   nimbostratus: { base: 600, top: [2600, 3400] },
   altocumulus: { base: 3800, top: [4200, 4600] },
   altostratus: { base: 4000, top: [4800, 5500] },
