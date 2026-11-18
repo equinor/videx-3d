@@ -860,6 +860,34 @@ export const SceneryStageReliefTiles = ({
     const tileCellPixels = (distance: number) =>
       cellPixels * (finest / cellPixels) ** towardOverview(distance);
 
+    // Over the ground handed out, which must meet what is drawn exactly.
+    const overHanded = (key: number) => {
+      if (handed.length === 0) return false;
+      const [a, b, width] = geoTileSquare(key);
+      return handed.some(
+        ({ square: [a0, b0, a1, b1] }) =>
+          a < a1 && b < b1 && a + width > a0 && b + width > b0,
+      );
+    };
+    // Seen from over it, the hollow's open opening peels the ground away (relief-fragment): a
+    // tile wholly inside is never seen. From under the ground it is the lid, seen as any.
+    // Per tile while the globe and the opening hold.
+    const opening = sky?.hollowOpen ? sky.hollowRadius : 0;
+    const holdsKey = `${globe.version},${opening}`;
+    if (view.hollowHoldsKey !== holdsKey) {
+      view.hollowHoldsKey = holdsKey;
+      view.hollowHolds.clear();
+    }
+    const inOpening = (key: number) => {
+      if (opening <= 0) return false;
+      let inside = view.hollowHolds.get(key);
+      if (inside === undefined) {
+        inside = sceneryHollowHoldsTile(globe, opening, key);
+        view.hollowHolds.set(key, inside);
+      }
+      return inside;
+    };
+
     const info = (key: number) => {
       const tile = streamer.get(key);
       const slot = slotOf.get(key);
@@ -868,7 +896,9 @@ export const SceneryStageReliefTiles = ({
         error: tile.error,
         minY: level + tile.min,
         maxY: level + tile.max,
-        leaf: tile.leaf,
+        // Never seen inside the open opening from over it: no finer tiles loaded there, as if
+        // none lay under it, but over the ground handed out. What is pinned is held apart.
+        leaf: tile.leaf || (!under && inOpening(key) && !overHanded(key)),
         // Across the coast, land and sea are shaded apart however flat the tile; and across
         // where a finer layer ends, or over one between its nodes.
         rough: tile.edge || (tile.min < 0 && tile.max > 0),
@@ -909,7 +939,7 @@ export const SceneryStageReliefTiles = ({
       view.regions.boxes,
     );
     const regionKey = `${view.regions.boxes.map(box => box.join(',')).join(';')}|${globe.version}`;
-    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${seeAll}|${regionKey}|${wet}|${!!sky}`;
+    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${seeAll}|${regionKey}|${wet}|${!!sky}|${opening}`;
     if (
       chosenKey === view.chosen.key &&
       pinnedNow === view.chosen.pins &&
@@ -1084,16 +1114,7 @@ export const SceneryStageReliefTiles = ({
     for (const fill of selection.fills) fillSource.set(fill.key, fill.source);
     // Over the ground handed out, which must meet what is drawn exactly: no soft swaps, and
     // no edges blended toward a parent.
-    const onHanded =
-      handed.length > 0
-        ? (key: number) => {
-            const [a, b, width] = geoTileSquare(key);
-            return handed.some(
-              ({ square: [a0, b0, a1, b1] }) =>
-                a < a1 && b < b1 && a + width > a0 && b + width > b0,
-            );
-          }
-        : undefined;
+    const onHanded = handed.length > 0 ? overHanded : undefined;
     // Soft swaps (TileTransitions): each tile drawn blends from the tile it replaces. Not
     // over the ground handed out, which must meet what is drawn exactly.
     const transitions = view.transitions;
@@ -1179,25 +1200,12 @@ export const SceneryStageReliefTiles = ({
     let order = drawnTiles;
     let kept = drawnTiles.length;
     if (sky?.hollowOpen && !under) {
-      const radius = sky.hollowRadius;
-      const holdsKey = `${globe.version},${radius}`;
-      if (view.hollowHoldsKey !== holdsKey) {
-        view.hollowHoldsKey = holdsKey;
-        view.hollowHolds.clear();
-      }
-      const holds = view.hollowHolds;
       order = view.hollowOrder;
       const cut = view.hollowCut;
       order.length = 0;
       cut.length = 0;
-      for (const tile of drawnTiles) {
-        let inside = holds.get(tile.key);
-        if (inside === undefined) {
-          inside = sceneryHollowHoldsTile(globe, radius, tile.key);
-          holds.set(tile.key, inside);
-        }
-        (inside ? cut : order).push(tile);
-      }
+      for (const tile of drawnTiles)
+        (inOpening(tile.key) ? cut : order).push(tile);
       kept = order.length;
       for (const tile of cut) order.push(tile);
     }

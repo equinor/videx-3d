@@ -65,6 +65,9 @@ built again only when the globe, the radius, the floor depth or the seabed's hei
 - **The relief:** its tiles wholly inside the rim's furthest reach are not drawn while the
   hollow is open and the camera is over the ground (`sceneryHollowHoldsTile`). They are still
   handed to the layers draped on it. Near the rim each pixel is cut in `relief-fragment.glsl`.
+  Nor are they split there, the far overview's too: no finer tiles are loaded for ground never
+  seen, but over the ground handed to a stage, and what is pinned (`SceneryStageReliefTiles`,
+  the tiles' `leaf`; 2026-11-18). From under the ground they are the lid, chosen as anywhere.
 
 ## Look
 
