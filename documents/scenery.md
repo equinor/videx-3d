@@ -445,9 +445,18 @@ from below.
 The sky is baked again when it changes, once it has been still for `capture.interval`
 (default 250 ms): a slider being dragged bakes nothing on the way, so the sky follows it at
 once and only the light it casts waits. A sky that keeps changing (a timelapse) is baked
-at least every `capture.maxWait` (default 1000 ms). The scene's light probe eases toward
+at least every `capture.maxWait` (default 1000 ms), the camera's zone alone: the others wait
+for the sky to be still, and a zone the camera enters is baked at once (until 2026-11-18 every
+zone each time, the water's prefiltered too while the camera was in the air). A bake goes a
+stage a frame: the zone's film (with the clouds' cube), its prefilter, its probe; together in
+one frame, on top of a full one, they stood the view still 80–150 ms at a time as the GPU
+caught up (RTX A1000). The probe is projected to spherical harmonics on the GPU and only its
+coefficients read back (`SphericalHarmonicsProjector`: 0.8 ms, against 1.1 ms, up to 3.7, for
+its six faces read back whole), and while the sky keeps changing every other round. The
+scene's light probe eases toward
 each new bake of its zone over a fraction of a second, so the light does not step as the
-sun moves; another zone's is swapped in at once. The environment map is swapped in.
+sun moves; another zone's is swapped in at once. The environment map is swapped in, whole,
+by its prefilter.
 
 With clouds (`SceneryClouds`), the air's bakes take them too, baked from where the
 air is baked and drawn over the sky; the sea reflects them (blurred from high up, and far off

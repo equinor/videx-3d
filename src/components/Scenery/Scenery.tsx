@@ -1100,6 +1100,15 @@ export const Scenery = ({
   const [schedule] = useState(() => new SceneryBakeSchedule());
   // One readback at a time: they are slow to come back, and piled up they stall.
   const probeBusy = useRef(false);
+  // A bake's stages, one a frame: a zone's film (with the clouds' cube), its prefilter, its
+  // probe. Together in one frame, on top of a full frame, they put 30–38 ms of GPU into frames
+  // in a row, and the browser stood still 80–150 ms to catch up (RTX A1000, 2026-11-18).
+  const bakeStages = useRef<
+    { zone: SceneryZone; stage: 'film' | 'prefilter' | 'probe' }[]
+  >([]);
+  // The zones whose probe was left out of their last round while the sky kept changing: every
+  // other round, as the scene's probe eases toward each anyway.
+  const probeSkipped = useRef(new Set<SceneryZone>());
   const captureInterval = capture?.interval ?? DEFAULT_CAPTURE_INTERVAL;
   const captureMaxWait = capture?.maxWait ?? DEFAULT_CAPTURE_MAX_WAIT;
   // The zones the camera can be in; the subsurface also lights an undrawn sky, and the
@@ -1892,37 +1901,64 @@ export const Scenery = ({
     dirty.current = false;
     subsurfaceDirty.current = false;
 
-    const next = schedule.next(
-      now,
-      zones,
-      zone,
-      z =>
-        environmentDue.has(z)
-          ? 'due'
-          : probeDue.has(z)
-            ? probeBusy.current
-              ? 'blocked'
-              : 'due'
-            : 'none',
-      { sky: bakeReady, subsurface: bakeReady },
-      captureInterval,
-      captureMaxWait,
-    );
-    if (next) {
-      if (environmentDue.delete(next)) {
-        baker.environment(gl, next, environmentResolution);
+    // A stage of the bake under way, or the next zone's first. Its prefilter replaces the
+    // zone's environment map whole, after its film, so no frame sees half a bake.
+    const bakeQueue = bakeStages.current;
+    if (bakeQueue.length === 0) {
+      const next = schedule.next(
+        now,
+        zones,
+        zone,
+        z =>
+          environmentDue.has(z)
+            ? 'due'
+            : probeDue.has(z)
+              ? probeBusy.current
+                ? 'blocked'
+                : 'due'
+              : 'none',
+        { sky: bakeReady, subsurface: bakeReady },
+        captureInterval,
+        captureMaxWait,
+      );
+      if (next) {
+        if (environmentDue.delete(next))
+          bakeQueue.push(
+            { zone: next, stage: 'film' },
+            { zone: next, stage: 'prefilter' },
+          );
+        if (!probeBusy.current && probeDue.has(next)) {
+          const skipped = probeSkipped.current;
+          if (
+            schedule.changing(now, captureInterval) &&
+            zoneProbes.current[next] &&
+            !skipped.has(next)
+          ) {
+            skipped.add(next);
+          } else {
+            skipped.delete(next);
+            probeDue.delete(next);
+            bakeQueue.push({ zone: next, stage: 'probe' });
+          }
+        }
       }
-      if (!probeBusy.current && probeDue.delete(next)) {
-        probeBusy.current = true;
-        baker
-          .lightProbe(gl, next)
-          .then(sh => {
-            if (sh) zoneProbes.current[next] = sh;
-          })
-          .finally(() => {
-            probeBusy.current = false;
-          });
-      }
+    }
+    const bakeStep = bakeQueue.shift();
+    if (bakeStep?.stage === 'film')
+      baker.filmEnvironment(gl, bakeStep.zone, environmentResolution);
+    else if (bakeStep?.stage === 'prefilter')
+      baker.prefilterEnvironment(gl, bakeStep.zone);
+    else if (bakeStep?.stage === 'probe') {
+      const probed = bakeStep.zone;
+      probeBusy.current = true;
+      baker
+        .lightProbe(gl, probed)
+        .then(sh => {
+          if (sh) zoneProbes.current[probed] = sh;
+        })
+        .finally(() => {
+          probeBusy.current = false;
+        });
     }
 
     // The zone's bakes, swapped in as the camera crosses a level: no GPU work. Until it has

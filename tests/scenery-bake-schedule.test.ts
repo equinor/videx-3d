@@ -68,18 +68,48 @@ describe('SceneryBakeSchedule', () => {
     expect(bake(1000 + INTERVAL + 1)).toBe('air');
   });
 
-  it('bakes a sky that keeps changing every maxWait', () => {
+  it('bakes the zone in view of a sky that keeps changing every maxWait', () => {
     const { bake, change } = sky(['air', 'subsurface']);
     bake(0);
     bake(1);
-    const baked: number[] = [];
+    const baked: (string | null)[] = [];
     for (let t = 100; t <= 2500; t += 50) {
       change(t);
-      if (bake(t)) baked.push(t);
+      const zone = bake(t);
+      if (zone) baked.push(`${zone} ${t}`);
     }
-    // A round bakes its zones on consecutive calls; the next waits maxWait from the first
-    // change after it began.
-    expect(baked).toEqual([1100, 1150, 2150, 2200]);
+    // The next waits maxWait from the first change after it; the others wait for it to be still.
+    expect(baked).toEqual(['air 1100', 'air 2150']);
+  });
+
+  it('bakes the other zones once the sky is still', () => {
+    const { bake, change } = sky();
+    bake(0);
+    bake(1);
+    bake(2);
+    for (let t = 100; t <= 1200; t += 50) {
+      change(t);
+      bake(t);
+    }
+    expect(bake(1200 + INTERVAL - 1)).toBeNull();
+    // The air changed again after its last bake (1100) too.
+    expect([
+      bake(1200 + INTERVAL),
+      bake(1201 + INTERVAL),
+      bake(1202 + INTERVAL),
+    ]).toEqual(['subsurface', 'air', 'water']);
+    expect(bake(1203 + INTERVAL)).toBeNull();
+  });
+
+  it('bakes a zone the camera enters at once', () => {
+    const { bake, change } = sky();
+    bake(0);
+    bake(1);
+    bake(2);
+    change(1000);
+    expect(bake(1010)).toBeNull();
+    expect(bake(1020, READY, 'water')).toBe('water');
+    expect(bake(1030, READY, 'water')).toBeNull();
   });
 
   it('keeps a zone whose readback is busy in its round', () => {

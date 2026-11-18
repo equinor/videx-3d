@@ -23,8 +23,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { precompile, PrecompileOptions } from '../../rendering/precompile';
-import { readFloatTargetAsync } from '../../sdk/utils/read-target-async';
-import { cubeFacesToSphericalHarmonics } from '../../sdk/utils/spherical-harmonics';
+import { SphericalHarmonicsProjector } from '../../sdk/utils/spherical-harmonics';
 import { oceanWhitecapCover } from '../Ocean/ocean-material';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import bakeFragmentShader from './shaders/scenery-bake-fragment.glsl';
@@ -37,8 +36,6 @@ import {
 import type { ScenerySkyOverlay } from './scenery-registry';
 
 const PROBE_RESOLUTION = 32;
-// A cube target's faces, read for the probe in this order (cubeFacesToSphericalHarmonics').
-const CUBE_FACES = [0, 1, 2, 3, 4, 5];
 // How far above the sea surface (or the abyss level) the air is filmed from, in world units.
 const AIR_BAKE_HEIGHT = 100;
 // The bake's zones, as its shader numbers them (uBakeZone).
@@ -155,6 +152,8 @@ export class SceneryBaker {
     type: HalfFloatType,
   });
   private readonly probeCamera = new CubeCamera(0.1, 10, this.probeTarget);
+  // The probe's harmonics, worked out on the GPU and read back alone.
+  private readonly projector = new SphericalHarmonicsProjector();
   private envCamera: CubeCamera | null = null;
   private readonly bakes: Record<SceneryZone, ZoneBake> = {
     air: { cube: null, prefiltered: null },
@@ -236,19 +235,29 @@ export class SceneryBaker {
 
   /**
    * Compile what the bakes draw with, in the background where the browser can (see
-   * `precompile`): its one small program, and with an environment of `resolution`, the
-   * prefilter every environment bake takes. `track` gives each of its compiles an
-   * `onProgress` (see `createPrecompileCount`). `null` when all is ready already.
+   * `precompile`): its one small program, the light probe's projection, and with an
+   * environment of `resolution`, the prefilter every environment bake takes. `track` gives each
+   * of its compiles an `onProgress` (see `createPrecompileCount`). `null` when all is ready
+   * already.
    */
   precompile(
     renderer: WebGLRenderer,
     resolution: number | null,
     track?: () => PrecompileOptions['onProgress'],
   ): Promise<void> | null {
+    const projector = this.projector;
     const waits = [
       precompile(renderer, this.scene, compileCamera, this.scene, 'offscreen', {
         onProgress: track?.(),
       }),
+      precompile(
+        renderer,
+        projector.scene,
+        projector.camera,
+        projector.scene,
+        'offscreen',
+        { onProgress: track?.() },
+      ),
       resolution === null
         ? null
         : this.precompilePmrem(renderer, resolution, track?.()),
@@ -295,12 +304,16 @@ export class SceneryBaker {
     return this.bakes[zone].prefiltered?.texture ?? null;
   }
 
-  /** Film a zone and prefilter it. Its textures are reused until the resolution changes. */
-  environment(
+  /**
+   * Film a zone into its environment cube, to prefilter after ({@link prefilterEnvironment}):
+   * two stages, so a frame takes one (the prefilter is a bake's heaviest, 2.4 ms of GPU at 128,
+   * RTX A1000). Its textures are reused until the resolution changes.
+   */
+  filmEnvironment(
     renderer: WebGLRenderer,
     zone: SceneryZone,
     resolution: number,
-  ): Texture {
+  ) {
     const bake = this.bakes[zone];
     if (!bake.cube || bake.cube.width !== resolution) {
       bake.cube?.dispose();
@@ -313,19 +326,26 @@ export class SceneryBaker {
     this.envCamera ??= new CubeCamera(0.1, 10, bake.cube);
     this.envCamera.renderTarget = bake.cube;
     this.film(renderer, zone, this.envCamera);
+  }
+
+  /**
+   * Prefilter a zone's last film ({@link filmEnvironment}) into its environment map, which the
+   * scene's materials read: the map changes only here, whole. Nothing before its first film.
+   */
+  prefilterEnvironment(renderer: WebGLRenderer, zone: SceneryZone) {
+    const bake = this.bakes[zone];
+    if (!bake.cube) return;
     this.pmrem ??= new PMREMGenerator(renderer);
     bake.prefiltered = this.pmrem.fromCubemap(
       bake.cube.texture,
       bake.prefiltered,
     );
-    return bake.prefiltered.texture;
   }
 
   /**
-   * Film a zone and project it to spherical harmonics; the readback is asynchronous (all six
-   * faces behind one fence, without three's synchronous format queries: `readFloatTargetAsync`),
-   * and resolves `null` if the baker is disposed meanwhile, or the bake is not finite. One at
-   * a time: they share a target.
+   * Film a zone and project it to spherical harmonics on the GPU, reading back only them
+   * (`SphericalHarmonicsProjector`, asynchronous); resolves `null` if the baker is disposed
+   * meanwhile, or the bake is not finite. One at a time: they share a target.
    */
   lightProbe(
     renderer: WebGLRenderer,
@@ -333,24 +353,25 @@ export class SceneryBaker {
   ): Promise<SphericalHarmonics3 | null> {
     this.film(renderer, zone, this.probeCamera);
     const generation = this.generation;
-    return readFloatTargetAsync(renderer, this.probeTarget, CUBE_FACES).then(
-      pixels => {
-        if (generation !== this.generation) return null;
-        const sh = cubeFacesToSphericalHarmonics(pixels, PROBE_RESOLUTION);
-        return sh.coefficients.every(
-          c =>
-            Number.isFinite(c.x) &&
-            Number.isFinite(c.y) &&
-            Number.isFinite(c.z),
-        )
-          ? sh
-          : null;
-      },
-      error => {
-        if (generation === this.generation) throw error;
-        return null;
-      },
-    );
+    return this.projector
+      .project(renderer, this.probeTarget.texture, PROBE_RESOLUTION)
+      .then(
+        sh => {
+          if (generation !== this.generation) return null;
+          return sh.coefficients.every(
+            c =>
+              Number.isFinite(c.x) &&
+              Number.isFinite(c.y) &&
+              Number.isFinite(c.z),
+          )
+            ? sh
+            : null;
+        },
+        error => {
+          if (generation === this.generation) throw error;
+          return null;
+        },
+      );
   }
 
   // A zone's light from where it is seen: the air with what draws itself in the sky
@@ -397,6 +418,7 @@ export class SceneryBaker {
     this.geometry.dispose();
     release(this.material);
     release(this.overlayMaterial);
+    this.projector.dispose(release);
     this.probeTarget.dispose();
     for (const bake of Object.values(this.bakes)) {
       bake.cube?.dispose();
