@@ -6,7 +6,10 @@ import {
   SceneryLayerView,
 } from '../src/components/Scenery/scenery-layers';
 import { SceneryMaterial } from '../src/components/Scenery/scenery-material';
-import { OceanMaterial } from '../src/components/Ocean/ocean-material';
+import {
+  OCEAN_QUALITY_DEFINES,
+  OceanMaterial,
+} from '../src/components/Ocean/ocean-material';
 
 const key = (defines: Record<string, unknown>) => JSON.stringify(defines);
 
@@ -86,6 +89,19 @@ describe('sceneryLayerDefines', () => {
     // On high, by default.
     sky.linkOcean(new OceanMaterial({ quality: 'high' }));
     expect(sea()).toHaveProperty('OCEAN_SPARKLE');
+  });
+
+  it('draws a low sea, and the void under it, without what low leaves out', () => {
+    const sky = new SceneryMaterial();
+    sky.ocean = true;
+    sky.abyss = true;
+    sky.linkOcean(new OceanMaterial({ quality: 'low' }));
+    for (const layer of ['sea', 'water', 'abyss'] as const)
+      for (const name of OCEAN_QUALITY_DEFINES.low)
+        expect(sceneryLayerDefines(sky, layer)).toHaveProperty(name);
+    sky.linkOcean(new OceanMaterial({ quality: 'medium' }));
+    for (const name of OCEAN_QUALITY_DEFINES.low)
+      expect(sceneryLayerDefines(sky, 'sea')).not.toHaveProperty(name);
   });
 });
 

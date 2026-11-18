@@ -11,7 +11,7 @@ import {
 import { releaseMaterial } from '../../rendering/precompile';
 import layerFragmentShader from './shaders/sky-layer-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
-import type { SceneryMaterial } from './scenery-material';
+import { SCENERY_SEA_DEFINES, type SceneryMaterial } from './scenery-material';
 import {
   createScenerySurfaceMaterial,
   sceneryOceanDefines,
@@ -67,14 +67,7 @@ export function sceneryLayerDefines(
     // Under a sea, where it leaves the void showing: the sea's code, but not its seabed's detail.
     if (sky.ocean) {
       defines.SKY_OCEAN = '';
-      for (const key of [
-        'SEA_LAYERS',
-        'SEA_DETAIL',
-        'OCEAN_CONTACT_COUNT',
-        'OCEAN_SPARKLE',
-        'OCEAN_FRESNEL_POWER',
-        'OCEAN_FOAM_LIFE',
-      ])
+      for (const key of SCENERY_SEA_DEFINES)
         if (switches[key] !== undefined) defines[key] = switches[key];
     }
   } else {

@@ -448,8 +448,10 @@ export type SceneryOceanProps = SceneryOceanWater & {
    */
   bodyFogDensity?: number;
   /**
-   * How much of the sea state's waves it draws, as `Ocean`'s `quality` (`SEA_QUALITY`).
-   * Default `'medium'`, sized for a mid-range laptop's integrated GPU.
+   * How much of the sea it draws, as `Ocean`'s `quality` (`SEA_QUALITY`,
+   * `OCEAN_QUALITY_DEFINES`); at `low` its reflection takes the sky's gradient alone, without
+   * the twilight's glow or the sun's halo. Default `'medium'`, sized for a mid-range laptop's
+   * integrated GPU.
    */
   quality?: SeaQuality;
 };

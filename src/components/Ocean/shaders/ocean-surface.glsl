@@ -139,9 +139,14 @@ float oceanGustRough(float g) {
 // The reflection off water rougher (or smoother) than the sea's mean, `rough` the slope
 // variance the pixel cannot show (oceanWaves): its facets tilted every way see higher up the
 // sky, as cat's paws darken against the bright horizon a glassy sea mirrors. `r` the mirror
-// direction, `up` the sea's up; nothing changes at the mean.
+// direction, `up` the sea's up; nothing changes at the mean, as everywhere without the gusts
+// and slicks (OCEAN_NO_GUSTS).
 vec3 oceanRoughReflect(vec3 r, vec3 up, float rough) {
+  #ifdef OCEAN_NO_GUSTS
+  return r;
+  #else
   return normalize(r + up * (uRoughReflect * (sqrt(rough) - sqrt(oceanRoughMean))));
+  #endif
 }
 
 // Smith's masking of a Beckmann surface of slope variance `rough` (both axes) seen at `ndv`.
@@ -155,10 +160,15 @@ float oceanMasking(float ndv, float rough) {
 }
 
 // The reflection's `fresnel` at `ndv` for water rougher (or smoother) than the mean: its facets
-// hide each other more as it roughens, toward grazing. Nothing changes at the mean.
+// hide each other more as it roughens, toward grazing. Nothing changes at the mean, nor
+// without the gusts and slicks.
 float oceanRoughFresnel(float fresnel, float ndv, float rough) {
+  #ifdef OCEAN_NO_GUSTS
+  return fresnel;
+  #else
   float ratio = oceanMasking(ndv, rough) / max(oceanMasking(ndv, oceanRoughMean), 1e-4);
   return clamp(fresnel * mix(1.0, ratio, uRoughReflect), 0.0, 1.0);
+  #endif
 }
 
 // 0 up close, 1 where the sea has faded to a flat mirror, `dist` from the camera.
@@ -287,8 +297,10 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
   // The weather's gusts and slicks roughen and calm the short waves: what no layer draws by
   // the spectrum's answer to the local wind, the ripples and the finest layer a share of it.
   // Faded with the waves (far off, and where two of a Scenery's charts meet); the slicks'
-  // damping over its mean, so a sea too far off to show them is as rough as without.
+  // damping over its mean, so a sea too far off to show them is as rough as without. None at
+  // low quality (OCEAN_NO_GUSTS): the mean's roughness everywhere.
   float gustRough = 1.0;
+  #ifndef OCEAN_NO_GUSTS
   if(uWeatherGusts.x > 0.0 || uWeatherGusts.z > 0.0) {
     float slick;
     float g = weatherWindAt(p, wind, uWeatherGustTravel, uWeatherGusts, sqrt(pixel2), slick);
@@ -296,6 +308,7 @@ vec3 oceanWaves(vec2 p, float flatness, float depth, out vec2 slope, out float h
     oceanSlick = slick * detail;
     gustRough = oceanGustRough(oceanGust) * (1.0 - OCEAN_SLICK_DAMPING * oceanSlick) / (1.0 - OCEAN_SLICK_DAMPING * WEATHER_SLICK_MEAN * uWeatherGusts.z);
   }
+  #endif
   // What that adds to the slopes drawn, and to all of them: the mean less these is the mean.
   float gustSlope = 0.0;
   float gustTotal = 0.0;
@@ -561,6 +574,10 @@ vec3 oceanGlint(vec3 N, vec3 V, float glint, float rough, vec2 p, float texel) {
 #define OCEAN_CREST_BEND 0.5
 #define OCEAN_CREST_POWER 4.0
 vec3 oceanCrestLight(vec3 N, vec3 V, float height, float flatness, float fresnel, vec3 extinction, vec3 waterColor, vec3 sun, vec3 up) {
+  // Not drawn at low quality (OCEAN_QUALITY_DEFINES).
+  #ifdef OCEAN_NO_CREST_LIGHT
+  return vec3(0.0);
+  #else
   float crest = uCrestLight * smoothstep(0.0, 0.5 * uSignificantHeight, height) * (1.0 - flatness);
   if(crest <= 0.0)
     return vec3(0.0);
@@ -570,6 +587,7 @@ vec3 oceanCrestLight(vec3 N, vec3 V, float height, float flatness, float fresnel
   behind *= smoothstep(-0.02, 0.05, dot(L, up));
   vec3 tint = exp(-extinction * clamp(0.5 * uSignificantHeight, 0.3, 3.0));
   return crest * behind * (1.0 - fresnel) * OCEAN_CREST_GLOW * waterColor * tint * sun;
+  #endif
 }
 
 // A premultiplied layer as colour and opacity, for blending. Its colour is kept no brighter

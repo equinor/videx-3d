@@ -525,8 +525,14 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // (globeCameraLook): far off, into the field's frame, it fell below the camera's horizon.
   r -= 2.0 * min(dot(r, wave.up), 0.0) * wave.up;
   r = globeTurnFrom(r, wave.up, globeCameraLook());
-  // Over the sky, the clouds it reflects (skyOceanReflectedClouds).
+  // Over the sky, the clouds it reflects (skyOceanReflectedClouds). At low quality
+  // (OCEAN_PLAIN_SKY) the sky's gradient alone, in the daylight where the camera is: no
+  // twilight's glow nor the sun's halo in it.
+  #ifdef OCEAN_PLAIN_SKY
+  vec3 reflected = skyGradientSeen(normalize(r), blend, 0.0, uSkyDaylight);
+  #else
   vec3 reflected = skySurfaceAt(normalize(r), blend, 0.0);
+  #endif
   if(uSkyOceanCloudsOn > 0.5) {
     vec4 clouds = skyOceanReflectedClouds(normalize(r), reflected, world, wave.up, texel);
     reflected = reflected * (1.0 - clouds.a) + clouds.rgb;
@@ -562,8 +568,14 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // Lit, the foam takes the sky's light toward the wave's normal (a second look at the sky, so
   // only where there is foam) and the sun's as the glint has it; unlit, it is dimmed by night.
   vec3 foamSky = vec3(0.0);
-  if(foamOpacity > 0.001 && uFoamLook.z > 0.0)
-    foamSky = skySurfaceAt(globeTurnFrom(normal, wave.up, globeCameraLook()), blend, 0.0);
+  if(foamOpacity > 0.001 && uFoamLook.z > 0.0) {
+    vec3 toward = globeTurnFrom(normal, wave.up, globeCameraLook());
+    #ifdef OCEAN_PLAIN_SKY
+    foamSky = skyGradientSeen(toward, blend, 0.0, uSkyDaylight);
+    #else
+    foamSky = skySurfaceAt(toward, blend, 0.0);
+    #endif
+  }
   surface = oceanFoamOver(surface, uFoamColor * mix(night, 1.0, uFoamLook.z), normal, foamOpacity, foamSky, uSunColor * glint);
   // Lit as the sky the camera sees is (its daylight, its reflection): far round the Earth,
   // where the sun has set, dark as by night (skyDayFrom).

@@ -378,12 +378,11 @@ float skySpace(vec3 dir, float height) {
   return skyNearSpace(height) ? skySpaceAbove(skyAirHeight(dir, height)) : 0.0;
 }
 
-// Gradient, daylight, the sun's halo and the twilight glow; no disc. Seen along `dir` with
-// the horizon's sine along its bearing `horizon` (skyHorizonAt), in the light `seen`: the
-// air's own light, without the dark of space.
-vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
-  vec3 look = globeCameraLook();
-  float y = skyOverHorizon(dot(dir, look), horizon);
+// The gradient alone along `dir` (no halo, no twilight's glow), with the horizon's sine along
+// its bearing `horizon` (skyHorizonAt), in `daylight`: what skySurfaceSeen starts from, and
+// what a sea's reflection takes at low quality (OCEAN_PLAIN_SKY).
+vec3 skyGradientSeen(vec3 dir, float blend, float horizon, float daylight) {
+  float y = skyOverHorizon(dot(dir, globeCameraLook()), horizon);
   // Higher up, the sky deepens, and its haze closes onto the horizon as the camera rises out of it.
   float below = skyAirBelow();
   vec3 zenith = mix(uSkyZenithColor, skyDeepZenith(), below * below);
@@ -391,8 +390,16 @@ vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
   vec3 ground = mix(uSkyGroundColor, uSkyNadirColor, sqrt(max(-y, 0.0)));
   // The sky carries on a little below the horizon, reading as distant haze.
   vec3 color = mix(sky, ground, smoothstep(0.0, blend, -y));
+  return color * mix(SKY_NIGHT_LEVEL, 1.0, daylight);
+}
 
-  color *= mix(SKY_NIGHT_LEVEL, 1.0, seen.daylight);
+// Gradient, daylight, the sun's halo and the twilight glow; no disc. Seen along `dir` with
+// the horizon's sine along its bearing `horizon` (skyHorizonAt), in the light `seen`: the
+// air's own light, without the dark of space.
+vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
+  vec3 look = globeCameraLook();
+  float y = skyOverHorizon(dot(dir, look), horizon);
+  vec3 color = skyGradientSeen(dir, blend, horizon, seen.daylight);
 
   float toward = max(dot(dir, uSkySunDirection), 0.0);
   float overHorizon = smoothstep(-blend, 0.0, y);

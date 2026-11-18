@@ -33,8 +33,13 @@ are all tunable via props.
 much of the sea state is drawn: `medium`, sized for a mid-range laptop's integrated GPU, four
 layers (tiles of 2011, 307, 47 and 7.3 m, waves down to 0.23 m); `high` adds the finest
 layer's texture read again 6.4× smaller below that, for close up; `low` three coarse layers
-and no ripples; `ultra` finer tiles. The `<Scenery>`'s sea (`SceneryOcean`) takes the same
-`quality`. The short waves, from about a metre down, grow with the wind (Elfouhaily et al.
+and no ripples; `ultra` finer tiles. `low` also leaves out of the shading, compiled out
+(`OCEAN_QUALITY_DEFINES`): the weather's gusts and slicks (the mean's roughness everywhere),
+the light through the crests and, in a `<Scenery>`'s sea, the sky's twilight and the sun's
+halo in the reflection (its gradient alone, in the daylight where the camera is). Measured on
+the `Scenery`'s stage surface (2026-11-18, A1000), those three take it to 0.74 of `medium`'s
+(the gusts 0.85, the sky 0.96, the crests 0.98–0.99). The `<Scenery>`'s sea (`SceneryOcean`)
+takes the same `quality`. The short waves, from about a metre down, grow with the wind (Elfouhaily et al.
 1997): a light air leaves them faint, a gale sharp. `steepness` (default 1) scales the slopes
 for show; 1 is as the spectrum gives them. Whitecaps (`foamAmount`, default 0.5) cover the
 share of the sea measured at sea for the wind (about 1 % at 10 m/s, 10 % at 20 m/s) on the

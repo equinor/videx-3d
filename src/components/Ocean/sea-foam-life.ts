@@ -47,7 +47,12 @@ const FRESH_LIFE = 2;
 const FRESH_TO_OLD = 0.05;
 const DRIFT = 0.03;
 // The defines the waves compile with (ocean-surface.glsl).
-const WAVE_DEFINES = ['SEA_LAYERS', 'SEA_DETAIL', 'OCEAN_CONTACT_COUNT'];
+const WAVE_DEFINES = [
+  'SEA_LAYERS',
+  'SEA_DETAIL',
+  'OCEAN_CONTACT_COUNT',
+  'OCEAN_NO_GUSTS',
+];
 
 /** What the foam's life is run with, a step. */
 export type SeaFoamStep = {

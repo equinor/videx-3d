@@ -404,6 +404,35 @@ export const OCEAN_FOAM_LIFE_DEFAULT: Record<SeaQuality, boolean> = {
   high: true,
   ultra: true,
 };
+
+/**
+ * What each quality leaves out of the surface's shading, compiled out. `low`: the weather's
+ * gusts and slicks (an even roughness, the mean's: {@link OceanMaterial.gusts} is not drawn),
+ * the light through the crests ({@link OceanMaterial.crestLight}) and, in a `Scenery`'s sea,
+ * the sky's twilight and the sun's halo in its reflection (the sky's gradient alone, in the
+ * daylight where the camera is).
+ */
+export const OCEAN_QUALITY_DEFINES: Record<SeaQuality, readonly string[]> = {
+  low: ['OCEAN_NO_GUSTS', 'OCEAN_NO_CREST_LIGHT', 'OCEAN_PLAIN_SKY'],
+  medium: [],
+  high: [],
+  ultra: [],
+};
+
+/**
+ * The defines the surface's shading compiles with besides its waves: its quality's
+ * ({@link OCEAN_QUALITY_DEFINES}) and its options' (`sparkle`, `fresnelPower`, `foamLife`). A
+ * material drawing an {@link OceanMaterial}'s water takes them over (a `Scenery`'s sea:
+ * `SceneryMaterial.linkOcean`), in this order.
+ */
+export const OCEAN_SHADING_DEFINES = [
+  'OCEAN_SPARKLE',
+  'OCEAN_FRESNEL_POWER',
+  'OCEAN_FOAM_LIFE',
+  'OCEAN_NO_GUSTS',
+  'OCEAN_NO_CREST_LIGHT',
+  'OCEAN_PLAIN_SKY',
+] as const;
 // The defines the scene's sky sets (setSky).
 const OCEAN_SKY_DEFINES = [
   'OCEAN_SKY_ENV',
@@ -530,6 +559,10 @@ export class OceanMaterial extends ShaderMaterial {
         ...(OCEAN_SPARKLE_DEFAULT[quality] > 0 ? { OCEAN_SPARKLE: '' } : {}),
         // The whitecaps' life, where it is drawn (foamLife).
         ...(OCEAN_FOAM_LIFE_DEFAULT[quality] ? { OCEAN_FOAM_LIFE: '' } : {}),
+        // What the quality leaves out.
+        ...Object.fromEntries(
+          (OCEAN_QUALITY_DEFINES[quality] ?? []).map(name => [name, '']),
+        ),
         OCEAN_CONTACT_COUNT: contactCount,
         ...(sectionPlane ? { OCEAN_SECTION: '' } : {}),
         ...(fence ? { OCEAN_FENCE: '' } : {}),
@@ -806,7 +839,7 @@ export class OceanMaterial extends ShaderMaterial {
   /**
    * The weather's gusts and slicks over the sea ({@link WeatherGusts}): the short waves
    * roughen in a gust and calm in a lull and a slick. `null`, as the wind gives them; with
-   * `strength` and `slicks` 0, none.
+   * `strength` and `slicks` 0, none. Not drawn at `low` quality ({@link OCEAN_QUALITY_DEFINES}).
    */
   get gusts(): WeatherGusts | null {
     return this._gusts;
@@ -1454,7 +1487,8 @@ export class OceanMaterial extends ShaderMaterial {
   /**
    * How much of the sun's light through the waves' crests is drawn, with the sun behind them:
    * the water's own light tinted by the short path through a crest. 0 none, 1 (the default)
-   * as modelled, more for more. A few operations a pixel at any quality.
+   * as modelled, more for more. A few operations a pixel; not drawn at `low` quality
+   * ({@link OCEAN_QUALITY_DEFINES}).
    */
   get crestLight(): number {
     return this.uniforms.uCrestLight.value;

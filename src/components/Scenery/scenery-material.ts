@@ -46,7 +46,11 @@ import {
   CompassFrame,
   directionFromCompass,
 } from '../../sdk/utils/vector-operations';
-import { OCEAN_SURFACE_UNIFORMS, OceanMaterial } from '../Ocean/ocean-material';
+import {
+  OCEAN_SHADING_DEFINES,
+  OCEAN_SURFACE_UNIFORMS,
+  OceanMaterial,
+} from '../Ocean/ocean-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
 import {
@@ -69,14 +73,21 @@ const SKY_PLANET_COUNT = 5;
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
 
-/** The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}. */
-export const SCENERY_SHARED_DEFINES = [
+/**
+ * The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}:
+ * its waves and its water's shading ({@link OCEAN_SHADING_DEFINES}). In this order wherever a
+ * program is made, as a program is keyed on the order of its defines.
+ */
+export const SCENERY_SEA_DEFINES = [
   'SEA_LAYERS',
   'SEA_DETAIL',
   'OCEAN_CONTACT_COUNT',
-  'OCEAN_SPARKLE',
-  'OCEAN_FRESNEL_POWER',
-  'OCEAN_FOAM_LIFE',
+  ...OCEAN_SHADING_DEFINES,
+];
+
+/** The same and the seabed's detail: what a stage's sea compiles with. */
+export const SCENERY_SHARED_DEFINES = [
+  ...SCENERY_SEA_DEFINES,
   ...SURFACE_DETAIL_DEFINES,
 ];
 
@@ -1094,14 +1105,10 @@ export class SceneryMaterial extends ShaderMaterial {
       this.switchesVersion++;
     }
     this.setSwitch('SEA_DETAIL', water.seaState.detail !== null);
-    // Its glitter, its Fresnel and its whitecaps' life, as the water's (`sparkle`,
-    // `fresnelPower`, `foamLife`).
-    this.setSwitch('OCEAN_SPARKLE', 'OCEAN_SPARKLE' in water.defines);
-    this.setSwitch(
-      'OCEAN_FRESNEL_POWER',
-      'OCEAN_FRESNEL_POWER' in water.defines,
-    );
-    this.setSwitch('OCEAN_FOAM_LIFE', 'OCEAN_FOAM_LIFE' in water.defines);
+    // Its shading as the water's: what its quality leaves out, its glitter, its Fresnel and
+    // its whitecaps' life (`sparkle`, `fresnelPower`, `foamLife`).
+    for (const name of OCEAN_SHADING_DEFINES)
+      this.setSwitch(name, name in water.defines);
   }
 
   /** height of the sea surface along {@link up} */
