@@ -79,7 +79,10 @@ its light is red), and a faint pink belt rises opposite; `twilight` scales it al
 1, 0 for none). The sea reflects it, with a broad glitter path under the low sun
 (`OceanMaterial.sunGlintSpread`), and the bakes see it.
 
-`moon` (default on) is a full moon opposite the sun, so it is up at night. The sky has
+`moon` (default on) is a full moon opposite the sun, so it is up at night. Its face is the
+real one, from an albedo map of the whole moon (see below), its north toward its axis on the
+star sphere: within 1.5° of the ecliptic's pole (`SKY_MOON_AXIS`), so it tilts as the stars
+turn. The sky has
 ONE directional light: the sun's while it is up, the moon's once the sun is well down
 (it fades in between −6° and −12°). `stars` (default on) come out once it is dark. They
 are no real star map, but they turn as the real ones do: about the celestial pole, which
@@ -105,7 +108,8 @@ invalid one (no real date, a latitude past ±90) falls back to the sky above. In
 - **Sun:** `solarPosition`.
 - **Moon:** where it really is (the Astronomical Almanac's low-precision series, within
   a few tenths of a degree, with parallax), drawn as a sphere lit from the sun, so the
-  phase and the tilt of its lit side come out on their own, with faint earthshine on the
+  phase and the tilt of its lit side come out on their own, its face tilted as the real
+  one is (libration left out), with faint earthshine on the
   dark side, which shows the air in front of it a shade darker than the sky around it
   once the stars are out (in twilight it is lost in the sky).
   It is up by day too, as a pale disc. Its light scales with the phase and
@@ -130,6 +134,17 @@ in every cell within half a degree of it, so a pixel reads one cell. The catalog
 10 KB gzipped) is a chunk of its own (`codeSplitting` in `vite.config.ts`), loaded the
 first time an observer is set: a `Scenery` without one never loads it, and until it is in, the
 procedural stars show.
+
+The moon's face is an albedo map of its whole globe, longitude by latitude, 256×128 grey
+(`textures/moon.jpg`, 6 KB): NASA's Scientific Visualization Studio CGI Moon Kit
+(<https://svs.gsfc.nasa.gov/4720>, `lroc_color_poles_2k`, from the Lunar Reconnaissance
+Orbiter Camera's mosaic; public domain), its luminance averaged in linear light. Imported
+with `?inline`, it is a data URL in a chunk of its own (`sky-moon.ts`), loaded the first
+time the moon is shown; until it is in, the disc is plain. The shader reads it only on the
+disc, over its mean as seen from the Earth (`SKY_MOON_MEAN`), so the moon is as bright on the
+whole as the plain disc; the brightest highlands clip to white without tone mapping, as a
+full moon does to the eye. It darkens the lit side, the earthshine and the moon by day; its
+glow and the air in front of its dark side are left as they were.
 
 The astronomy is in the SDK, free of three.js: `julianDay`, `localSiderealTime`,
 `equatorialToHorizontal`, `precessFromJ2000`, `lunarPosition`, `planetPosition` and
@@ -970,6 +985,7 @@ basic ones show in every story, the advanced and debug ones only in `StageDebug`
 | `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |
 | `scenery-model.ts` | option types, defaults, and the pure rules (`sceneryZone`, `skyDaylight`, `skyMoonlight`, `skySunColor`, …) |
 | `scenery-material.ts` | `SceneryMaterial`: the sky's own layer, the uniform objects every layer shares, and the switches they compile with |
+| `sky-star-catalogue.ts`, `sky-moon.ts`, `textures/moon.jpg` | the observer's stars as the shader's textures, and the moon's albedo map (each loaded in its own chunk) |
 | `scenery-baker.ts` | bakes the environment and light probe per zone (internal) |
 | `scenery-stage.ts`, `SceneryStage.tsx` | the stage's geometry and materials |
 | `SceneryStageReliefTiles.tsx`, `scenery-relief-tiles.ts`, `SceneryStageReliefOverview.tsx`, `scenery-relief.ts`, `scenery-relief-atlas.ts` | the relief: its tiles, and its overview past the far plane, read from the same tiles through an index (see [tiles.md](./tiles.md)) |

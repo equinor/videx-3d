@@ -139,7 +139,11 @@ export class SceneryMaterial extends ShaderMaterial {
   private starTextures: { cells: DataTexture; list: DataTexture } | null = null;
   private observing = false;
   private starsLoading = false;
-  private starGeneration = 0;
+  // Bumped on dispose: what is still loading then (the star catalogue, the moon's map) is
+  // dropped when it arrives.
+  private generation = 0;
+  private moonMap: Texture | null = null;
+  private moonLoading = false;
   /**
    * The field's light, as {@link setSun} and the light's setters leave it: the scene's
    * lights and the bakes take it. The sky's own uniforms hold the light where the camera
@@ -193,6 +197,8 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyMoonGlow: new Uniform(0),
         uSkyMoonPhase: new Uniform(1),
         uSkyMoonDay: new Uniform(0),
+        uSkyMoonMap: new Uniform<Texture | null>(null),
+        uSkyMoonMapped: new Uniform(0),
         uSkyNight: new Uniform(0),
         uSkyMoonlight: new Uniform(0),
         uSkyAirLight: new Uniform(new Vector4()),
@@ -608,12 +614,38 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uSkyMoonColor.value.set(value);
   }
 
-  /** angular radius of the moon disc, in degrees */
+  /**
+   * angular radius of the moon disc, in degrees. Shown, its map is loaded (its own chunk)
+   * and uploaded the first time; until it is in, the disc is plain.
+   */
   get moonSize(): number {
     return MathUtils.radToDeg(this.uniforms.uSkyMoonSize.value);
   }
   set moonSize(value: number) {
     this.uniforms.uSkyMoonSize.value = MathUtils.degToRad(Math.max(value, 0));
+    if (value > 0) this.loadMoonMap();
+  }
+
+  private loadMoonMap() {
+    if (this.moonMap || this.moonLoading) return;
+    this.moonLoading = true;
+    const generation = this.generation;
+    import('./sky-moon')
+      .then(({ loadSkyMoonTexture }) => loadSkyMoonTexture())
+      .then(texture => {
+        if (generation !== this.generation) {
+          texture?.dispose();
+          return;
+        }
+        if (!texture) return;
+        this.moonMap = texture;
+        this.uniforms.uSkyMoonMap.value = texture;
+        this.uniforms.uSkyMoonMapped.value = 1;
+      })
+      .catch(error => console.warn('SceneryMaterial: no moon map', error))
+      .finally(() => {
+        if (generation === this.generation) this.moonLoading = false;
+      });
   }
 
   get moonGlow(): number {
@@ -689,10 +721,10 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uSkyObserved.value = value && this.starTextures ? 1 : 0;
     if (!value || this.starTextures || this.starsLoading) return;
     this.starsLoading = true;
-    const generation = this.starGeneration;
+    const generation = this.generation;
     import('./sky-star-catalogue')
       .then(({ createSkyStarTextures }) => {
-        if (generation !== this.starGeneration) return;
+        if (generation !== this.generation) return;
         this.starTextures = createSkyStarTextures();
         this.uniforms.uSkyStarCells.value = this.starTextures.cells;
         this.uniforms.uSkyStarList.value = this.starTextures.list;
@@ -700,7 +732,7 @@ export class SceneryMaterial extends ShaderMaterial {
       })
       .catch(error => console.warn('SceneryMaterial: no star catalogue', error))
       .finally(() => {
-        if (generation === this.starGeneration) this.starsLoading = false;
+        if (generation === this.generation) this.starsLoading = false;
       });
   }
 
@@ -719,9 +751,10 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   dispose() {
-    // A catalogue still loading is dropped when it arrives.
-    this.starGeneration++;
+    // What is still loading is dropped when it arrives.
+    this.generation++;
     this.starsLoading = false;
+    this.moonLoading = false;
     // Only the owner's: a bake's material shares these uniforms.
     if (this.starTextures) {
       this.starTextures.cells.dispose();
@@ -730,6 +763,12 @@ export class SceneryMaterial extends ShaderMaterial {
       this.uniforms.uSkyObserved.value = 0;
       this.uniforms.uSkyStarCells.value = null;
       this.uniforms.uSkyStarList.value = null;
+    }
+    if (this.moonMap) {
+      this.moonMap.dispose();
+      this.moonMap = null;
+      this.uniforms.uSkyMoonMapped.value = 0;
+      this.uniforms.uSkyMoonMap.value = null;
     }
     super.dispose();
   }

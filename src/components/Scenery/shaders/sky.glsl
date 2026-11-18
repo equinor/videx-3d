@@ -19,6 +19,8 @@ uniform float uSkyMoonSize; // angular radius, radians
 uniform float uSkyMoonGlow;
 uniform float uSkyMoonPhase; // share of its disc lit: 1 opposite the sun
 uniform float uSkyMoonDay; // 1 while it can be up by day (an observer's moon)
+uniform sampler2D uSkyMoonMap; // its albedo, longitude by latitude (sky-moon.ts)
+uniform float uSkyMoonMapped; // 1 once uSkyMoonMap is in: until then a plain disc
 uniform float uSkyNight; // 0 by day to 1 at night: how much the moon and the stars show
 uniform vec2 uSkyStars; // brightness, and the share of the sky's cells holding one
 uniform mat3 uSkyStarFrame; // world direction -> the turning star sphere's
@@ -55,6 +57,12 @@ uniform float uSkyOceanTrench;
 #define SKY_MOON_DARK 0.75
 // How bright the moon shows by day, over the sky behind it.
 #define SKY_MOON_DAY 0.35
+// The moon's axis on the star sphere (uSkyStarFrame's): within 1.5° of the ecliptic's pole
+// (right ascension 18h, declination 66.56°).
+#define SKY_MOON_AXIS vec3(0.0, -0.39777, 0.91748)
+// uSkyMoonMap's mean over the near side as seen from the Earth, in linear light: the albedo is
+// taken over it, so the moon is as bright on the whole as a plain disc.
+#define SKY_MOON_MEAN 0.2242
 // The procedural stars as a faint filler under an observer's catalogue, relative to their own,
 // and the magnitude the brightest of them is held to: half the light of the catalogue's
 // faintest (magnitude 5), so the real stars, the planets, the sun and the moon stand out.
@@ -224,6 +232,24 @@ vec3 skyPlanets(vec3 dir, float pixel, float sunElevation) {
   return light;
 }
 
+// The moon's albedo over its mean where the view meets its sphere at `normal` (toward the camera
+// at the disc's middle), seen `aa` (radians) to a pixel: from its map, its north toward its axis
+// and its near side's middle toward the Earth; 1 until the map is in.
+float skyMoonAlbedo(vec3 normal, float aa) {
+  if(uSkyMoonMapped <= 0.0)
+    return 1.0;
+  vec3 toEarth = -uSkyMoonDirection;
+  vec3 axis = SKY_MOON_AXIS * uSkyStarFrame;
+  vec3 north = normalize(axis - toEarth * dot(axis, toEarth));
+  vec3 east = cross(north, toEarth);
+  float latitude = asin(clamp(dot(normal, north), -1.0, 1.0));
+  float longitude = atan(dot(normal, east), dot(normal, toEarth));
+  vec2 uv = vec2(0.5 + longitude * RECIPROCAL_PI2, 0.5 + latitude * RECIPROCAL_PI);
+  // A quarter of the map's width spans the disc's radius.
+  float texels = float(textureSize(uSkyMoonMap, 0).x) / (4.0 * max(uSkyMoonSize, 1e-6));
+  return textureLod(uSkyMoonMap, uv, log2(max(aa * texels, 1.0))).r / SKY_MOON_MEAN;
+}
+
 // The moon and the stars over `color`, as night falls, and by day where the sky is space, or
 // its air `gone` (over the open hollow, hollowAirGone); the moon by day too, while it can be
 // up. ⚠️ Derivatives.
@@ -249,8 +275,12 @@ vec3 skyNight(vec3 color, vec3 dir, float blend, float gone) {
   vec3 normal = -uSkyMoonDirection * sqrt(1.0 - r * r) + across * (r / max(length(across), 1e-8));
   float edge = aa / max(uSkyMoonSize, 1e-6);
   float lit = smoothstep(-edge, edge, dot(normal, uSkySunDirection));
+  float shown = disc * above * uSkySunDisc;
+  float albedo = 1.0;
+  if(shown > 0.0)
+    albedo = skyMoonAlbedo(normal, aa);
   // The dark side faintly lit by the Earth, most near new moon.
-  float face = lit + SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * (1.0 - lit);
+  float face = (lit + SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * (1.0 - lit)) * albedo;
   // The air's glow about it: none where the view crosses no air.
   float glow = uSkyMoonGlow * uSkyMoonPhase * pow(max(cosMoon, 0.0), 200.0) * (1.0 - space);
   // The stars come out late, once it is dark, and fade low down through more air.
@@ -271,13 +301,12 @@ vec3 skyNight(vec3 color, vec3 dir, float blend, float gone) {
   stars *= exp(-0.25 * (airmass - 1.0));
   vec3 air = color + uSkyMoonColor * glow * night * above;
   color = air + stars * uSkySunDisc * above;
-  float shown = disc * above * uSkySunDisc;
   // By night it hides the stars behind it, its dark side a shade darker than the air in
   // front of it once they are out (in twilight it is lost in the sky); by day it is a
   // pale disc over the sky.
   float darkSide = mix(1.0, SKY_MOON_DARK, skyStarSeen(2.0, sunElevation));
-  vec3 dark = air * darkSide + uSkyMoonColor * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase);
-  color = mix(color, mix(dark, uSkyMoonColor, lit), shown * night);
+  vec3 dark = air * darkSide + uSkyMoonColor * SKY_EARTHSHINE * (1.0 - uSkyMoonPhase) * albedo;
+  color = mix(color, mix(dark, uSkyMoonColor * albedo, lit), shown * night);
   return color + uSkyMoonColor * face * shown * uSkyMoonDay * (1.0 - night) * SKY_MOON_DAY;
 }
 
