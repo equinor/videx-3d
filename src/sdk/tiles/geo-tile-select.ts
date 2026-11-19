@@ -3,7 +3,7 @@ import {
   GEO_TILE_ROOTS,
   geoTileRegion,
 } from './geo-tile-keys';
-import { tileAddress, tileChildren } from './tile-keys';
+import { tileChildren, tileDepth } from './tile-keys';
 
 // ⚠️ Free of three.js: a map drawn top-down chooses its tiles where it likes.
 
@@ -145,7 +145,7 @@ export function selectGeoMapTiles(
   // `stopAt`: the depth a leaf above, and `pastLeaf`, end the way down at.
   const visit = (key: number, ancestor: number | null, stopAt: number) => {
     if (!overlaps(key)) return;
-    const [d] = tileAddress(key);
+    const d = tileDepth(key);
     const tile = info(key);
     if (!tile) {
       want.push({ key, priority: -d });
@@ -162,8 +162,7 @@ export function selectGeoMapTiles(
   };
   for (const root of GEO_TILE_ROOTS) visit(root, null, Infinity);
 
-  const deepestFirst = (a: number, b: number) =>
-    tileAddress(b)[0] - tileAddress(a)[0];
+  const deepestFirst = (a: number, b: number) => tileDepth(b) - tileDepth(a);
   return {
     draw: [...finest.sort(deepestFirst), ...[...standIns].sort(deepestFirst)],
     want,

@@ -1842,12 +1842,16 @@ export const Scenery = ({
 
     // The background's layers where they can show from here; each draws nothing elsewhere.
     const shown = sceneryLayersShown(layerView(height, voidOpen));
-    // The sea's waves, while a layer that reads them can show: the sky's sea or its water, and
-    // with them its surface and a stage's, which show only where those do. Below the seabed
-    // none can: the bake (and the whitecaps' life, which a long step then fades as it would
-    // have) waits, and a sea of another's (an Ocean, a stack's water) bakes its own. Until
-    // 2026-11-19 it ran there every frame (2.2 ms at sea level on an RTX A1000).
-    if (bakeWaves && (shown.sea || shown.water)) bakeWaves();
+    // The sea's waves, while a layer that reads them can show: the sky's sea surface (from the
+    // air, with water) or its water, and with them a stage's surface, which shows only where
+    // those do. Over a dry sea nothing reads them: the sky's sea layer is its seabed alone, and
+    // neither the sky nor a stage draws a surface. Below the seabed none can. Then the bake
+    // (and the whitecaps' life, which a long step then fades as it would have) waits, while the
+    // sea's clock runs on; a sea of another's (an Ocean, a stack's water) bakes its own. Until
+    // 2026-11-19 it ran there every frame (2.2 ms at sea level on an RTX A1000; 1.4 ms of main
+    // thread over a dry sea).
+    if (bakeWaves && (shown.water || (shown.sea && material.oceanWater)))
+      bakeWaves();
     const showLayer = (mesh: Mesh | null, layer: keyof typeof shown) => {
       if (mesh)
         mesh.visible =

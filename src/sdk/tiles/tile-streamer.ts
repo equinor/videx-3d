@@ -1,4 +1,4 @@
-import { tileAddress } from './tile-keys';
+import { tileAddress, tileDepth } from './tile-keys';
 
 /**
  * Where a {@link TileStreamer}'s tiles come from.
@@ -174,7 +174,7 @@ export class TileStreamer<T> {
     const candidates: [number, Resident<T>][] = [];
     for (const item of this.resident) {
       if (item[1].used >= this.frame) continue;
-      if (tileAddress(item[0])[0] <= this.keepDepth) continue;
+      if (tileDepth(item[0]) <= this.keepDepth) continue;
       candidates.push(item);
     }
     candidates.sort((a, b) => a[1].used - b[1].used);

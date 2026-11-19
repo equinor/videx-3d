@@ -1,4 +1,4 @@
-import { tileAddress, tileKey } from './tile-keys';
+import { tileColumn, tileDepth, tileKey, tileRow } from './tile-keys';
 
 // ⚠️ Free of three.js: the tiles' builders run where the generators run.
 
@@ -28,9 +28,8 @@ export const GEO_TILE_ROOTS: readonly number[] = [
  * @group Tiles
  */
 export function geoTileRegion(key: number): [number, number, number] {
-  const [depth, i, j] = tileAddress(key);
-  const span = GEO_TILE_ROOT_SPAN / 2 ** depth;
-  return [-180 + i * span, 90 - j * span, span];
+  const span = GEO_TILE_ROOT_SPAN / 2 ** tileDepth(key);
+  return [-180 + tileColumn(key) * span, 90 - tileRow(key) * span, span];
 }
 
 /**
@@ -88,11 +87,15 @@ export function geoTileNeighbour(
   columns: number,
   rows: number,
 ): number | null {
-  const [depth, i, j] = tileAddress(key);
-  const row = j + rows;
+  const depth = tileDepth(key);
+  const row = tileRow(key) + rows;
   if (row < 0 || row >= 2 ** depth) return null;
   const across = 2 ** (depth + 1);
-  return tileKey(depth, (((i + columns) % across) + across) % across, row);
+  return tileKey(
+    depth,
+    (((tileColumn(key) + columns) % across) + across) % across,
+    row,
+  );
 }
 
 /**

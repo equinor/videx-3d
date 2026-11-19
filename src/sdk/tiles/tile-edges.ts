@@ -1,4 +1,4 @@
-import { tileAddress, tileParent } from './tile-keys';
+import { tileAddress, tileDepth, tileParent } from './tile-keys';
 
 // ⚠️ Free of three.js: the relief's labels find their lines with it where the generators run.
 
@@ -78,7 +78,7 @@ export function tileCoarserEdges(
         if (drawn < depth) mask |= bit;
         break;
       }
-      if (tileAddress(at)[0] === 0) break;
+      if (tileDepth(at) === 0) break;
     }
   }
   return mask;

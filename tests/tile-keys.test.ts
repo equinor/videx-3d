@@ -1,5 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { tileKey, tileNearestIn } from '../src/sdk/tiles/tile-keys';
+import {
+  tileAddress,
+  tileChildren,
+  tileColumn,
+  tileDepth,
+  tileKey,
+  tileNearestIn,
+  tileParent,
+  tileRow,
+} from '../src/sdk/tiles/tile-keys';
+
+describe('tile key parts', () => {
+  it('read a key as its address does, either side of the origin and at the deepest', () => {
+    for (const [depth, i, j] of [
+      [0, 0, 0],
+      [3, -5, 7],
+      [19, 2 ** 19 - 1, -(2 ** 19)],
+      [31, 2 ** 23 - 1, -(2 ** 23)],
+    ]) {
+      const key = tileKey(depth, i, j);
+      expect([tileDepth(key), tileColumn(key), tileRow(key)]).toEqual(
+        tileAddress(key),
+      );
+      // The parent holds it; it is one of its parent's children.
+      const parent = tileParent(key);
+      if (depth > 0) {
+        expect(tileAddress(parent)).toEqual([
+          depth - 1,
+          Math.floor(i / 2),
+          Math.floor(j / 2),
+        ]);
+        expect(tileChildren(parent)).toContain(key);
+      }
+    }
+  });
+});
 
 describe('tileNearestIn', () => {
   const deep = tileKey(4, 9, 6);

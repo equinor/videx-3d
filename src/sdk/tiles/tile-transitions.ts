@@ -1,4 +1,4 @@
-import { tileAddress, tileChildren, tileParent } from './tile-keys';
+import { tileAddress, tileChildren, tileDepth, tileParent } from './tile-keys';
 
 // ⚠️ Free of three.js.
 
@@ -163,7 +163,7 @@ export class TileTransitions {
 
   /** The nearest ancestor of `key` drawn now (held or not), or null. */
   private drawnAncestor(key: number, isIn: (key: number) => boolean) {
-    let depth = tileAddress(key)[0];
+    let depth = tileDepth(key);
     let at = key;
     while (depth > 0) {
       at = tileParent(at);
@@ -227,7 +227,7 @@ export class TileTransitions {
     const chosenAbove = new Set<number>();
     for (const key of target) {
       let at = key;
-      for (let depth = tileAddress(key)[0]; depth > 0; depth--) {
+      for (let depth = tileDepth(key); depth > 0; depth--) {
         at = tileParent(at);
         if (chosenAbove.has(at)) break;
         chosenAbove.add(at);
@@ -247,7 +247,7 @@ export class TileTransitions {
       if (entry.held || !isIn(key) || ready(key)) continue;
       let chosenAncestor: number | null = null;
       let at = key;
-      for (let depth = tileAddress(key)[0]; depth > 0; depth--) {
+      for (let depth = tileDepth(key); depth > 0; depth--) {
         at = tileParent(at);
         if (target.has(at)) {
           chosenAncestor = at;
@@ -266,7 +266,7 @@ export class TileTransitions {
     const underStandIn = (key: number) => {
       if (standIns.size === 0) return false;
       let at = key;
-      for (let depth = tileAddress(key)[0]; depth > 0; depth--) {
+      for (let depth = tileDepth(key); depth > 0; depth--) {
         at = tileParent(at);
         if (standIns.has(at)) return true;
       }
@@ -277,7 +277,7 @@ export class TileTransitions {
     const above = new Set<number>();
     for (const key of entries.keys()) {
       let at = key;
-      for (let depth = tileAddress(key)[0]; depth > 0; depth--) {
+      for (let depth = tileDepth(key); depth > 0; depth--) {
         at = tileParent(at);
         if (above.has(at)) break;
         above.add(at);
@@ -295,7 +295,7 @@ export class TileTransitions {
       for (const [drawn, entry] of entries) {
         if (drawn === key || entry.held) continue;
         let at = drawn;
-        for (let depth = tileAddress(drawn)[0]; depth > 0; depth--) {
+        for (let depth = tileDepth(drawn); depth > 0; depth--) {
           at = tileParent(at);
           if (at === key) {
             found.push(drawn);

@@ -420,3 +420,7 @@ build (its static Storybook) and the new in two tabs of one Chrome on the A1000,
 - From high up the bake would be most of the sea's cost: layers no pixel resolves from the
   camera's height are not baked (`renderWaves`' camera), and past the detail fade no layer is
   read. Without either, 1000 km read 1.13 and 100 km 1.0.
+- A `Scenery` bakes its sea's waves only while something that reads them can show: the sea's
+  surface from the air, or the view in the water. Below the seabed, and over a dry sea (its
+  water off: the seabed alone, no surface drawn), the bake waits while the sea's clock runs
+  on. Over a dry sea from 1.8 Mm up it had cost 1.4 ms of main thread a frame.

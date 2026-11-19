@@ -35,6 +35,33 @@ export function tileAddress(key: number): [number, number, number] {
 }
 
 /**
+ * The depth of a {@link tileKey}: {@link tileAddress}'s first, without building the rest.
+ *
+ * @group Tiles
+ */
+export function tileDepth(key: number): number {
+  return Math.floor(Math.floor(key / SPAN) / SPAN);
+}
+
+/**
+ * The column of a {@link tileKey}: {@link tileAddress}'s second.
+ *
+ * @group Tiles
+ */
+export function tileColumn(key: number): number {
+  return (Math.floor(key / SPAN) % SPAN) - HALF;
+}
+
+/**
+ * The row of a {@link tileKey}: {@link tileAddress}'s third.
+ *
+ * @group Tiles
+ */
+export function tileRow(key: number): number {
+  return (key % SPAN) - HALF;
+}
+
+/**
  * The min X, min Z and width of a tile, for roots `rootSize` wide.
  *
  * @group Tiles
@@ -70,8 +97,12 @@ export function tileKeyAt(
  * @group Tiles
  */
 export function tileParent(key: number): number {
-  const [depth, i, j] = tileAddress(key);
-  return tileKey(depth - 1, Math.floor(i / 2), Math.floor(j / 2));
+  const rest = Math.floor(key / SPAN);
+  return tileKey(
+    Math.floor(rest / SPAN) - 1,
+    Math.floor(((rest % SPAN) - HALF) / 2),
+    Math.floor(((key % SPAN) - HALF) / 2),
+  );
 }
 
 /**
@@ -80,8 +111,10 @@ export function tileParent(key: number): number {
  * @group Tiles
  */
 export function tileChildren(key: number): [number, number, number, number] {
-  const [depth, i, j] = tileAddress(key);
-  const d = depth + 1;
+  const rest = Math.floor(key / SPAN);
+  const d = Math.floor(rest / SPAN) + 1;
+  const i = (rest % SPAN) - HALF;
+  const j = (key % SPAN) - HALF;
   return [
     tileKey(d, 2 * i, 2 * j),
     tileKey(d, 2 * i + 1, 2 * j),
@@ -102,6 +135,6 @@ export function tileNearestIn(
 ): number | null {
   for (let at = key; ; at = tileParent(at)) {
     if (isIn(at)) return at;
-    if (tileAddress(at)[0] === 0) return null;
+    if (tileDepth(at) === 0) return null;
   }
 }

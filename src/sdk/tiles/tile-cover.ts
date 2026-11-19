@@ -1,5 +1,5 @@
 import { geoTileKeyAt } from './geo-tile-keys';
-import { tileAddress, tileChildren, tileParent } from './tile-keys';
+import { tileChildren, tileDepth, tileParent } from './tile-keys';
 
 // ⚠️ Free of three.js: shared with code that runs where the generators run.
 
@@ -39,7 +39,7 @@ export function tileAncestors(keys: Iterable<number>): Set<number> {
   const found = new Set<number>();
   for (const key of keys) {
     let at = key;
-    while (tileAddress(at)[0] > 0) {
+    while (tileDepth(at) > 0) {
       at = tileParent(at);
       if (found.has(at)) break;
       found.add(at);
@@ -85,7 +85,7 @@ export function tilesUnder(
       out.push({ square: key, under: at });
       return out;
     }
-    if (tileAddress(at)[0] === 0) break;
+    if (tileDepth(at) === 0) break;
   }
   if (!ancestors.has(key)) {
     if (fill) out.push({ square: key, under: -1 });

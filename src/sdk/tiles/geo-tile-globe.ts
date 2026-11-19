@@ -1,7 +1,12 @@
 import { Box3, Frustum, Vector2, Vector3 } from 'three';
 import type { Globe } from '../projection/globe';
-import { GEO_TILE_ROOTS, geoTileRegion } from './geo-tile-keys';
+import {
+  GEO_TILE_ROOT_SPAN,
+  GEO_TILE_ROOTS,
+  geoTileRegion,
+} from './geo-tile-keys';
 import type { QuadtreeLayout } from './quadtree';
+import { tileColumn, tileDepth, tileRow } from './tile-keys';
 
 // Geographic tiles (`geo-tile-keys`) on a globe with a frame (`Globe.setFrame`): their
 // squares in the coordinates the quadtree, its finer regions and its pins take — longitude
@@ -16,8 +21,8 @@ const DEG = Math.PI / 180;
  * @group Tiles
  */
 export function geoTileSquare(key: number): [number, number, number] {
-  const [west, north, span] = geoTileRegion(key);
-  return [west, -north, span];
+  const span = GEO_TILE_ROOT_SPAN / 2 ** tileDepth(key);
+  return [-180 + tileColumn(key) * span, -(90 - tileRow(key) * span), span];
 }
 
 const corner = new Vector3();
@@ -60,14 +65,17 @@ export function geoSquareOver(
  * @group Tiles
  */
 export function geoTileWidth(globe: Globe, key: number): number {
-  const [, north, span] = geoTileRegion(key);
+  const span = GEO_TILE_ROOT_SPAN / 2 ** tileDepth(key);
+  const north = 90 - tileRow(key) * span;
   const along = span * DEG * globe.radius;
   return along * Math.sqrt(Math.max(Math.cos((north - span / 2) * DEG), 1e-3));
 }
 
 // What a tile's place on the globe gives that does not depend on the camera: its corners on
 // the conformal sphere, and its bounding box between two heights. Kept per globe while it
-// does not change (`Globe.version`), for at most TILE_CACHE_LIMIT tiles.
+// does not change (`Globe.version`), for at most TILE_CACHE_LIMIT tiles. With its point
+// nearest the eye (`geoTileNearest`), for the eye it was found for (`eyeStamp`): the choice
+// asks for it twice a tile, for its distance and for the horizon test.
 type TileGeometry = {
   chiNorth: number;
   lonWest: number;
@@ -76,15 +84,20 @@ type TileGeometry = {
   box: Box3 | null;
   low: number;
   high: number;
+  nearestStamp: number;
+  nearestChi: number;
+  nearestLon: number;
 };
 type GlobeTileCache = {
   version: number;
   tiles: Map<number, TileGeometry>;
-  // The eye's offset on the sphere, for the latitude and longitude it was found at.
+  // The eye's offset on the sphere, for the latitude and longitude it was found at; one more
+  // each time they change.
   eyeLatitude: number;
   eyeLongitude: number;
   chiEye: number;
   lonEye: number;
+  eyeStamp: number;
 };
 const TILE_CACHE_LIMIT = 16384;
 const tileCaches = new WeakMap<Globe, GlobeTileCache>();
@@ -99,14 +112,18 @@ function tileCache(globe: Globe): GlobeTileCache {
       eyeLongitude: NaN,
       chiEye: 0,
       lonEye: 0,
+      eyeStamp: 0,
     };
     tileCaches.set(globe, cache);
   }
   return cache;
 }
 
-function tileGeometry(globe: Globe, key: number): TileGeometry {
-  const cache = tileCache(globe);
+function tileGeometry(
+  globe: Globe,
+  key: number,
+  cache = tileCache(globe),
+): TileGeometry {
   let geometry = cache.tiles.get(key);
   if (geometry) return geometry;
   const [west, north, span] = geoTileRegion(key);
@@ -127,6 +144,9 @@ function tileGeometry(globe: Globe, key: number): TileGeometry {
     box: null,
     low: NaN,
     high: NaN,
+    nearestStamp: -1,
+    nearestChi: 0,
+    nearestLon: 0,
   };
   cache.tiles.set(key, geometry);
   return geometry;
@@ -138,8 +158,8 @@ function tileGeometry(globe: Globe, key: number): TileGeometry {
  * of latitude and longitude on that sphere too, so the point is exact there: on the eye's
  * meridian where the tile spans it, else on its nearer side's, at the latitude nearest the
  * eye along it — not where the eye's latitude is, which far east or west of the tile lies
- * tens of degrees off. The tile's corners, and the eye's place, are kept while the globe
- * and the eye hold.
+ * tens of degrees off. The tile's corners, the eye's place, and the point itself are kept
+ * while the globe and the eye hold.
  *
  * @group Tiles
  */
@@ -160,10 +180,14 @@ export function geoTileNearest(
     cache.eyeLongitude = eyeAt.longitude;
     cache.chiEye = chi0 + offset.x;
     cache.lonEye = offset.y;
+    cache.eyeStamp++;
   }
+  const geometry = tileGeometry(globe, key, cache);
+  if (geometry.nearestStamp === cache.eyeStamp)
+    return target.set(geometry.nearestChi - chi0, geometry.nearestLon);
   const chiEye = cache.chiEye;
   const lonEye = cache.lonEye;
-  const { chiNorth, lonWest, chiSouth, lonEast } = tileGeometry(globe, key);
+  const { chiNorth, lonWest, chiSouth, lonEast } = geometry;
   // East of the west side, and how far the tile spans.
   const along =
     (((lonEye - lonWest) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
@@ -177,23 +201,21 @@ export function geoTileNearest(
     apart = Math.min(pastEast, toWest);
   }
   // Along a meridian `apart` from the eye's, cos χ cos χe cos Δ + sin χ sin χe is greatest
-  // at one latitude; within the tile's, there or at a side.
+  // at one latitude; within the tile's, there or at a side (the first of them that is).
   const a = Math.cos(chiEye) * Math.cos(apart);
   const b = Math.sin(chiEye);
-  const best = Math.atan2(b, a);
-  let chi = chiNorth;
-  let most = -Infinity;
-  for (const candidate of [
-    Math.min(Math.max(best, chiSouth), chiNorth),
-    chiSouth,
-    chiNorth,
-  ]) {
-    const value = a * Math.cos(candidate) + b * Math.sin(candidate);
-    if (value > most) {
-      most = value;
-      chi = candidate;
-    }
+  const within = Math.min(Math.max(Math.atan2(b, a), chiSouth), chiNorth);
+  let chi = within;
+  let most = a * Math.cos(within) + b * Math.sin(within);
+  const south = a * Math.cos(chiSouth) + b * Math.sin(chiSouth);
+  if (south > most) {
+    most = south;
+    chi = chiSouth;
   }
+  if (a * Math.cos(chiNorth) + b * Math.sin(chiNorth) > most) chi = chiNorth;
+  geometry.nearestStamp = cache.eyeStamp;
+  geometry.nearestChi = chi;
+  geometry.nearestLon = lon;
   return target.set(chi - chi0, lon);
 }
 

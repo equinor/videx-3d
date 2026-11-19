@@ -47,7 +47,7 @@ import {
   GeoTileView,
 } from '../../sdk/tiles/geo-tile-globe';
 import {
-  tileAddress,
+  tileDepth,
   tileNearestIn,
   tileParent,
 } from '../../sdk/tiles/tile-keys';
@@ -1071,8 +1071,8 @@ export const SceneryStageReliefTiles = ({
         const allowed = overviewRegion(chosen.draw).depth;
         const deepest = Math.max(
           0,
-          ...chosen.draw.map(key => tileAddress(key)[0]),
-          ...chosen.want.map(({ key }) => tileAddress(key)[0]),
+          ...chosen.draw.map(key => tileDepth(key)),
+          ...chosen.want.map(({ key }) => tileDepth(key)),
         );
         if (deepest > allowed) maxDepth = allowed;
         else if (
@@ -1105,7 +1105,7 @@ export const SceneryStageReliefTiles = ({
       const { bounds, depth } = overviewRegion(draw);
       const keys = new Set<number>();
       for (let key of draw) {
-        while (tileAddress(key)[0] > depth) key = tileParent(key);
+        while (tileDepth(key) > depth) key = tileParent(key);
         keys.add(key);
       }
       const squares: HeightFieldTile[] = [];
@@ -1233,7 +1233,7 @@ export const SceneryStageReliefTiles = ({
     for (const { key, proxy } of drawnTiles) {
       const data = proxy ?? key;
       if ((slotOf.get(data) ?? -1) >= 0 && streamer.get(data))
-        drawnDepth.set(key, tileAddress(data)[0]);
+        drawnDepth.set(key, tileDepth(data));
     }
     const depthOf = (key: number) => drawnDepth.get(key);
     // Seen from over it, the hollow's open opening peels the ground away (relief-fragment):
@@ -1264,8 +1264,8 @@ export const SceneryStageReliefTiles = ({
       const tile = streamer.get(data);
       const slot = slotOf.get(data);
       if (!tile || slot === undefined || slot < 0) continue;
-      const [depth] = tileAddress(key);
-      deepest = Math.max(deepest, tileAddress(data)[0]);
+      const depth = tileDepth(key);
+      deepest = Math.max(deepest, tileDepth(data));
       geoTileOffsets(globe, key, array, 4 * count, chiArray, 3 * count);
       array[4 * count + 2] = depth;
       array[4 * count + 3] = slot;

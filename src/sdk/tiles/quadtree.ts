@@ -4,6 +4,7 @@ import {
   TILE_ROOT_SIZE,
   tileAddress,
   tileChildren,
+  tileDepth,
   tileKey,
   tileParent,
 } from './tile-keys';
@@ -271,7 +272,7 @@ export function selectQuadtreeTiles(
       : shows(minX, minZ, size, minY, maxY);
 
   const visit = (key: number, tile: QuadtreeTileInfo) => {
-    const [depth] = tileAddress(key);
+    const depth = tileDepth(key);
     const square = squareOf(key);
     const [minX, minZ, size] = square;
     const distance = distanceOf(key, square, tile.minY, tile.maxY);
@@ -362,14 +363,14 @@ export function selectQuadtreeTiles(
     const covering = (key: number): number | null => {
       for (let at = key; ; at = tileParent(at)) {
         if (drawn.has(at) || filled.has(at)) return at;
-        if (tileAddress(at)[0] === 0) return null;
+        if (tileDepth(at) === 0) return null;
       }
     };
     // Split `at` for balance: false where it cannot be (its children in view not in). A leaf
     // too: its children hold no more than it, but meet a finer neighbour's parent.
     const splitFor = (at: number): boolean => {
       const tile = info(at);
-      if (!tile || tileAddress(at)[0] >= maxDepth) return false;
+      if (!tile || tileDepth(at) >= maxDepth) return false;
       const inside: [number, boolean][] = [];
       let some = false;
       let missing = false;
@@ -404,14 +405,14 @@ export function selectQuadtreeTiles(
     while (queue.length > 0) {
       const key = queue.pop()!;
       if (!drawn.has(key) && !filled.has(key)) continue;
-      const [depth] = tileAddress(key);
+      const depth = tileDepth(key);
       if (depth < 2) continue;
       // Each neighbour's tile split until within a level of this one, or it cannot be.
       for (const neighbour of balance(key)) {
         for (;;) {
           const at = covering(neighbour);
           if (at === null || !drawn.has(at)) break;
-          if (tileAddress(at)[0] >= depth - 1 || !splitFor(at)) break;
+          if (tileDepth(at) >= depth - 1 || !splitFor(at)) break;
         }
       }
     }
@@ -429,7 +430,7 @@ export function selectQuadtreeTiles(
     if (!prefetch) return;
     const seen = new Set<number>();
     for (const key of draw) {
-      if (tileAddress(key)[0] < 2) continue;
+      if (tileDepth(key) < 2) continue;
       const parent = tileParent(key);
       const grand = tileParent(parent);
       if (seen.has(grand)) continue;
@@ -531,7 +532,7 @@ export function selectPinnedTiles(options: {
       return;
     }
     keep.push(key);
-    const [depth] = tileAddress(key);
+    const depth = tileDepth(key);
     if (tile.leaf || depth >= maxDepth) return;
     for (const child of tileChildren(key)) {
       const [cx, cz, size] = squareOf(child);
