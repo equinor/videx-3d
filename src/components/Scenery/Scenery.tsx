@@ -144,7 +144,11 @@ import { SceneryCubeView } from './SceneryCubeView';
 export type SceneryEnvironmentOptions = {
   /** `scene.environmentIntensity` while the sky provides the environment. Default 1 */
   intensity?: number;
-  /** cube face size of the bake. Default 128 */
+  /**
+   * cube face size of the bake. Only smooth, glossy materials lit by it show the difference:
+   * 128 or more for sharper reflections, at more of the GPU each bake (its prefilter 3.6 ms
+   * against 2.0 at 64, RTX A1000). A change recompiles every material it lights. Default 64
+   */
   resolution?: number;
 };
 
@@ -309,7 +313,7 @@ export type SceneryProps = {
 // The ground's maps are compiled for a scene of their own, without lights: three keys a program
 // on the lights of the scene it is compiled for (see precompile).
 const GROUND_SCENE = new Scene();
-const DEFAULT_ENVIRONMENT_RESOLUTION = 128;
+const DEFAULT_ENVIRONMENT_RESOLUTION = 64;
 const DEFAULT_CAPTURE_INTERVAL = 250;
 // Seconds the scene's light probe takes to ease most of the way to a new bake: about as
 // long as bakes come apart while the sky changes.

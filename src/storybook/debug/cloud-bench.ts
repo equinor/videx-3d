@@ -93,6 +93,8 @@ export type BenchConditions = {
     steps: number;
     lightSamples: number;
     shapeReads: number;
+    /** the shadows' map, texels a side: the shadow pass's time grows with its square */
+    shadowSize: number;
   } | null;
   /** how the march reuses the last frames (`temporal`): `frames` times what it draws */
   temporal: string | null;
@@ -359,6 +361,7 @@ type VolumeInternals = {
       steps: number;
       lightSamples: number;
       shapeReads: number;
+      shadowSize: number;
     };
     global: unknown;
     levels: unknown[];

@@ -347,7 +347,7 @@ export const sceneryArgs: SceneryArgs = {
   environment: true,
   lightProbe: true,
   environmentIntensity: 1,
-  environmentResolution: 128,
+  environmentResolution: 64,
   lightProbeIntensity: 1,
   captureInterval: 250,
   captureMaxWait: 1000,
@@ -1030,7 +1030,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     control: { type: 'inline-radio' },
     options: ['low', 'medium', 'high', 'ultra'],
     description:
-      'How much the clouds spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen\u2019s resolution, how finely they are marched, how often they read the shape (once at LOW and MEDIUM: a march program each, compiled as the quality switches, the clouds drawn as they were meanwhile), and how much of it a frame (`temporal`).',
+      'How much the clouds spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen\u2019s resolution, how finely they are marched, how often they read the shape (once at LOW and MEDIUM: a march program each, compiled as the quality switches, the clouds drawn as they were meanwhile), how much of it a frame (`temporal`), and their shadows\u2019 map (512\u00b2 at LOW and MEDIUM, 1024\u00b2 at HIGH and ULTRA: as sharp from some 6.5 km up as 512\u00b2 from 2 km).',
     table: { category: CLOUDS },
   },
   air: toggle(
@@ -1506,7 +1506,8 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   environmentResolution: {
     control: { type: 'select' },
     options: [64, 128, 256, 512, 1024],
-    description: 'Cube face size of the environment\u2019s bake.',
+    description:
+      'Cube face size of the environment\u2019s bake (`environment.resolution`, default 64). Only smooth, glossy materials lit by the environment show the difference: 128 or more for sharper reflections, at 1.6 ms more a bake (RTX A1000). A change recompiles every material it lights.',
     if: { arg: 'environment' },
     table: { category: ENVIRONMENT },
   },

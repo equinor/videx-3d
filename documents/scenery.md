@@ -453,6 +453,11 @@ one frame, on top of a full one, they stood the view still 80–150 ms at a time
 caught up (RTX A1000). The probe is projected to spherical harmonics on the GPU and only its
 coefficients read back (`SphericalHarmonicsProjector`: 0.8 ms, against 1.1 ms, up to 3.7, for
 its six faces read back whole), and while the sky keeps changing every other round. The
+environment is filmed and prefiltered 64² a face by default (`environment.resolution`): its
+prefilter 2.0 ms a bake against 3.6 at 128 (RTX A1000, 2026-11-18). Only smooth, glossy
+materials lit by it show the difference, in sharper reflections at 128 or more; the matte ones
+read its blurred levels, the same at either. A change recompiles every material it lights (its
+size is compiled into them). The
 scene's light probe eases toward
 each new bake of its zone over a fraction of a second, so the light does not step as the
 sun moves; another zone's is swapped in at once. The environment map is swapped in, whole,

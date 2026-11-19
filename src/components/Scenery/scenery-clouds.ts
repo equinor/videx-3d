@@ -112,6 +112,13 @@ export type CloudsQualityLevel = {
   shapeReads: 1 | 2;
   /** how the march reuses what it drew over the last frames */
   temporal: SceneryCloudsTemporal;
+  /**
+   * texels a side of the map of their shadows on the ground: its square reaches further the
+   * higher the camera is, and where its texel no longer resolves the clouds' lumps small clouds'
+   * shadows fade (from some 2 km up at 512, where a texel spans 140 m; 1024 spans that from some
+   * 6.5 km up). Four times the texels to draw at 1024
+   */
+  shadowSize: number;
 };
 
 /**
@@ -120,7 +127,8 @@ export type CloudsQualityLevel = {
  * frame however the camera moves (`temporal: 'moving'`); high and ultra every pixel while it
  * moves, and a quarter a frame while it holds still with the clock running (`'still'`). Low and
  * medium read the shape once a step, high and ultra twice (`shapeReads`: a march program each,
- * compiled as the quality switches to it).
+ * compiled as the quality switches to it). Low and medium draw their shadows 512² texels, high
+ * and ultra 1024² (`shadowSize`).
  *
  * @group Components
  */
@@ -133,6 +141,7 @@ export const CLOUDS_QUALITY: Readonly<
     lightSamples: 1,
     shapeReads: 1,
     temporal: 'moving',
+    shadowSize: 512,
   },
   medium: {
     resolution: 0.5,
@@ -140,6 +149,7 @@ export const CLOUDS_QUALITY: Readonly<
     lightSamples: 2,
     shapeReads: 1,
     temporal: 'moving',
+    shadowSize: 512,
   },
   high: {
     resolution: 0.75,
@@ -147,6 +157,7 @@ export const CLOUDS_QUALITY: Readonly<
     lightSamples: 3,
     shapeReads: 2,
     temporal: 'still',
+    shadowSize: 1024,
   },
   ultra: {
     resolution: 1,
@@ -154,6 +165,7 @@ export const CLOUDS_QUALITY: Readonly<
     lightSamples: 4,
     shapeReads: 2,
     temporal: 'still',
+    shadowSize: 1024,
   },
 };
 
@@ -426,12 +438,11 @@ const LIGHT_SLANT: Readonly<Record<CloudType, number>> = {
   cirrus: 0.5,
   cirrostratus: 0.8,
 };
-// The shadows: texels a side; the square's reach to its sides, from the least to the most, the
-// camera's height over the sea times the last; drawn again once the camera's foot or the clouds
-// have moved this share of it, the light has turned (1 − its cosine: 2°; at 1° a timelapse drew
-// them 7 times a second), or the lowest level's clouds have lived this share of their lifetime;
-// none from higher up than this (m).
-const SHADOW_SIZE = 512;
+// The shadows (their map's size is the quality's, `shadowSize`): the square's reach to its sides,
+// from the least to the most, the camera's height over the sea times the last; drawn again once
+// the camera's foot or the clouds have moved this share of it, the light has turned (1 − its
+// cosine: 2°; at 1° a timelapse drew them 7 times a second), or the lowest level's clouds have
+// lived this share of their lifetime; none from higher up than this (m).
 // Samples across each level toward the light, a texel of the shadows (cloud-march.glsl), each
 // read over half its stretch or a texel: 2 averaged a fair cumulus with the clear air about it
 // (its darkest texel let 63% of the sun through, 2026-11-18); 8 read it over a texel.
@@ -902,10 +913,11 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   private weatherSeen = -1;
   private terrainSeen = -1;
   private levelsReady = false;
-  // Mipmapped: read over the reader's pixel (cloud-shadow.glsl, skyCloudLightAt).
+  // Mipmapped: read over the reader's pixel (cloud-shadow.glsl, skyCloudLightAt). As large as
+  // the quality says (set).
   private readonly shadowTarget = new WebGLRenderTarget(
-    SHADOW_SIZE,
-    SHADOW_SIZE,
+    CLOUDS_QUALITY.medium.shadowSize,
+    CLOUDS_QUALITY.medium.shadowSize,
     {
       type: UnsignedByteType,
       format: RedFormat,
@@ -1034,7 +1046,7 @@ export class CloudsRenderer implements ScenerySkyOverlay {
       uCloudShadowPlace: new Uniform(new Vector4()),
       uCloudShadowEast: new Uniform(new Vector3(1, 0, 0)),
       uCloudShadowNorth: new Uniform(new Vector3(0, 0, -1)),
-      uCloudShadowSize: new Uniform(SHADOW_SIZE),
+      uCloudShadowSize: new Uniform(CLOUDS_QUALITY.medium.shadowSize),
       uCloudShadowSamples: new Uniform(SHADOW_SAMPLES),
     };
     // A local weather's programs until set says otherwise.
@@ -1164,6 +1176,13 @@ void main() {
     this.marchDrawn = false;
     this.settingsSerial++;
     const u = this.marchMaterial.uniforms;
+    // The shadows as large as the quality says: drawn again at that size.
+    const shadowSize = Math.max(Math.round(settings.quality.shadowSize), 1);
+    if (shadowSize !== this.shadowTarget.width) {
+      this.shadowTarget.setSize(shadowSize, shadowSize);
+      this.shadowUniforms.uCloudShadowSize.value = shadowSize;
+      this.shadowDrawn.valid = false;
+    }
     // A local weather's middle as the anchor lies now, until it says.
     if (
       settings.local.latitude !== undefined &&
@@ -2285,7 +2304,8 @@ void main() {
   /**
    * Draw the clouds' shadows ({@link shadow}) about the foot of `camera` when it has moved far
    * enough from where they were drawn, the light has turned, the clouds or the ground changed,
-   * or the clouds have drifted or formed and faded enough since: SHADOW_SIZE² texels over a
+   * or the clouds have drifted or formed and faded enough since: the quality's `shadowSize`²
+   * texels over a
    * square reaching further the higher the camera is. Between, carried with the lowest level's
    * wind, which casts most of them. None from high up, where the scene's light stands as dimmed
    * ({@link light}). In the frame loop.
@@ -2345,7 +2365,8 @@ void main() {
     // about a new middle or later, reads them at the points it read before: off that grid, each
     // drawing read their lumps at other points, and the shadows changed as the camera moved
     // (2026-11-19).
-    const texel = (2 * reach) / SHADOW_SIZE;
+    const shadowSize = this.shadowTarget.width;
+    const texel = (2 * reach) / shadowSize;
     const swept = shadowCarried.copy(shadowDrift).multiplyScalar(this.time);
     const alongEast = centre.dot(eastward) - swept.dot(eastward);
     const alongNorth = centre.dot(north) - swept.dot(north);
@@ -2373,7 +2394,7 @@ void main() {
       Math.abs(Math.log(reach / Math.max(drawn.reach, 1))) > Math.log(1.2);
     if (stale) {
       this.sky.syncCamera(camera);
-      this.updateCamera(camera, SHADOW_SIZE);
+      this.updateCamera(camera, shadowSize);
       const u = this.shadowUniforms;
       (u.uCloudShadowPlace.value as Vector4).set(
         centre.x - cameraAt.x,

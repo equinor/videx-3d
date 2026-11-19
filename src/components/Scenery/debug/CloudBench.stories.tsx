@@ -231,7 +231,7 @@ const conditionsText = (c: BenchConditions) =>
     `${c.viewport.join('×')} css @${c.pixelRatio} → ${c.drawingBuffer.join('×')}, clouds ${c.cloudImage.join('×')}`,
     `${c.weather ?? '—'}, ${c.levels} levels` +
       (c.quality
-        ? `, res ${c.quality.resolution} steps ${c.quality.steps} light ${c.quality.lightSamples} shape ×${c.quality.shapeReads}`
+        ? `, res ${c.quality.resolution} steps ${c.quality.steps} light ${c.quality.lightSamples} shape ×${c.quality.shapeReads} shadow ${c.quality.shadowSize}²`
         : ''),
     ...(c.hookedWebGL.length > 0
       ? [`⚠ WebGL hooked: ${c.hookedWebGL.join(', ')} (CPU times off)`]

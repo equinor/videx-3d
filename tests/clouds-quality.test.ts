@@ -19,6 +19,7 @@ describe('cloudsQuality', () => {
       expect(more.steps).toBeGreaterThan(less.steps);
       expect(more.lightSamples).toBeGreaterThanOrEqual(less.lightSamples);
       expect(more.shapeReads).toBeGreaterThanOrEqual(less.shapeReads);
+      expect(more.shadowSize).toBeGreaterThanOrEqual(less.shadowSize);
     }
   });
 

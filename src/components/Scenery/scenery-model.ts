@@ -88,7 +88,8 @@ export type SkyStars = {
  * 5–6.5 ms a frame at 1920 × 1080 on a laptop's RTX A1000 as the camera moves about the clouds.
  * Low and medium read the clouds' shape once a step, high and ultra twice: a march program each,
  * compiled off the main thread as the quality switches to it, the clouds drawn as they were
- * meanwhile.
+ * meanwhile. Low and medium draw their shadows on the ground 512² texels, high and ultra 1024²,
+ * as sharp from some 6.5 km up as 512² from 2 km.
  */
 export type SceneryCloudsQuality = 'low' | 'medium' | 'high' | 'ultra';
 
@@ -198,8 +199,8 @@ export type SceneryCloudsProps = {
   seed?: number;
   /**
    * how much they spend for how they look (`CLOUDS_QUALITY`): the share of the screen's
-   * resolution they are marched at, how finely, and how much of it a frame (`temporal`). Default
-   * `'medium'`
+   * resolution they are marched at, how finely, how much of it a frame (`temporal`), and how
+   * finely their shadows are drawn. Default `'medium'`
    */
   quality?: SceneryCloudsQuality;
   /**

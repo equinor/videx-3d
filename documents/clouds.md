@@ -640,8 +640,8 @@ trails come from (below).
 
 **Quality** (`quality`, `CLOUDS_QUALITY`; default `'medium'`). Each level sets the share of
 the screen's resolution in CSS pixels the clouds' image is drawn at, its steps, its samples
-toward the light, its reads of the shape volume and how it reuses frames (`resolution` and
-`temporal` given override the quality's). The steps lay out a run of a dense level (a thin one
+toward the light, its reads of the shape volume, how it reuses frames (`resolution` and
+`temporal` given override the quality's) and the size of the shadows' map (see "Shadows"). The steps lay out a run of a dense level (a thin one
 takes fewer, down to a quarter): the longest stretch the march looks ahead over; 0.4 of them go
 up a level's depth (`LAYER_STEPS`), and a step through cloud hides an optical depth of 32 over
 them (`STEP_DEPTH`; see "The march"). The reads of the shape are a march program each
@@ -649,12 +649,12 @@ them (`STEP_DEPTH`; see "The march"). The reads of the shape are a march program
 it, as the code a march holds costs it however rarely it runs (see "Measured"). Counts of loops
 stay uniforms (Direct3D unrolls a loop of a constant count).
 
-| | share | steps | light samples | shape reads | `temporal` |
-| --- | --- | --- | --- | --- | --- |
-| `low` | 0.25 | 16 | 1 | 1 | `'moving'` |
-| `medium` | 0.5 | 32 | 2 | 1 | `'moving'` |
-| `high` | 0.75 | 48 | 3 | 2 | `'still'` |
-| `ultra` | 1 | 64 | 4 | 2 | `'still'` |
+| | share | steps | light samples | shape reads | `temporal` | shadows |
+| --- | --- | --- | --- | --- | --- | --- |
+| `low` | 0.25 | 16 | 1 | 1 | `'moving'` | 512² |
+| `medium` | 0.5 | 32 | 2 | 1 | `'moving'` | 512² |
+| `high` | 0.75 | 48 | 3 | 2 | `'still'` | 1024² |
+| `ultra` | 1 | 64 | 4 | 2 | `'still'` | 1024² |
 
 `'moving'` for `low` and `medium` (a quarter of the pixels a frame as the camera moves) left
 trails behind the clouds as it moved, and was dropped (2026-11-16) — then brought back
@@ -883,17 +883,19 @@ the zone, `background`, `debug.hide`).
   squared). Overcast takes all of it, and the scene is lit by the grey bakes alone. Eased over
   some 0.4 s; the moon's by night.
 - **Shadows** on the sea and the relief: a map of the share of the light that reaches the
-  ground (512², 8 bits) over a square about the camera's foot, from 20 km to 200 km from its
+  ground (8 bits; 512² at `low` and `medium`, 1024² at `high` and `ultra`: the quality's
+  `shadowSize`) over a square about the camera's foot, from 20 km to 200 km from its
   middle to its sides (8 times the camera's height), marched toward the light from the ground
   (the terrain's, under the relief) across each layer in 8 samples (`SHADOW_SAMPLES`), each read
   with the lumps the view's march reads where a texel resolves them, with the march's own
   coverage, weather and terrain (`cloud-march.glsl` under `CLOUD_SHADOW`: one source,
-  so the shadows are the clouds'): 0.5 ms a drawing (RTX A1000). Until 2026-11-18 it read 2
+  so the shadows are the clouds'): 0.5 ms a drawing at 512² (RTX A1000); 1024² draws four times
+  the texels, some 2 ms (estimated, not measured). Until 2026-11-18 it read 2
   samples without the lumps: a broken field's clouds averaged into a faint haze, fair cumulus
   covering a fifth of the sky shading 1% of the sea and letting 60% of the light through at most;
-  now their cores let none through. ⚠️ The square's texel grows with the camera's height (79 m
-  from near the sea, 140 m from 2 km), and where it no longer resolves the lumps small clouds'
-  shadows fade again. Drawn again only once the camera's foot is a tenth of the
+  now their cores let none through. ⚠️ The square's texel grows with the camera's height (at 512²
+  79 m from near the sea, 140 m from 2 km; at 1024² half that, 140 m only from some 6.5 km), and
+  where it no longer resolves the lumps small clouds' shadows fade again. Drawn again only once the camera's foot is a tenth of the
   reach from its middle, the light has turned 2° (1° until 2026-11-18: 7 drawings a second in a
   timelapse), or the clouds, the terrain or the globe
   changed, or the clouds have drifted a tenth of it or lived a fiftieth of their lifetime; none
