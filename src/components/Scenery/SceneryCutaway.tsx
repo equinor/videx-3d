@@ -116,6 +116,14 @@ const CUTAWAY_EXIT_MARGIN = 0.05;
 const CUTAWAY_TOP_ROW = 0.9;
 const CUTAWAY_CEILING_DOWN = 0.0175;
 const CUTAWAY_HORIZON_SHARE = 0.8;
+// The cut lies on the globe's flat disc about the field (Globe.discRadius): past it the sea
+// falls away from the cut's plane (7 km below it 300 km off) and the scene's up is no longer
+// the sea's. So it gives way as the camera leaves the field, to the side or upward: its edge
+// slides back under the camera as the camera's distance from the disc's middle goes from the
+// first to the second of these many radii (the radius at least CUTAWAY_FIELD_LEAST, m), and it
+// is off past it. None of this without the globe, where the plane is the sea everywhere.
+const CUTAWAY_AWAY = [4, 8] as const;
+const CUTAWAY_FIELD_LEAST = 10000;
 
 const scratch = new Color();
 // Primitive dependency for a colour prop, so an inline `new Color()` does nothing each render.
@@ -302,7 +310,24 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
     const cutsAny =
       (cutawayWater > 0 && material.oceanWater) ||
       (cutawaySeabed && material.oceanSeabed);
-    if (!material.ocean || !cutsAny || plane === null || altitude <= 0) {
+    // How far it has given way to a distant view (CUTAWAY_AWAY): 0 none, 1 off.
+    let away = 0;
+    if (material.globeEnabled) {
+      const globe = material.globe;
+      const field = Math.max(globe.discRadius, CUTAWAY_FIELD_LEAST);
+      away = MathUtils.smoothstep(
+        camera.position.distanceTo(globe.discCentre),
+        CUTAWAY_AWAY[0] * field,
+        CUTAWAY_AWAY[1] * field,
+      );
+    }
+    if (
+      !material.ocean ||
+      !cutsAny ||
+      plane === null ||
+      altitude <= 0 ||
+      away >= 1
+    ) {
       cutawayShape.y = 0;
       size.active = false;
       (material.uniforms.uSkyOceanCutawayGrip.value as Vector2).x = 0;
@@ -416,6 +441,8 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
         size.floor = top - shift + clearance;
         target = MathUtils.lerp(target, Math.max(target, size.floor), exit);
       }
+      // Leaving the field (CUTAWAY_AWAY), the edge slides back under the camera.
+      if (away > 0) target = MathUtils.lerp(target, -shift, away);
       // The size eases, so a tilt near the horizon never makes the edge jump. Switching
       // plane starts it over: the cutaway keeps its place in the frame either way.
       if (size.plane !== plane) size.active = false;
@@ -489,15 +516,16 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
           Math.abs(centre.x) > 1 ||
           Math.abs(centre.y) > 1 ||
           Math.abs(centre.z) > 1;
-        if (plane !== material.oceanLevel || lost) {
+        if (plane !== material.oceanLevel || lost || away > 0) {
           grip.hide();
-          // Out of view where it could be held — over the sea, not sliding out, not held (a
-          // tilt carrying a near edge below the frame, say): back to no offset, as a double
-          // click puts it, and told so.
+          // Out of view where it could be held — over the sea, not sliding out, not held, not
+          // giving way to a distant view (a tilt carrying a near edge below the frame, say):
+          // back to no offset, as a double click puts it, and told so.
           if (
             lost &&
             plane === material.oceanLevel &&
             exit <= 0 &&
+            away <= 0 &&
             !grip.active &&
             (cutawayDragged.current ?? cutawayOffset) !== 0
           ) {

@@ -799,6 +799,13 @@ A cutaway also keeps the scene lit as from above the water.
   dragged or given, beyond it is held there while the view needs it and comes back as the view
   allows; dragging stops there. Before, a far edge could lie past the frame's top or the
   horizon, where no rim is drawn, and its grip was lost.
+- With the globe, the cut lies on its flat disc about the field (`Globe.discRadius`), where
+  the sea is the cut's plane; past it the sea falls away (7 km below the plane 300 km off) and
+  the scene's up is no longer the sea's. So it gives way to a distant view (2026-11-19): as the
+  camera's distance from the disc's middle (to the side or upward) goes from 4 to 8 of its
+  radii (at least 10 km), its edge slides back under the camera, its grip hidden, and past it
+  there is no cut (`CUTAWAY_AWAY`). Without the globe the sea is the plane everywhere, and it
+  never gives way.
 - `handle: true` draws a grip on the rim in the middle of the view: dragging it sets the
   offset, under the pointer, and a double click or tap puts it back to 0. It reports
   through `onOffsetChange` once the drag ends (and on a reset), and the sky keeps the
