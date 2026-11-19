@@ -20,6 +20,7 @@ import {
   sceneryReliefArgTypes,
   sceneryReliefFrame,
   sceneryReliefFromArgs,
+  skyDateAfter,
   skySunPosition,
 } from '../../storybook/components/scenery-controls';
 import {
@@ -42,7 +43,8 @@ import { SceneryStage } from './SceneryStage';
 import { SceneryStageBounds } from './scenery-stage';
 
 // A day over the sea in a few seconds: the sun follows the clock from a date and a place,
-// and the moon, the stars, the light and a sky of clouds (`fair` by default) follow the sun.
+// on into the next day past midnight, and the moon, the stars, the light and a sky of clouds
+// (`fair` by default) follow the sun.
 
 const DEPTH = 100;
 const BOUNDS: SceneryStageBounds = [-5000, -5000, 5000, 5000];
@@ -83,9 +85,11 @@ const ClockOverlay = ({ text }: { text: string }) => {
 };
 
 const SceneryTimelapse = (args: TimelapseArgs) => {
-  const { hour } = useSunClock(args.sunHour, args.playing, args.speed);
+  const { hour, days } = useSunClock(args.sunHour, args.playing, args.speed);
+  // On to the next day at midnight: the same date again set the sky back a day.
+  const sunDate = skyDateAfter(args.sunDate, days);
 
-  const sunArgs = { ...args, sunFromTime: true, sunHour: hour };
+  const sunArgs = { ...args, sunFromTime: true, sunDate, sunHour: hour };
   const { elevation } = skySunPosition(sunArgs);
   // Kept out of the clock's re-render every frame.
   const tanker = useMemo(
@@ -114,7 +118,7 @@ const SceneryTimelapse = (args: TimelapseArgs) => {
         <SceneryArgsMinimap frame={frame} reliefLayers={args.reliefLayers} />
       )}
       <ClockOverlay
-        text={`${args.sunDate}  ${formatSkyHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
+        text={`${sunDate}  ${formatSkyHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
       />
     </World>
   );
@@ -168,18 +172,19 @@ const meta = {
       6,
       0.05,
       'Timelapse',
-      'Hours of the day per second. The day loops.',
+      'Hours of the day per second. Past midnight the clock goes on into the next day.',
     ),
     sunHour: range(
       0,
       24,
       0.05,
       'Timelapse',
-      'The hour the clock starts at, local solar time: 12 is noon. Changing it sets the clock.',
+      'The hour the clock starts at, local solar time: 12 is noon. Changing it sets the clock. The date moves on at midnight.',
     ),
     sunDate: {
       control: { type: 'text' },
-      description: 'The date, as `YYYY-MM-DD`.',
+      description:
+        'The date the clock starts on, as `YYYY-MM-DD`; it moves on at midnight.',
       table: { category: 'Timelapse' },
     },
     sunLatitude: range(

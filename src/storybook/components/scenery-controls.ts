@@ -368,6 +368,19 @@ function skySunDate(args: SceneryArgs) {
   return Number.isFinite(utc) ? new Date(utc) : null;
 }
 
+/**
+ * `date` (`YYYY-MM-DD`) moved on by a whole number of `days` (back, if negative), as
+ * `YYYY-MM-DD`: for a clock that runs past midnight. As it is if it is no date.
+ */
+export function skyDateAfter(date: string, days: number): string {
+  if (days === 0) return date;
+  const [year, month, day] = date.split('-').map(Number);
+  const time = Date.UTC(year, month - 1, day + days);
+  return Number.isFinite(time)
+    ? new Date(time).toISOString().slice(0, 10)
+    : date;
+}
+
 /** The sun's azimuth and elevation from {@link SceneryArgs}: as set, or from the time and place. */
 export function skySunPosition(args: SceneryArgs) {
   const manual = { azimuth: args.sunAzimuth, elevation: args.sunElevation };

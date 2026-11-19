@@ -17,7 +17,12 @@ import type { Globe } from '../../sdk/projection/globe';
 import { applyCameraUp } from '../../sdk/utils/camera';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { findSceneGlobe } from '../debug/globe';
-import { SceneryArgs, sceneryArgs, skySunPosition } from './scenery-controls';
+import {
+  SceneryArgs,
+  sceneryArgs,
+  skyDateAfter,
+  skySunPosition,
+} from './scenery-controls';
 
 /** `hour` of the day as `hh:mm`. */
 export const formatSkyHour = (hour: number) => {
@@ -28,23 +33,27 @@ export const formatSkyHour = (hour: number) => {
 
 /**
  * A clock from `start`, in local solar hours, running `speed` hours a second while
- * `playing`. A new `start` sets it, and so does `reset`.
+ * `playing`: the `hour` of the day, and the whole `days` since it started, so the date moves
+ * on at midnight ({@link skyDateAfter}). Wrapped to the same date instead, the sky went back a
+ * day at midnight and the moon jumped some 12° (2026-11-19). A new `start` sets it, and so does
+ * `reset`.
  */
 export function useSunClock(start: number, playing: boolean, speed: number) {
-  const [hour, setHour] = useState(start);
+  const [time, setTime] = useState(start);
   const clock = useRef(start);
   const reset = useCallback(() => {
     clock.current = start;
-    setHour(start);
+    setTime(start);
   }, [start]);
   useEffect(reset, [reset]);
   useFrame((_, delta) => {
     if (!playing || speed <= 0) return;
     // Capped, so the frame after a stall does not skip hours.
-    clock.current = (clock.current + Math.min(delta, 0.1) * speed) % 24;
-    setHour(clock.current);
+    clock.current += Math.min(delta, 0.1) * speed;
+    setTime(clock.current);
   });
-  return { hour, reset };
+  const days = Math.floor(time / 24);
+  return { hour: time - days * 24, days, reset };
 }
 
 /**
@@ -57,7 +66,7 @@ export function useSceneryTimelapse<T extends SceneryArgs>(args: T) {
   // Storybook drops the time and place from the args while the sun is set by hand.
   const start = args.sunHour ?? sceneryArgs.sunHour;
   const clock = useSunClock(start, playing, speed);
-  const timed = playing || clock.hour !== start;
+  const timed = playing || clock.days * 24 + clock.hour !== start;
   const timelapse: SceneryDebugTimelapse = {
     playing,
     speed,
@@ -70,7 +79,10 @@ export function useSceneryTimelapse<T extends SceneryArgs>(args: T) {
       ? {
           ...args,
           sunFromTime: true,
-          sunDate: args.sunDate ?? sceneryArgs.sunDate,
+          sunDate: skyDateAfter(
+            args.sunDate ?? sceneryArgs.sunDate,
+            clock.days,
+          ),
           sunHour: clock.hour,
           sunLatitude: args.sunLatitude ?? sceneryArgs.sunLatitude,
           sunLongitude: args.sunLongitude ?? sceneryArgs.sunLongitude,
