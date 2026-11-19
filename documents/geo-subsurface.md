@@ -5,13 +5,17 @@
 > 2026-11-03 (the answers are recorded under [Decided](#decided-draft)). Built with it: only
 > `TrackLayer` anywhere on the globe ([layers.md, Tracks](./layers.md#tracks-tracklayer)),
 > whose `globeUprightMatrix` the models below would share.
+>
+> **Revised 2026-11-19:** a level of detail told by the `World` to any content (LOD clients,
+> with events), not only `PixelLod`'s switch; and `GeoHorizon` on the relief's tile core,
+> moved out of the stage's relief first.
 
 - [Why](#why)
 - [What there is](#what-there-is)
 - [Decided (draft)](#decided-draft)
 - [Wells: `GeoWells`](#wells-geowells)
 - [Surfaces](#surfaces)
-- [Models: `GeoModel`, `PixelLod`, glTF](#models-geomodel-pixellod-gltf)
+- [Models and LOD: `GeoModel`, LOD clients, `PixelLod`, glTF](#models-and-lod-geomodel-lod-clients-pixellod-gltf)
 - [Under the seabed](#under-the-seabed)
 - [Open questions](#open-questions)
 - [Order of work](#order-of-work)
@@ -58,6 +62,7 @@ ellipsoid, 40–50 m from mean sea level on the shelf; a ground and a sea of the
 | A well's placement | **Rigid per well, at its wellhead in its own CRS** (`placeMapPoint`, as `UtmPosition` with a `projection` places): the overview and the detailed well then lie exactly on each other when one replaces the other. A reach of 10 km parts from the curve by 8 m at most, and only the overview is seen from where that could show. (world.md's first sketch placed each node by latitude, longitude and TVD.) |
 | Surfaces | **Both scales, each in its own CRS:** field-scale grids rigid about the grid's centre (`GeoSurface`); regional horizons tiled and curved through the relief's contract and tiles (`GeoHorizon`). |
 | Models | Standing on the relief (settling as finer tiles come in), a heading from true north and an API by latitude and longitude, visibility by the camera's height (`layerShownAt`), detail by size on screen, and a glTF helper. Instancing many copies: not asked for. |
+| LOD (2026-11-19) | **A registry per `World`, its clients anywhere** (in a `GeoModel`, a `UtmArea`, any group): distance, pixels on screen, in view, shown, level and near — live each frame, and as events or a hook's state when they change; `PixelLod` the declarative layer on it. |
 | Scale | Several thousand wells in the overview (the demo field has 943; the shelf, several thousand). |
 
 ## Wells: `GeoWells`
@@ -115,40 +120,89 @@ Every `Surface` prop passes through; `LayerVisibility`, tested by `layerShownAt`
 
 ### Regional: `GeoHorizon`
 
-Hundreds of kilometres: tiled and curved on the globe, as the relief is — not one mesh.
+Hundreds of kilometres: tiled and curved on the globe, as the relief is — not one mesh — and
+loaded on its own, apart from the relief, only where it can be seen.
 
 - **Data through the relief's contract:** a `relief-meta` in the horizon's CRS and
   `relief-values` by window, or `surfaceToRelief` from a store's surface. Its tiles built on
   the worker by `buildReliefTile`, heights negative below the sea.
+- **The relief's tile machinery, shared:** the choice (`selectQuadtreeTiles` over
+  `geoTileLayout`), the streamer, the soft swaps (`TileTransitions`), the instances and the
+  edges blended toward a coarser neighbour (`tileCoarserEdges`) are written into
+  `SceneryStageReliefTiles`' frame today. Moved out first, into a core both draw with; the
+  relief keeps what is its own (the overview, the hollow, the ground handed to a column, pinned
+  tiles, see-through). That a second user works, the `GeoMap` shows: it draws the relief's
+  tiles apart from the stage, with a loader, a `TileStreamer` and an atlas of its own.
+- **Its own layers, budget and worker:** a `relief-meta` per horizon, a byte budget of its
+  own, and a `GeneratorsProvider` of its own around it, so its tiles do not queue behind the
+  relief's.
+- **Seen, and loaded, only where it can be:** under an opaque seabed it is hidden. It shows
+  from below (the void), through the cutaway, as a map from above (`reveal`), or where the
+  relief is see-through ([Under the seabed](#under-the-seabed)). Where none of these holds,
+  none of its tiles is chosen or loaded.
 - **Drawn** as geographic tile patches, each node placed by `globeGeodetic` at its height,
-  split by their error in pixels, swapped softly (`TileTransitions`); with the `Surface` look:
-  a colour ramp by depth, contours, OIT.
+  split by their error in pixels, swapped softly; with the `Surface` look: a colour ramp by
+  depth, contours and their labels (shared with the relief, `ContourLabels`), OIT.
 - **Not** the relief's own drawing: no see-through, occupants, clip or overview. To be designed
   in full when picked up; the largest part of this plan.
 
-## Models: `GeoModel`, `PixelLod`, glTF
+## Models and LOD: `GeoModel`, LOD clients, `PixelLod`, glTF
+
+Revised 2026-11-19. `PixelLod` alone switched its own children by their size on screen. Wanted
+instead: a level of detail any content can follow — a model swapped by its size on screen, its
+data loaded as it comes near, a well's casings and completion shown close up — told by the
+`World` rather than worked out by each.
 
 ```tsx
-<GeoModel longitude={2.27} latitude={61.21} heading={42} on="ground" footprint={{ radius: 60 }}>
-  <PixelLod
-    radius={80}
-    levels={[
-      { minPixels: 0, children: <PlatformSymbol /> },
-      { minPixels: 40, children: <GltfModel url="/models/platform-low.glb" /> },
-      { minPixels: 250, children: <GltfModel url="/models/platform.glb" /> },
-    ]}
-  />
-</GeoModel>
+<World frame={frame}>
+  <GeoModel longitude={2.27} latitude={61.21} heading={42} on="ground" footprint={{ radius: 60 }}>
+    <LodClient
+      levels={[40, 250]} // pixels across: level 0 under 40, 1 up to 250, 2 over
+      near={0.5} // near at half the next level's pixels: time to load it
+      onChange={({ level, visible, near }) => setDetail({ level, visible, near })}
+    >
+      <Rig />
+    </LodClient>
+  </GeoModel>
+</World>
 ```
 
+- **One registry per `World`:** its clients evaluated in one frame callback, and only when the
+  camera, the viewport or a client moved — not a `useFrame` each. A few operations a client: a
+  thousand cost microseconds.
+- **A client** (`<LodClient>`, or `useLod(ref, options)` on a group of your own), wherever it
+  is placed: in a `GeoModel`, a `UtmArea`, any group. Its bounds: a sphere from its contents'
+  bounding box (taken once, and again on request) or a `radius` given, moved by its world
+  matrix.
+- **What it is told**, each time it is evaluated:
+  - `distance` from the camera, and `pixels`: the sphere's size on screen (`pixelsPerUnit`);
+    on request the box's rectangle on screen, for long things (a well);
+  - `inView`: in the frustum, and not past the globe's horizon (the test the geographic tiles
+    make);
+  - `shown`: within its band of heights, and not under the void's lid (`layerShownAt`);
+  - `level`, by its `levels` (thresholds in pixels), with hysteresis (`selectLodLevel`,
+    `LOD_COARSEN_MARGIN`);
+  - `near`: within a fraction of the next level's threshold, or within a distance — time to
+    load what that level needs.
+- **Delivered two ways:** the live values in a state object read in `useFrame` (no React render
+  a frame), and the discrete changes — `level`, visible or hidden, near or not — as events
+  (`onChange`, `onVisible`, `onNear`) or as the hook's state, which renders only when they
+  change. Near is let go only after a delay, so moving to and fro does not load the same thing
+  again and again.
+- **`PixelLod`:** the declarative layer on a client: one of its `levels`' children by `level`,
+  the next one's model fetched ahead (`useGLTF.preload`) when near.
+- **Examples:** rigs and land bases (a `GeoModel` with a client: a symbol far off, a model close
+  up); a field's wells, a client per well bounded by its trajectory, with casings, completion
+  and formations by level, their data fetched from the store when near.
+- **Not in it:** hidden behind terrain (an occlusion query or a depth read per client: too dear
+  for many). Under an opaque seabed could be a rule of `shown`
+  ([Under the seabed](#under-the-seabed)).
 - **`GeoModel`:** `longitude`, `latitude`, `heading` (degrees from true north), `height`,
   `on: 'sea' | 'ground'`, `footprint` (`radius`, `samples`, `align`: level, or laid on the
   fitted slope), `LayerVisibility`. Placed as `Wgs84Position` places (`EarthPlacement`, made a
   hook both share), or by `globeUprightMatrix` where no map reaches. On the ground: the relief's
   `heightAt` over the footprint, settled again when finer tiles come in (`resident`, at most
   every half second), as `GeoSymbols` does. Hidden by `layerShownAt`.
-- **`PixelLod`:** generic, not geographic — one of its `levels` by the size of a sphere of
-  `radius` on screen, with hysteresis (15%), a few operations a frame.
 - **`useGltfModel(url, { draco, meshopt })` and `<GltfModel url />`:** on drei's `useGLTF` (a
   peer dependency already): a clone per use, transparent materials made OIT-compatible
   (`makeOitCompatible`), and the model's radius for the footprint and `PixelLod`. glTF is Y up
@@ -172,13 +226,20 @@ where the scene has no relief or sea.
   depth, water depth, no position logs — as vertical wells, fetched by the overlays script.
 - **A glTF for the demo:** one of the user's, or a small CC0 model (licence checked).
 - **Instanced models** (many copies of one, a wind farm's turbines): not asked for now.
+- **LOD outside a `World`:** the registry needs the globe only for the horizon test; a provider
+  of its own for scenes without one?
+- **A client's size on screen by default:** the sphere (cheapest), or the box's rectangle,
+  which fits long things (a well seen end on)?
+- **Thousands of clients** (every well of a region): a plain loop, or an index (`rbush`, as
+  `GeoWells` plans) so only those near the view are evaluated?
+- **The horizon's budget against the relief's:** a share of one, or apart?
 
 ## Order of work
 
 | # | Part | Ends with |
 |--|--|--|
 | 1 | `TrackLayer` anywhere on the globe | ✅ built (2026-11-03): placed to a millimetre on the curved sea 150 km to 2 900 km off and on the far side of the Earth (`track-placement.test.ts`); the `Ships` story's `far` adds ships there |
-| 2 | Models: `GeoModel`, `PixelLod`, the glTF helper | — |
+| 2 | Models and LOD: the LOD registry and clients, `GeoModel`, `PixelLod`, the glTF helper | — |
 | 3 | Wells: `WellboreHeader.crs`, `GeoWells`, the demo's exploration wells | — |
 | 4 | `GeoSurface` | — |
-| 5 | `GeoHorizon`: designed in full, then built | — |
+| 5 | `GeoHorizon`: the relief's tile core moved out of the stage, then designed in full and built | — |
