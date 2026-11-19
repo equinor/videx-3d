@@ -26,6 +26,7 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **FormationMarkers** | formationSymbols | generateFormationMarkers | - position-logs<br/>- formations |
 | **Shoes** | shoeSymbols | generateShoes | - position-logs<br/>- casings |
 | **SceneryStage** _(`relief`: its tiles, and its overview past a short far plane)_ | sceneryReliefTile | generateSceneryReliefTile | - relief-meta<br/>- relief-values |
+| **Scenery** _(its ground map, for the sea and the clouds: grids of the relief's tiles, stitched in the generator)_ | sceneryReliefTile | generateSceneryReliefTile | - relief-meta<br/>- relief-values |
 | **Minimap** _(its relief, from the same tiles)_ | sceneryReliefTile | generateSceneryReliefTile | - relief-meta<br/>- relief-values |
 | **Surface** | surfaceGeometry | generateSurfaceGeometry | - surface-meta<br/>- surface-values |
 | **Surface** | surfaceTextures | generateSurfaceTextureData | - surface-meta<br/>- surface-values |

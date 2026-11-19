@@ -75,8 +75,13 @@ What samples the same ground elsewhere takes the relief's tiles from the `World`
 (`useWorldRelief().loader`, a `ReliefTileLoader`; `useReliefTileLoader` makes one for any
 layers): geographic tiles of any depth and cells, or with `heightsOnly` their heights alone,
 without the normals and the error that take most of a tile's work. `geoReliefTileGrid`
-stitches tiles of one depth into a grid of longitude and latitude. The 3D clouds take their
-terrain so ([clouds.md](./clouds.md), "Over the ground"); a `GeoMap` loads its own the same way.
+stitches tiles of one depth into a grid of longitude and latitude. Asked for a grid of tiles
+(`loadGrid`, a `GeoReliefGridRequest` in place of a tile's key), the same generator builds
+their heights and stitches them where it runs (`buildGeoReliefTileGrid`) and hands the grid
+back whole, so a host registering the generator needs nothing more. The `Scenery`'s ground
+map takes its grids so: stitched on the main thread they took 28–113 ms each, every second or
+two while the camera moved fast (2026-11-19). The 3D clouds take their terrain from that map
+([clouds.md](./clouds.md), "Over the ground"); a `GeoMap` loads its own tiles one by one.
 
 Where the scene lies on the map is the enclosing `World`'s `frame`, a `GeoFrame`: the
 projection it is drawn in and the map coordinates of its origin, as a `UtmArea` places a

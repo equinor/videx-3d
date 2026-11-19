@@ -1187,7 +1187,8 @@ export function geoReliefTileGrid(
   }
   let min = Infinity;
   let max = -Infinity;
-  for (const h of heights) {
+  for (let k = 0; k < heights.length; k++) {
+    const h = heights[k];
     if (h < min) min = h;
     if (h > max) max = h;
   }
@@ -1202,6 +1203,66 @@ export function geoReliefTileGrid(
     min,
     max,
   };
+}
+
+/**
+ * The tiles a {@link GeoReliefGrid} is stitched from (see {@link buildGeoReliefTileGrid}):
+ * `tileColumns × tileRows` geographic tiles of `depth` from column `firstColumn` and row
+ * `firstRow` (`geoTileRegion`'s), the columns wrapping round the Earth.
+ *
+ * @group Geometries
+ */
+export type GeoReliefGridRequest = {
+  depth: number;
+  firstColumn: number;
+  tileColumns: number;
+  firstRow: number;
+  tileRows: number;
+};
+
+/**
+ * The {@link GeoReliefGrid} of a relief's geographic tiles, built where its tiles are (a
+ * generator's worker): each tile's heights alone (`buildGeoReliefTile`), stitched by
+ * {@link geoReliefTileGrid}. A tile that fails to build is left out, its nodes the fill (0).
+ *
+ * @group Geometries
+ */
+export async function buildGeoReliefTileGrid(
+  reader: ReliefReader,
+  source: ReliefLayersSource,
+  request: GeoReliefGridRequest,
+  cells = RELIEF_TILE_CELLS,
+): Promise<GeoReliefGrid> {
+  const { depth, firstColumn, tileColumns, firstRow, tileRows } = request;
+  const around = 2 ** (depth + 1);
+  const keys: number[] = [];
+  for (let r = 0; r < tileRows; r++)
+    for (let c = 0; c < tileColumns; c++)
+      keys.push(
+        tileKey(
+          depth,
+          (((firstColumn + c) % around) + around) % around,
+          firstRow + r,
+        ),
+      );
+  const tiles = new Map<number, ReliefTile>();
+  await Promise.all(
+    keys.map(key =>
+      buildGeoReliefTile(reader, source, key, cells, true).then(
+        tile => void tiles.set(key, tile),
+        () => undefined,
+      ),
+    ),
+  );
+  return geoReliefTileGrid(
+    key => tiles.get(key),
+    depth,
+    firstColumn,
+    tileColumns,
+    firstRow,
+    tileRows,
+    cells,
+  );
 }
 
 // A tile's height at (`u`, `v`), its own nodes from 0 to 1 along each side, clamped:

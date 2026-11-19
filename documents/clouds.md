@@ -403,7 +403,8 @@ it reads any other and costs nothing more a frame.
 (`SceneryGround`, `scenery-ground.ts`, `shaders/ground-terrain.glsl`), shared with the sea, which
 reads how deep it is from it (`GroundMap`, `sceneGroundMap`): the clouds read its maps
 (`CloudGround`). With a `GeoRelief` in the `World`, it takes the ground from its tiles (the
-relief's loader, `WorldReliefState.loader`, heights only, `buildGeoReliefTile`'s `heightsOnly`),
+relief's loader, `WorldReliefState.loader`, heights only, `buildGeoReliefTile`'s `heightsOnly`,
+stitched into one grid by the generator: `loadGrid`, `buildGeoReliefTileGrid`),
 drawn on the GPU into the frame fixed on the Earth they are read in. That frame's latitudes are the globe's conformal sphere's, some 0.2° off the
 ground's at mid-latitudes, so each texel's latitude goes through a table of the sphere's
 (`geodeticLatitude`) and its longitude through the sphere's scale (`sphereLongitude`).

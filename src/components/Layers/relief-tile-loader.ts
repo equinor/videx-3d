@@ -2,12 +2,15 @@ import { useContext, useMemo } from 'react';
 import { GeneratorsContext } from '../../contexts/GeneratorsContext';
 import { useGenerator } from '../../hooks/useGenerator';
 import type {
+  GeoReliefGrid,
+  GeoReliefGridRequest,
   ReliefLayer,
   ReliefLayersSource,
   ReliefTile,
 } from '../../sdk/geometries/relief-tiles';
 import {
   sceneryReliefTile,
+  type SceneryReliefGridResponse,
   type SceneryReliefTileResponse,
 } from '../Scenery/scenery-defs';
 
@@ -30,6 +33,14 @@ export type ReliefTileLoader = {
     cells: number,
     heightsOnly?: boolean,
   ) => Promise<ReliefTile | null>;
+  /**
+   * a grid of geographic tiles' heights with `cells` along each tile's side, stitched where
+   * they are built (`buildGeoReliefTileGrid`), null where the generator gives none
+   */
+  loadGrid: (
+    request: GeoReliefGridRequest,
+    cells: number,
+  ) => Promise<GeoReliefGrid | null>;
 };
 
 /**
@@ -43,6 +54,8 @@ export function useReliefTileLoader(
 ): ReliefTileLoader | null {
   const provided = useContext(GeneratorsContext) !== null;
   const generate = useGenerator<SceneryReliefTileResponse>(sceneryReliefTile);
+  const generateGrid =
+    useGenerator<SceneryReliefGridResponse>(sceneryReliefTile);
   const layerKey = JSON.stringify(
     layers.map(({ id, feather }) => [id, feather ?? 0]),
   );
@@ -50,7 +63,9 @@ export function useReliefTileLoader(
     const specs = JSON.parse(layerKey) as [string, number][];
     if (!specs.length || !provided) return null;
     const source: ReliefLayersSource = {
-      layers: specs.map(([id, feather]) => (feather ? { id, feather } : { id })),
+      layers: specs.map(([id, feather]) =>
+        feather ? { id, feather } : { id },
+      ),
       base,
     };
     return {
@@ -58,7 +73,8 @@ export function useReliefTileLoader(
       base,
       load: (key, cells, heightsOnly) =>
         generate(source, key, cells, heightsOnly ?? false),
+      loadGrid: (request, cells) => generateGrid(source, request, cells),
     };
     // Without a provider the generator is new each render, and there are no tiles: null.
-  }, [provided, generate, layerKey, base]);
+  }, [provided, generate, generateGrid, layerKey, base]);
 }

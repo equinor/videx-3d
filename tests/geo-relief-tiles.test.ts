@@ -8,6 +8,7 @@ import type {
 } from '../src/sdk/data/types/ReliefMeta';
 import {
   buildGeoReliefTile,
+  buildGeoReliefTileGrid,
   buildReliefTile,
   geoReliefTileGrid,
   geoReliefTileHeightAt,
@@ -432,5 +433,36 @@ describe('geoReliefTileGrid', () => {
     const grid = geoReliefTileGrid(() => null, 2, 0, 1, 1, 1, 4, -7);
     expect(grid.heights.length).toBe(25);
     expect(grid.heights.every(h => h === -7)).toBe(true);
+  });
+
+  it('is built where its tiles are as stitched from them one by one', async () => {
+    const reader = storeOf(worldGrid());
+    const source = { layers: [{ id: 'world' }], base: -5000 };
+    const depth = 3;
+    const tiles = new Map<number, ReliefTile>();
+    for (const lon of [170, -170])
+      for (const lat of [20, 0]) {
+        const key = geoTileKeyAt(depth, lon, lat);
+        tiles.set(
+          key,
+          await buildGeoReliefTile(reader, source, key, CELLS, true),
+        );
+      }
+    const [, column, row] = tileAddress(geoTileKeyAt(depth, 170, 20));
+    const built = await buildGeoReliefTileGrid(
+      reader,
+      source,
+      {
+        depth,
+        firstColumn: column,
+        tileColumns: 2,
+        firstRow: row,
+        tileRows: 2,
+      },
+      CELLS,
+    );
+    expect(built).toEqual(
+      geoReliefTileGrid(key => tiles.get(key), depth, column, 2, row, 2, CELLS),
+    );
   });
 });

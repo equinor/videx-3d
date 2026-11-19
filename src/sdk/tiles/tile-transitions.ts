@@ -1,6 +1,8 @@
-import { tileAddress, tileChildren, tileDepth, tileParent } from './tile-keys';
+import { tileAddress, tileChild, tileDepth, tileParent } from './tile-keys';
 
 // ⚠️ Free of three.js.
+// ⚠️ The entries are walked with `forEach`, not `for (const [key, entry] of …)`: that makes a
+// pair per entry, a few hundred a loop, every frame (2026-11-19).
 
 /**
  * A tile drawn with {@link TileTransitions}: what it shows is its source's look mixed into
@@ -212,13 +214,13 @@ export class TileTransitions {
     // A tile held for a merge given up, as a coarser one or none took its place: an ordinary
     // drawn tile again, its own look, which the choice below keeps as a stand-in or holds for
     // the new merge. Let go, its area would be bare until the new merge is done.
-    for (const [key, entry] of entries) {
-      if (!entry.held || entry.from === null || target.has(key)) continue;
-      if (target.has(entry.from) && isIn(entry.from)) continue;
+    entries.forEach((entry, key) => {
+      if (!entry.held || entry.from === null || target.has(key)) return;
+      if (target.has(entry.from) && isIn(entry.from)) return;
       entry.held = false;
       entry.from = null;
       entry.start = -Infinity;
-    }
+    });
     // A chosen tile that can be drawn now.
     const ready = (key: number) => target.has(key) && drawable(key);
     const blank = (key: number) => !!isBlank?.(key);
@@ -238,13 +240,15 @@ export class TileTransitions {
     const chosenCovers = (key: number): boolean => {
       if (target.has(key)) return drawable(key) || blank(key);
       if (!chosenAbove.has(key) || blank(key)) return true;
-      return tileChildren(key).every(chosenCovers);
+      for (let c = 0; c < 4; c++)
+        if (!chosenCovers(tileChild(key, c))) return false;
+      return true;
     };
     // Stand-ins: tiles drawn whose area the chosen tiles ready do not yet cover. They stay
     // drawn; the chosen tiles under them wait.
     const standIns = new Set<number>();
-    for (const [key, entry] of entries) {
-      if (entry.held || !isIn(key) || ready(key)) continue;
+    entries.forEach((entry, key) => {
+      if (entry.held || !isIn(key) || ready(key)) return;
       let chosenAncestor: number | null = null;
       let at = key;
       for (let depth = tileDepth(key); depth > 0; depth--) {
@@ -262,7 +266,7 @@ export class TileTransitions {
         // Splitting into tiles not all in yet.
         if (!chosenCovers(key)) standIns.add(key);
       }
-    }
+    });
     const underStandIn = (key: number) => {
       if (standIns.size === 0) return false;
       let at = key;
@@ -288,12 +292,14 @@ export class TileTransitions {
       if (entries.has(key) && isIn(key)) return true;
       if (blank(key)) return true;
       if (levels === 0 || !above.has(key)) return false;
-      return tileChildren(key).every(child => covered(child, levels - 1));
+      for (let c = 0; c < 4; c++)
+        if (!covered(tileChild(key, c), levels - 1)) return false;
+      return true;
     };
     const heldUnder = (key: number) => {
       const found: number[] = [];
-      for (const [drawn, entry] of entries) {
-        if (drawn === key || entry.held) continue;
+      entries.forEach((entry, drawn) => {
+        if (drawn === key || entry.held) return;
         let at = drawn;
         for (let depth = tileDepth(drawn); depth > 0; depth--) {
           at = tileParent(at);
@@ -302,7 +308,7 @@ export class TileTransitions {
             break;
           }
         }
-      }
+      });
       return found;
     };
 
@@ -387,9 +393,9 @@ export class TileTransitions {
 
     // Tiles let go: stand-ins stay until replaced; held ones until their blend is done (or
     // their source goes).
-    for (const [key, entry] of entries) {
-      if (standIns.has(key)) continue;
-      if (ready(key) && !underStandIn(key)) continue;
+    entries.forEach((entry, key) => {
+      if (standIns.has(key)) return;
+      if (ready(key) && !underStandIn(key)) return;
       if (
         entry.held &&
         entry.from !== null &&
@@ -397,14 +403,14 @@ export class TileTransitions {
         isIn(entry.from) &&
         this.progress(entry, now) > 0
       )
-        continue;
+        return;
       entries.delete(key);
-    }
+    });
     // Merges done: the tile they waited for is drawn, its own look already.
-    for (const [key, until] of this.waiting) {
+    this.waiting.forEach((until, key) => {
       if (!target.has(key)) {
         this.waiting.delete(key);
-        continue;
+        return;
       }
       let holding = false;
       for (const entry of entries.values()) {
@@ -419,14 +425,14 @@ export class TileTransitions {
           proxy: null,
         });
       }
-    }
+    });
 
     // What to draw, and what to keep in.
     const draw: TileTransitionDraw[] = [];
     const keep = new Set<number>();
     let busy = this.waiting.size > 0;
-    for (const [key, entry] of entries) {
-      if (!isIn(key)) continue;
+    entries.forEach((entry, key) => {
+      if (!isIn(key)) return;
       let blend = this.progress(entry, now);
       let from = entry.from;
       // From a fill: from what it is drawn from.
@@ -456,7 +462,7 @@ export class TileTransitions {
           ? { key, from, blend, proxy: entry.proxy! }
           : { key, from, blend },
       );
-    }
+    });
     this.kept = [...keep];
     this.busy = busy;
     return draw;

@@ -124,6 +124,19 @@ export function tileChildren(key: number): [number, number, number, number] {
 }
 
 /**
+ * {@link tileChildren}' `index`th (0…3: along X, then along Z), without the array.
+ *
+ * @group Tiles
+ */
+export function tileChild(key: number, index: number): number {
+  return tileKey(
+    tileDepth(key) + 1,
+    2 * tileColumn(key) + (index & 1),
+    2 * tileRow(key) + (index >> 1),
+  );
+}
+
+/**
  * The tile itself if it is in (`isIn`), else the nearest tile above it that is: what can be
  * drawn in its place. Null where none is: a hole, not a tile still sharpening.
  *

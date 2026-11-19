@@ -258,7 +258,6 @@ export function geoTileInView(
   low: number,
   high: number,
 ): boolean {
-  const [west, north, span] = geoTileRegion(key);
   const centre = globe.centre;
   const R = globe.radius;
   toEye.subVectors(eye, centre);
@@ -276,11 +275,12 @@ export function geoTileInView(
     )
       return false;
   }
-  const steps = span > 20 ? 6 : span > 2 ? 3 : 1;
   // Its box between these heights, kept while they and the globe hold.
   const geometry = tileGeometry(globe, key);
   if (geometry.box && geometry.low === low && geometry.high === high)
     return frustum.intersectsBox(geometry.box);
+  const [west, north, span] = geoTileRegion(key);
+  const steps = span > 20 ? 6 : span > 2 ? 3 : 1;
   box.makeEmpty();
   for (let j = 0; j <= steps; j++) {
     for (let i = 0; i <= steps; i++) {
@@ -329,7 +329,10 @@ export function geoTileOffsets(
   chi: Float32Array,
   chiAt: number,
 ) {
-  const [west, north, span] = geoTileRegion(key);
+  // geoTileRegion's, without the tuple: once a drawn tile, every frame.
+  const span = GEO_TILE_ROOT_SPAN / 2 ** tileDepth(key);
+  const west = -180 + tileColumn(key) * span;
+  const north = 90 - tileRow(key) * span;
   const mid = north - span / 2;
   globe.sphereOffset(north, west, offset);
   const chiNorth = offset.x;

@@ -1,4 +1,4 @@
-import { tileAddress, tileDepth, tileParent } from './tile-keys';
+import { tileColumn, tileDepth, tileParent, tileRow } from './tile-keys';
 
 // ⚠️ Free of three.js: the relief's labels find their lines with it where the generators run.
 
@@ -65,11 +65,13 @@ export function tileCoarserEdges(
   depthOf: (key: number) => number | undefined,
   neighbour: (key: number, columns: number, rows: number) => number | null,
 ): number {
-  const [, i, j] = tileAddress(key);
+  const i = tileColumn(key);
+  const j = tileRow(key);
   let mask =
     (((i % 2) + 2) % 2 === 1 ? TILE_EDGE.oddColumn : 0) |
     (((j % 2) + 2) % 2 === 1 ? TILE_EDGE.oddRow : 0);
-  for (const [bit, columns, rows] of SIDES) {
+  for (let side = 0; side < SIDES.length; side++) {
+    const [bit, columns, rows] = SIDES[side];
     const next = neighbour(key, columns, rows);
     if (next === null) continue;
     for (let at = next; ; at = tileParent(at)) {

@@ -29,7 +29,7 @@ import { GroundMap } from '../../sdk/materials/ground-map';
 import {
   geoReliefTileGrid,
   type GeoReliefGrid,
-  type ReliefTile,
+  type GeoReliefGridRequest,
 } from '../../sdk/geometries/relief-tiles';
 import {
   conformalOffset,
@@ -37,7 +37,6 @@ import {
   type ConformalOrigin,
 } from '../../sdk/projection/conformal-sphere';
 import type { Globe } from '../../sdk/projection/globe';
-import { tileKey } from '../../sdk/tiles/tile-keys';
 import type { ReliefTileLoader } from '../Layers/relief-tile-loader';
 import type { CloudMapTerrain } from './scenery-cloud-map';
 import { createSceneryGeometry } from './scenery-material';
@@ -297,20 +296,19 @@ export class SceneryGround {
     if (!source) return;
     const columns = 2 ** (EARTH_DEPTH + 1);
     const rows = 2 ** EARTH_DEPTH;
-    const keys: number[] = [];
-    for (let j = 0; j < rows; j++)
-      for (let i = 0; i < columns; i++) keys.push(tileKey(EARTH_DEPTH, i, j));
-    loadTiles(source, keys, EARTH_CELLS).then(tiles => {
+    loadGrid(
+      source,
+      {
+        depth: EARTH_DEPTH,
+        firstColumn: 0,
+        tileColumns: columns,
+        firstRow: 0,
+        tileRows: rows,
+      },
+      EARTH_CELLS,
+    ).then(grid => {
       if (generation !== this.generation) return;
-      this.earthGrid = geoReliefTileGrid(
-        key => tiles.get(key),
-        EARTH_DEPTH,
-        0,
-        columns,
-        0,
-        rows,
-        EARTH_CELLS,
-      );
+      this.earthGrid = grid;
     });
   }
 
@@ -437,34 +435,15 @@ export class SceneryGround {
       firstColumn + Math.floor(mostTiles / tileRows) - 1,
     );
     const tileColumns = lastColumn - firstColumn + 1;
-    const around = 2 ** (depth + 1);
-    const keys: number[] = [];
-    for (let r = 0; r < tileRows; r++)
-      for (let c = 0; c < tileColumns; c++)
-        keys.push(
-          tileKey(
-            depth,
-            (((firstColumn + c) % around) + around) % around,
-            firstRow + r,
-          ),
-        );
     level.loading = true;
-    loadTiles(source, keys, cells).then(tiles => {
+    loadGrid(
+      source,
+      { depth, firstColumn, tileColumns, firstRow, tileRows },
+      cells,
+    ).then(grid => {
       if (generation !== this.generation) return;
       level.loading = false;
-      level.grid = {
-        grid: geoReliefTileGrid(
-          key => tiles.get(key),
-          depth,
-          firstColumn,
-          tileColumns,
-          firstRow,
-          tileRows,
-          cells,
-        ),
-        latitude,
-        longitude,
-      };
+      level.grid = { grid, latitude, longitude };
       level.drawn = false;
     });
   }
@@ -699,20 +678,27 @@ export function earthFrame(globe: Globe, target: Matrix3): Matrix3 {
   return target;
 }
 
-// Each of `keys` with `cells` along its side, its heights alone; a failed one left out.
-async function loadTiles(
+// `request`'s tiles' heights as one grid, stitched where they are built
+// (`ReliefTileLoader.loadGrid`); where the generator gives none or fails, the fill alone, as a
+// grid whose tiles all failed.
+async function loadGrid(
   source: ReliefTileLoader,
-  keys: number[],
+  request: GeoReliefGridRequest,
   cells: number,
-): Promise<Map<number, ReliefTile>> {
-  const tiles = await Promise.all(
-    keys.map(key => source.load(key, cells, true).catch(() => null)),
+): Promise<GeoReliefGrid> {
+  const grid = await source.loadGrid(request, cells).catch(() => null);
+  return (
+    grid ??
+    geoReliefTileGrid(
+      () => null,
+      request.depth,
+      request.firstColumn,
+      request.tileColumns,
+      request.firstRow,
+      request.tileRows,
+      cells,
+    )
   );
-  const loaded = new Map<number, ReliefTile>();
-  tiles.forEach((tile, i) => {
-    if (tile) loaded.set(keys[i], tile);
-  });
-  return loaded;
 }
 
 // The angle between two places (degrees in, radians out).

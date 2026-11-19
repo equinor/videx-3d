@@ -690,6 +690,14 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
     globe calls a frame (was 10k–25k); main thread 1.4 ms a frame in all (was 7.4). Moving
     at 3 km, about 1000 a frame (`tests/geo-tile-cache.test.ts` checks the kept answers
     against a fresh globe's).
+  - **Garbage (2026-11-19):** moving, the relief's frame made some 500 KB a frame (sampled
+    over a fast tour above the field): tuples and arrays per tile in the choice (`visit`,
+    `balanceDrawn`, a square per tile and child), a pair per entry in `TileTransitions`'
+    walks over its maps, a tuple per drawn tile in `tileCoarserEdges` and `geoTileOffsets`.
+    Now 264 KB: children worked out in place (`tileChild`), squares only where `finer` or
+    `errorCap` ask for them, the maps walked with `forEach`; the same choice, swaps and edge
+    masks on 160 frames, 8–17 % less time. What is left is mostly the choice's sets: a tile
+    key (over 2^47) is a boxed number in each.
 - **The rest is today's relief:** the coast per pixel from the height map, the colour ramp,
   the land fading through the air, the drop with the Earth's curve, the cutaway, and the
   layer past the far plane (from the overview).
