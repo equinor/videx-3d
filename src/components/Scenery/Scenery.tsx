@@ -724,6 +724,8 @@ export const Scenery = ({
   // In render rather than an effect, so a stage or layer made in this commit compiles with
   // it. A no-op unless a switch changed. The waves' defines likewise, for the sea's layers.
   material.oceanBedDetail = bedDetail;
+  // Under a relief, its tiles are the seabed: the sea's layers draw their own plain.
+  material.oceanReliefBed = !!worldRelief?.present;
   material.voidBackground = voided;
   material.ocean = hasOcean;
   // With a sea, the void lies below its seabed.

@@ -369,6 +369,8 @@ uniform float uSkyOceanStageReach;
 uniform float uSkyOceanReliefReach;
 // 1 while a stage's occupant's cut opens its seabed to the void (SceneryMaterial.abyssOpenings).
 uniform float uSkyOceanStageOpen;
+// The pixels a dry sea's seabed eases out over toward its own horizon (skySeaLayer).
+#define SKY_OCEAN_DRY_EDGE 2.0
 // What draws itself in the sky (the 3D clouds) as seen from the scene, all round by direction:
 // premultiplied colour and alpha, without the sky's intensity; while uSkyOceanCloudsOn. The sea
 // reflects it over the sky (SceneryMaterial.oceanClouds).
@@ -698,6 +700,8 @@ vec4 skyOceanStagedOver(vec4 layer, SkyOceanStagedView staged, vec3 dir, vec3 or
 // water, over the void (skyOceanFromAir). Nothing from in the water (skyWaterLayer), nor from
 // below the seabed. ⚠️ Derivatives.
 vec4 skySeaLayer(vec3 dir, vec3 origin, float blend) {
+  // How far apart two pixels look (radians): taken before anything branches.
+  float pixel = length(fwidth(dir));
   SkyOceanStagedView staged = skyOceanStagedView(dir, origin);
   bool water = skyOceanNeedsWaterView(origin);
   vec4 sea = vec4(0.0);
@@ -707,6 +711,7 @@ vec4 skySeaLayer(vec3 dir, vec3 origin, float blend) {
     vec3 bedPoint = origin + dir * reach.x;
     vec3 bedUp = globeUpAt(bedPoint);
     float bedDepth = uSkyOceanDepth;
+    float edge = 1.0;
     // From the air over water, the seabed the water in front of it reads (skyOceanWaterUnder):
     // as deep as the ground lies there (skyOceanDepthAt), on the line of sight, lit as that
     // deep. Not bent at the surface: the stage's seabed and the relief lie where they are, and
@@ -719,6 +724,30 @@ vec4 skySeaLayer(vec3 dir, vec3 origin, float blend) {
       bedUp = globeUpAt(at);
       bedDepth = skyOceanDepthAt(at);
       bedPoint = at + dir * (bedDepth / max(-dot(dir, bedUp), 1e-3));
+    } else if(uSkyOceanWater < 0.5) {
+      // Dry, as deep as the ground lies where the view meets the sea's own seabed
+      // (skyOceanDepthAt: the scene's ground where its maps cover, else that depth), met again
+      // that deep, and again where that meets it: down a slope toward a basin the ground lies
+      // deeper further on. A view that passes over deeper ground meets none, and the sky shows
+      // past it. On the sea's depth alone, over a deep basin the seabed showed as a strip
+      // between the relief's horizon and its own, higher one (0.5° from 13 km over 4 km,
+      // 2026-11-19); taken once, a thinner one was left where the basin deepens.
+      float ground = skyOceanDepthAt(bedPoint);
+      for(int i = 0; i < 2; i++) {
+        if(ground <= bedDepth)
+          break;
+        reach = skyOceanReach(origin, dir, altitude + ground);
+        bedPoint = origin + dir * reach.x;
+        bedDepth = ground;
+        if(reach.z > 0.5)
+          break;
+        ground = skyOceanDepthAt(bedPoint);
+      }
+      bedUp = globeUpAt(bedPoint);
+      // Eased out over its last SKY_OCEAN_DRY_EDGE pixels toward its horizon: met or missed a
+      // pixel at a time, the ground map's steps left it showing past the relief's in dashes a
+      // pixel thick (2026-11-19).
+      edge = smoothstep(0.0, SKY_OCEAN_DRY_EDGE * pixel, globeBelowHorizon(origin, dir, bedDepth));
     }
     vec3 bed = skyOceanBed(bedPoint, bedUp, bedDepth);
     bool reached;
@@ -727,6 +756,7 @@ vec4 skySeaLayer(vec3 dir, vec3 origin, float blend) {
     if(reached)
       sea = skyOceanOverVoid(sea, dir);
     #endif
+    sea *= edge;
   }
   return water ? vec4(0.0) : skyOceanStagedOver(sea, staged, dir, origin);
 }

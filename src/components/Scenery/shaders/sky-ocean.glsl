@@ -351,13 +351,22 @@ vec4 skyOceanOverVoid(vec4 layer, vec3 dir) {
 // The seabed at `world`, `depth` under the surface, facing `up` (its up there, globeUpAt):
 // lit by the scene's lights, and dimmed by the water over it. The lights are the field's:
 // far round the Earth, where the sun has set, it is dark as by night, as the relief's ground
-// is (skyDayFrom). ⚠️ Derivatives.
+// is (skyDayFrom). With a relief (SKY_OCEAN_BED_LOOK) its tiles are the seabed, and this one
+// shows only where none is drawn yet or past their edge: plain, in the relief's own look by the
+// ground's height there (the ground map's, else `depth` down), without the seabed's detail,
+// which no one would see. ⚠️ Derivatives.
 vec3 skyOceanBed(vec3 world, vec3 up, float depth) {
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
   vec3 normal = normalize(mat3(viewMatrix) * up);
+  #ifdef SKY_OCEAN_BED_LOOK
+  float covered;
+  float ground = groundMapHeight(world, covered);
+  vec3 albedo = reliefLookAlbedo(covered > 0.5 ? ground : -depth, 0, uSkyOceanBedColor, uSkyOceanDepth);
+  #else
   vec3 albedo = uSkyOceanBedColor;
   #ifdef SURFACE_DETAIL
   albedo *= surfaceDetail(normal, world, position, 0.0, true);
+  #endif
   #endif
   vec3 lit = sceneBlinnPhong(albedo, uSkyOceanBedSpecular, uSkyOceanBedShininess, uSkyOceanBedAmbient, position, normal) * skyDayFrom(uSkyUp, up);
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
@@ -868,19 +877,20 @@ float skyOceanCover(vec3 world, float height) {
   }
   // From in the water, the seabed straight below the camera's level, as the water's layer has it.
   bool inWater = uSkyOceanWater > 0.5 && altitude <= 0.0;
-  // From the air over water the background's seabed lies as deep as the ground map has it
-  // under the point (skySeaLayer), give or take half a texel of it on a slope: only what lies
-  // deeper than that is below it. Coarse far out, so data on the true seabed is never taken
-  // for under it. Else the sea's own depth.
+  // From the air over water, and over a dry sea, the background's seabed lies as deep as the
+  // ground map has it under the point (skySeaLayer), give or take half a texel of it on a slope:
+  // only what lies deeper than that is below it. Coarse far out, so data on the true seabed is
+  // never taken for under it. Else the sea's own depth.
+  bool dry = uSkyOceanWater < 0.5;
   float floorDepth = uSkyOceanDepth;
-  if(fromAir) {
+  if(fromAir || dry) {
     float covered;
     float cell;
     float ground = groundMapHeight(world, covered, cell);
     if(covered > 0.5)
       floorDepth = max(-ground, 0.0) + 0.5 * cell;
   }
-  vec3 bedReach = fromAir ? skyOceanReach(cameraPosition, dir, altitude + floorDepth) : skyOceanBedReach(cameraPosition, dir, inWater);
+  vec3 bedReach = fromAir || dry ? skyOceanReach(cameraPosition, dir, altitude + floorDepth) : skyOceanBedReach(cameraPosition, dir, inWater);
   bool below = height < -floorDepth - margin || (!inWater && bedReach.z < 0.5 && bedReach.x < pastCurve);
   // A relief's tiles draw the seabed out to their reach, but from the air through water,
   // where only a stage's area shows theirs.

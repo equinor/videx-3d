@@ -43,9 +43,12 @@ varying vec3 vViewPosition;
 // How far from the camera the tiles draw it: past it, the stage's sea ends, and so do the tiles.
 uniform float uReliefReach;
 #ifdef RELIEF_FAR
-// The deepest ground in, metres over the sea (0 or below): where the overview hands over.
+// The deepest ground in view (the tiles drawn and the overview's), metres over the sea (0 or
+// below): where the overview hands over.
 uniform float uReliefLowest;
-#define RELIEF_HANDOVER_MIN 0.8
+// The nearest it hands over, as a share of the tiles' reach along the sea: where its tiles
+// start (SceneryReliefOverviewState.handover).
+uniform float uReliefHandoverMin;
 varying vec3 vSkyDirection;
 #else
 varying vec3 vReliefWorld;
@@ -237,12 +240,11 @@ void main() {
   float fine = 1.0 - smoothstep(1.0, 2.0, pixel / max(cellMetres, 1e-3));
   // Handed over where the tiles' ground passes their reach. The ground lies past where the
   // view meets the sea's level, by up to its depth, so the view's meeting with the deepest
-  // ground in (`uReliefLowest`) decides: past the reach, drawn. Where the tiles draw as well
+  // ground in view (`uReliefLowest`) decides: past the reach, drawn. Where the tiles draw as well
   // they lie nearer, and win by depth; the sea's level alone left a ring to the background.
   vec3 deepest = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3) - min(uReliefLowest, 0.0));
-  // No nearer than RELIEF_HANDOVER_MIN of the reach along the sea (OVERVIEW_HANDOVER_MIN in
-  // SceneryStageReliefTiles, where its tiles start).
-  float handover = min(deepest.z > 0.5 ? 1e30 : deepest.x, dist / RELIEF_HANDOVER_MIN);
+  // No nearer than uReliefHandoverMin of the reach along the sea, where its tiles start.
+  float handover = min(deepest.z > 0.5 ? 1e30 : deepest.x, dist / uReliefHandoverMin);
   // Only where the sea is met past the tiles, and a tile is in, outside the hollow's open
   // opening. Every derivative is taken above.
   if(altitude <= 0.0 || hit.z > 0.5 || handover < uReliefReach || merged.w <= 0.0 || hollowIn > 0.0)

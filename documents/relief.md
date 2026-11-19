@@ -143,6 +143,18 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   blue a little fastest, so distant land turns blue before it fades into the horizon,
   but keeps its own colour in most views. From space the sky's own dry seabed past the
   tiles is lit and hazed as their ground is, so the two meet without a seam at their reach.
+- Over a dry sea the sky's own seabed lies as deep as the ground where the view meets it (the
+  `Scenery`'s ground map, once it is in; the sea's `depth` until then), its edge eased over its
+  last two pixels: a view that passes over deeper ground meets none of it. Flat, the sea's
+  `depth` down, it had shown over deep basins as a strip under the horizon, its own horizon
+  higher than the tiles' (0.5°, some 10 pixels, from 13 km up over 4 km of water; 2026-11-19).
+  Left out wherever the tiles reach instead, it no longer covered the Earth while its tiles
+  loaded, and from space the sky's glow at the Earth's edge showed across the whole of it.
+- Under a relief the sky's own seabed shows only where no tile is drawn yet, or past their
+  edge, and it is drawn last, behind them by depth, so it costs nothing where they are. It is
+  drawn plain: in the relief's own look (`SceneryMaterial.oceanReliefLooks`) by the ground
+  map's height, without contours or the seabed's sand detail. While the tiles load, the Earth
+  is then a coarse version of itself rather than the seabed's flat colour.
 - The sea stays flat over the disc holding the `boundary` and lies on the sky's globe beyond it;
   the relief is placed on the same globe, and the stage's sea surface writes the depth of
   the sea on it, so land beyond the scene meets it there. Nothing in either depends on the
@@ -403,10 +415,20 @@ faded through the air, but flat on the curved sea.
 
 The two hand over where the tiles' ground passes their reach. The overview lies on the sea's
 level, the ground below it by its depth, so the overview starts where the view meets the
-deepest ground in (`uReliefLowest`) past the reach, a little short of where it meets the
-sea; where the tiles still draw they lie nearer, and win by depth. Started where the view
+deepest ground in view (`uReliefLowest`: of the tiles drawn and the overview's own) past the
+reach, a little short of where it meets the sea; where the tiles still draw they lie nearer,
+and win by depth. Not the deepest ground of every tile in: a coarse one holds an ocean's
+deepest, and with the dry floor below the overview started as near as it may wherever the
+sea was dry, 135 more tiles held at 2 km over the North Sea for nothing seen (2026-11-19).
+Started where the view
 met the sea's level, it left the background's own flat seabed showing in a ring between the
-two, widest over deep water seen at a slant, with the water off (2026-10-30). Toward their
+two, widest over deep water seen at a slant, with the water off (2026-10-30). It starts no
+nearer than a share of the reach along the sea (`OVERVIEW_HANDOVER_MIN`, its shader's
+`uReliefHandoverMin`): from low over deep water the deepest ground's point comes near the
+camera, and the overview would choose every tile out to it at its own detail. 0.8 under
+water, which hides what lies between; over a dry sea 0.25, as views that pass over ground
+deeper than the share allows meet it past the tiles' reach, and a gap showed between the
+two (0.70 wanted from 13 km over 5.8 km of water, 2026-11-19). Toward their
 reach the tiles take the overview's detail (its 2 pixel cells, and every tile split by
 them where it is coloured by height), eased in from half the reach, and where a pixel is
 finer than a cell the overview takes the tiles' contours and normals, so the two meet

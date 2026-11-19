@@ -80,11 +80,8 @@ uniform vec2 fenceSize;   // grid size in texels
 #include <fog_pars_fragment>
 #include <logdepthbuf_pars_fragment>
 #include ./ocean-surface.glsl
-#include ../../../sdk/materials/shaderLib/water-body.glsl
-
-#ifdef OCEAN_BATHYMETRY
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
-#endif
+#include ../../../sdk/materials/shaderLib/water-body.glsl
 
 #ifdef USE_OIT
 #include ../../../sdk/materials/shaderLib/oit.glsl

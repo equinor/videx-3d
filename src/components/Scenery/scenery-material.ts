@@ -7,9 +7,12 @@ import {
   DataTexture,
   DoubleSide,
   Float32BufferAttribute,
+  FloatType,
   MathUtils,
   Matrix3,
   Matrix4,
+  NearestFilter,
+  RGBAFormat,
   Scene,
   ShaderMaterial,
   ShaderMaterialParameters,
@@ -22,6 +25,8 @@ import {
   Vector4,
   WebGLRenderer,
 } from 'three';
+import { colorRampTexture } from '../../common/color-ramps';
+import { shareTexture } from '../../common/shared-textures';
 import { GroundMap } from '../../sdk/materials/ground-map';
 import { Boundary, boundaryDisc } from '../../sdk/geometries/boundary';
 import {
@@ -72,6 +77,28 @@ const SKY_PLANET_COUNT = 5;
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
+
+// The look the background's seabed takes under a relief until it hands its own over
+// (oceanReliefLooks), in relief-look.glsl's rows: the land flat grey, no contours, and the seabed
+// the sea's own colour, plain.
+const NO_RELIEF_LOOK = shareTexture(
+  (() => {
+    const texture = new DataTexture(
+      new Float32Array([
+        -1, 0, 0, 0, 0.5, 0.5, 0.5, 0, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      ]),
+      1,
+      5,
+      RGBAFormat,
+      FloatType,
+    );
+    texture.minFilter = NearestFilter;
+    texture.magFilter = NearestFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+    return texture;
+  })(),
+);
 
 /**
  * The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}:
@@ -335,6 +362,9 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyOceanStage: new Uniform(new Vector4(...NO_STAGE)),
         uSkyOceanStageReach: new Uniform(0),
         uSkyOceanReliefReach: new Uniform(0),
+        // The relief's looks, for the background's seabed under it (oceanReliefBed).
+        uReliefLook: new Uniform<Texture>(NO_RELIEF_LOOK),
+        uColorRamps: new Uniform(colorRampTexture),
         uSkyOceanClouds: new Uniform<CubeTexture | null>(null),
         uSkyOceanCloudsOn: new Uniform(0),
         // What the sea reflects of them away from where they were baked (setOceanCloudReflection).
@@ -1263,6 +1293,27 @@ export class SceneryMaterial extends ShaderMaterial {
   }
   set oceanReliefReach(value: number) {
     this.uniforms.uSkyOceanReliefReach.value = Math.max(value, 0);
+  }
+
+  /**
+   * Whether a relief is the seabed (a `GeoRelief` in the `World`): the background's own then
+   * shows only where none of its tiles is drawn yet, or past their edge, so it is drawn plain,
+   * in the relief's look ({@link oceanReliefLooks}) by the ground's height under it, without
+   * the seabed's detail. Changing it recompiles the sea's layers.
+   */
+  get oceanReliefBed(): boolean {
+    return this.switches.SKY_OCEAN_BED_LOOK !== undefined;
+  }
+  set oceanReliefBed(value: boolean) {
+    this.setSwitch('SKY_OCEAN_BED_LOOK', value);
+  }
+
+  /**
+   * The relief's looks (`SceneryReliefLooks.texture`), which the background's seabed takes
+   * under it ({@link oceanReliefBed}): its own; null for the sea's seabed colour, plain.
+   */
+  set oceanReliefLooks(value: Texture | null) {
+    this.uniforms.uReliefLook.value = value ?? NO_RELIEF_LOOK;
   }
 
   /**

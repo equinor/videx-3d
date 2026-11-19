@@ -130,11 +130,14 @@ const OVERVIEW_BUDGET_ATTEMPTS = 3;
 // The share of the slots the streamer keeps tiles in (its budget, below): the overview's
 // share and the tiles' detail toward their reach (taking its rules) must fit in it together.
 const STREAM_SHARE = 0.9;
-// The nearest the overview starts, as a share of the tiles' reach (relief-fragment.glsl's
-// RELIEF_HANDOVER_MIN, the same): where the view meets the deepest ground past the reach, but
+// The nearest the overview starts, as a share of the tiles' reach (its shader's
+// uReliefHandoverMin, the same): where the view meets the deepest ground past the reach, but
 // not nearer. From low over deep water that point comes near the camera, and the overview
-// chose every tile out to it at its own detail.
+// chose every tile out to it at its own detail. Over a dry sea nearer: the views that pass
+// over ground deeper than the floor allows reach it past the tiles, and a gap showed between
+// the two (0.70 wanted from 13 km over 5.8 km, 2026-11-19); under water the sea hides it.
 const OVERVIEW_HANDOVER_MIN = 0.8;
+const OVERVIEW_HANDOVER_MIN_DRY = 0.25;
 // The most entries along a side of the overview's index (`SceneryReliefAtlas`): tiles no
 // narrower than an entry are drawn deeper than this allows over a wide region, so a region
 // that would need more is drawn from coarser tiles. 512 x 512 entries are 4 MB.
@@ -339,7 +342,7 @@ export const SceneryStageReliefTiles = ({
   );
   useEffect(() => () => overviewAtlas.dispose(), [overviewAtlas]);
   const overviewState = useMemo<SceneryReliefOverviewState>(
-    () => ({ beyond: false, lowest: 0 }),
+    () => ({ beyond: false, lowest: 0, handover: OVERVIEW_HANDOVER_MIN }),
     [],
   );
   const geometry = useMemo(
@@ -465,14 +468,17 @@ export const SceneryStageReliefTiles = ({
     (uReliefOpacity?.value as Vector2 | undefined)?.set(opacity, fieldOpacity);
     if (uReliefBedDepth) uReliefBedDepth.value = Math.max(-base, 0);
   }, [material, opacity, fieldOpacity, base]);
-  // Where the tiles draw the seabed, it hides what lies below it by depth (skyOceanCover).
+  // Where the tiles draw the seabed, it hides what lies below it by depth (skyOceanCover); the
+  // background's own, where none is drawn, takes their look.
   useEffect(() => {
     if (!sky) return;
     sky.oceanReliefReach = visible ? reach : 0;
+    sky.oceanReliefLooks = looks;
     return () => {
       sky.oceanReliefReach = 0;
+      sky.oceanReliefLooks = null;
     };
-  }, [sky, reach, visible]);
+  }, [sky, reach, visible, looks]);
 
   const generate = useGenerator<SceneryReliefTileResponse>(sceneryReliefTile);
   // What is placed on the relief pins the ground under it (see `ReliefSampler`).
@@ -717,6 +723,8 @@ export const SceneryStageReliefTiles = ({
       layout: GeoTileView;
       /** where its tiles start: tiles wholly within it are the tiles'. Short of their reach by as much as the view meets the sea's level before the deepest ground (see relief-fragment.glsl's hand-over) */
       reach: number;
+      /** the deepest ground of the tiles it last drew, metres over the sea (0 or below) */
+      lowest: number;
       /** the cells' most pixels it last chose by (OVERVIEW_CELL_PIXELS, coarser over its share): the tiles take it toward their reach */
       pixels: number;
       tiles: QuadtreeLayout;
@@ -726,6 +734,7 @@ export const SceneryStageReliefTiles = ({
       frustum: overviewFrustum,
       layout: overviewLayout,
       reach: 0,
+      lowest: 0,
       pixels: OVERVIEW_CELL_PIXELS,
       tiles: {
         ...overviewGeo,
@@ -859,13 +868,15 @@ export const SceneryStageReliefTiles = ({
     }
     // The ground in view reaches past the tiles: with a sky, the overview draws it.
     overviewState.beyond = !!sky && horizon > reach;
-    overviewState.lowest = streaming.reached.lowest;
     // Toward their reach, where the overview takes over, the tiles take its rules, eased in
     // from half the reach: cells as fine on screen as its (as it last chose them), and every
     // tile split by them where it colours by height — with the water off, or above the sea —
     // so the two meet at the same detail. Nearer, as before. Not if that would want more
     // than their share of the slots (below). Without a sky there is no water.
     const wet = sky?.oceanWater ?? false;
+    overviewState.handover = wet
+      ? OVERVIEW_HANDOVER_MIN
+      : OVERVIEW_HANDOVER_MIN_DRY;
     let easing = overviewState.beyond;
     const towardOverview = (distance: number) =>
       easing ? Math.min(Math.max((2 * distance) / reach - 1, 0), 1) : 0;
@@ -1012,10 +1023,22 @@ export const SceneryStageReliefTiles = ({
       selection = choose();
     }
     streaming.split = selection.split;
+    // The deepest ground in view, metres over the sea (0 or below): of the tiles drawn (a fill
+    // by its source) and the overview's as it last chose them, where a view past the reach can
+    // meet ground. Where the overview hands over follows it. Not of every tile in
+    // (`reached.lowest`, the hub's): a coarse one in holds an ocean's deepest, and with the dry
+    // floor the overview then started as near as it may wherever the sea was dry (135 more
+    // tiles at 2 km over the North Sea, for nothing seen; 2026-11-19).
+    const overview = view.overview;
+    let lowest = overviewState.beyond ? overview.lowest : 0;
+    for (const key of selection.draw)
+      lowest = Math.min(lowest, streamer.get(key)?.min ?? 0);
+    for (const fill of selection.fills)
+      lowest = Math.min(lowest, streamer.get(fill.source)?.min ?? 0);
+    overviewState.lowest = lowest;
     // Past the tiles' reach, while the ground in view lies farther: the overview's tiles,
     // by the same rules, out to the horizon and no deeper than its index allows.
     let overviewSelection: QuadtreeSelection | null = null;
-    const overview = view.overview;
     if (overviewState.beyond && visible) {
       overview.frustum.copy(view.frustum);
       overview.frustum.planes[4].set(NO_PLANE_NORMAL, 1);
@@ -1027,9 +1050,8 @@ export const SceneryStageReliefTiles = ({
       overview.reach =
         reach *
         Math.max(
-          Math.max(altitude, 1) /
-            (Math.max(altitude, 1) - Math.min(streaming.reached.lowest, 0)),
-          OVERVIEW_HANDOVER_MIN,
+          Math.max(altitude, 1) / (Math.max(altitude, 1) - lowest),
+          overviewState.handover,
         );
       // Land is coloured by its height per pixel, and with the water off so is the seabed:
       // their cells split by their size on screen however flat. Under the water only a
@@ -1097,6 +1119,14 @@ export const SceneryStageReliefTiles = ({
           .slice(0, room);
       streaming.overviewSplit = chosen.split;
       overview.pixels = pixels;
+      overview.lowest = 0;
+      for (const key of chosen.draw)
+        overview.lowest = Math.min(
+          overview.lowest,
+          streamer.get(key)?.min ?? 0,
+        );
+    } else {
+      overview.lowest = 0;
     }
     // The overview's index over the region its tiles cover, built again only when they
     // change; tiles deeper than the region allows (the last choice's, past its attempts)

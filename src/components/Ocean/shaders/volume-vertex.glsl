@@ -44,6 +44,7 @@ varying vec2 vObjectXZ;
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ./sea-layers.glsl
+#include ../../../sdk/materials/shaderLib/depth-map.glsl
 #include ../../../sdk/materials/shaderLib/water-body.glsl
 
 void main() {

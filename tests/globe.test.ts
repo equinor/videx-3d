@@ -60,6 +60,21 @@ describe('Globe, the surface', () => {
     expect(g.upAt(p, new Vector3()).toArray()).toEqual([0, 1, 0]);
   });
 
+  it('is the sphere across the Earth, under the same offset from the disc', () => {
+    const g = globe();
+    // About the disc's antipode, within its radius of its axis: on the ground and over it.
+    for (const offset of [0, 2000]) {
+      const angle = offset / R;
+      const dir = new Vector3(Math.sin(angle), -Math.cos(angle), 0);
+      for (const height of [0, 40, 270000]) {
+        const p = g.centre.clone().addScaledVector(dir, R + height);
+        expect(g.altitude(p)).toBeCloseTo(height, 3);
+        expect(g.upAt(p, new Vector3()).angleTo(dir)).toBeLessThan(1e-7);
+        expect(g.lookUp(p, new Vector3()).angleTo(dir)).toBeLessThan(1e-7);
+      }
+    }
+  });
+
   it.each([6000, 50000, 500000, 2000000])(
     'is the sphere beyond it, %i m out',
     distance => {

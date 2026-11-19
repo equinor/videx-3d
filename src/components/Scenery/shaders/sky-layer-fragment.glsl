@@ -7,6 +7,10 @@
 #include <common>
 #include <fog_pars_fragment>
 #include <dithering_pars_fragment>
+// The relief's looks, for its seabed (SKY_OCEAN_BED_LOOK, sky-ocean.glsl's skyOceanBed): here,
+// once, before the sky, as no other program of the sky's needs them and the relief's own include
+// them themselves.
+#include ./relief-look.glsl
 #include ./sky.glsl
 
 varying vec3 vSkyDirection;

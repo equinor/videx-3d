@@ -3,9 +3,9 @@
 // by what it enters the water by, the surface (waterBodySurfaceWater: the water down to the
 // seabed under it) or a wall (the Ocean's walls, ocean-volume-material.ts); what lies in the
 // water is only dimmed by the daylight its depth leaves it. From in the water, all of it fades
-// by its own path through the water (waterBodyFog).
+// by its own path through the water (waterBodyFog). Needs depth-map.glsl included before it,
+// once: an include repeated is inlined again (vite-plugin-glsl), and warned of.
 #include ./water-fog.glsl
-#include ./depth-map.glsl
 #include ./ground-map.glsl
 
 // xyz the world's up, w the surface's height along it.

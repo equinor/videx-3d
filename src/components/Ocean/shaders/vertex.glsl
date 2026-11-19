@@ -44,6 +44,7 @@ varying float vSectionDist;
 #include <fog_pars_vertex>
 #include <logdepthbuf_pars_vertex>
 #include ./sea-layers.glsl
+#include ../../../sdk/materials/shaderLib/depth-map.glsl
 #include ../../../sdk/materials/shaderLib/water-body.glsl
 
 void main() {

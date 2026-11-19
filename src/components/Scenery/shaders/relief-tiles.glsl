@@ -136,6 +136,9 @@ float reliefTileGroundAt(vec3 p) {
 #define RELIEF_MAX_REGIONS 8
 #define RELIEF_REGION_CIRCLE 1
 #define RELIEF_REGION_POLYGON 2
+// How far below a region's plane its area still reaches (metres): far more than its ground, far
+// less than the Earth across (reliefTileInRegion).
+#define RELIEF_REGION_BELOW 1e6
 uniform int uReliefRegionCount;
 uniform mat4 uReliefRegions[RELIEF_MAX_REGIONS];
 // Per region (SceneryReliefRegions) its kind, 0 a box, 1 a circle, 2 a polygon; and its shape:
@@ -168,7 +171,12 @@ bool reliefTileInRegion(vec3 world) {
   for(int i = 0; i < RELIEF_MAX_REGIONS; i++) {
     if(i >= uReliefRegionCount)
       break;
-    vec2 p = (uReliefRegions[i] * vec4(world, 1.0)).xz;
+    vec4 local = uReliefRegions[i] * vec4(world, 1.0);
+    // Not across the Earth from it, where the same offset in its plane is its antipode's, some
+    // 12 700 km below: its ground lies within a few km of its plane.
+    if(local.y < -RELIEF_REGION_BELOW)
+      continue;
+    vec2 p = local.xz;
     vec4 shape = uReliefRegionShapes[i];
     int kind = uReliefRegionKinds[i];
     bool inside;

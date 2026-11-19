@@ -56,6 +56,9 @@ uniform vec4 waterSectionPlane;
 
 #if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY) || defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS) || defined(CHUNK_HEIGHT_CLIP) || defined(CHUNK_WATER_SECTION) || defined(CHUNK_WATER_FENCE)
 varying vec3 vObjectPos;
+#endif
+// Once, for the scene's water (water-body.glsl) too: an include repeated is inlined again.
+#if defined(CHUNK_CONTACTS) || defined(CHUNK_BATHYMETRY) || defined(CHUNK_FENCE) || defined(CHUNK_FENCE_OVERLAY) || defined(CHUNK_TILE_DEBUG) || defined(CHUNK_TILE_LEVELS) || defined(CHUNK_HEIGHT_CLIP) || defined(CHUNK_WATER_SECTION) || defined(CHUNK_WATER_FENCE) || defined(CHUNK_WATER)
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
 #endif
 

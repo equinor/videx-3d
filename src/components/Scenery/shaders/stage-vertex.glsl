@@ -16,7 +16,8 @@ varying vec3 vViewPosition;
 vec3 stageSink(vec3 world) {
   vec3 under = globeFoot(cameraPosition);
   vec3 across = under - uGlobeDisc.xyz;
-  if(!globeOn() || dot(across, across) <= uGlobe.z)
+  vec3 v = cameraPosition - uGlobeDisc.xyz;
+  if(!globeOn() || globeOverDisc(dot(v, uGlobeUp), across))
     return world;
   under = globePlace(under.xz, dot(world - uGlobeDisc.xyz, uGlobeUp));
   vec3 up = globeUpAt(under);

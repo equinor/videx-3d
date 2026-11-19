@@ -407,7 +407,11 @@ export type SceneryOceanWater = Omit<
  * continues it without a seam.
  */
 export type ScenerySeabed = {
-  /** Default `#8c8573` */
+  /**
+   * Default `#8c8573`. Under a `GeoRelief` in the `World`, whose tiles are the seabed, the
+   * background's own (where none is drawn yet, or past their edge) takes the relief's look
+   * instead: its seabed's ramp, or this colour where the look gives it none
+   */
   color?: ColorRepresentation;
   /** specular highlight colour. Default `#1a1a1a`, as on `ChunkMaterial` */
   specular?: ColorRepresentation;
@@ -415,7 +419,7 @@ export type ScenerySeabed = {
   shininess?: number;
   /** ambient multipliers facing up / facing down, or `false` for none. Default `[1.35, 0.5]`, as on `ChunkMaterial` */
   ambient?: Vec2 | false;
-  /** procedural relief, or `false` for none. Default `'seabed'` */
+  /** procedural relief, or `false` for none; not drawn under a `GeoRelief`, whose tiles are the seabed. Default `'seabed'` */
   detail?: SurfaceDetail | false;
 };
 

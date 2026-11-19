@@ -37,6 +37,7 @@ export function createSceneryReliefFarMaterial(
   uniforms.uReliefBase = new Uniform(base);
   uniforms.uReliefReach = new Uniform(1e30);
   uniforms.uReliefLowest = new Uniform(0);
+  uniforms.uReliefHandoverMin = new Uniform(0.8);
   uniforms.uReliefLook = new Uniform(looks);
   uniforms.uColorRamps = new Uniform(colorRampTexture);
   return drawsSharedTextures(

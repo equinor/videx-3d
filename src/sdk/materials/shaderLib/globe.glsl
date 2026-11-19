@@ -21,6 +21,15 @@ bool globeOn() {
   return uGlobe.w > 0.5;
 }
 
+// Whether a point `h` along up from the disc's centre and `across` it lies over the disc, where
+// the globe is the level plane: within its radius, on the field's side of the Earth. Across the
+// Earth the same offset is its antipode's, 12 700 km below the plane: there the sphere holds.
+// Tested by the offset alone, the field's frame was taken there too, the ground under it shaded
+// as the void and lit as the field is (2026-11-19).
+bool globeOverDisc(float h, vec3 across) {
+  return dot(across, across) <= uGlobe.z && h > -uGlobe.y;
+}
+
 // The sea's level along up.
 float globeLevel() {
   return dot(uGlobeDisc.xyz, uGlobeUp);
@@ -34,7 +43,7 @@ float globeAltitude(vec3 p) {
     return h;
   vec3 across = v - uGlobeUp * h;
   float d2 = dot(across, across);
-  if(d2 <= uGlobe.z)
+  if(globeOverDisc(h, across))
     return h;
   float hs = h + uGlobe.y;
   // (|p − C|² − R²) / (|p − C| + R), the numerator about the disc's centre.
@@ -61,8 +70,8 @@ float globeViewHeight(vec3 origin) {
 // Up at `p`: the scene's above the disc, away from the sphere's centre beyond.
 vec3 globeUpAt(vec3 p) {
   vec3 v = p - uGlobeDisc.xyz;
-  vec3 across = v - uGlobeUp * dot(v, uGlobeUp);
-  if(!globeOn() || dot(across, across) <= uGlobe.z)
+  float h = dot(v, uGlobeUp);
+  if(!globeOn() || globeOverDisc(h, v - uGlobeUp * h))
     return uGlobeUp;
   return normalize(v + uGlobeUp * uGlobe.y);
 }
@@ -119,7 +128,7 @@ vec3 globeFoot(vec3 p) {
   vec3 v = p - uGlobeDisc.xyz;
   float h = dot(v, uGlobeUp);
   vec3 across = v - uGlobeUp * h;
-  if(!globeOn() || dot(across, across) <= uGlobe.z)
+  if(!globeOn() || globeOverDisc(h, across))
     return uGlobeDisc.xyz + across;
   return uGlobeDisc.xyz + across * (uGlobe.y / (h + uGlobe.y));
 }
@@ -184,7 +193,7 @@ vec2 globeSphereOffset(vec3 p) {
   vec3 across = v - uGlobeUp * h;
   float e = dot(across, uGlobeEast);
   float n = dot(across, uGlobeNorth);
-  float u = uGlobe.y + (dot(across, across) <= uGlobe.z ? 0.0 : h);
+  float u = uGlobe.y + (globeOverDisc(h, across) ? 0.0 : h);
   float sinChi0 = uGlobeSphere.x;
   float cosChi0 = uGlobeSphere.y;
   // The direction's latitude about the disc's centre's, from its parts: sin and cos of
@@ -269,6 +278,30 @@ vec2 globeReach(vec3 origin, vec3 dir, float below) {
   if(over > 0.0 && dot(at, at) <= rho2)
     return vec2(closest, 1.0);
   return vec2(t, 0.0);
+}
+
+// How far below the horizon of the sphere `below` lower (R − below) a view from `origin` along
+// `dir` (unit) looks, as an angle (radians): 0 where it grazes it, negative above it, as far
+// as small angles go. For easing an edge drawn by globeReach over a pixel or two (its sphere
+// only, not the disc's plane). With the globe off, or from inside the sphere, 1: no horizon.
+float globeBelowHorizon(vec3 origin, vec3 dir, float below) {
+  if(!globeOn())
+    return 1.0;
+  vec3 v = origin - uGlobeDisc.xyz;
+  float up = dot(v, uGlobeUp);
+  float R = uGlobe.x;
+  float s = uGlobe.y;
+  // As globeReach: about the disc's centre, |origin − C|² − (R − below)².
+  float b = dot(v, dir) + s * dot(dir, uGlobeUp);
+  float outside = dot(v, v) + 2.0 * s * up - uGlobe.z + below * (2.0 * R - below);
+  if(outside <= 0.0)
+    return 1.0;
+  if(b >= 0.0)
+    return -1.0;
+  // b² − outside is (R − below)² less the square of how near the line passes the centre: over
+  // 2 (R − below), how deep it passes under the sphere; over √outside, how far off the view
+  // grazes it, the angle.
+  return (b * b - outside) / (2.0 * (R - below) * sqrt(outside));
 }
 
 // The sine of the elevation, from the level of `look` (unit), of the horizon seen from

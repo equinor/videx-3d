@@ -474,7 +474,7 @@ export class Globe {
     v.subVectors(point, this.c);
     const h = v.dot(up);
     flat.copy(v).addScaledVector(up, -h);
-    const onDisc = flat.lengthSq() <= this.discR * this.discR;
+    const onDisc = this.overDisc(h, flat.lengthSq());
     // Its direction from the sphere's centre; over the disc, its foot's; off, where the
     // sphere laid flat has it (geodetic).
     const R = this.R;
@@ -509,7 +509,7 @@ export class Globe {
     if (!this.on) return h;
     const r2 = this.discR * this.discR;
     const d2 = flat.copy(v).addScaledVector(up, -h).lengthSq();
-    if (d2 <= r2) return h;
+    if (this.overDisc(h, d2)) return h;
     const s = this.s;
     // (|p − C|² − R²) / (|p − C| + R), the numerator about the disc's centre.
     const fromCentre = Math.sqrt(d2 + (h + s) * (h + s));
@@ -522,7 +522,7 @@ export class Globe {
     v.subVectors(point, this.c);
     const h = v.dot(up);
     const d2 = flat.copy(v).addScaledVector(up, -h).lengthSq();
-    if (!this.on || d2 <= this.discR * this.discR) return target.copy(up);
+    if (!this.on || this.overDisc(h, d2)) return target.copy(up);
     return target.copy(v).addScaledVector(up, this.s).normalize();
   }
 
@@ -538,8 +538,9 @@ export class Globe {
     const h = v.dot(up);
     const d = flat.copy(v).addScaledVector(up, -h).length();
     const r = this.discR;
-    if (!this.on || d <= r) return target.copy(up);
-    const t = Math.min((d - r) / Math.max(r, 1), 1);
+    if (!this.on || this.overDisc(h, d * d)) return target.copy(up);
+    // Across the Earth from the field, up there whole: no easing toward the field's.
+    const t = h > -this.s ? Math.min((d - r) / Math.max(r, 1), 1) : 1;
     const ease = t * t * (3 - 2 * t);
     target.copy(v).addScaledVector(up, this.s).normalize();
     return target.lerp(up, 1 - ease).normalize();
@@ -584,7 +585,7 @@ export class Globe {
     v.subVectors(point, this.c);
     const h = v.dot(up);
     flat.copy(v).addScaledVector(up, -h);
-    const onDisc = !this.on || flat.lengthSq() <= this.discR * this.discR;
+    const onDisc = !this.on || this.overDisc(h, flat.lengthSq());
     if (!onDisc && this.toMap) {
       const { latitude, longitude } = this.geographic(point, under);
       const [x, z] = this.mapXZ(longitude, latitude);
@@ -792,6 +793,14 @@ export class Globe {
     return target
       .set(x, 0, z)
       .addScaledVector(up, this.seaLevel - (x * up.x + z * up.z));
+  }
+
+  // Whether a point `h` along up from the disc's centre and `d2` (squared) across it lies over
+  // the disc, where the globe is the level plane: within its radius, on the field's side of the
+  // Earth. Across the Earth the same offset is its antipode's, where the sphere holds
+  // (globe.glsl's globeOverDisc, the same).
+  private overDisc(h: number, d2: number): boolean {
+    return d2 <= this.discR * this.discR && h > -this.s;
   }
 
   private update() {

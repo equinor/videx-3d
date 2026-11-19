@@ -9,6 +9,8 @@ import {
   SrcAlphaFactor,
 } from 'three';
 import { releaseMaterial } from '../../rendering/precompile';
+import { drawsSharedTextures } from '../../common/shared-textures';
+import { SURFACE_DETAIL_DEFINES } from '../../sdk/materials/surface-detail';
 import layerFragmentShader from './shaders/sky-layer-fragment.glsl';
 import skyVertexShader from './shaders/sky-vertex.glsl';
 import { SCENERY_SEA_DEFINES, type SceneryMaterial } from './scenery-material';
@@ -75,6 +77,12 @@ export function sceneryLayerDefines(
     Object.assign(defines, sceneryOceanDefines(sky));
     // With no void of its own under it, the sea fills in its own.
     if (!sky.abyss) delete defines.SKY_ABYSS;
+    // Under a relief its seabed shows only where none of its tiles is drawn: plain, in the
+    // relief's look (SceneryMaterial.oceanReliefBed), without the detail.
+    if (sky.oceanReliefBed) {
+      for (const key of SURFACE_DETAIL_DEFINES) delete defines[key];
+      defines.SKY_OCEAN_BED_LOOK = '';
+    }
   }
   return defines;
 }
@@ -94,24 +102,26 @@ export function createSceneryLayerMaterial(
   const material =
     layer === 'surface'
       ? createScenerySurfaceMaterial(sky)
-      : new ShaderMaterial({
-          vertexShader: skyVertexShader,
-          fragmentShader: layerFragmentShader,
-          uniforms: sky.uniforms,
-          defines: sceneryLayerDefines(sky, layer),
-          side: DoubleSide,
-          depthWrite: false,
-          fog: true,
-          dithering: true,
-          // The seabed is lit by the scene's lights.
-          lights: layer === 'sea' || layer === 'water',
-          // ⚠️ Alpha as three's normal blending does, or the canvas turns see-through here.
-          blending: CustomBlending,
-          blendSrc: SrcAlphaFactor,
-          blendDst: OneMinusSrcAlphaFactor,
-          blendSrcAlpha: OneFactor,
-          blendDstAlpha: OneMinusSrcAlphaFactor,
-        });
+      : drawsSharedTextures(
+          new ShaderMaterial({
+            vertexShader: skyVertexShader,
+            fragmentShader: layerFragmentShader,
+            uniforms: sky.uniforms,
+            defines: sceneryLayerDefines(sky, layer),
+            side: DoubleSide,
+            depthWrite: false,
+            fog: true,
+            dithering: true,
+            // The seabed is lit by the scene's lights.
+            lights: layer === 'sea' || layer === 'water',
+            // ⚠️ Alpha as three's normal blending does, or the canvas turns see-through here.
+            blending: CustomBlending,
+            blendSrc: SrcAlphaFactor,
+            blendDst: OneMinusSrcAlphaFactor,
+            blendSrcAlpha: OneFactor,
+            blendDstAlpha: OneMinusSrcAlphaFactor,
+          }),
+        );
   material.name = `scenery-${layer}`;
   material.depthTest = depthTest;
   return material;

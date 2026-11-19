@@ -17,8 +17,10 @@ import {
 export type SceneryReliefOverviewState = {
   /** the farthest ground in view lies past the tiles' reach: the overview is wanted */
   beyond: boolean;
-  /** the deepest ground in, metres over the sea: the overview hands over where the view meets it past the tiles' reach */
+  /** the deepest ground in view (the tiles drawn and the overview's), metres over the sea: the overview hands over where the view meets it past the tiles' reach */
   lowest: number;
+  /** the nearest it hands over, as a share of the tiles' reach along the sea: where its tiles start at the nearest */
+  handover: number;
 };
 
 type SceneryStageReliefOverviewProps = {
@@ -110,7 +112,10 @@ export const SceneryStageReliefOverview = ({
   useFrame(() => {
     const beyond = told.beyond;
     if (visible && beyond && !wanted) setWanted(true);
-    if (material) material.uniforms.uReliefLowest.value = told.lowest;
+    if (material) {
+      material.uniforms.uReliefLowest.value = told.lowest;
+      material.uniforms.uReliefHandoverMin.value = told.handover;
+    }
     if (mesh.current)
       mesh.current.visible = visible && beyond && compiled === material;
   });

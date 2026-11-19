@@ -31,6 +31,7 @@ varying vec3 vViewPosition;
 #include <common>
 #include <logdepthbuf_pars_fragment>
 #include ../../../sdk/materials/shaderLib/procedural-normal.glsl
+#include ../../../sdk/materials/shaderLib/depth-map.glsl
 #include ../../../sdk/materials/shaderLib/water-body.glsl
 
 #ifdef USE_OIT
