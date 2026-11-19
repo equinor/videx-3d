@@ -79,8 +79,8 @@ view or its labels change (`LabelGroup`, `label-placement.ts`), as annotations a
   fading by the time since (`LabelGroup.placeBudget`; Infinity places every frame). Labels
   are drawn where they are by the GPU each frame regardless; only which are shown lags.
 
-Priorities in the library: data labels (`GeoLabels`) 0, a relief's contour labels −0.5
-(`RELIEF_CONTOUR_LABEL_PRIORITY`, see [relief.md](./relief.md#contour-labels)), latitude and
+Priorities in the library: data labels (`GeoLabels`) 0, contour labels −0.5, a relief's and a
+`Surface`'s (`RELIEF_CONTOUR_LABEL_PRIORITY`, see [relief.md](./relief.md#contour-labels)), latitude and
 longitude's names −1 (`GRATICULE_LABEL_PRIORITY`), the zones' −2
 (`GRATICULE_ZONE_LABEL_PRIORITY`).
 

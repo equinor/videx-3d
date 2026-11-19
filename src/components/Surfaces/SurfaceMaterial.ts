@@ -32,6 +32,8 @@ export type SurfaceMaterialParameters = ShaderMaterialParameters &
     referenceDepth?: number;
     showContours?: boolean;
     contoursInterval?: number;
+    contoursMajor?: number;
+    contoursThickness?: number;
     contoursColorMode?: ContourColorMode;
     contoursColorModeFactor?: number;
     contoursColor?: string | number | Color;
@@ -68,6 +70,8 @@ const shader = {
       elevationTexture: { value: null },
       normalTexture: { value: null },
       contoursInterval: { value: 100 },
+      // every how many lines a major one, twice as wide; below 2 none
+      contoursMajor: { value: 0 },
       contoursColorMode: { value: 0 },
       contoursColorModeFactor: { value: 0.5 },
       contoursColor: { value: new Color('black') },
@@ -145,6 +149,7 @@ export class SurfaceMaterial extends ShaderMaterial {
       'saturation',
       'brightness',
       'contoursInterval',
+      'contoursMajor',
       'contoursColorMode',
       'contoursColorModeFactor',
       'contoursThickness',

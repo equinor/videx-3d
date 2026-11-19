@@ -21,6 +21,7 @@ uniform int colorRamps;
 
 #ifdef USE_CONTOURS
 uniform float contoursInterval;
+uniform float contoursMajor;
 uniform int contoursColorMode;
 uniform float contoursColorModeFactor;
 uniform float contoursThickness;
@@ -274,7 +275,7 @@ void main() {
 
   // contour lines
   #ifdef USE_CONTOURS
-  float contour = contourCover(depth, contourGradient(depth), contoursInterval, contoursThickness, 0.0);
+  float contour = contourCover(depth, contourGradient(depth), contoursInterval, contoursThickness, contoursMajor);
   #endif
 
   ReflectedLight reflectedLight = ReflectedLight(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0));

@@ -107,7 +107,7 @@ describe('relief contour labels', () => {
     const dark = labelsOf({ labels: true, factor: 0.4 })!;
     expect(dark.color).toBe('#000000');
     expect(dark.opacity).toBeCloseTo(0.4);
-    expect(dark.haloColor).toBe('rgba(210, 210, 210, 0.3)');
+    expect(dark.haloColor).toBe('rgba(210, 210, 210, 0.13)');
     expect(dark.haloWidth).toBe(RELIEF_CONTOUR_LABEL_DEFAULTS.haloWidth);
     // Mixed: their colour; a light one takes a dark grey halo.
     const mixed = labelsOf({

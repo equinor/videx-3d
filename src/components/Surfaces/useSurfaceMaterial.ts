@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { DataTexture, DoubleSide, FrontSide, Texture } from 'three';
+import { Color, DataTexture, DoubleSide, FrontSide, Texture } from 'three';
 import { ColorRampRef, resolveColorRamp } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -9,7 +9,12 @@ import {
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
+import type { ReliefContours } from '../Scenery/scenery-relief-look';
 import { surfaceTextures, SurfaceTexturesResponse } from './surface-defs';
+import {
+  resolveSurfaceContours,
+  type SurfaceContours,
+} from './surface-contours';
 import { SurfaceMaterial } from './SurfaceMaterial';
 
 /** Appearance options for {@link useSurfaceMaterial}. */
@@ -23,11 +28,23 @@ export type SurfaceMaterialOptions = {
   rampMax?: number;
   reverseRamp?: boolean;
   useColorRamp?: boolean;
+  /**
+   * contour lines by depth (see {@link SurfaceContours}; their `labels` are a `Surface`'s
+   * to draw); `true` for the defaults. Given, the `showContours` and `contours*` options
+   * are not read
+   */
+  contours?: boolean | SurfaceContours;
+  /** @deprecated use `contours` */
   showContours?: boolean;
+  /** @deprecated use `contours.interval` */
   contoursInterval?: number;
+  /** @deprecated use `contours.colorMode` */
   contoursColorMode?: ContourColorMode;
+  /** @deprecated use `contours.factor` */
   contoursColorModeFactor?: number;
+  /** @deprecated use `contours.thickness` */
   contoursThickness?: number;
+  /** @deprecated use `contours.color` */
   contoursColor?: string;
   opacity?: number;
   doubleSide?: boolean;
@@ -65,7 +82,7 @@ export type SurfaceMaterialOptions = {
  * dispose it.
  *
  * @example
- * const topMaterial = useSurfaceMaterial(topMeta, { showContours: true });
+ * const topMaterial = useSurfaceMaterial(topMeta, { contours: true });
  * <Chunk groups={groups} topMaterial={topMaterial} />
  *
  * @group Hooks
@@ -89,12 +106,13 @@ export function useSurfaceMaterial(
     rampMax,
     reverseRamp = false,
     useColorRamp = true,
-    showContours = false,
-    contoursInterval = 100,
-    contoursColorMode = ContourColorMode.darken,
-    contoursColorModeFactor = 0.5,
-    contoursThickness = 0.8,
-    contoursColor = 'black',
+    contours,
+    showContours,
+    contoursInterval,
+    contoursColorMode,
+    contoursColorModeFactor,
+    contoursThickness,
+    contoursColor,
     opacity = 1,
     doubleSide = opacity === 1 || false,
     wireframe = false,
@@ -136,15 +154,23 @@ export function useSurfaceMaterial(
     });
   }, []);
 
+  // By value, so contours written inline set nothing again.
+  const linesKey = JSON.stringify(
+    resolveSurfaceContours(contours, {
+      showContours,
+      contoursInterval,
+      contoursColorMode,
+      contoursColorModeFactor,
+      contoursThickness,
+      contoursColor,
+    }),
+  );
+
   // --- grid uniforms (from the meta) + the reactive appearance ---------------
   useEffect(() => {
     if (!meta) return;
     material.uniforms.colorRampIndex.value = resolveColorRamp(colorRamp);
     material.uniforms.opacity.value = opacity;
-    material.uniforms.contoursColorMode.value = contoursColorMode;
-    material.uniforms.contoursColorModeFactor.value = contoursColorModeFactor;
-    material.uniforms.contoursInterval.value = contoursInterval;
-    material.uniforms.contoursThickness.value = contoursThickness;
     material.uniforms.colorRampMin.value = rampMin ?? meta.displayMin;
     material.uniforms.colorRampMax.value = rampMax ?? meta.displayMax;
     material.uniforms.colorRampReverse.value = reverseRamp;
@@ -161,10 +187,6 @@ export function useSurfaceMaterial(
     meta,
     colorRamp,
     opacity,
-    contoursColorMode,
-    contoursColorModeFactor,
-    contoursInterval,
-    contoursThickness,
     rampMin,
     rampMax,
     reverseRamp,
@@ -172,9 +194,21 @@ export function useSurfaceMaterial(
   ]);
 
   useEffect(() => {
+    const lines = JSON.parse(linesKey) as Required<ReliefContours> | null;
+    material.showContours = !!lines;
+    if (!lines) return;
+    const { uniforms } = material;
+    uniforms.contoursInterval.value = lines.interval;
+    uniforms.contoursMajor.value = lines.major;
+    uniforms.contoursThickness.value = lines.thickness;
+    uniforms.contoursColorMode.value = lines.colorMode;
+    uniforms.contoursColorModeFactor.value = lines.factor;
+    (uniforms.contoursColor.value as Color).set(lines.color);
+    material.uniformsNeedUpdate = true;
+  }, [material, linesKey]);
+
+  useEffect(() => {
     material.wireframe = wireframe;
-    material.showContours = showContours;
-    material.contoursColor = contoursColor;
     material.useColorRamp = useColorRamp;
     material.geometryFallback = geometryFallback;
     material.color = color || material.color;
@@ -190,9 +224,7 @@ export function useSurfaceMaterial(
   }, [
     material,
     useColorRamp,
-    showContours,
     wireframe,
-    contoursColor,
     color,
     doubleSide,
     geometryFallback,

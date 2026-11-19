@@ -7,6 +7,7 @@ import {
   ReliefColor,
   ReliefContours,
   ReliefLook,
+  contourLabelStep,
   resolveReliefContourLabels,
   resolveReliefContours,
 } from '../Scenery/scenery-relief-look';
@@ -232,9 +233,8 @@ export const GeoRelief = ({
       const lines = resolveReliefContours(given ?? undefined);
       const labels = resolveReliefContourLabels(lines);
       if (!lines || !labels) return null;
-      const major = labels.lines === 'major' && lines.major > 1;
       return {
-        step: lines.interval * (major ? lines.major : 1),
+        step: contourLabelStep(lines, labels),
         seabed: lines.seabed,
         labels,
       };

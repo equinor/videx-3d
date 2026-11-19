@@ -18,8 +18,20 @@ import {
   EventEmitterCallback,
   useEventEmitter,
 } from '../EventEmitter/EventEmitterContext';
+import {
+  contourLabelStep,
+  resolveReliefContourLabels,
+  type ReliefContours,
+} from '../Scenery/scenery-relief-look';
 import { surfaceGeometry, SurfaceGeometryResponse } from './surface-defs';
+import {
+  resolveSurfaceContours,
+  type SurfaceContours,
+} from './surface-contours';
+import { SurfaceContourLabels } from './SurfaceContourLabels';
 import { useSurfaceMaterial } from './useSurfaceMaterial';
+
+export type { SurfaceContours } from './surface-contours';
 
 /**
  * Surface props
@@ -35,11 +47,23 @@ export type SurfaceProps = CommonComponentProps &
     rampMax?: number;
     reverseRamp?: boolean;
     useColorRamp?: boolean;
+    /**
+     * contour lines by depth, and with `labels` each line's depth written along it (see
+     * {@link SurfaceContours}); `true` for the defaults. Given, the `showContours` and
+     * `contours*` props are not read
+     */
+    contours?: boolean | SurfaceContours;
+    /** @deprecated use `contours` (these had no major lines: `major: 0`) */
     showContours?: boolean;
+    /** @deprecated use `contours.interval` */
     contoursInterval?: number;
+    /** @deprecated use `contours.colorMode` */
     contoursColorMode?: ContourColorMode;
+    /** @deprecated use `contours.factor` */
     contoursColorModeFactor?: number;
+    /** @deprecated use `contours.thickness` */
     contoursThickness?: number;
+    /** @deprecated use `contours.color` */
     contoursColor?: string;
     opacity?: number;
     priority?: number;
@@ -73,7 +97,8 @@ export type SurfaceProps = CommonComponentProps &
 /**
  * This component renderes a TIN model from an elevation map, according to the `SurfaceMeta` and `SurfaveValues` data types.
  *
- * It has several customization options for rendering the surfaces, including color ramps, contour lines and transparency.
+ * It has several customization options for rendering the surfaces, including color ramps, contour lines (with their
+ * depths written along them, as a relief's: `contours.labels`) and transparency.
  *
  * Surface values are expected to be in a regular grid. An optimized triangulation is used for the geometry, but color ramp
  * values and contour lines are always using the full resolution of the data for accuracy.
@@ -91,12 +116,13 @@ export const Surface = ({
   rampMax,
   reverseRamp = false,
   useColorRamp = true,
-  showContours = false,
-  contoursInterval = 100,
-  contoursColorMode = ContourColorMode.darken,
-  contoursColorModeFactor = 0.5,
-  contoursThickness = 0.8,
-  contoursColor = 'black',
+  contours,
+  showContours,
+  contoursInterval,
+  contoursColorMode,
+  contoursColorModeFactor,
+  contoursThickness,
+  contoursColor,
   opacity = 1,
   priority = 0,
   maxError = 5,
@@ -138,6 +164,28 @@ export const Surface = ({
 
   const glyphContext = useContext(GlyphsContext);
 
+  // Its contours, by value: the deprecated props mapped in where `contours` is not given.
+  const linesKey = JSON.stringify(
+    resolveSurfaceContours(contours, {
+      showContours,
+      contoursInterval,
+      contoursColorMode,
+      contoursColorModeFactor,
+      contoursThickness,
+      contoursColor,
+    }),
+  );
+  const lines = useMemo(
+    () => JSON.parse(linesKey) as Required<ReliefContours> | null,
+    [linesKey],
+  );
+  const labelLook = useMemo(() => {
+    const labels = resolveReliefContourLabels(lines);
+    return lines && labels
+      ? { step: contourLabelStep(lines, labels), labels }
+      : null;
+  }, [lines]);
+
   const material = useSurfaceMaterial(meta, {
     color,
     colorRamp,
@@ -145,12 +193,7 @@ export const Surface = ({
     rampMax,
     reverseRamp,
     useColorRamp,
-    showContours,
-    contoursInterval,
-    contoursColorMode,
-    contoursColorModeFactor,
-    contoursThickness,
-    contoursColor,
+    contours: lines ?? false,
     opacity,
     doubleSide,
     wireframe,
@@ -278,6 +321,15 @@ export const Surface = ({
           material={material}
           layers={layers}
           renderOrder={renderOrder}
+        />
+      )}
+      {geometry && labelLook && (
+        <SurfaceContourLabels
+          meta={meta}
+          material={material}
+          look={labelLook}
+          visible={visible}
+          frame={ref}
         />
       )}
     </group>

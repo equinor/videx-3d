@@ -123,11 +123,11 @@ export type ReliefContourLabels = {
    * 60 % of it (see `GeoRelief`). Default 320
    */
   spacing?: number;
-  /** the text's size on screen, CSS pixels. Default 9 */
+  /** the text's size on screen, CSS pixels. Default 16 */
   size?: number;
   /** Default monospace ({@link RELIEF_CONTOUR_LABEL_FONT}) */
   fontFamily?: string;
-  /** Default 400 */
+  /** Default 700: the monospace fonts have no face between regular and bold, which draws thin */
   fontWeight?: string | number;
   /** Default the lines' own: black darkening, white lightening, their `color` mixed */
   color?: string;
@@ -138,11 +138,11 @@ export type ReliefContourLabels = {
    */
   opacity?: number;
   /**
-   * Default the tone opposite the text's, faint: a light grey at 30 % under dark text (15 %
-   * as drawn at the lines' default strength), a dark grey under light
+   * Default the tone opposite the text's, faint: a light grey at 13 % under dark text, a
+   * dark grey at 30 % under light (both times the text's `opacity`)
    */
   haloColor?: string;
-  /** a fraction of the text's size; 0 for none. Default 0.015: a hair, just apart from the line it sits on */
+  /** a fraction of the text's size; 0 for none. Default 0.035: a hair, just apart from the line it sits on */
   haloWidth?: number;
   /**
    * farther from the camera than this, in metres, none: fading out over its last quarter.
@@ -226,8 +226,8 @@ export const RELIEF_CONTOUR_LABEL_DEFAULTS: Omit<
   spacing: 320,
   size: 16,
   fontFamily: RELIEF_CONTOUR_LABEL_FONT,
-  fontWeight: 500,
-  haloWidth: 0.025,
+  fontWeight: 700,
+  haloWidth: 0.035,
 };
 
 /**
@@ -269,12 +269,23 @@ export function resolveReliefContourLabels(
     ...RELIEF_CONTOUR_LABEL_DEFAULTS,
     color: tone,
     opacity,
-    haloColor: light ? 'rgba(45, 45, 45, 0.3)' : 'rgba(210, 210, 210, 0.3)',
+    haloColor: light ? 'rgba(45, 45, 45, 0.3)' : 'rgba(210, 210, 210, 0.13)',
     ...Object.fromEntries(
       Object.entries(given).filter(([, value]) => value != null),
     ),
   };
 }
+
+/**
+ * The metres between the lines `labels` go on: the major lines' (`lines: 'major'`, with
+ * major lines), else every line's.
+ */
+export const contourLabelStep = (
+  contours: Required<ReliefContours>,
+  labels: ResolvedReliefContourLabels,
+) =>
+  contours.interval *
+  (labels.lines === 'major' && contours.major > 1 ? contours.major : 1);
 
 const isRamp = (color: ReliefColor | undefined): color is ReliefColorRamp =>
   typeof color === 'object' && color !== null && 'ramp' in color;

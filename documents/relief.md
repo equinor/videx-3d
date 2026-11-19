@@ -247,7 +247,8 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
   Ground lying exactly at a line's level (gridded data's flats often do: EMODnet east of
   Volve has runs of −100.00 m) counts as on one side of it, as marching squares counts it,
   so such a flat is outlined rather than filled with the line's colour.
-  `Surface` contours are drawn the same way (`contours.glsl`). The tiles and the overview
+  `Surface` contours are drawn the same way (`contours.glsl`), from the same `contours`
+  (see [On a `Surface`](#on-a-surface)). The tiles and the overview
   past them draw the same lines, so they run on across where one hands over to the other.
 - **`layerLooks`**: a look of its own for a layer, by its id, `{ color?, contours? }`,
   each falling back to the relief's. A local survey can be a rainbow over its depths with
@@ -262,14 +263,16 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
 `contours: { labels: true }` (or an options object, `ReliefContourLabels`) writes each line's
 height along it on the ground. They are meant to be barely there, part of the lines:
 
-- **Look**: 9 px monospace numbers (`size`, `fontFamily`, `fontWeight`) in the lines' own
-  colour and strength. Darkening lines give black at `factor`, mixed ones their `color` at
-  `factor`; both blend over the ground as the lines do, so the text is the line's colour on
-  any ground. Lightening lines give white at a quarter of `factor`, as close as see-through
-  white gets to a multiply. A hair of a halo, 0.015 em, light grey at 30 % of the text's
-  opacity (dark grey under light text), keeps the digits apart from the line they sit on,
-  where a minus sign would otherwise merge into it. `color`, `opacity`, `haloColor` and
-  `haloWidth` override these.
+- **Look**: 16 px bold monospace numbers (`size`, `fontFamily`, `fontWeight`) in the lines' own
+  colour and strength; bold, as the monospace fonts have no face between regular and bold,
+  and regular reads too thin, more so on a high-DPI screen. Darkening lines give black at
+  `factor`, mixed ones their `color` at `factor`; both blend over the ground as the lines
+  do, so the text is the line's colour on any ground. Lightening lines give white at a
+  quarter of `factor`, as close as see-through white gets to a multiply. A hair of a halo,
+  0.035 em, light grey at 13 % of the text's opacity under dark text (dark grey at 30 %
+  under light), keeps the digits apart from the line they sit on, where a minus sign would
+  otherwise merge into it; a halo in the text's own tone merges the digits instead.
+  `color`, `opacity`, `haloColor` and `haloWidth` override these.
 - **Which way it reads**: turned to read left to right on screen wherever the camera is
   (`flip`, default true), turned in its own place so it keeps its side of the line. A paper
   map writes contour heights with their top uphill instead, so the label shows which way
@@ -321,6 +324,26 @@ height along it on the ground. They are meant to be barely there, part of the li
 - **Cost**: a tile's ranks are found once, when the camera first comes near enough for
   them, at most 3 ms a frame. They are let go a rank late as it moves away. What is drawn
   is handed on at most every 0.2 s.
+
+All of this but the tiles, where a label lies on them and which levels are left out is one
+component, `ContourLabels` (`src/components/Labels/ContourLabels.tsx`): the relief's
+(`GeoReliefContourLabels`) and a `Surface`'s give it their tiles each frame.
+
+#### On a `Surface`
+
+A `Surface` takes the same `contours` (`SurfaceContours`: all of `ReliefContours` but
+`seabed`), by depth: lines every `interval` metres of depth from 0, a major one every
+`major`-th, and with `labels` each line's depth written along it, looking, spaced and
+reaching as a relief's do. Its labels are found on tiles of its grid: 32 cells across,
+every `2^level`-th node, from one tile over the whole grid split in four near the camera
+until a cell spans no more than 8 pixels — a relief's tile size and `cellPixels`, so they
+are as far apart (`surfaceLabelTiles`, `surfaceLabelTileGround`). None lies within a node
+of the grid's edge or of a node without data, where the lines run along the drop. They lie
+in the surface's own frame, so they follow its position; a label's `maxHeight` is the
+camera's height over the surface's shallowest point. The props before `contours`
+(`showContours`, `contoursInterval`, `contoursColorMode`, `contoursColorModeFactor`,
+`contoursThickness`, `contoursColor`) are deprecated, read only without `contours`, and
+draw no major lines, as they did not.
 
 The colour ramps are shared with `Surface` and the seismic views
 ([color-ramps.ts](../src/common/color-ramps.ts)): a texture of up to 64 rows. Rows 0–9

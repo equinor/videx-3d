@@ -180,8 +180,7 @@ const Field = (args: ScenerySpikeArgs) => {
             colorRamp={3}
             rampMin={surface.displayMin}
             rampMax={surface.displayMax}
-            showContours
-            contoursInterval={25}
+            contours={{ interval: 25, major: 0 }}
           />
         </UtmPosition>
       )}

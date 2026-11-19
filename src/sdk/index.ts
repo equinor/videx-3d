@@ -56,6 +56,7 @@ export * from './geometries/surface-clip';
 export * from './geometries/surface-column';
 export * from './geometries/surface-drape';
 export * from './geometries/surface-field';
+export * from './geometries/surface-label-tiles';
 export * from './geometries/surface-outline';
 export * from './geometries/surface-sampler';
 export * from './geometries/surface-seal';

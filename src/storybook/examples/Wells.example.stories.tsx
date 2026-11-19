@@ -284,12 +284,16 @@ const Example = (args: ExampleProps) => {
               renderOrder={10}
               maxError={args.maxError}
               wireframe={args.wireframe}
-              showContours={args.showContours}
-              contoursColorMode={args.contoursColorMode}
-              contoursColorModeFactor={args.contoursColorModeFactor}
-              contoursInterval={args.contoursInterval}
-              contoursThickness={args.contoursThickness}
-              contoursColor={args.contoursColor}
+              contours={
+                args.showContours && {
+                  interval: args.contoursInterval,
+                  major: 0,
+                  colorMode: args.contoursColorMode,
+                  factor: args.contoursColorModeFactor,
+                  thickness: args.contoursThickness,
+                  color: args.contoursColor,
+                }
+              }
               normalMap={normalMap}
               normalScale={[0.1, 0.1]}
               doubleSide

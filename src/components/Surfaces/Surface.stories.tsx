@@ -18,20 +18,66 @@ import { Surface, SurfaceProps } from './Surface';
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
 
-type SurfaceStoryProps = Omit<SurfaceProps, 'meta'> & {
-  surfaceId: string;
+const CONTOUR_MODES = {
+  darken: ContourColorMode.darken,
+  lighten: ContourColorMode.lighten,
+  mixed: ContourColorMode.mixed,
 };
 
-const SurfaceStory = (props: SurfaceStoryProps) => {
+// The story's contour controls, as `Surface`'s `contours`.
+type ContourArgs = {
+  contours: boolean;
+  contourInterval: number;
+  contourMajor: number;
+  contourThickness: number;
+  contourMode: keyof typeof CONTOUR_MODES;
+  contourFactor: number;
+  contourColor: string;
+  contourLabels: boolean;
+  contourLabelLines: 'major' | 'all';
+  contourLabelBaseline: 'top' | 'middle' | 'bottom';
+  contourLabelFlip: boolean;
+};
+
+type SurfaceStoryProps = Omit<
+  SurfaceProps,
+  | 'meta'
+  | 'contours'
+  | 'showContours'
+  | 'contoursInterval'
+  | 'contoursColorMode'
+  | 'contoursColorModeFactor'
+  | 'contoursThickness'
+  | 'contoursColor'
+> &
+  ContourArgs & {
+    surfaceId: string;
+  };
+
+const SurfaceStory = ({
+  surfaceId,
+  contours,
+  contourInterval,
+  contourMajor,
+  contourThickness,
+  contourMode,
+  contourFactor,
+  contourColor,
+  contourLabels,
+  contourLabelLines,
+  contourLabelBaseline,
+  contourLabelFlip,
+  ...props
+}: SurfaceStoryProps) => {
   const surfaceHeaders = useSurfaceMeta();
 
   const meta = useMemo<SurfaceMeta | null>(() => {
-    return surfaceHeaders.find(d => d.id === props.surfaceId) || null;
-  }, [props.surfaceId, surfaceHeaders]);
+    return surfaceHeaders.find(d => d.id === surfaceId) || null;
+  }, [surfaceId, surfaceHeaders]);
 
   return (
     <UtmArea origin={origin} utmZone={utmZone}>
-      {props.surfaceId && meta && (
+      {surfaceId && meta && (
         <UtmPosition
           easting={meta.header.xori}
           northing={meta.header.yori}
@@ -42,6 +88,21 @@ const SurfaceStory = (props: SurfaceStoryProps) => {
             meta={meta}
             rampMin={meta.displayMin + (props.rampMin || 0)}
             rampMax={meta.displayMax + (props.rampMax || 0)}
+            contours={
+              contours && {
+                interval: contourInterval,
+                major: contourMajor,
+                thickness: contourThickness,
+                colorMode: CONTOUR_MODES[contourMode],
+                factor: contourFactor,
+                color: contourColor,
+                labels: contourLabels && {
+                  lines: contourLabelLines,
+                  baseline: contourLabelBaseline,
+                  flip: contourLabelFlip,
+                },
+              }
+            }
           />
         </UtmPosition>
       )}
@@ -59,6 +120,10 @@ type StoryArgs = React.ComponentProps<typeof SurfaceStory>;
 export default meta;
 type Story = StoryObj<StoryArgs>;
 
+const CONTOURS = 'Contours';
+const lined = { if: { arg: 'contours' } };
+const labelled = { if: { arg: 'contourLabels' } };
+
 export const Default: Story = {
   args: {
     surfaceId: Object.keys(storyArgs.surfaceOptions)[0],
@@ -71,12 +136,17 @@ export const Default: Story = {
     cutHoles: true,
     edgeSmoothing: 0,
     wireframe: false,
-    showContours: true,
-    contoursColorMode: ContourColorMode.darken,
-    contoursColorModeFactor: 0.5,
-    contoursInterval: 10,
-    contoursThickness: 0.8,
-    contoursColor: '#000000',
+    contours: true,
+    contourInterval: 10,
+    contourMajor: 5,
+    contourThickness: 0.8,
+    contourMode: 'darken',
+    contourFactor: 0.5,
+    contourColor: '#000000',
+    contourLabels: true,
+    contourLabelLines: 'major',
+    contourLabelBaseline: 'middle',
+    contourLabelFlip: true,
     rampMin: 0,
     rampMax: 0,
     debug: false,
@@ -140,31 +210,80 @@ export const Default: Story = {
         step: 1,
       },
     },
-    contoursInterval: {
+    contours: {
+      control: { type: 'boolean' },
+      description: 'Contour lines by depth (`contours`).',
+      table: { category: CONTOURS },
+    },
+    contourInterval: {
       options: [1, 2, 5, 10, 25, 50, 100, 250, 500],
-      control: {
-        type: 'select',
-      },
+      control: { type: 'select' },
+      description: 'Metres between lines.',
+      table: { category: CONTOURS },
+      ...lined,
     },
-    contoursColorMode: {
-      options: [0, 1, 2],
-      control: {
-        type: 'radio',
-        labels: { '0': 'darken', '1': 'lighten', '2': 'mixed' },
-      },
+    contourMajor: {
+      control: { type: 'range', min: 0, max: 10, step: 1 },
+      description:
+        'Every how many lines a major one, twice as wide; 0 for none.',
+      table: { category: CONTOURS },
+      ...lined,
     },
-    contoursThickness: {
-      control: {
-        type: 'range',
-        min: 0.5,
-        max: 5,
-        step: 0.1,
-      },
+    contourThickness: {
+      control: { type: 'range', min: 0.1, max: 3, step: 0.1 },
+      description: 'The lines\u2019 width, about pixels each side.',
+      table: { category: CONTOURS },
+      ...lined,
     },
-    contoursColor: {
-      control: {
-        type: 'color',
-      },
+    contourMode: {
+      options: ['darken', 'lighten', 'mixed'],
+      control: { type: 'inline-radio' },
+      description:
+        'How a line shades the surface: DARKEN, LIGHTEN, or MIXED toward `contourColor`.',
+      table: { category: CONTOURS },
+      ...lined,
+    },
+    contourFactor: {
+      control: { type: 'range', min: 0, max: 1, step: 0.05 },
+      description: 'How strongly a line shades.',
+      table: { category: CONTOURS },
+      ...lined,
+    },
+    contourColor: {
+      control: { type: 'color' },
+      description: 'The lines\u2019 colour, MIXED.',
+      table: { category: CONTOURS },
+      if: { arg: 'contourMode', eq: 'mixed' },
+    },
+    contourLabels: {
+      control: { type: 'boolean' },
+      description:
+        'Each line\u2019s depth written along it on the surface (`contours.labels`), as a relief\u2019s heights are.',
+      table: { category: CONTOURS },
+      ...lined,
+    },
+    contourLabelLines: {
+      options: ['major', 'all'],
+      control: { type: 'inline-radio' },
+      description:
+        'The lines labelled (`contours.labels.lines`): the MAJOR ones, or ALL.',
+      table: { category: CONTOURS },
+      ...labelled,
+    },
+    contourLabelBaseline: {
+      options: ['top', 'middle', 'bottom'],
+      control: { type: 'inline-radio' },
+      description:
+        'Where a label\u2019s text lies by its line (`contours.labels.baseline`): across it (MIDDLE), hanging from it on the deeper side (TOP), or standing on it on the shallower side (BOTTOM).',
+      table: { category: CONTOURS },
+      ...labelled,
+    },
+    contourLabelFlip: {
+      control: { type: 'boolean' },
+      description:
+        'Labels turned to read left to right on screen (`contours.labels.flip`); off, the top of the text always toward the shallower side.',
+      table: { category: CONTOURS },
+      ...labelled,
     },
     normalMap: {
       control: {
