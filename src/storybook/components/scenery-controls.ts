@@ -113,8 +113,7 @@ export type SceneryArgs = {
   graticuleTimeZonesLabels: boolean;
   graticuleOpacity: number;
   // Scenery
-  drawSky: boolean;
-  skyVoid: boolean;
+  backgroundMode: 'sky' | 'void' | 'none';
   air: boolean;
   airHaze: number;
   airHazeHeight: number;
@@ -266,8 +265,7 @@ export const sceneryArgs: SceneryArgs = {
   graticuleTimeZonesThickness: GRATICULE_DEFAULTS.lines.thickness,
   graticuleTimeZonesLabels: false,
   graticuleOpacity: GRATICULE_DEFAULTS.lines.opacity,
-  drawSky: true,
-  skyVoid: false,
+  backgroundMode: 'sky',
   air: true,
   airHaze: sceneryDefaults.air.haze,
   airHazeHeight: sceneryDefaults.air.hazeHeight,
@@ -658,7 +656,12 @@ export const sceneryPropsFromArgs = (args: SceneryArgs, weather = false) =>
     intensity: args.skyIntensity,
     horizonBlend: args.skyHorizonBlend,
     globe: args.globe,
-    background: args.drawSky && (args.skyVoid ? 'void' : true),
+    background:
+      args.backgroundMode === 'none'
+        ? false
+        : args.backgroundMode === 'void'
+          ? 'void'
+          : true,
     subsurface: {
       intensity: args.subsurfaceIntensity,
       panels: {
@@ -988,16 +991,12 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     if: { arg: 'graticuleTimeZones' },
   },
   graticuleOpacity: range(0, 1, 0.05, GRATICULE, 'Every line\u2019s opacity.'),
-  drawSky: toggle(
-    SKY,
-    'Draw the sky and its stage behind the scene (`background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, by the subsurface.',
-  ),
-  skyVoid: {
-    ...toggle(
-      SKY,
-      "The void\u2019s grey gradient in the sky\u2019s place (`background: 'void'`), as the stand-in draws it while the sky compiles: no air, sun, moon, stars or clouds, and the scene lit by the subsurface everywhere. The void and a sea are drawn as ever. Recompiles.",
-    ),
-    if: { arg: 'drawSky' },
+  backgroundMode: {
+    control: { type: 'inline-radio' },
+    options: ['sky', 'void', 'none'],
+    description:
+      "What is drawn behind the scene (`background`): `sky` the sky and its stage; `void` the void\u2019s grey gradient in the sky\u2019s place (`'void'`), as the stand-in draws it while the sky compiles: no air, sun, moon, stars or clouds, and the scene lit by the subsurface everywhere, the void and a sea drawn as ever (recompiles); `none` nothing (`false`), switched instantly with nothing rebuilt or baked, the scene still lit by the sky, by the subsurface.",
+    table: { category: SKY },
   },
   air: toggle(
     SKY,

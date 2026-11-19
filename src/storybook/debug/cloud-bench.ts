@@ -366,7 +366,11 @@ type VolumeInternals = {
   weather: { update: (...args: unknown[]) => unknown };
   updateCamera: (camera: Camera, height: number) => void;
   updateCoverMap: (renderer: WebGLRenderer) => void;
-  coverMap: { held: unknown; update: (...args: unknown[]) => unknown };
+  coverMap: {
+    restart: () => void;
+    underway: boolean;
+    update: (...args: unknown[]) => unknown;
+  };
 };
 
 /**
@@ -540,7 +544,7 @@ export function createCloudBench(
         coverMap: [] as number[],
       };
       const shadowDrawn = real.shadow !== null;
-      const coverDrawn = !!real.coverMap.uniforms.uCloudCoverOn.value;
+      const coverDrawn = real.coverMap.shown;
       await warm(v, camera, options.warmup ?? 2000);
       for (let r = 0; r < rounds; r++) {
         aimMarch(v, camera);
@@ -548,8 +552,10 @@ export function createCloudBench(
         if (coverDrawn)
           out.coverMap.push(
             await timeOf(() => {
-              v.coverMap.held = null;
-              v.updateCoverMap(gl);
+              // A drawing whole, its rows over as many updates as it takes.
+              v.coverMap.restart();
+              do v.updateCoverMap(gl);
+              while (v.coverMap.underway);
             }, reps),
           );
         if (shadowDrawn) {

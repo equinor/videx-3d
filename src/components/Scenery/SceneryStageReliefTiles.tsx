@@ -566,15 +566,18 @@ export const SceneryStageReliefTiles = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- pinnedSquares reads refs
   }, [generate, sourceKey, textures, slots, pins]);
   useEffect(() => () => streaming.streamer.dispose(), [streaming]);
-  // The relief's ground under the camera, for the camera site (`CameraSite.ground`): while it
-  // is wanted (`cameraGround`, while the relief is shown).
+  // The relief's ground under the camera, for the camera site (`CameraSite.ground`), and
+  // whether the camera is under it (`underground`, which the sky and the tiles both take):
+  // while it is wanted (`cameraGround`, while the relief is shown).
   const groundAt = useMemo(() => ({ latitude: 0, longitude: 0 }), []);
   const groundProbe = useCallback<CameraProbe>(
     site => {
       if (!globe.frame) return;
       const at = globe.geographic(site.position, groundAt);
       const height = streaming.heightAt(at.longitude, at.latitude);
-      if (height !== null) site.ground = level + height;
+      if (height === null) return;
+      site.ground = level + height;
+      site.underground = globe.altitude(site.position) < height;
     },
     [globe, streaming, level, groundAt],
   );
@@ -818,16 +821,21 @@ export const SceneryStageReliefTiles = ({
     // just over the ground drawn is never taken to be in it. The camera site's while it is
     // wanted (`cameraGround`): worked out once a frame for all that asks.
     let ground: number | null;
-    if (cameraGround) ground = cameraSite.get(camera).ground;
-    else {
+    let under: boolean;
+    if (cameraGround) {
+      const site = cameraSite.get(camera);
+      ground = site.ground;
+      under = site.underground;
+    } else {
       const height = streaming.heightAt(eye.longitude, eye.latitude);
       ground = height === null ? null : level + height;
+      under = ground !== null && y < ground;
     }
     if (cameraGround) cameraGround.current = ground;
     // Under it — in the void, or in rock above the sea's own seabed — the relief is the
     // void's lid: its undersides are drawn instead of its tops. Without a sky, nothing is:
-    // what lies under the ground is seen unhindered.
-    const under = ground !== null && y < ground;
+    // what lies under the ground is seen unhindered. The camera site's answer while it is
+    // wanted, the one the sky takes too (`buried`, `trench`).
     for (const [mesh, shows] of [
       [aboveMesh, !under],
       [aboveSeeThroughMesh, !under],

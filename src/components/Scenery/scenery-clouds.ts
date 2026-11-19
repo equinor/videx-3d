@@ -66,8 +66,7 @@ import {
   CLOUD_COVER_VOLUME_SIZE,
   CloudCoverVolume,
 } from './scenery-cloud-cover';
-import { CloudCoverMap } from './scenery-cloud-cover-map';
-import { CloudLightMap } from './scenery-cloud-light';
+import { CloudFieldMap } from './scenery-cloud-field-map';
 import { CloudPlaceMap } from './scenery-cloud-place-map';
 import { CLOUD_MAP_SIZE, type CloudMapWeather } from './scenery-cloud-map';
 import { CloudGround, earthFrame } from './scenery-ground';
@@ -355,6 +354,8 @@ const PLACE_TOP = 15000;
 // The light maps reach this much past a local weather's radius at most (m): a ray toward a low
 // light leaves a level's base that far out from the cloud it lights at its top.
 const LIGHT_MARGIN = 25000;
+// The stretches along each light map texel's ray toward the light (cloud-march.glsl).
+const CLOUD_LIGHT_STEPS = 16;
 // What the bakes of the air and the sea's reflection see of them (ScenerySkyOverlay.texture):
 // texels a face, each texel's view through each level read once and lit without a march toward
 // the light (cloud-march.glsl, CLOUD_BAKE), blurred in the bakes and the sea.
@@ -489,7 +490,7 @@ export type CloudsSettings = {
   seed: number;
   /** how much they spend for how they look (cloudsQuality) */
   quality: CloudsQualityLevel;
-  /** a local weather's clouds lit from light maps (see {@link CloudLightMap}) */
+  /** a local weather's clouds lit from light maps (see {@link CloudFieldMap}) */
   lightMap: boolean;
   debug: SceneryCloudsDebug;
 };
@@ -673,10 +674,30 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   private readonly weather: CloudWeather;
   /** the ground under the clouds, the scenery's (see {@link CloudGround}): none until given one */
   readonly terrain = new CloudGround();
-  /** a local weather's light maps (see {@link CloudLightMap}) */
-  readonly lightMaps = new CloudLightMap(CLOUDS_LEVELS);
-  /** a local weather's cover maps (see {@link CloudCoverMap}) */
-  readonly coverMap = new CloudCoverMap();
+  /** a local weather's light maps (see {@link CloudFieldMap}): the march lit from them, with `lightMap` */
+  readonly lightMaps = new CloudFieldMap({
+    name: 'Light',
+    define: 'CLOUD_LIGHT_MAP',
+    defines: { CLOUD_LIGHT_STEPS },
+    format: RGBAFormat,
+    // A map of SIZE_MOST a side in 16 frames a level.
+    texelsAFrame: 65536,
+    levels: CLOUDS_LEVELS,
+  });
+  /**
+   * a local weather's cover maps (see {@link CloudFieldMap}): each level's mean cover of each
+   * column, the same all up it, so the march, its light and its shadows read it once from a 2D
+   * map instead of twice from the 3D volume at every step; its spread about the mean is the
+   * volume's, by the footprint alone (cloud-march.glsl, `cloudCoverOf`, `cloudSpreadOf`)
+   */
+  readonly coverMap = new CloudFieldMap({
+    name: 'Cover',
+    define: 'CLOUD_COVER_MAP',
+    format: RedFormat,
+    // Two volume reads a texel, against the light's 16 stretches: a level of 768² in some 2 frames.
+    texelsAFrame: 262144,
+    levels: CLOUDS_LEVELS,
+  });
   /** a global weather's cloud map and types about the camera (see {@link CloudPlaceMap}) */
   readonly placeMap = new CloudPlaceMap();
   // Counts the settings set: the light maps are drawn anew for each.
@@ -1913,7 +1934,7 @@ void main() {
     return inputs.end();
   }
 
-  // A local weather's light maps, with `lightMap`, drawn on a few rows a frame (CloudLightMap):
+  // A local weather's light maps, with `lightMap`, drawn on a few rows a frame (CloudFieldMap):
   // over its disc and as far again as a ray toward the light runs out under its deepest level's
   // base, the texel the finest level's cover's, drawn anew as the settings, the light's way or
   // the ground change, or as the clock runs on by a twentieth of the shortest lifetime (its
@@ -1960,9 +1981,11 @@ void main() {
     return this.lightMaps.generator(this.marchMaterial);
   }
 
-  // A local weather's cover maps (CloudCoverMap): over its disc, the texel the finest level's
-  // cover's, drawn anew as the clock runs or the settings or the globe change. A global
-  // weather's cover is read from the volume where its map places it.
+  // A local weather's cover maps (CloudFieldMap): over its disc, the texel the finest level's
+  // cover's, drawn a few rows a frame, anew as the settings or the globe change or as the clock
+  // runs on by a twentieth of the shortest lifetime (its clouds formed and faded so far), each
+  // read where the wind has carried its clouds since. A global weather's cover is read from the
+  // volume where its map places it.
   private updateCoverMap(renderer: WebGLRenderer) {
     const settings = this.settings!;
     if (settings.global) {
@@ -1971,15 +1994,20 @@ void main() {
     }
     const levels = settings.levels.slice(0, CLOUDS_LEVELS);
     const texel = VOLUME_TILE / CLOUD_COVER_VOLUME_SIZE;
-    const finest = Math.min(
-      ...levels.map(({ look }) => texel * settings.scale * look.scale),
-    );
+    let finest = Infinity;
+    let shortest = Infinity;
+    for (const { look } of levels) {
+      finest = Math.min(finest, texel * settings.scale * look.scale);
+      shortest = Math.min(shortest, look.lifetime);
+    }
     this.coverMap.update(renderer, {
       levels: levels.length,
       half: settings.local.radius * COVER_MARGIN,
       texel: finest,
       key: `${this.settingsSerial},${this.sky.globe.version}`,
       time: this.time,
+      refresh: MathUtils.clamp(shortest / 20, 30, 600),
+      winds: this.levelWinds,
     });
   }
 

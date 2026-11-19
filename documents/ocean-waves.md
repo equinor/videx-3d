@@ -75,7 +75,10 @@ GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
   the layers whose whole tile a pixel there spans (`SEA_BAKE_PIXEL_MARGIN`, 2): the surface reads
   none of them. A layer of tile `size` stops once the camera is higher than
   size · rows / (2 · margin · tan(fov / 2)): with 1080 rows and a 50° view, the 47 m layer from
-  about 27 km up, the 307 m one from 180 km, the 2011 m one from 1160 km.
+  about 27 km up, the 307 m one from 180 km, the 2011 m one from 1160 km. A `Scenery` bakes none
+  at all while no layer of its that reads them can show: below the seabed, in rock or the void,
+  neither its sea nor its water nor any surface is drawn (`sceneryLayersShown`), and the
+  whitecaps' life waits with them (2026-11-19; until then it baked every frame there).
 - **Whitecaps** (`oceanWindFoam`, `oceanFoam`): the share of the sea the wind's whitecaps
   cover (Monahan and O'Muircheartaigh 1980, 3.84·10⁻⁶·U^3.41; `foamAmount` 0.5 as measured),
   as a threshold on the wind sea's crests in standard deviations (all but the longest layer,

@@ -22,8 +22,8 @@ export type WeatherProps = {
   weather: WeatherState;
   /**
    * the weather's time, in seconds (any origin): where it moves its clouds and weather systems
-   * to. Set, the clock jumps there and runs on from it; a new value is a new jump. Default: it
-   * starts at 0
+   * to. Set, the clock jumps there and runs on from it; a new value is a new jump, the same value
+   * again none (to jump back to it, `useWeatherClock().setTime`). Default: it starts at 0
    */
   time?: number;
   /** weather seconds a second: 3600 runs an hour a second (the waves too). Default 1 */

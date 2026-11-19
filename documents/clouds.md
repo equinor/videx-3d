@@ -550,13 +550,18 @@ marches a quarter of the pixels a frame once the camera holds still, `'moving'` 
 
 **What the march reads baked (2026-11-10).** Reads that change only with the clock are baked:
 
-- **A local weather's cover** (`CloudCoverMap`, `scenery-cloud-cover-map.ts`, `CLOUD_COVER_MAP`):
-  each level's mean cover over its disc, as its two reads of the 3D cover volume give it, baked
-  into a layer of a 2D map (768², the cover's texel; half floats, with mipmaps), drawn anew by the
-  march's own code whenever the clock moves (0.7 ms) and never for the camera. The march, its
-  light and the shadows read it (`cloudCoverOf`) instead of the volume: 1.13–1.42 times as long
-  without it, the image the same to 0.003 a channel. Its spread about the
-  mean is the volume's, by the footprint alone (`cloudSpreadOf`; see "Far off").
+- **A local weather's cover** (`CloudFieldMap` `'Cover'`, `scenery-cloud-field-map.ts`,
+  `CLOUD_COVER_MAP`): each level's mean cover over its disc, as its two reads of the 3D cover
+  volume give it, baked into a layer of a 2D map (768², the cover's texel; half floats, with
+  mipmaps) by the march's own code, never for the camera. The march, its light and the shadows
+  read it (`cloudCoverOf`) instead of the volume: 1.13–1.42 times as long without it, the image
+  the same to 0.003 a channel. Its spread about the mean is the volume's, by the footprint alone
+  (`cloudSpreadOf`; see "Far off"). It holds the pattern alone (the weather's edge is applied
+  after), so it is drawn the light maps' way, by the same class: read where each level's wind has
+  carried its clouds since its drawing, drawn anew only as the clock runs on by a twentieth of the
+  shortest lifetime (30 s to 10 min) or the settings or the globe change, a few rows a frame, the
+  newer faded in over half a second. Until 2026-11-18 it was drawn whole every frame the clock
+  moved, 0.76 ms a frame on an RTX A1000.
 - **A global weather's placing** (`CloudPlaceMap`, `scenery-cloud-place-map.ts`,
   `CLOUD_PLACE_MAP`): the cloud map and its types as `cloudPlace` reads them (both drawings,
   drifted, the newer dissolved in), baked on a gnomonic map about the camera's foot, as far as
@@ -759,7 +764,8 @@ the sky lights them less (`CLOUD_SKY_LOW`), so sunset's colours carry. Calibrate
 `toneMapping: 'none'`. Then the air's haze over the distance their light comes from on average,
 as the relief is hazed, and from space the air over them.
 
-**Light maps (an option: `lightMap`, off by default; `scenery-cloud-light.ts`, 2026-11-10).** A
+**Light maps (an option: `lightMap`, off by default; `CloudFieldMap` `'Light'`,
+`scenery-cloud-field-map.ts`, 2026-11-10).** A
 local weather's clouds can be lit from maps instead of marching toward the light from every point
 lit. For each level, a layer of a 2D array target covers the weather's disc on the field, as far
 again as a ray toward a low light runs out under the deepest level's base (`LIGHT_MARGIN`, at
@@ -786,7 +792,9 @@ wind drift never redraws. Measured with scattered cumulus and cirrus (march alon
 is finer than marched: 16 stretches at the cover's texel against a skin and one long stretch.
 Under a fast clock (a timelapse) the maps are drawn on and on and the light lags behind the
 clouds, so it stays an option. A global weather is lit as marched. The program is compiled only
-once the option is on.
+once the option is on. Until 2026-11-18 its first drawing, and any at a new size, was drawn over
+the area of the drawing shown before it (none at first: two metres), and lit the clouds wrongly
+until the next: its program now has an area of its own.
 
 **Drawn over the scene.** The march writes premultiplied colour and, as depth, log2 of the
 distance to the clouds' front, where they hide a tenth of what lies behind (`CLOUD_FRONT`; the

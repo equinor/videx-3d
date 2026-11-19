@@ -1877,9 +1877,9 @@ export const Default: Story = {
     resources: true,
     resourceInterval: 1000,
     ...progressArgs,
-    // Scenery: it lights the column, and draws nothing behind it (`drawSky`; see `WithScenery`).
+    // Scenery: it lights the column, and draws nothing behind it (`backgroundMode`; see `WithScenery`).
     sky: true,
-    drawSky: false,
+    backgroundMode: 'none',
     matchBed: true,
     skyBed: 'median',
     sunElevation: 30,
@@ -1904,10 +1904,11 @@ export const Default: Story = {
         'Put the field under the videx `<Scenery>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The sky owns the water then: the column\u2019s own `water` is hidden while it is on (`ChunkStack.drawWater`).',
       table: { category: 'Scenery' },
     },
-    drawSky: {
-      control: { type: 'boolean' },
+    backgroundMode: {
+      control: { type: 'inline-radio' },
+      options: ['sky', 'void', 'none'],
       description:
-        'Draw the sky and its stage behind the scene (`Scenery.background`). Switched instantly, with nothing rebuilt or baked: off, the sky still lights the scene, and the column draws its own water and sea bed again.',
+        'What the sky draws behind the scene (`Scenery.background`): `sky`, `void` (its grey gradient), or `none`, switched instantly with nothing rebuilt or baked: the sky still lights the scene, and the column draws its own water and sea bed again.',
       if: { arg: 'sky' },
       table: { category: 'Scenery' },
     },
@@ -2654,5 +2655,5 @@ export const Default: Story = {
 // the sky's stage as the sea's, and the sky's seabed eased into it around the outline.
 export const WithScenery: Story = {
   ...Default,
-  args: { ...Default.args, sky: true, drawSky: true },
+  args: { ...Default.args, sky: true, backgroundMode: 'sky' },
 };

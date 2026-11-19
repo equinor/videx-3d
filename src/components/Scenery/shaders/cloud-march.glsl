@@ -118,7 +118,7 @@ uniform vec3 uCloudTerrainNearEast;
 uniform vec3 uCloudTerrainNearNorth;
 uniform float uCloudTerrainNearReach;
 uniform vec4 uCloudTerrain;
-// A local weather's light maps (CloudLightMap, scenery-cloud-light.ts): a layer a level, a texel
+// A local weather's light maps (CloudFieldMap, scenery-cloud-field-map.ts): a layer a level, a texel
 // a ray toward the light through its shell from where it leaves its base, on the field over the
 // weather's disc (uCloudLightArea: the map's middle on the field, its half-width (m), its texels
 // a side); in each the optical depth from its base, and from a quarter, half and three quarters
@@ -133,14 +133,20 @@ uniform vec4 uCloudLightArea;
 uniform float uCloudLightFade;
 uniform vec2 uCloudLightDrift[2 * CLOUD_LEVELS_MOST];
 uniform int uCloudLightMode;
-// A local weather's cover maps (CloudCoverMap, scenery-cloud-cover-map.ts): a layer a level, on
+// A local weather's cover maps (CloudFieldMap, scenery-cloud-field-map.ts): a layer a level, on
 // the field over the weather's disc (uCloudCoverArea: the map's middle on the field, its
 // half-width (m), its texels a side), each texel the level's mean cover over it as cloudCoverAt
-// reads it from the cover volume (two reads of it), drawn anew as the clock runs. Read instead of
-// the volume within it (cloudCoverOf), while uCloudCoverOn.
-uniform highp sampler2DArray uCloudCoverMap;
+// reads it from the cover volume (two reads of it): the pattern alone, the weather's edge
+// applied after. The newer drawing faded in over the older (uCloudCoverFade), each read where
+// the level's wind has carried its clouds since it was drawn (uCloudCoverDrift, as the light
+// maps'). Read instead of the volume within it (cloudCoverOf) once one is drawn
+// (uCloudCoverMode 1).
+uniform highp sampler2DArray uCloudCoverNewer;
+uniform highp sampler2DArray uCloudCoverOlder;
 uniform vec4 uCloudCoverArea;
-uniform bool uCloudCoverOn;
+uniform float uCloudCoverFade;
+uniform vec2 uCloudCoverDrift[2 * CLOUD_LEVELS_MOST];
+uniform int uCloudCoverMode;
 
 #if defined(CLOUD_GLOBAL)
 // A global weather (scenery-cloud-weather.ts): the weather systems' cloud over the whole Earth
@@ -649,16 +655,21 @@ vec2 cloudCoverAt(CloudLevel L, vec3 foot, float extent) {
 }
 
 // As cloudCoverAt, the column at `field` (on the field): from a local weather's cover map where
-// it reaches (uCloudCoverOn), one read of a 2D map for its two of the 3D volume; else from the
-// volume.
+// it reaches (uCloudCoverMode), one read of a 2D map for its two of the 3D volume (two while a
+// newer drawing fades in); else from the volume.
 vec2 cloudCoverOf(CloudLevel L, vec3 foot, vec2 field, float extent) {
 #if !defined(CLOUD_GLOBAL) && !defined(CLOUD_COVER_MAP)
   // Returned from within: written as one return after a branch, the volume was read anyway.
   float side = 2.0 * uCloudCoverArea.z;
-  vec2 at = (field - uCloudCoverArea.xy) / side + 0.5;
-  if(uCloudCoverOn && all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0)))) {
+  int layer = int(L.kind.w);
+  vec2 on = (field - uCloudCoverArea.xy) / side + 0.5;
+  vec2 at = on - uCloudCoverDrift[2 * layer] / side;
+  if(uCloudCoverMode > 0 && all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0)))) {
     float lod = log2(max(extent * uCloudCoverArea.w / side, 1.0));
-    return vec2(textureLod(uCloudCoverMap, vec3(at, L.kind.w), lod).x, cloudSpreadOf(L, extent));
+    float cover = textureLod(uCloudCoverNewer, vec3(at, L.kind.w), lod).x;
+    if(uCloudCoverFade < 1.0)
+      cover = mix(textureLod(uCloudCoverOlder, vec3(on - uCloudCoverDrift[2 * layer + 1] / side, L.kind.w), lod).x, cover, uCloudCoverFade);
+    return vec2(cover, cloudSpreadOf(L, extent));
   }
 #endif
   return cloudCoverAt(L, foot, extent);
@@ -1202,7 +1213,7 @@ vec3 cloudFieldColumn(vec2 field, float altitude) {
 uniform int uCloudLightLevel;
 uniform vec2 uCloudLightShift;
 
-// A texel of level uCloudLightLevel's light map (CloudLightMap): the ray toward the light from
+// A texel of level uCloudLightLevel's light map (CloudFieldMap): the ray toward the light from
 // where it leaves the level's base, through its shell, in CLOUD_LIGHT_STEPS stretches each read at
 // its middle over half its length or a texel, as the march's light's are (cloudLight); out, the
 // optical depth from its base, and from a quarter, half and three quarters of the way up, to its
@@ -1237,15 +1248,16 @@ void main() {
   gl_FragColor = vec4(dot(quarters, vec4(1.0)), quarters.y + quarters.z + quarters.w, quarters.z + quarters.w, quarters.w);
 }
 #elif defined(CLOUD_COVER_MAP)
-// A texel of level uCloudCoverLevel's cover map (CloudCoverMap): the cover of the column at its
-// middle, read from the cover volume over a texel as the march reads it (cloudCoverAt), with the
-// clock's drift and lives in the level's uniforms; out, its mean.
+// A texel of level uCloudCoverLevel's cover map (CloudFieldMap): the cover of the column at its
+// middle, read from the cover volume over a texel as the march reads it (cloudCoverAt), as the
+// clouds were at the drawing's time (uCloudCoverShift: where those lie now); out, its mean.
 uniform int uCloudCoverLevel;
+uniform vec2 uCloudCoverShift;
 
 void main() {
   float side = 2.0 * uCloudCoverArea.z;
   float texel = side / uCloudCoverArea.w;
-  vec2 field = uCloudCoverArea.xy + (gl_FragCoord.xy / uCloudCoverArea.w - 0.5) * side;
+  vec2 field = uCloudCoverArea.xy + (gl_FragCoord.xy / uCloudCoverArea.w - 0.5) * side + uCloudCoverShift;
   CloudLevel L = cloudLevel(uCloudCoverLevel);
   vec3 o = cloudFieldColumn(field, 0.0) - uCloudCamera;
   vec2 c = cloudCoverAt(L, cloudFootOf(o, vec3(0.0, 0.0, 1.0), 0.0), texel);

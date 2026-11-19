@@ -52,6 +52,8 @@ export type CameraSite = {
   altitude: number | null;
   /** the relief's ground under it, in the measure of {@link height} */
   ground: number | null;
+  /** under the relief's {@link ground}, by the relief's own measure of where it lies: in rock, or the void below; false without a ground */
+  underground: boolean;
   /** the void's lid over it while it is in the ground (`sceneryLidOverCamera`), in the measure of {@link height} */
   lid: number | null;
   /** in the ground above the sea's seabed, as from inside rock */
@@ -93,6 +95,7 @@ function emptySite(site: CameraSite, camera: Camera | null) {
   site.seaLevel = null;
   site.altitude = null;
   site.ground = null;
+  site.underground = false;
   site.lid = null;
   site.buried = false;
   site.trench = false;

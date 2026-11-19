@@ -2,10 +2,12 @@ import {
   HalfFloatType,
   LinearFilter,
   LinearMipmapLinearFilter,
+  Material,
   Mesh,
   NoBlending,
   OrthographicCamera,
   RGBAFormat,
+  RedFormat,
   Scene,
   ShaderMaterial,
   Texture,
@@ -19,16 +21,11 @@ import { createSceneryGeometry } from './scenery-material';
 
 // Texels a side at most: some 200 m over a weather of 100 km's radius.
 const SIZE_MOST = 1024;
-// Texels drawn a frame, all levels together: a map of SIZE_MOST a side in 16 frames a level.
-const TEXELS_A_FRAME = 65536;
-// The newer drawing fades in over this long (wall seconds), so the light never steps.
+// The newer drawing fades in over this long (wall seconds), so what it holds never steps.
 const FADE = 0.5;
 
-/** The stretches along each texel's ray toward the light (the shader's CLOUD_LIGHT_STEPS). */
-export const CLOUD_LIGHT_STEPS = 16;
-
-/** What a {@link CloudLightMap} is drawn from, frame by frame. */
-export type CloudLightMapInputs = {
+/** What a {@link CloudFieldMap} is drawn from, frame by frame. */
+export type CloudFieldMapInputs = {
   /** the levels drawn (a layer each) */
   levels: number;
   /** the map's half-width on the field about the weather's middle (m) */
@@ -38,16 +35,36 @@ export type CloudLightMapInputs = {
   /** everything it is drawn from but the clock and the light: the drawing under way is dropped once it changes */
   key: string;
   /**
-   * the light's way: drawn anew once it changes, but the drawing under way finishes first, so
-   * a light that keeps turning (a timelapse) is followed a drawing behind rather than never
+   * the light's way, for a map of the light: drawn anew once it changes, but the drawing under
+   * way finishes first, so a light that keeps turning (a timelapse) is followed a drawing behind
+   * rather than never
    */
-  light: string;
+  light?: string;
   /** the weather's clock (s) */
   time: number;
   /** drawn anew after the clock has run on this far (weather seconds): the clouds form and fade */
   refresh: number;
   /** each level's wind on the field: the way it blows toward (east, north) times its speed (m/s) */
   winds: readonly Vector2[];
+};
+
+/** What a {@link CloudFieldMap} holds, and how it is drawn. */
+export type CloudFieldMapOptions = {
+  /**
+   * what it holds, naming the march's uniforms for it — `uCloud${name}Newer`, `Older`, `Area`,
+   * `Fade`, `Drift`, `Mode` — and its program's — `uCloud${name}Level`, `Shift`, its own `Area`
+   */
+  name: 'Light' | 'Cover';
+  /** the march's define that draws a texel of it (cloud-march.glsl) */
+  define: string;
+  /** more of its program's defines */
+  defines?: Record<string, unknown>;
+  /** its texels: RGBA, or red alone, in half floats */
+  format: typeof RGBAFormat | typeof RedFormat;
+  /** texels drawn a frame, all levels together */
+  texelsAFrame: number;
+  /** the most levels it holds */
+  levels: number;
 };
 
 // What a map holds: what it was drawn from, at what time, and its size.
@@ -63,35 +80,40 @@ type Held = {
 const camera = new OrthographicCamera();
 
 /**
- * The light maps of a local weather's 3D clouds (`CloudsRenderer`): for each level, how much
- * of its cloud lies toward the light from anywhere in its shell, so a point of the march is lit
- * by a read of it rather than by marching toward the light (cloud-march.glsl,
- * `cloudLightFromMap`). A layer a level, on the field over the weather's disc, fixed on the
- * Earth: it never depends on where the camera is. Drawn by the march's own program
- * (`CLOUD_LIGHT_MAP`), so it holds the cloud the march draws: a ray toward the light a texel,
- * from where it leaves the level's base, its optical depth from four heights up to the top.
+ * A map of a local weather's 3D clouds (`CloudsRenderer`), a layer a level, on the field over
+ * the weather's disc, fixed on the Earth: it never depends on where the camera is. Drawn by the
+ * march's own program under `define`, so it holds what the march would read: the light toward
+ * the light from each level's base (`Light`, cloud-march.glsl `cloudLightFromMap`), or each
+ * column's mean cover (`Cover`, `cloudCoverOf`: one read of a 2D map for two of the 3D volume).
  *
- * Two drawings: the one shown, and the next, drawn a few rows a frame (TEXELS_A_FRAME), then
+ * Two drawings: the one shown, and the next, drawn a few rows a frame (`texelsAFrame`), then
  * faded in over FADE. A new one once what it is drawn from changes (`key`: the settings, the
  * ground; the drawing under way is dropped), the light's way does (`light`: the drawing under
- * way finishes first, so a light that keeps turning is followed a drawing behind; until
- * 2026-11-18 it was dropped too, and in a timelapse the clouds kept the light they had when it
- * started) or the clock has run on (`refresh`: the clouds form and fade); each
- * read where the wind has carried its clouds since its time, and its rows drawn over several
- * frames all of that time, so drift costs nothing.
+ * way finishes first, so a light that keeps turning is followed a drawing behind), or the clock
+ * has run on (`refresh`: the clouds form and fade). Each is read where the wind has carried its
+ * clouds since its time, and its rows drawn over several frames all of that time, so drift costs
+ * nothing. Until the first is drawn the march does without it (`uCloud${name}Mode` 0).
+ *
+ * Until 2026-11-18 the cover's map was drawn whole, every frame the clock moved (0.76 ms a frame
+ * on an RTX A1000), and the light's first drawing, and one at a new size, was drawn over the
+ * area of the drawing shown before it: its program now has an area of its own.
  */
-export class CloudLightMap {
+export class CloudFieldMap {
   /** the march's own uniforms for it */
-  readonly uniforms = {
-    uCloudLightNewer: new Uniform<Texture | null>(null),
-    uCloudLightOlder: new Uniform<Texture | null>(null),
-    uCloudLightArea: new Uniform(new Vector4(0, 0, 1, 1)),
-    uCloudLightFade: new Uniform(1),
-    uCloudLightDrift: new Uniform<Vector2[]>([]),
-    uCloudLightMode: new Uniform(0),
-  };
+  readonly uniforms: Record<string, Uniform>;
   /** Counts what the march reads of it changing: drawn anew, or faded on. */
   version = 0;
+  private readonly newerMap = new Uniform<Texture | null>(null);
+  private readonly olderMap = new Uniform<Texture | null>(null);
+  private readonly area = new Uniform(new Vector4(0, 0, 1, 1));
+  private readonly fade = new Uniform(1);
+  private readonly drift: Uniform<Vector2[]>;
+  private readonly mode = new Uniform(0);
+  // Its program's own: the drawing's area, the level drawn, and where the clouds of the
+  // drawing's time lie now.
+  private readonly drawArea = new Uniform(new Vector4(0, 0, 1, 1));
+  private readonly drawLevel = new Uniform(0);
+  private readonly drawShift = new Uniform(new Vector2());
   private material: ShaderMaterial | null = null;
   private mesh: Mesh | null = null;
   private readonly scene = new Scene();
@@ -106,31 +128,61 @@ export class CloudLightMap {
     | (Held & { target: number; layer: number; row: number })
     | null = null;
 
-  constructor(levels: number) {
-    this.uniforms.uCloudLightDrift.value = Array.from(
-      { length: 2 * levels },
-      () => new Vector2(),
+  constructor(private readonly options: CloudFieldMapOptions) {
+    const name = options.name;
+    this.drift = new Uniform(
+      Array.from({ length: 2 * options.levels }, () => new Vector2()),
     );
+    this.uniforms = {
+      [`uCloud${name}Newer`]: this.newerMap,
+      [`uCloud${name}Older`]: this.olderMap,
+      [`uCloud${name}Area`]: this.area,
+      [`uCloud${name}Fade`]: this.fade,
+      [`uCloud${name}Drift`]: this.drift,
+      [`uCloud${name}Mode`]: this.mode,
+    };
+  }
+
+  /** Whether the march reads it: a drawing is shown. */
+  get shown(): boolean {
+    return this.mode.value > 0;
+  }
+
+  /** Whether a drawing is under way. */
+  get underway(): boolean {
+    return this.drawing !== null;
   }
 
   /**
-   * What draws it: the march's program as `CLOUD_LIGHT_MAP`, its uniforms the march's own (made
-   * once, for `march`); compile it before it draws.
+   * Drawn anew from the next {@link update} on, as if what it is drawn from had changed, the
+   * one shown let go at once: to time a drawing whole (the debug benches).
+   */
+  restart() {
+    this.drawing = null;
+    this.older = -1;
+    if (this.newer >= 0) this.held[this.newer] = null;
+  }
+
+  /**
+   * What draws it: the march's program under `define`, its uniforms the march's own but for its
+   * own area, level and shift (made once, for `march`); compile it before it draws.
    */
   generator(march: ShaderMaterial): Mesh {
     if (!this.mesh) {
+      const { name, define } = this.options;
       // A local weather's alone: never a global one's.
       const defines = { ...march.defines };
       delete defines.CLOUD_GLOBAL;
       this.material = new ShaderMaterial({
-        name: 'scenery-cloud-light-map',
+        name: `scenery-cloud-${name.toLowerCase()}-map`,
         vertexShader: march.vertexShader,
         fragmentShader: march.fragmentShader,
-        defines: { ...defines, CLOUD_LIGHT_MAP: '', CLOUD_LIGHT_STEPS },
+        defines: { ...defines, [define]: '', ...this.options.defines },
         uniforms: {
           ...march.uniforms,
-          uCloudLightLevel: new Uniform(0),
-          uCloudLightShift: new Uniform(new Vector2()),
+          [`uCloud${name}Area`]: this.drawArea,
+          [`uCloud${name}Level`]: this.drawLevel,
+          [`uCloud${name}Shift`]: this.drawShift,
         },
         depthTest: false,
         depthWrite: false,
@@ -147,10 +199,9 @@ export class CloudLightMap {
    * march reads. Within the scene's draw, after the march's uniforms are set for the frame: it
    * draws with them. `renderer`'s target is left as it was.
    */
-  update(renderer: WebGLRenderer, inputs: CloudLightMapInputs | null) {
-    const u = this.uniforms;
-    if (!inputs || !this.material) {
-      this.set(u.uCloudLightMode, 0);
+  update(renderer: WebGLRenderer, inputs: CloudFieldMapInputs | null) {
+    if (!inputs || !this.material || inputs.levels === 0) {
+      this.set(this.mode, 0);
       return;
     }
     const size = Math.min(
@@ -159,7 +210,7 @@ export class CloudLightMap {
     );
     const want = {
       key: inputs.key,
-      light: inputs.light,
+      light: inputs.light ?? '',
       size,
       levels: inputs.levels,
       half: inputs.half,
@@ -195,29 +246,29 @@ export class CloudLightMap {
     // its clouds since it was drawn.
     const newer = this.newer >= 0 ? this.held[this.newer] : null;
     if (!newer) {
-      this.set(u.uCloudLightMode, 0);
+      this.set(this.mode, 0);
       return;
     }
     let share = this.fadeShare();
     if (share >= 1 && this.older >= 0) this.older = -1;
     const older = this.older >= 0 ? this.held[this.older] : null;
     if (!older) share = 1;
-    this.set(u.uCloudLightMode, 1);
-    this.set(u.uCloudLightFade, share);
+    this.set(this.mode, 1);
+    this.set(this.fade, share);
     const newerTexture = this.targets[this.newer]!.texture;
-    if (u.uCloudLightNewer.value !== newerTexture) {
-      u.uCloudLightNewer.value = newerTexture;
+    if (this.newerMap.value !== newerTexture) {
+      this.newerMap.value = newerTexture;
       this.version++;
     }
     const olderTexture = older
       ? this.targets[this.older]!.texture
       : newerTexture;
-    if (u.uCloudLightOlder.value !== olderTexture) {
-      u.uCloudLightOlder.value = olderTexture;
+    if (this.olderMap.value !== olderTexture) {
+      this.olderMap.value = olderTexture;
       this.version++;
     }
-    u.uCloudLightArea.value.set(0, 0, newer.half, newer.size);
-    const drift = u.uCloudLightDrift.value;
+    this.area.value.set(0, 0, newer.half, newer.size);
+    const drift = this.drift.value;
     inputs.winds.forEach((wind, k) => {
       drift[2 * k]?.copy(wind).multiplyScalar(inputs.time - newer.time);
       drift[2 * k + 1]
@@ -238,11 +289,10 @@ export class CloudLightMap {
     this.version++;
   }
 
-  // TEXELS_A_FRAME more of the drawing under way, its layers one after another; once done, shown,
+  // texelsAFrame more of the drawing under way, its layers one after another; once done, shown,
   // fading in over the one before.
-  private draw(renderer: WebGLRenderer, inputs: CloudLightMapInputs) {
+  private draw(renderer: WebGLRenderer, inputs: CloudFieldMapInputs) {
     const drawing = this.drawing!;
-    const material = this.material!;
     const target = this.target(drawing.target, drawing.size, drawing.levels);
     const outer = renderer.getRenderTarget();
     const cubeFace = renderer.getActiveCubeFace();
@@ -252,12 +302,15 @@ export class CloudLightMap {
     renderer.autoClear = false;
     renderer.info.autoReset = false;
     this.scene.add(this.mesh!);
-    const level = material.uniforms.uCloudLightLevel;
-    const shift = material.uniforms.uCloudLightShift.value as Vector2;
-    let left = Math.max(Math.floor(TEXELS_A_FRAME / drawing.size), 1);
+    this.drawArea.value.set(0, 0, drawing.half, drawing.size);
+    const shift = this.drawShift.value;
+    let left = Math.max(
+      Math.floor(this.options.texelsAFrame / drawing.size),
+      1,
+    );
     while (left > 0 && drawing.layer < drawing.levels) {
       const rows = Math.min(left, drawing.size - drawing.row);
-      level.value = drawing.layer;
+      this.drawLevel.value = drawing.layer;
       // Where the clouds of the drawing's time lie now.
       shift
         .copy(inputs.winds[drawing.layer] ?? shift.set(0, 0))
@@ -330,7 +383,7 @@ export class CloudLightMap {
     if (!target) {
       target = new WebGLArrayRenderTarget(size, size, levels, {
         type: HalfFloatType,
-        format: RGBAFormat,
+        format: this.options.format,
         minFilter: LinearMipmapLinearFilter,
         magFilter: LinearFilter,
         depthBuffer: false,
@@ -342,12 +395,13 @@ export class CloudLightMap {
   }
 
   /** Let go of its maps, and its generator's material through `release` (default `dispose`). */
-  dispose(release?: (material: ShaderMaterial) => void) {
+  dispose(release?: (material: Material) => void) {
     for (const target of this.targets) target?.dispose();
     this.targets.fill(null);
     this.held.fill(null);
     this.newer = this.older = -1;
     this.drawing = null;
+    this.mode.value = 0;
     this.mesh?.geometry.dispose();
     if (this.material) {
       if (release) release(this.material);

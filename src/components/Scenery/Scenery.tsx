@@ -1592,14 +1592,14 @@ export const Scenery = ({
       site.altitude = height - level;
       const under = skyGroundOf(site);
       const bed = level - material.oceanDepth;
-      // Under the relief's ground above the sea's own seabed, as from inside rock: below the
-      // sea or in land above it.
+      // Under the relief's ground (the camera site's, as the relief has it) above the sea's own
+      // seabed, as from inside rock: below the sea or in land above it.
       site.buried =
-        material.ocean && under !== null && height <= under && height > bed;
+        material.ocean && under !== null && site.underground && height > bed;
       // Over the relief's ground below the sea's own seabed, as in a trench: in the water, or
       // over a dry sea's bed in the air.
       site.trench =
-        material.ocean && under !== null && height > under && height <= bed;
+        material.ocean && under !== null && !site.underground && height <= bed;
       site.lid = sceneryLidOverCamera(height, {
         ocean: material.ocean,
         oceanLevel: level,
@@ -1664,6 +1664,9 @@ export const Scenery = ({
     sceneWater.setGround(sceneryGround.map, 1, material.oceanLevel);
     // The waves at the enclosing Weather's pace.
     const waveStep = step(delta);
+    // Its waves for this frame, baked once the layers shown are known (below): only while one
+    // that reads them can show.
+    let bakeWaves: (() => void) | null = null;
     if (water) {
       // Its waves on the weather's clock while it draws the weather's sea.
       water.step(waveStep);
@@ -1671,34 +1674,36 @@ export const Scenery = ({
       // from the camera's altitude over it; and the whitecaps' life about the camera, in the
       // chart every pixel takes (none while a line where two meet is in view), ahead of it the
       // way it looks: the level part of its look, as the chart has it a short way on.
-      const charts = material.oceanCharts;
-      let foamAt: Vector2 | null = null;
-      let foamAhead: Vector2 | null = null;
-      if ((charts.uniforms.uOceanChartOnly.value as number) >= 0) {
-        const earth = material.globe;
-        const stillUp = earth.upAt(camera.position, foamUp);
-        const still = foamPoint
-          .copy(stillUp)
-          .multiplyScalar(-earth.altitude(camera.position))
-          .add(camera.position);
-        const chart = charts.chartAt(still).chart;
-        foamAt = charts.coords(chart, still, foamCoords);
-        const look = camera.getWorldDirection(foamLook);
-        look.addScaledVector(stillUp, -look.dot(stillUp));
-        const on = charts.coords(
-          chart,
-          look.multiplyScalar(FOAM_AHEAD_STEP).add(still),
-          foamAheadCoords,
+      bakeWaves = () => {
+        const charts = material.oceanCharts;
+        let foamAt: Vector2 | null = null;
+        let foamAhead: Vector2 | null = null;
+        if ((charts.uniforms.uOceanChartOnly.value as number) >= 0) {
+          const earth = material.globe;
+          const stillUp = earth.upAt(camera.position, foamUp);
+          const still = foamPoint
+            .copy(stillUp)
+            .multiplyScalar(-earth.altitude(camera.position))
+            .add(camera.position);
+          const chart = charts.chartAt(still).chart;
+          foamAt = charts.coords(chart, still, foamCoords);
+          const look = camera.getWorldDirection(foamLook);
+          look.addScaledVector(stillUp, -look.dot(stillUp));
+          const on = charts.coords(
+            chart,
+            look.multiplyScalar(FOAM_AHEAD_STEP).add(still),
+            foamAheadCoords,
+          );
+          foamAhead = on.sub(foamAt).divideScalar(FOAM_AHEAD_STEP);
+        }
+        water.renderWaves(
+          gl,
+          camera,
+          material.heightOf(camera.position) - material.oceanLevel,
+          foamAt,
+          foamAhead,
         );
-        foamAhead = on.sub(foamAt).divideScalar(FOAM_AHEAD_STEP);
-      }
-      water.renderWaves(
-        gl,
-        camera,
-        material.heightOf(camera.position) - material.oceanLevel,
-        foamAt,
-        foamAhead,
-      );
+      };
       contacts.upload(water, { plane: wavePlane, from: camera.position });
     }
     // What draws itself in the sky (the 3D clouds): in the air's bakes, which are due again
@@ -1837,6 +1842,12 @@ export const Scenery = ({
 
     // The background's layers where they can show from here; each draws nothing elsewhere.
     const shown = sceneryLayersShown(layerView(height, voidOpen));
+    // The sea's waves, while a layer that reads them can show: the sky's sea or its water, and
+    // with them its surface and a stage's, which show only where those do. Below the seabed
+    // none can: the bake (and the whitecaps' life, which a long step then fades as it would
+    // have) waits, and a sea of another's (an Ocean, a stack's water) bakes its own. Until
+    // 2026-11-19 it ran there every frame (2.2 ms at sea level on an RTX A1000).
+    if (bakeWaves && (shown.sea || shown.water)) bakeWaves();
     const showLayer = (mesh: Mesh | null, layer: keyof typeof shown) => {
       if (mesh)
         mesh.visible =
