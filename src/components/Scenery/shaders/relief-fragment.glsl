@@ -301,8 +301,9 @@ void main() {
   #endif
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
   vec3 albedo = reliefAlbedo(height, ground.y, look);
-  // The sun's light as much as the clouds let through here (skyCloudShadow): on land.
-  float shade = under ? 1.0 : skyCloudShadow(world);
+  // The sun's light as much as the clouds let through here (skyCloudShadow): on land, read over
+  // the pixel's footprint.
+  float shade = under ? 1.0 : skyCloudShadow(world, hollowPixel);
   vec3 color = sceneBlinnPhongShaded(albedo, under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal), shade);
   // The scene's lights are the field's: far round the Earth, where the sun has set, the
   // ground is dark as by night (skyDayFrom).

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CLOUDS_LOOKS,
   CLOUDS_QUALITY,
+  cloudsGustyLook,
   cloudsLight,
   cloudsQuality,
 } from '../src/components/Scenery/scenery-clouds';
@@ -65,6 +66,36 @@ describe('CLOUDS_LOOKS', () => {
       expect(look.lifetime).toBeGreaterThan(0);
       expect(look.rise).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe('cloudsGustyLook', () => {
+  const cumulus = CLOUDS_LOOKS.cumulus;
+  const breeze = { speed: 10, from: 240 };
+
+  it('leaves the look as it is without wind, without gusts, and aloft', () => {
+    expect(cloudsGustyLook(cumulus, 'low', null)).toBe(cumulus);
+    expect(
+      cloudsGustyLook(cumulus, 'low', { ...breeze, gusts: { strength: 0 } }),
+    ).toBe(cumulus);
+    expect(cloudsGustyLook(CLOUDS_LOOKS.cirrus, 'high', breeze)).toBe(
+      CLOUDS_LOOKS.cirrus,
+    );
+  });
+
+  it('makes low clouds shorter-lived, boiling and ragged, the middle level half as much', () => {
+    const low = cloudsGustyLook(cumulus, 'low', breeze);
+    // A fresh breeze: twenty minutes to some fourteen.
+    expect(low.lifetime / 60).toBeCloseTo(13.6, 1);
+    expect(low.rise).toBeGreaterThan(cumulus.rise);
+    expect(low.softness).toBeGreaterThan(cumulus.softness);
+    expect(low.stretch).toBeGreaterThan(cumulus.stretch);
+    const mid = cloudsGustyLook(cumulus, 'mid', breeze);
+    expect(mid.lifetime).toBeGreaterThan(low.lifetime);
+    expect(mid.lifetime).toBeLessThan(cumulus.lifetime);
+    // Gustier air, more so.
+    const gale = cloudsGustyLook(cumulus, 'low', { speed: 25, from: 240 });
+    expect(gale.lifetime).toBeCloseTo(cumulus.lifetime / 2, 5);
   });
 });
 

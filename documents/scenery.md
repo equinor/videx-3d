@@ -792,13 +792,22 @@ A cutaway also keeps the scene lit as from above the water.
   half-width at the edge, so it keeps its proportions through a zoom or a tilt. Keep
   `reach` where the cut reads well (0.5) and move the edge with `offset`: near the horizon
   a row's sight line runs far for a small step, an offset never does.
+- The edge never lies farther than a ceiling (2026-11-19): where a row 95 % up the frame meets
+  the cut's plane (`CUTAWAY_TOP_ROW`), a sight line at least 1° below level, and with the globe
+  no farther than 80 % of the way to the horizon (`CUTAWAY_HORIZON_SHARE`: the cut's plane is
+  flat, while the sea falls away, 1.4° below level from 2 km up and 3.2° from 10 km). An offset,
+  dragged or given, beyond it is held there while the view needs it and comes back as the view
+  allows; dragging stops there. Before, a far edge could lie past the frame's top or the
+  horizon, where no rim is drawn, and its grip was lost.
 - `handle: true` draws a grip on the rim in the middle of the view: dragging it sets the
   offset, under the pointer, and a double click or tap puts it back to 0. It reports
   through `onOffsetChange` once the drag ends (and on a reset), and the sky keeps the
   dragged offset until `offset` changes.
   The shader draws it with the rim, so it is drawn only where the rim is (on the surface
   seen from above); an invisible element over it takes the pointer, so camera controls
-  never see the drag. It works while the edge slides out too.
+  never see the drag. It works while the edge slides out too. Should it still go out of
+  view over the sea (a tilt carrying a near edge below the frame), not held and not sliding
+  out, the offset goes back to 0, reported as a double click's is.
 - `zoomFollow` is how much of a zoom its size follows on screen: 1 keeps it fixed in
   the frame, 0 fixed in the world. It has its frame size with the camera `reference`
   high (default half the width of a stage's occupant).
@@ -1032,7 +1041,11 @@ it, an optional occupant's outline and stand-in spheres, every option and debug 
 story drawing a `<Scenery>` takes its controls from one module,
 `src/storybook/components/scenery-controls.ts`, so a control has the same name everywhere: the
 basic ones show in every story, the advanced and debug ones only in `StageDebug`
-(`sceneryArgTypes({ debug: true })`), keeping their defaults elsewhere.
+(`sceneryArgTypes({ debug: true })`), keeping their defaults elsewhere. Their features come
+from one component too (`SceneryArgsFeatures`): the sea, the void, the graticule, the cutaway
+and the clouds, a sky preset (`clouds`, `clear` by default but in the Timelapse, `fair`) at a
+quality (`cloudsQuality`), in every story; the Clouds story builds its own weather and leaves
+the shared preset out.
 
 ## For maintainers
 

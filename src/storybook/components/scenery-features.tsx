@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { GeoMapCameraMarker } from '../../components/Html/GeoMap/GeoMapMarkers';
 import { Minimap } from '../../components/Html/Minimap/Minimap';
 import { Overlay } from '../../components/Html/Overlay/Overlay';
 import { SceneryAbyss } from '../../components/Scenery/SceneryAbyss';
+import { SceneryClouds } from '../../components/Scenery/SceneryClouds';
 import { SceneryCutaway } from '../../components/Scenery/SceneryCutaway';
 import { GeoGraticule } from '../../components/Layers/GeoGraticule';
 import { SceneryOcean } from '../../components/Scenery/SceneryOcean';
@@ -14,6 +15,7 @@ import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import {
   SceneryArgs,
   sceneryAbyssFromArgs,
+  sceneryCloudsFromArgs,
   sceneryGraticuleFromArgs,
   sceneryMinimapLayers,
   sceneryOceanFromArgs,
@@ -22,24 +24,33 @@ import { sceneryCutawayFromArgs } from './scenery-cutaway-controls';
 
 /**
  * A story's scenery features from its {@link SceneryArgs}, under its `<Scenery>`: the
- * graticule and the cutaway as the args set them, and the sea and the void with what
- * only the story knows (their levels, a seabed of its own) laid over the args'. `false`
- * leaves one out. With `weather`, the sea takes its wind and swell from the enclosing
- * `Weather` (`sceneryWeatherFromArgs`), and draws its sea.
+ * graticule, the cutaway and the clouds (a sky preset, `clouds`) as the args set them, and the
+ * sea and the void with what only the story knows (their levels, a seabed of its own) laid over
+ * the args'. `false` leaves one out (`clouds={false}` for a story drawing its own). With
+ * `weather`, the sea takes its wind and swell from the enclosing `Weather`
+ * (`sceneryWeatherFromArgs`), and draws its sea.
  */
 export const SceneryArgsFeatures = ({
   args,
   ocean,
   abyss,
   weather = false,
+  clouds = true,
 }: {
   args: SceneryArgs;
   ocean: Partial<SceneryOceanProps> | false;
   abyss: Partial<SceneryAbyssProps> | false;
   weather?: boolean;
+  clouds?: boolean;
 }) => {
   const graticule = sceneryGraticuleFromArgs(args);
   const cutaway = sceneryCutawayFromArgs(args);
+  // Kept out of a story's re-render every frame (a clock's): made again only as they change.
+  const { clouds: sky, cloudsQuality } = args;
+  const cloudsElement = useMemo(() => {
+    const props = sceneryCloudsFromArgs({ clouds: sky, cloudsQuality });
+    return props && <SceneryClouds {...props} />;
+  }, [sky, cloudsQuality]);
   return (
     <>
       {graticule && <GeoGraticule {...graticule} />}
@@ -48,6 +59,7 @@ export const SceneryArgsFeatures = ({
       )}
       {abyss && <SceneryAbyss {...sceneryAbyssFromArgs(args)} {...abyss} />}
       {cutaway && <SceneryCutaway {...cutaway} />}
+      {clouds && cloudsElement}
     </>
   );
 };

@@ -17,6 +17,7 @@ import {
   cloudLayersByLevel,
   cloudLayersInProportion,
   cloudLayersOf,
+  cloudLevelOf,
   WEATHER_LOCAL_RADIUS,
   weatherSystemsOf,
   type CloudLayer,
@@ -27,6 +28,7 @@ import { useWeather, useWeatherClock } from '../Weather/weather-context';
 import {
   CLOUDS_LOOKS,
   cloudsChainLayer,
+  cloudsGustyLook,
   CloudsRenderer,
   cloudsQuality,
   type CloudsGlobal,
@@ -160,11 +162,16 @@ export const SceneryClouds = ({
         radius: local.radius ?? WEATHER_LOCAL_RADIUS,
       })
     : '';
-  // Each type's look, over the defaults.
+  // Each type's look, over the defaults, as the weather's gusts leave it at its level.
+  const gustWind = weather?.wind;
   const allLooks = Object.fromEntries(
     (Object.keys(CLOUDS_LOOKS) as CloudType[]).map(type => [
       type,
-      { ...CLOUDS_LOOKS[type], ...looks?.[type] },
+      cloudsGustyLook(
+        { ...CLOUDS_LOOKS[type], ...looks?.[type] },
+        cloudLevelOf(type),
+        gustWind,
+      ),
     ]),
   ) as Record<CloudType, CloudsLook>;
   // Local: one layer a level, in proportion, each drawn as its type looks. Global: each level

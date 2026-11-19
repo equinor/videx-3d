@@ -513,7 +513,7 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // their shadow the glint goes, and the water's own light loses the sun's share of the daylight
   // (skySunShare): the darker sea a shadow shows, most from above, where the surface reflects
   // little of the sky.
-  float through = skyCloudLightAt(world);
+  float through = skyCloudLightAt(world, texel);
   float shade = skyCloudShadowFrom(through);
   float waterShade = 1.0 - skySunShare(dot(uSkySunDirection, wave.up)) * (1.0 - through);
 

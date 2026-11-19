@@ -10,7 +10,9 @@ import {
 import type { SeaQuality } from '../../sdk/weather/sea-state';
 import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import {
+  SKY_PRESETS,
   weatherSeaSwells,
+  type SkyPreset,
   type WeatherState,
   type WeatherSwell,
 } from '../../sdk/weather/weather';
@@ -32,6 +34,8 @@ import type { SceneryStageLayer } from '../../components/Scenery/SceneryStage';
 import {
   sceneryDefaults,
   type SceneryAbyssProps,
+  type SceneryCloudsProps,
+  type SceneryCloudsQuality,
   type SceneryHollowStyle,
   type SceneryOceanProps,
   type SkyMoon,
@@ -114,6 +118,9 @@ export type SceneryArgs = {
   graticuleOpacity: number;
   // Scenery
   backgroundMode: 'sky' | 'void' | 'none';
+  // Clouds (sceneryCloudsFromArgs)
+  clouds: SkyPreset;
+  cloudsQuality: SceneryCloudsQuality;
   air: boolean;
   airHaze: number;
   airHazeHeight: number;
@@ -266,6 +273,8 @@ export const sceneryArgs: SceneryArgs = {
   graticuleTimeZonesLabels: false,
   graticuleOpacity: GRATICULE_DEFAULTS.lines.opacity,
   backgroundMode: 'sky',
+  clouds: 'clear',
+  cloudsQuality: sceneryDefaults.clouds.quality,
   air: true,
   airHaze: sceneryDefaults.air.haze,
   airHazeHeight: sceneryDefaults.air.hazeHeight,
@@ -559,6 +568,17 @@ export const sceneryWeatherFromArgs = (
 });
 
 /**
+ * A `SceneryClouds`' props from {@link SceneryArgs}: a sky preset's layers at the quality
+ * chosen; null for `clear`. With a `Weather` around the Scenery they take its wind and gusts.
+ */
+export const sceneryCloudsFromArgs = (
+  args: Pick<SceneryArgs, 'clouds' | 'cloudsQuality'>,
+): SceneryCloudsProps | null =>
+  args.clouds === 'clear'
+    ? null
+    : { layers: args.clouds, quality: args.cloudsQuality };
+
+/**
  * A `SceneryOcean`'s props from {@link SceneryArgs}, but for its level and depth, which are the
  * story's. With `weather`, no wind or swell of its own: it draws the enclosing `Weather`'s sea
  * ({@link sceneryWeatherFromArgs}).
@@ -799,6 +819,7 @@ const ADVANCED = new Set<string>([
 const SUN = 'Sun';
 const GRATICULE = 'Graticule';
 const SKY = 'Scenery';
+const CLOUDS = 'Clouds';
 const SEA = 'Sea';
 const SUBSURFACE = 'Subsurface';
 const ENVIRONMENT = 'Environment';
@@ -997,6 +1018,20 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     description:
       "What is drawn behind the scene (`background`): `sky` the sky and its stage; `void` the void\u2019s grey gradient in the sky\u2019s place (`'void'`), as the stand-in draws it while the sky compiles: no air, sun, moon, stars or clouds, and the scene lit by the subsurface everywhere, the void and a sea drawn as ever (recompiles); `none` nothing (`false`), switched instantly with nothing rebuilt or baked, the scene still lit by the sky, by the subsurface.",
     table: { category: SKY },
+  },
+  clouds: {
+    control: { type: 'select' },
+    options: Object.keys(SKY_PRESETS),
+    description:
+      'A sky of 3D clouds about the field (`SceneryClouds` `layers`, a `SKY_PRESETS` name), lit by the sun and the moon: `clear` for none. Without a `Weather` around the Scenery they have no wind: they hold still, and no gusts work on them.',
+    table: { category: CLOUDS },
+  },
+  cloudsQuality: {
+    control: { type: 'inline-radio' },
+    options: ['low', 'medium', 'high', 'ultra'],
+    description:
+      'How much the clouds spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen\u2019s resolution, how finely they are marched, how often they read the shape (once at LOW and MEDIUM: a march program each, compiled as the quality switches, the clouds drawn as they were meanwhile), and how much of it a frame (`temporal`).',
+    table: { category: CLOUDS },
   },
   air: toggle(
     SKY,

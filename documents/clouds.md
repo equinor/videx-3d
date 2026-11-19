@@ -193,6 +193,19 @@ measured quantiles for its look's weight of masses (`softCoverLevel`, `updateLev
 holds whatever the noise's distribution; at its top, that of cover × (0.02 + 0.3 × `towering`),
 its tallest columns.
 
+**Gusty air** (2026-11-19): inside a `Weather`, each type's look is as its wind's gusts leave it
+at its level (`cloudsGustyLook`, where `SceneryClouds` puts the looks together, so the march, the
+maps, the shadows and the bakes all take the same). The gusts are the air's turbulence near the
+ground: their spread about the mean wind (their strength as given, else as the wind's speed
+gives it, times the speed), in full at a gale's 6 m/s. The low level's clouds form and fade
+faster (`lifetime` over 1 + t), their lumps boil up faster (`rise` times 1 + t), their edges turn
+softer and more ragged (`softness` 1 + t/2, `lumps` 1 + 0.3 t), drawn out a little along the wind
+(`stretch` 1 + 0.2 t); the middle level's half as much, the high level's not at all. A fresh
+breeze (10 m/s) shortens a cumulus's twenty minutes to some fourteen, a gale's to ten. Uniforms
+only, nothing more marched; a look, not a model: fixed for a weather, never changing as the gusts
+run (a change of the wind's speed or gusts is a new look, as a change of its speed already moves
+the pattern). Gusts `{ strength: 0 }` leave the looks as they are.
+
 **Domed, and the tops give way, they do not thin** (2026-11-07). Up a level the cover a column
 must pass rises from its base's to its top's as the square of the way up (`CLOUD_DOME`), so the
 clouds are domed over flat bases, which fade in over the bottom 5 % of the level
@@ -875,7 +888,13 @@ the zone, `background`, `debug.hide`).
   timelapse), or the clouds, the terrain or the globe
   changed, or the clouds have drifted a tenth of it or lived a fiftieth of their lifetime; none
   at rest, nor where nothing reads them (below the seabed). Between, the map is
-  carried with the lowest level's wind. The sea
+  carried with the lowest level's wind. Its middle lies on a whole texel of a grid carried with
+  that wind, and its reach is kept while the camera's height keeps it within a fifth, so a map
+  drawn again reads the clouds at the points the one before did; and it is read on its mipmaps
+  over the reader's pixel (`skyCloudLightAt`'s `pixel`). Until 2026-11-19 each drawing was
+  centred anywhere and read at its finest, and once the shadows had their lumps they flickered
+  as the camera orbited: changing at each drawing, and shimmering far off, where a pixel spans
+  many texels. The sea
   and the relief scale the dimmed light (`cloud-shadow.glsl`) by the map's share over the share
   it was dimmed to, so a sunlit patch is lit by the whole sun and a shaded one by what gets
   through; toward the square's sides, and past it, the dimmed light stands. In shadow the
@@ -1081,3 +1100,20 @@ the GPU.
     rows: no gain); and the band accumulated over frames, its rays shifted within their pixels
     each frame and blended into a history moved to where its cloud lies (no visible gain).
     Not tried: more steps for runs that graze a layer, a full-resolution march of the band.
+11. **Decorative clouds without the march** (noted 2026-11-19; to be looked at again after a
+    lighter quality for a local weather and the compile work, which may make it unneeded): for
+    weak GPUs and a quicker start, scattered clouds with well-defined bounds (fair-weather
+    cumulus) within a radius, drawn without the march. As cloud boxes, not impostors: a few
+    cumulus shapes each baked once into a small 3D density texture (some 64³) from the cover and
+    lump noise the march reads, so they match; a volume of each one's sunlight, baked again only
+    as the sun turns; drawn as instanced boxes in the clouds' overlay, each pixel stepping 16 to
+    32 times inside its box alone, lit by the march's own phase, ambient and air; drifting by
+    moving the instance, forming and fading by its density's threshold. A small program, so a
+    quick compile. Cube or octahedral impostors (each cloud's look baked from a set of view
+    directions) are cheaper still but were ruled out: blending between baked views morphs a cloud
+    as the camera orbits (the clouds may change with the camera only by mip), the light is baked
+    for one sun (a timelapse bakes every view again), and up close they are flat. Costs: a handful
+    of shapes repeat, clouds never merge into fields and overlapping boxes blend only roughly,
+    and what the march gives besides its image (the shadows, the bakes' cloud cube, the sea's
+    reflection, the light dimmed under them) must be given again. To try first: one cumulus
+    against the march in the Clouds story, its look and its time.

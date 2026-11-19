@@ -44,6 +44,7 @@ import {
   SOFT_COVER_QUANTILES,
   softCoverLevel,
 } from '../../sdk/weather/soft-clouds';
+import { weatherGustsOf } from '../../sdk/weather/wind-field';
 import {
   cloudLayerWind,
   cloudLevelOf,
@@ -285,6 +286,48 @@ export const CLOUDS_LOOKS: Readonly<Record<CloudType, CloudsLook>> = {
  * @group Components
  */
 export const CLOUDS_LEVELS = 3;
+
+// How much of the gusts a level's clouds answer (cloudsGustyLook): the gusts are the air's
+// turbulence near the ground, which the low clouds live in, the middle ones partly.
+const GUST_LEVEL_SHARE: Record<CloudLevel, number> = {
+  low: 1,
+  mid: 0.5,
+  high: 0,
+};
+// The gusts' spread (m/s, as a share of the wind times its speed) answered in full: a gale's.
+const GUST_FULL = 6;
+
+/**
+ * `look` for clouds at `level` in gusty air: the wind over the sea `wind`, its gusts as given or
+ * as its speed gives them (`weatherGustsOf`), their spread about the mean (m/s) the
+ * turbulence. The low level's clouds form and fade faster (a shorter `lifetime`), their lumps
+ * boil up faster (`rise`), their edges turn softer and more ragged (`softness`, `lumps`), drawn
+ * out a little along the wind (`stretch`); the middle level's half as much, the high level's not
+ * at all. A light air leaves them much as they are; a fresh breeze (10 m/s, its gusts 2.9 m/s
+ * about it) shortens a cumulus's twenty minutes to some fourteen, a gale's (25 m/s) to ten. A
+ * look, not a model: a new weather, a new look, never changing as the gusts run.
+ *
+ * @group Components
+ */
+export function cloudsGustyLook(
+  look: CloudsLook,
+  level: CloudLevel,
+  wind: WeatherWind | null | undefined,
+): CloudsLook {
+  const share = GUST_LEVEL_SHARE[level];
+  if (!wind || share <= 0 || wind.speed <= 0) return look;
+  const spread = weatherGustsOf(wind.speed, wind.gusts).strength * wind.speed;
+  const t = (share * spread) / GUST_FULL;
+  if (t <= 0) return look;
+  return {
+    ...look,
+    lifetime: look.lifetime / (1 + t),
+    rise: look.rise * (1 + t),
+    softness: look.softness * (1 + 0.5 * t),
+    lumps: look.lumps * (1 + 0.3 * t),
+    stretch: look.stretch * (1 + 0.2 * t),
+  };
+}
 
 /**
  * Each `CloudLevel`'s types in a global weather, from heaped to sheet: where its cloud lies along
@@ -594,6 +637,7 @@ const clearColor = new Color();
 const coverCamera = new Camera();
 const shadowFoot = new Vector3();
 const shadowCentre = new Vector3();
+const shadowCarried = new Vector3();
 const shadowUp = new Vector3();
 const shadowNorth = new Vector3();
 const shadowEast = new Vector3();
@@ -858,16 +902,17 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   private weatherSeen = -1;
   private terrainSeen = -1;
   private levelsReady = false;
+  // Mipmapped: read over the reader's pixel (cloud-shadow.glsl, skyCloudLightAt).
   private readonly shadowTarget = new WebGLRenderTarget(
     SHADOW_SIZE,
     SHADOW_SIZE,
     {
       type: UnsignedByteType,
       format: RedFormat,
-      minFilter: LinearFilter,
+      minFilter: LinearMipmapLinearFilter,
       magFilter: LinearFilter,
       depthBuffer: false,
-      generateMipmaps: false,
+      generateMipmaps: true,
     },
   );
   private readonly shadowScene = new Scene();
@@ -2262,11 +2307,18 @@ void main() {
       drawn.valid = false;
       return;
     }
-    const reach = MathUtils.clamp(
+    const reachNow = MathUtils.clamp(
       SHADOW_REACH[0] + SHADOW_REACH[2] * altitude,
       SHADOW_REACH[0],
       SHADOW_REACH[1],
     );
+    // The reach drawn while the camera's height keeps it within a fifth: a move alone redraws on
+    // the same texel, so on the same grid (below).
+    const reach =
+      drawn.valid &&
+      Math.abs(Math.log(reachNow / Math.max(drawn.reach, 1))) <= Math.log(1.2)
+        ? drawn.reach
+        : reachNow;
     // Its middle on the sea under the camera, east and north there.
     globe.foot(cameraAt, shadowFoot);
     const centre = globe.place(shadowFoot.x, shadowFoot.z, 0, shadowCentre);
@@ -2288,6 +2340,24 @@ void main() {
       .copy(this.frameE)
       .multiplyScalar(wind.x)
       .addScaledVector(this.frameN, wind.y);
+    // On a whole texel along east and north of the lowest level's clouds where their wind has
+    // carried them (the map is carried with them between drawings, below), so a map drawn again,
+    // about a new middle or later, reads them at the points it read before: off that grid, each
+    // drawing read their lumps at other points, and the shadows changed as the camera moved
+    // (2026-11-19).
+    const texel = (2 * reach) / SHADOW_SIZE;
+    const swept = shadowCarried.copy(shadowDrift).multiplyScalar(this.time);
+    const alongEast = centre.dot(eastward) - swept.dot(eastward);
+    const alongNorth = centre.dot(north) - swept.dot(north);
+    centre
+      .addScaledVector(
+        eastward,
+        Math.round(alongEast / texel) * texel - alongEast,
+      )
+      .addScaledVector(
+        north,
+        Math.round(alongNorth / texel) * texel - alongNorth,
+      );
     const elapsed = Math.abs(this.time - drawn.time);
     const lowest = settings.levels[0];
     const lived = lowest ? elapsed / Math.max(lowest.look.lifetime, 1) : 0;

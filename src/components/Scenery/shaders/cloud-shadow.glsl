@@ -18,8 +18,10 @@ uniform vec2 uSkyCloudShadowLight;
 
 // The share of the light that reaches the ground at `world` through the clouds: the map's,
 // easing toward its sides into the share the scene's light was dimmed to; all of it without
-// shadows, or where they do not apply.
-float skyCloudLightAt(vec3 world) {
+// shadows, or where they do not apply. Read on the map's mipmaps over `pixel` (world units a
+// pixel spans there): far off, a pixel spans many of its texels, and read at its finest the
+// clouds' lumps in it shimmered as the view moved (2026-11-19).
+float skyCloudLightAt(vec3 world, float pixel) {
   float reach = uSkyCloudShadowPlace.w;
   if(reach <= 0.0 || uSkyCloudShadowLight.y <= 0.0)
     return 1.0;
@@ -27,8 +29,10 @@ float skyCloudLightAt(vec3 world) {
   vec2 at = vec2(dot(v, uSkyCloudShadowEast), dot(v, uSkyCloudShadowNorth)) / reach;
   float edge = max(abs(at.x), abs(at.y));
   float through = uSkyCloudShadowLight.x;
-  if(edge < 1.0)
-    through = mix(textureLod(uSkyCloudShadow, at * 0.5 + 0.5, 0.0).r, through, smoothstep(0.75, 1.0, edge));
+  if(edge < 1.0) {
+    float lod = log2(max(pixel * float(textureSize(uSkyCloudShadow, 0).x) / (2.0 * reach), 1.0));
+    through = mix(textureLod(uSkyCloudShadow, at * 0.5 + 0.5, lod).r, through, smoothstep(0.75, 1.0, edge));
+  }
   return mix(1.0, through, uSkyCloudShadowLight.y);
 }
 
@@ -42,10 +46,10 @@ float skyCloudShadowFrom(float through) {
   return through / dimmed;
 }
 
-// What to scale the scene's (already dimmed) light by at `world`, for the clouds' shadow there
-// (skyCloudShadowFrom).
-float skyCloudShadow(vec3 world) {
-  return skyCloudShadowFrom(skyCloudLightAt(world));
+// What to scale the scene's (already dimmed) light by at `world`, `pixel` world units a pixel
+// there, for the clouds' shadow there (skyCloudShadowFrom).
+float skyCloudShadow(vec3 world, float pixel) {
+  return skyCloudShadowFrom(skyCloudLightAt(world, pixel));
 }
 
 // How much of the daylight on the level is the sun's own, the rest the sky's, for its

@@ -72,7 +72,6 @@ import {
 import {
   sceneryDefaults,
   type SceneryCloudLook,
-  type SceneryCloudsQuality,
   type SceneryCloudsTemporal,
 } from './scenery-model';
 import type { SceneryStageBounds } from './scenery-stage';
@@ -149,8 +148,7 @@ type CloudsArgs = {
   localRadius: number;
   volumeScale: number;
   density: number;
-  quality: SceneryCloudsQuality;
-  /** a resolution of its own instead of the quality's */
+  /** a resolution of its own instead of the quality's (`cloudsQuality`) */
   ownResolution: boolean;
   resolution?: number;
   volumeSeed: number;
@@ -739,6 +737,7 @@ const CloudsStory = (args: CloudsArgs) => {
           <SceneryArgsFeatures
             args={args}
             weather
+            clouds={false}
             ocean={sea && { level: 0, depth: DEPTH }}
             abyss={{}}
           />
@@ -755,7 +754,7 @@ const CloudsStory = (args: CloudsArgs) => {
               }}
               scale={args.volumeScale}
               density={args.density}
-              quality={args.quality}
+              quality={args.cloudsQuality}
               resolution={args.ownResolution ? args.resolution : undefined}
               seed={args.volumeSeed}
               lightMap={args.lightMap}
@@ -1008,13 +1007,8 @@ const meta = {
     },
     volumeScale: range(0.25, 4, 0.05, 'Size of the clouds, relative.'),
     density: range(0.1, 3, 0.05, 'How dense they are inside, relative.'),
-    quality: {
-      control: { type: 'select' },
-      options: ['low', 'medium', 'high', 'ultra'],
-      description:
-        'How much they spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen’s resolution, how finely they are marched, how often they read the shape (once at LOW and MEDIUM: a march program each, compiled as the quality switches, the clouds drawn as they were meanwhile), and how much of it a frame (`temporal`).',
-      table: { category: 'Cloud volume' },
-    },
+    // The shared sky preset (`clouds`): this story builds its weather itself (PRESET above).
+    clouds: { table: { disable: true } },
     ownResolution: {
       control: { type: 'boolean' },
       description: 'A resolution of their own instead of the quality’s.',
@@ -1094,7 +1088,6 @@ const meta = {
     localRadius: WEATHER_LOCAL_RADIUS / 1000,
     volumeScale: sceneryDefaults.clouds.scale,
     density: sceneryDefaults.clouds.density,
-    quality: sceneryDefaults.clouds.quality,
     ownResolution: false,
     resolution: CLOUDS_QUALITY.medium.resolution,
     volumeSeed: sceneryDefaults.clouds.seed,

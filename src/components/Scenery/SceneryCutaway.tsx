@@ -109,6 +109,13 @@ const CUTAWAY_MIN_EDGE = 0.01;
 const CUTAWAY_MIN_DOWN = 0.01;
 // Past the frame's top, for the rim and its antialiasing: of the frame's half-width there.
 const CUTAWAY_EXIT_MARGIN = 0.05;
+// The highest the edge lies, so its grip stays on sea in view: no higher than this frame row
+// (normalised: 0.9 is 95 % up the frame), its sight line at least this far below level (sine,
+// about 1°), and, on the globe, no farther than this share of the way to the horizon (the cut's
+// plane is flat; the sea falls away, 1.4° below level from 2 km up and 3.2° from 10 km).
+const CUTAWAY_TOP_ROW = 0.9;
+const CUTAWAY_CEILING_DOWN = 0.0175;
+const CUTAWAY_HORIZON_SHARE = 0.8;
 
 const scratch = new Color();
 // Primitive dependency for a colour prop, so an inline `new Color()` does nothing each render.
@@ -163,12 +170,13 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
     shift: 0,
     plane: 0,
     active: false,
-    // This frame's edge without its offset, the offset's unit, and the slide-out holding the
-    // edge past `floor`, for the grip.
+    // This frame's edge without its offset, the offset's unit, the slide-out holding the
+    // edge past `floor`, and the highest the edge may lie (`ceiling`), for the grip.
     base: 0,
     unit: 1,
     exit: 0,
     floor: 0,
+    ceiling: Infinity,
   });
   const [cutawayRay] = useState(() => new Vector3());
   const [cutawayScratch] = useState(() => ({
@@ -234,8 +242,12 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
         edge = (edge - size.floor * size.exit) / (1 - size.exit);
       }
       const offset = (edge - size.base) / size.unit;
-      // No nearer than straight below the camera.
-      return Math.max(offset, (-size.shift - size.base) / size.unit);
+      // No farther than the edge may lie (the frame's ceiling), no nearer than straight below
+      // the camera.
+      return Math.max(
+        Math.min(offset, (size.ceiling - size.base) / size.unit),
+        (-size.shift - size.base) / size.unit,
+      );
     };
     // Reported once a drag ends: reports on the way would come back as props behind it.
     let dragged = false;
@@ -358,8 +370,31 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
       // Looking down, from `exitTilt` on, the edge slides past the frame's top.
       size.base = reach * scale;
       size.unit = Math.max(halfWidth * scale, 1e-6);
+      // Its offset no farther than the ceiling: where a row near the frame's top meets the
+      // plane, and short of the horizon on the globe. Held there while the view needs it; the
+      // offset itself is kept, so the edge comes back once the view allows.
+      cutawayRay
+        .set(0, CUTAWAY_TOP_ROW, 0.5)
+        .unproject(camera)
+        .sub(camera.position)
+        .normalize();
+      let ceiling =
+        (altitude / Math.max(-cutawayRay.dot(skyUp), CUTAWAY_CEILING_DOWN)) *
+        cutawayRay.dot(heading);
+      if (material.globeEnabled) {
+        const radius = material.globe.radius;
+        ceiling = Math.min(
+          ceiling,
+          CUTAWAY_HORIZON_SHARE *
+            Math.sqrt(2 * radius * altitude + altitude * altitude),
+        );
+      }
+      size.ceiling = ceiling - shift;
       const offset = cutawayDragged.current ?? cutawayOffset;
-      let target = Math.max(size.base + offset * size.unit, -shift);
+      let target = Math.max(
+        Math.min(size.base + offset * size.unit, size.ceiling),
+        -shift,
+      );
       const exit = MathUtils.smoothstep(tilt, cutawayExitTilt / 90, 1);
       size.exit = exit;
       size.floor = -Infinity;
@@ -450,13 +485,25 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
             .project(camera);
         const centre = edgeAt(0, a);
         const along = edgeAt(width * 0.1, b);
-        if (
-          plane !== material.oceanLevel ||
+        const lost =
           Math.abs(centre.x) > 1 ||
           Math.abs(centre.y) > 1 ||
-          Math.abs(centre.z) > 1
-        ) {
+          Math.abs(centre.z) > 1;
+        if (plane !== material.oceanLevel || lost) {
           grip.hide();
+          // Out of view where it could be held — over the sea, not sliding out, not held (a
+          // tilt carrying a near edge below the frame, say): back to no offset, as a double
+          // click puts it, and told so.
+          if (
+            lost &&
+            plane === material.oceanLevel &&
+            exit <= 0 &&
+            !grip.active &&
+            (cutawayDragged.current ?? cutawayOffset) !== 0
+          ) {
+            cutawayDragged.current = 0;
+            onCutawayOffset.current?.(0);
+          }
         } else {
           gripUniform.x = 1;
           const canvas = gl.domElement;
