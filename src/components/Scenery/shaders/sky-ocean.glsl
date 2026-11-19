@@ -123,6 +123,20 @@ vec2 skyOceanCutawayGrip(vec2 rimAt) {
   return clamp(vec2(1.25, 2.5) * k + 0.5 - d, 0.0, 1.0);
 }
 
+// The seabed's own colour at `world`, `depth` under the surface: with a relief
+// (SKY_OCEAN_BED_LOOK), its tiles are the seabed and this one shows only where none is drawn
+// yet or past their edge: plain, in the relief's own look by the ground's height there (the
+// ground map's, else `depth` down). Else the sea's seabed colour; its detail is skyOceanBed's.
+vec3 skyOceanBedAlbedo(vec3 world, float depth) {
+  #ifdef SKY_OCEAN_BED_LOOK
+  float covered;
+  float ground = groundMapHeight(world, covered);
+  return reliefLookAlbedo(covered > 0.5 ? ground : -depth, 0, uSkyOceanBedColor, uSkyOceanDepth);
+  #else
+  return uSkyOceanBedColor;
+  #endif
+}
+
 // `surface` seen through the air, fading into the air's light: the horizon's colour along the
 // view's bearing toward the horizon; looking down, the sky overhead as seen from the sea,
 // which also has no bearing, so the sun's side cannot show as a wedge where all of them meet.
@@ -158,7 +172,7 @@ vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, flo
   vec3 p = origin + dir * dist;
   vec3 up = globeUpAt(p);
   // The ground keeps the scene's scale, as a lit surface does (skyOceanBed).
-  vec3 lit = dry ? skySpaceGround(uSkyOceanBedColor, up, p) / max(uSkyIntensity, 1e-4) : skySpaceSea(dir, up);
+  vec3 lit = dry ? skySpaceGround(skyOceanBedAlbedo(p, uSkyOceanDepth), up, p) / max(uSkyIntensity, 1e-4) : skySpaceSea(dir, up);
   return vec4(skyFromSpaceOver(near.rgb, lit, p), mix(near.a, 1.0, space));
 }
 
@@ -351,22 +365,14 @@ vec4 skyOceanOverVoid(vec4 layer, vec3 dir) {
 // The seabed at `world`, `depth` under the surface, facing `up` (its up there, globeUpAt):
 // lit by the scene's lights, and dimmed by the water over it. The lights are the field's:
 // far round the Earth, where the sun has set, it is dark as by night, as the relief's ground
-// is (skyDayFrom). With a relief (SKY_OCEAN_BED_LOOK) its tiles are the seabed, and this one
-// shows only where none is drawn yet or past their edge: plain, in the relief's own look by the
-// ground's height there (the ground map's, else `depth` down), without the seabed's detail,
+// is (skyDayFrom). Its colour skyOceanBedAlbedo's; under a relief without the seabed's detail,
 // which no one would see. ⚠️ Derivatives.
 vec3 skyOceanBed(vec3 world, vec3 up, float depth) {
   vec3 position = (viewMatrix * vec4(world, 1.0)).xyz;
   vec3 normal = normalize(mat3(viewMatrix) * up);
-  #ifdef SKY_OCEAN_BED_LOOK
-  float covered;
-  float ground = groundMapHeight(world, covered);
-  vec3 albedo = reliefLookAlbedo(covered > 0.5 ? ground : -depth, 0, uSkyOceanBedColor, uSkyOceanDepth);
-  #else
-  vec3 albedo = uSkyOceanBedColor;
-  #ifdef SURFACE_DETAIL
+  vec3 albedo = skyOceanBedAlbedo(world, depth);
+  #if defined(SURFACE_DETAIL) && !defined(SKY_OCEAN_BED_LOOK)
   albedo *= surfaceDetail(normal, world, position, 0.0, true);
-  #endif
   #endif
   vec3 lit = sceneBlinnPhong(albedo, uSkyOceanBedSpecular, uSkyOceanBedShininess, uSkyOceanBedAmbient, position, normal) * skyDayFrom(uSkyUp, up);
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.

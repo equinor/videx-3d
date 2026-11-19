@@ -295,7 +295,16 @@ cloud's size (`look.z`), as rays pass through clouds or between them: a broken f
 afar lets through what lies between its clouds, not a haze of their mean. The footprint spans its
 width up and down too, up to the level's depth: what the need climbs over that widens the edge,
 so a view grazing a level's top far off, or the limb from orbit, takes the share its pixel holds
-there rather than all or none.
+there rather than all or none. That eases what the need draws within the shell, not the
+shell's own top: seen from above, the top is a sphere's edge, and a view grazing it runs
+hundreds of kilometres through the shell (2√(2Rδ) for δ under the top: 22 km at 10 m, 290 km at
+1.6 km), so its cloud turned from none to opaque within a pixel, and the limb's cloud stood in
+steps along its curve, the same at any resolution and any number of steps. Each run is marched
+with only the share of the pixel under its top's horizon, eased over a march pixel
+(`cloudTopCover`, `CLOUD_TOP_EDGE`, `globeBelowHorizon`): the rest of the light left passes it by
+and joins again as it ends. No measurable cost (A1000, 2026-11-19, the cloud bench's `over`,
+`high` and `earth`: the march without it 1.02–1.03×, a no-op variant 0.97–1.00×); snapshots of
+all a run had added, blended as it ended, drew the same at 4–9 % more.
 
 **The weather far off.** Some hundreds of kilometres from the scene the cover is the weather
 systems': a map over the whole Earth (`scenery-cloud-map.ts`), a cube map 1024² a face (some

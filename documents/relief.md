@@ -153,7 +153,8 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
 - Under a relief the sky's own seabed shows only where no tile is drawn yet, or past their
   edge, and it is drawn last, behind them by depth, so it costs nothing where they are. It is
   drawn plain: in the relief's own look (`SceneryMaterial.oceanReliefLooks`) by the ground
-  map's height, without contours or the seabed's sand detail. While the tiles load, the Earth
+  map's height, from the air and from space alike (`skyOceanBedAlbedo`), without contours or
+  the seabed's sand detail. While the tiles load, the Earth
   is then a coarse version of itself rather than the seabed's flat colour.
 - The sea stays flat over the disc holding the `boundary` and lies on the sky's globe beyond it;
   the relief is placed on the same globe, and the stage's sea surface writes the depth of

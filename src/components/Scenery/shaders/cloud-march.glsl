@@ -182,6 +182,9 @@ varying vec3 vCloudDirection;
 // Where along the view what lies behind is drawn over the clouds (their depth): where they hide
 // this share of it.
 #define CLOUD_FRONT 0.1
+// Over this many of the march's pixels a run fades in below its level's top's horizon
+// (cloudTopCover).
+#define CLOUD_TOP_EDGE 1.0
 // Over this share of a level's depth its base fades in.
 #define CLOUD_BASE_FADE 0.05
 // x: a step is no longer than this many of the pixel's footprints there (cloudMarchRuns), the
@@ -536,6 +539,17 @@ void cloudRuns(vec3 o, vec3 dir, float height, vec2 span, float ground, out vec2
   bool under = base.x < base.y && base.y > 0.0;
   near = vec2(max(top.x, 0.0), min(min(top.y, under ? base.x : top.y), ground));
   far = under ? vec2(max(base.y, 0.0), min(top.y, ground)) : vec2(1.0, -1.0);
+}
+
+// How much of a pixel `pixel` (radians) across, along `dir`, a run through a shell topped at
+// `top` covers. Seen from above, that top is a sphere's edge, and a view grazing it runs
+// hundreds of kilometres through the shell (2√(2Rδ) for δ under its top: 22 km at 10 m, 290 km
+// at 1.6 km), so its cloud turns from none to opaque within a pixel: along the Earth's limb it
+// stood in steps, 1 / its slope apart, at any resolution and any number of steps (2026-11-19).
+// Eased over CLOUD_TOP_EDGE of them below that edge; 1 from inside the shell, or with the
+// globe off.
+float cloudTopCover(vec3 dir, float top, float pixel) {
+  return clamp(globeBelowHorizon(cameraPosition, dir, -top) / (CLOUD_TOP_EDGE * pixel), 0.0, 1.0);
 }
 
 // The stretch of a view along `d` (on the field's frame) within the local weather's radius of
@@ -924,9 +938,11 @@ vec3 cloudLight(CloudLevel L, int l, vec3 o, float w) {
   return cloudLit(gLighting, h, tau);
 }
 
-// The runs along the view (main), in order: each one's stretch and its level.
+// The runs along the view (main), in order: each one's stretch, its level, and how much of the
+// pixel it covers (cloudTopCover).
 vec2 gRuns[2 * CLOUD_LEVELS_MOST];
 int gLevels[2 * CLOUD_LEVELS_MOST];
+float gCovers[2 * CLOUD_LEVELS_MOST];
 
 // Whether level `L` may hold cloud anywhere in a stretch of the view about `o` (from the camera)
 // whose field it spans `extent` (m) across, from `fieldA` to `fieldB`, between the altitudes `lo`
@@ -1010,6 +1026,13 @@ float cloudLowestAlong(float t, float to, float altitudeA, float altitudeB) {
 //
 // One loop, its turns alike: the density's and the light's reads compiled into it once (written
 // as loops in loops, the march's link took 16 s, 2026-11-10).
+//
+// A run that covers only part of the pixel (gCovers: under a level's top's horizon,
+// cloudTopCover) is marched with only that share of the light left (gTransmit), so it adds only
+// that share of what it holds; the rest passes it by (`skip`) and joins again as it ends.
+// Stopped short within one, the march goes on to what lies behind it, seen in the rest.
+// Snapshots of all it had added, taken at each run and blended as it ended, were the same image
+// at 4–9 % more of the march (A1000, 2026-11-19).
 void cloudMarchRuns(int count) {
   int r = -1;
   int l = 0;
@@ -1035,14 +1058,23 @@ void cloudMarchRuns(int count) {
   CloudLevel P = cloudLevel(0);
   int placedLevel = -1;
   bool deckAgain = false;
+  // The light left that passes the run by: none where it covers the whole pixel (gCovers).
+  float skip = 0.0;
   for(int turn = 0; turn < uCloudMarchMost; turn++) {
-    if(gTransmit < uCloudDetail.z)
-      break;
+    if(gTransmit < uCloudDetail.z) {
+      if(skip <= 0.0)
+        break;
+      t = end;
+    }
     if(t >= end) {
+      gTransmit += skip;
+      skip = 0.0;
       r++;
       if(r >= count)
         break;
       l = gLevels[r];
+      skip = (1.0 - gCovers[r]) * gTransmit;
+      gTransmit -= skip;
       vec2 run = gRuns[r];
       start = max(run.x, 0.0);
       end = run.y;
@@ -1152,6 +1184,7 @@ void cloudMarchRuns(int count) {
     fieldA = fieldB;
     altitudeA = altitudeB;
   }
+  gTransmit += skip;
 }
 
 #if defined(CLOUD_BAKE)
@@ -1348,6 +1381,8 @@ void main() {
   // Derivatives first, before anything branches: of the full image's pixels, the quarter march's
   // spanning two (uCloudDerivative 0.5).
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())) * uCloudDerivative);
+  // A march pixel's width (radians), for the levels' tops (cloudTopCover).
+  float pixel = length(fwidth(dir)) * uCloudDerivative;
 
   float R = uGlobe.x;
   float height = globeOn() ? uGlobeCamera.z : globeCameraHeight() - globeLevel();
@@ -1385,6 +1420,7 @@ void main() {
 #endif
   vec2 runs[2 * CLOUD_LEVELS_MOST];
   int levels[2 * CLOUD_LEVELS_MOST];
+  float covers[2 * CLOUD_LEVELS_MOST];
   int count = 0;
   for(int l = 0; l < CLOUD_LEVELS_MOST; l++) {
     if(l >= uCloudLevelCount)
@@ -1394,6 +1430,8 @@ void main() {
     vec2 shell = uCloudShells[l].xy;
     float riseShare = gTerrain ? cloudRiseOf(uCloudKinds[l]) : 0.0;
     float riseMost = riseShare * uCloudTerrain.y;
+    // The top its runs are cut at.
+    float top = shell.y + riseMost;
     cloudRuns(gO, dir, height, shell + vec2(0.0, riseMost), ground, near, far);
     // Over the ground, only as far up as the level rises along this view: its broad rise read
     // along the runs that could hold it, so a view through a level over the sea steps through the
@@ -1408,19 +1446,24 @@ void main() {
         float rise = riseShare * cloudTerrainBroad(cloudUpEarthOf(cloudFieldPoint(gD, along))).x;
         rises = vec2(min(rises.x, rise), max(rises.y, rise));
       }
-      if(rises.x <= rises.y)
+      if(rises.x <= rises.y) {
+        top = shell.y + rises.y + CLOUD_TERRAIN_SPARE;
         cloudRuns(gO, dir, height, shell + rises + vec2(-CLOUD_TERRAIN_SPARE, CLOUD_TERRAIN_SPARE), ground, near, far);
+      }
     }
+    float cover = cloudTopCover(dir, top, pixel);
     near = vec2(max(near.x, local.x), min(near.y, local.y));
     far = vec2(max(far.x, local.x), min(far.y, local.y));
     if(near.x < near.y) {
       runs[count] = near;
       levels[count] = l;
+      covers[count] = cover;
       count++;
     }
     if(far.x < far.y) {
       runs[count] = far;
       levels[count] = l;
+      covers[count] = cover;
       count++;
     }
   }
@@ -1437,12 +1480,16 @@ void main() {
       int level = levels[j];
       levels[j] = levels[j - 1];
       levels[j - 1] = level;
+      float share = covers[j];
+      covers[j] = covers[j - 1];
+      covers[j - 1] = share;
     }
   }
 
   for(int r = 0; r < 2 * CLOUD_LEVELS_MOST; r++) {
     gRuns[r] = runs[r];
     gLevels[r] = levels[r];
+    gCovers[r] = covers[r];
   }
   // Lit as where the view first meets cloud.
   gLighting = cloudLightingAt(dir, cloudUpAt(count > 0 ? max(runs[0].x, 0.0) : 0.0));
