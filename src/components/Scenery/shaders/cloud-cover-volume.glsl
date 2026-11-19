@@ -25,6 +25,10 @@ precision highp int;
 uniform float uCoverSize;
 uniform float uCoverSlice;
 uniform float uCoverSeed;
+// 1: the masses' warp is read from one loop, its count written times this so Direct3D cannot
+// count the turns and keeps it as a loop, as Direct3D compiles a copy of a function for every
+// call (coverAt says what is left written out, and why).
+uniform int uCoverLoops;
 #if defined(COVER_SPREAD)
 uniform highp sampler3D uCoverVolume;
 #endif
@@ -72,7 +76,9 @@ float coverGradient(vec3 p, float cells, uint layer) {
 // further than a cell, so the cells about this one hold every bump reaching it.
 float coverMasses(vec3 p, float cells, uint layer) {
   float broad = 0.5 * cells;
-  vec3 warp = vec3(coverGradient(p, broad, layer + 32u), coverGradient(p, broad, layer + 48u), coverGradient(p, broad, layer + 64u));
+  vec3 warp = vec3(0.0);
+  for(int k = 0; k < 3 * uCoverLoops; k++)
+    warp[k] = coverGradient(p, broad, layer + 32u + 16u * uint(k));
   vec3 q = p * cells + 0.6 * warp;
   vec3 cell = floor(q);
   vec3 f = q - cell;
@@ -95,7 +101,9 @@ float coverMasses(vec3 p, float cells, uint layer) {
 }
 
 // The cover at `p` in the tile: its broad patches (x) and its masses (y), which a level weighs
-// against each other as its look says (its masses' weight).
+// against each other as its look says (its masses' weight). The scales written out, and each
+// mass's cells: as loops the volume compiled faster, but took a third more of its drawing
+// (0.45 → 0.61 ms a slice, 32 slices a frame, RTX A1000, 2026-11-19).
 vec2 coverAt(vec3 p) {
   uint seed = uint(uCoverSeed) * 16u;
   float patches = (coverGradient(p, 4.0, seed) + 0.5 * coverGradient(p, 8.0, seed + 1u) + 0.25 * coverGradient(p, 16.0, seed + 2u)) / 1.75;

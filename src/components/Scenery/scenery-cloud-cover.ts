@@ -127,6 +127,8 @@ export class CloudCoverVolume {
       uCoverSize: new Uniform(size),
       uCoverSlice: new Uniform(0),
       uCoverSeed: new Uniform(0),
+      // 1: its loops' counts are written times it, so Direct3D keeps them as loops (the shader).
+      uCoverLoops: new Uniform(1),
     };
     const common = {
       vertexShader,

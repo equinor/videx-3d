@@ -109,7 +109,8 @@ click puts the default radius back. The radius is kept between the walls' reach 
 - **Textures** (`src/sdk/materials`): `createRockTexture` (512², slope, shade, a crack network)
   and `createCliffTexture` (1024², shade, normal, openness), each drawn once by `bakeTexture`
   after its program has compiled (drawing a compiling program stalls Chrome's GPU process).
-  Both together take 50–100 ms when nothing else is compiling.
+  Both together take 50–100 ms when nothing else is compiling. Their programs compile in
+  1.4 and 0.6 s (5.9 and 2.4 s until 2026-11-19; see scenery.md, "Performance").
 - **The floor:** charcoal, brown and rust blotches some hundreds of km across, with rock at
   three sizes. Each size is read with its square shifted by region (Quílez's texture
   repetition, technique 3), so no lattice shows. The two largest sizes are read per vertex

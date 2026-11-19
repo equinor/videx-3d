@@ -39,7 +39,10 @@ export type BakedTexture = {
 export type BakeTextureOptions = {
   /** texels along a side */
   size: number;
-  /** the shader's own uniforms (besides `vUv`, the texel's place 0 to 1, which it is given) */
+  /**
+   * the shader's own uniforms (besides `vUv`, the texel's place 0 to 1, and `uLoops`, which it
+   * is given)
+   */
   uniforms?: Record<string, IUniform>;
   /** anisotropic filtering, capped at the GPU's. Default 4 */
   anisotropy?: number;
@@ -63,6 +66,13 @@ void main() {
  * Draw `fragmentShader` once into a square texture that repeats both ways and has mipmaps, 8
  * bits a channel, as data (no colour space): a tile a material reads instead of computing it
  * per pixel. The shader writes `gl_FragColor` at `varying vec2 vUv`, 0 to 1 across the tile.
+ *
+ * It may declare `uniform int uLoops`, always 1, and write its loops' counts times it: Direct3D
+ * (ANGLE, so Chrome and Edge on Windows) then cannot count their turns and keeps each loop as
+ * one, instead of copying its body out for every turn. A shader drawn once loses nothing by
+ * it, and an unrolled one can take tens of seconds to compile (the rock texture 10–22 s, RTX
+ * A1000, 2026-11-19). For the same reason it calls a heavy function from one place: every call
+ * compiles a copy of it.
  *
  * It is drawn only once its program has compiled, in the background where the browser can
  * (see `precompile`): drawn while it compiles, Chrome's GPU process waits for it, which
@@ -106,7 +116,7 @@ export function bakeTexture(
   const material = new ShaderMaterial({
     vertexShader,
     fragmentShader,
-    uniforms,
+    uniforms: { uLoops: { value: 1 }, ...uniforms },
     depthTest: false,
     depthWrite: false,
     toneMapped: false,

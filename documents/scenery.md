@@ -962,6 +962,21 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   programs, and no copies of them. Until 2026-11-18 they filmed the background's layers,
   sharing their programs only within a `RenderingPipeline` and with the same lights, and
   otherwise compiling copies after what was drawn.
+- The textures and volumes drawn once on the GPU (the hollow's rock and cliffs, the clouds'
+  cover volume) call their heavy function from one loop (the five taps of a gradient, the
+  masses' warp) and take their loop counts times a uniform `uLoops` / `uCoverLoops` of 1
+  (`bakeTexture` sets `uLoops`), so Direct3D keeps them as loops. Same arithmetic, so the
+  same result to 7e-5 or better. Measured 2026-11-19 (RTX A1000; the Timelapse's own
+  programs, each alone and fully cold: Direct3D's compile and the driver's, Chrome's GPU
+  process held to the performance cores), compile → and GPU per draw: rock 5.9 → 1.4 s
+  (16.9 → 11.7 ms, once), cliffs 2.4 → 0.6 s (17.5 → 7.1 ms, once), a cover slice 1.6 →
+  0.7 s (0.45 → 0.46 ms); the scenery's 36 programs 47 → 40 s in all.
+- ⚠️ The uniform loop count is a Direct3D workaround: elsewhere it only turns the loop into a
+  run-time loop, which can draw slower, and a material that leaves the uniform unset (0)
+  runs none of its turns. Kept to what is drawn once, and only for a clear gain. Declined:
+  the cover's scales and cells as loops (a slice 0.45 → 0.61 ms, 32 a frame for 8 frames),
+  the cover's sampler (1.9 → 1.6 s for 0.3 ms more), the weather's wind (0.7 → 0.6 s for
+  17% more of its drawing) and the cloud maps' passes (no gain).
 - ⚠️ ANGLE on Direct3D compiles a program's pixel shader for one colour attachment,
   and again at its first draw into several. `OITRenderPass` draws into several with
   `mergeFront` or `tailSlices`, so the first frame that shows a stage's see-through

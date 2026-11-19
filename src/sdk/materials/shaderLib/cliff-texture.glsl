@@ -9,6 +9,10 @@ precision highp float;
 
 uniform float uSize; // texels along a side
 uniform float uSeed;
+// 1 (bakeTexture): loop counts are written times it so Direct3D keeps each loop rather than
+// copying it out turn by turn, and cliffRelief is called from one loop; drawn once, it compiled
+// in 3–7 s before (RTX A1000, 2026-11-19).
+uniform int uLoops;
 
 varying vec2 vUv;
 
@@ -32,8 +36,8 @@ float cliffNoise(vec2 p, vec2 period) {
   vec2 f = fract(p);
   vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
   float n = 0.0;
-  for(int y = 0; y <= 1; y++) {
-    for(int x = 0; x <= 1; x++) {
+  for(int y = 0; y <= uLoops; y++) {
+    for(int x = 0; x <= uLoops; x++) {
       vec2 o = vec2(x, y);
       float a = 6.2831853 * cliffHash(mod(i + o, period));
       float w = dot(vec2(cos(a), sin(a)), f - o);
@@ -54,8 +58,8 @@ vec3 cliffCells(vec2 uv, vec2 period) {
   float d2 = 1e9;
   vec2 id1 = vec2(0.0);
   vec2 id2 = vec2(0.0);
-  for(int y = -1; y <= 1; y++) {
-    for(int x = -1; x <= 1; x++) {
+  for(int y = -uLoops; y <= uLoops; y++) {
+    for(int x = -uLoops; x <= uLoops; x++) {
       vec2 c = i + vec2(x, y);
       vec2 cell = mod(c, period);
       vec2 at = c + 0.5 + 0.8 * (vec2(cliffHash(cell), cliffHash(cell + 17.31)) - 0.5);
@@ -79,7 +83,7 @@ float cliffGrain(vec2 uv) {
   float sum = 0.0;
   float amp = 0.5;
   vec2 period = GRAIN;
-  for(int o = 0; o < 3; o++) {
+  for(int o = 0; o < 3 * uLoops; o++) {
     sum += amp * (0.5 + 0.5 * cliffNoise(uv * period + 0.37 * float(o), period));
     period *= 2.0;
     amp *= 0.5;
@@ -115,13 +119,23 @@ vec2 cliffRelief(vec2 uv) {
 void main() {
   vec2 uv = vUv;
   vec2 texel = vec2(1.0 / uSize);
-  // Slopes per column across and down the tile.
-  vec2 slope = vec2(
-    cliffRelief(uv + vec2(texel.x, 0.0)).x - cliffRelief(uv - vec2(texel.x, 0.0)).x,
-    cliffRelief(uv + vec2(0.0, texel.y)).x - cliffRelief(uv - vec2(0.0, texel.y)).x
-  ) / (2.0 * texel * COLUMNS.x);
+  // The relief here and either side of it across and down the tile, for its slopes per column:
+  // one call of cliffRelief, in a loop over the five.
+  vec2 relief = vec2(0.0);
+  vec2 slope = vec2(0.0);
+  for(int k = 0; k < 5 * uLoops; k++) {
+    vec2 side = k % 2 == 1 ? texel : -texel;
+    vec2 at = k == 0 ? vec2(0.0) : (k < 3 ? vec2(side.x, 0.0) : vec2(0.0, side.y));
+    vec2 r = cliffRelief(uv + at);
+    if(k == 0)
+      relief = r;
+    else if(k < 3)
+      slope.x += k == 1 ? r.x : -r.x;
+    else
+      slope.y += k == 3 ? r.x : -r.x;
+  }
+  slope /= 2.0 * texel * COLUMNS.x;
   vec3 normal = normalize(vec3(-slope * RELIEF_BUMP, 1.0));
-  vec2 relief = cliffRelief(uv);
   float shade = 0.5 + 0.5 * cliffNoise(uv * vec2(4.0, 4.0) + 1.7, vec2(4.0)) * 0.6 + 0.4 * (cliffGrain(uv * 0.5) - 0.5);
   gl_FragColor = vec4(clamp(shade, 0.0, 1.0), normal.xy * 0.5 + 0.5, relief.y);
 }

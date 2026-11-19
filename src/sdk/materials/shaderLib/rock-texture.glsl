@@ -13,6 +13,11 @@ uniform float uSeed;
 uniform float uSlopeScale; // the slope that maps to 1 (r and g at 0 or 1)
 uniform vec2 uFissures; // lattice cells across the square of the coarse fissures, and of the fine
 uniform vec2 uFissureWidth; // their widths, in texels
+// 1 (bakeTexture): every loop's count is written times it, so Direct3D cannot count the turns
+// and keeps each loop as one rather than copying its body out for every turn; and a function
+// called more than once is called from one loop, as Direct3D compiles a copy of a function for
+// every call. It compiled in 10–22 s before (RTX A1000, 2026-11-19); it is drawn once.
+uniform int uLoops;
 
 varying vec2 vUv;
 
@@ -54,7 +59,7 @@ float rockFbm(vec2 uv, int period, int octaves, int layer) {
   float sum = 0.0;
   float amp = 0.5;
   float norm = 0.0;
-  for(int i = 0; i < 8; i++) {
+  for(int i = 0; i < 8 * uLoops; i++) {
     if(i >= octaves)
       break;
     sum += amp * rockNoise(uv, period, layer + 17 * i);
@@ -72,7 +77,7 @@ float rockRidged(vec2 uv, int period, int octaves, int layer) {
   float amp = 0.5;
   float norm = 0.0;
   float weight = 1.0;
-  for(int i = 0; i < 8; i++) {
+  for(int i = 0; i < 8 * uLoops; i++) {
     if(i >= octaves)
       break;
     float r = 1.0 - abs(2.0 * rockNoise(uv, period, layer + 17 * i) - 1.0);
@@ -112,8 +117,8 @@ float rockCracks(vec2 uv, int cells, float width, float keep, int layer) {
   float d2 = 9.0;
   vec2 id1 = vec2(0.0);
   vec2 id2 = vec2(0.0);
-  for(int y = -1; y <= 1; y++)
-    for(int x = -1; x <= 1; x++) {
+  for(int y = -uLoops; y <= uLoops; y++)
+    for(int x = -uLoops; x <= uLoops; x++) {
       vec2 c = i + vec2(x, y);
       ivec2 cell = ivec2(mod(c, float(cells)));
       vec2 at = c + 0.5 + 0.8 * (vec2(rockHash(cell, cells, layer + 11), rockHash(cell, cells, layer + 13)) - 0.5);
@@ -141,9 +146,22 @@ float rockCracks(vec2 uv, int cells, float width, float keep, int layer) {
 void main() {
   vec2 uv = vUv;
   float pitch = 1.0 / uSize;
-  float h = rockHeight(uv);
-  float hx = rockHeight(uv + vec2(pitch, 0.0)) - rockHeight(uv - vec2(pitch, 0.0));
-  float hy = rockHeight(uv + vec2(0.0, pitch)) - rockHeight(uv - vec2(0.0, pitch));
+  // The relief here and either side of it along x and y, for its slope: one call of
+  // rockHeight, in a loop over the five.
+  float h = 0.0;
+  float hx = 0.0;
+  float hy = 0.0;
+  for(int k = 0; k < 5 * uLoops; k++) {
+    float side = k % 2 == 1 ? pitch : -pitch;
+    vec2 at = k == 0 ? vec2(0.0) : (k < 3 ? vec2(side, 0.0) : vec2(0.0, side));
+    float v = rockHeight(uv + at);
+    if(k == 0)
+      h = v;
+    else if(k < 3)
+      hx += k == 1 ? v : -v;
+    else
+      hy += k == 3 ? v : -v;
+  }
   // Per unit of the square.
   vec2 slope = vec2(hx, hy) / (2.0 * pitch);
   // The shade in blotches, some 16 to the square, their lattice bent away by a warp as strong as
@@ -151,7 +169,12 @@ void main() {
   // where it sits in every other, and the rock read dozens of times over shows them in a grid.
   float shade = mix(rockFbm(rockWarp(uv, 4, 0.3, 601), 4, 5, 701), h, 0.35);
   // The great cracks, most of their edges kept, and lesser ones between them, fewer kept: they
-  // fork off the great ones and end.
-  float fissures = max(rockCracks(uv, int(uFissures.x), uFissureWidth.x, 0.7, 801), 0.6 * rockCracks(uv, int(uFissures.y), uFissureWidth.y, 0.4, 901));
+  // fork off the great ones and end. One call of rockCracks, in a loop over the two.
+  float fissures = 0.0;
+  for(int k = 0; k < 2 * uLoops; k++) {
+    bool great = k == 0;
+    float c = rockCracks(uv, int(great ? uFissures.x : uFissures.y), great ? uFissureWidth.x : uFissureWidth.y, great ? 0.7 : 0.4, great ? 801 : 901);
+    fissures = max(fissures, great ? c : 0.6 * c);
+  }
   gl_FragColor = vec4(clamp(0.5 + 0.5 * slope / uSlopeScale, 0.0, 1.0), shade, fissures);
 }
