@@ -3069,10 +3069,9 @@ fault and the unconformity fall. Edit and reload. It is deliberately constants
 rather than story controls: a column is DATA, and swapping it at runtime would mean
 registering every variant in the store up front — the constraint §14.6 lifts.
 
-⚠️ Generation is eager, because the meta loader needs each surface's realized depth
-range at store init, and costs about `nodes² × surfaces`: ~235 ms at 400 × 400 with
-ten surfaces, ~135 ms at 300 × 300. It is paid once per page load by every story.
-§14.6 is how that cost goes away.
+⚠️ Generated when a story's store asks for its column (`parameters.store`, §14.6), and
+costs about `nodes² × surfaces`: ~235 ms at 400 × 400 with ten surfaces, ~135 ms at
+300 × 300. Paid once per page by the stories that list it.
 
 **The model, in cross-section:** [column-sketch.svg](column-sketch.svg) — drape,
 fill and the pinch-out, a column flattening upward, the two erosion encodings, and
@@ -3202,6 +3201,21 @@ rather than the parsed `number[]`, which is the same win at a thousandth of the
 scale — half the memory, and a repeat `get` is a memcpy instead of a rebuild.
 
 ### 14.6 Story-scoped data — the story writes to the store
+
+> **Status: BUILT as a store init step** (2026-11-20), not as the story-written records
+> below. Before each story renders, one Storybook loader (`storyStoreLoader`,
+> `.storybook/preview.tsx`; `src/storybook/dependencies/story-store.ts`) calls
+> `MockStore.init` with the story's `parameters.store`: the generated scenarios and
+> columns it uses, by key (`syntheticScenarios`, `syntheticColumns`, or `'all'`). The
+> store then lists and serves exactly those; without the parameter, the demo files
+> alone. A generated id the story did not ask for comes back null, with a warning
+> naming the parameter. Generation stays in the store's worker and memoized, so a
+> story switched back to pays nothing, and the keys name fixed specs, so the ids need
+> no hashing. Both traps below are gone: the loader runs before anything renders,
+> and `set` waits for the preloads and any init. A fresh store's first answer went
+> from 3.5–4.9 s to 0.9 s (Chrome, 2026-11-20), every story having waited
+> for all 28 generated surfaces before. Still proposed: specs injected at runtime,
+> which the `COLUMN` constants as story controls would need (content-addressed ids).
 
 **PROPOSED, not implemented.** This is the preferred way for a story to obtain data
 nobody else needs; it supersedes the per-story store considered alongside it.

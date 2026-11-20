@@ -52,6 +52,7 @@ import {
 import { solarPosition } from '../../sdk/utils/solar-position';
 import { bakedReliefId } from '../data/baked-reliefs';
 import { demoFrame } from '../data/demo-crs';
+import { SYNTHETIC_SEABED_ID } from '../data/synthetic-surfaces';
 import {
   progressArgs,
   ProgressArgs,
@@ -1882,9 +1883,10 @@ const SCENERY_DEMO_RELIEF_LABELS: Record<string, string> = {
 
 /**
  * The synthetic column's sea bed baked into a relief (`surfaceToRelief`): a coast and an
- * island over the field, made up, to see a local layer merge.
+ * island over the field, made up, to see a local layer merge. ⚠️ Served only to a story
+ * whose `parameters.store` holds it (`syntheticScenarios: [SYNTHETIC_SEABED_KEY]`).
  */
-export const SCENERY_DEMO_BAKED_SEABED = bakedReliefId('synthetic:cap-seabed');
+export const SCENERY_DEMO_BAKED_SEABED = bakedReliefId(SYNTHETIC_SEABED_ID);
 
 /**
  * A store surface baked into a relief layer by the demo store, as a story's own finest

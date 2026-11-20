@@ -23,9 +23,9 @@ import { demoCrs } from '../data/demo-crs';
 import { BAKED_RELIEF_PREFIX } from '../data/baked-reliefs';
 import { STAGE_GROUND_PREFIX, stageGroundRelief } from '../data/stage-ground';
 import {
-  getSyntheticSurface,
   isSyntheticSurfaceId,
-  syntheticSurfaceIds,
+  SyntheticColumnUnit,
+  SyntheticSurface,
 } from '../data/synthetic-surfaces';
 import {
   EXTRA_WELLBORE_IDS,
@@ -36,11 +36,22 @@ import { get, getBinary } from './api';
 
 /**
  * comlink transfer DETACHES the buffer it is given, so hand out a copy and keep
- * the cached one intact for the next request.
+ * the cached one intact for the next request. Null where there is none: a refused
+ * generated surface, a missing file.
  */
-const transferCopy = (buffer: ArrayBuffer) => {
+const transferCopy = (buffer?: ArrayBuffer | null) => {
+  if (!buffer) return null;
   const copy = buffer.slice(0);
   return transfer(new Float32Array(copy), [copy]);
+};
+
+/**
+ * The generated surfaces the store holds for the current story (`MockStore.init`): each
+ * null, with a warning naming `parameters.store`, where the story did not ask for it.
+ */
+export type HeldSynthetic = {
+  surface: (id: string) => SyntheticSurface | null;
+  column: (key: string) => SyntheticColumnUnit[] | null;
 };
 
 export const wellboreHeadersLoader = (store: Store) =>
@@ -83,28 +94,19 @@ export const surfaceMetaLoader = (store: Store) =>
   new DataLoader(store, {
     preloaded: true,
     init: async () => {
+      // The files' surfaces only: `MockStore.init` lists the generated ones a story asks for.
       const data = await get('/data/surface-meta.json');
-      const real = Object.keys(data).map(key => [key, data[key]]);
-      // Generated surfaces are listed alongside the real ones so anything that
-      // enumerates the catalogue (story pickers, the strat sort) sees them too.
-      const synthetic = syntheticSurfaceIds
-        .map(id => getSyntheticSurface(id))
-        .filter(s => s !== null)
-        .map(s => [s.meta.id, s.meta]);
-      return [...real, ...synthetic] as [KeyType, any][];
+      return Object.keys(data).map(key => [key, data[key]]) as [KeyType, any][];
     },
   });
 
-export const surfaceValuesLoader = (store: Store) =>
+export const surfaceValuesLoader = (store: Store, held: HeldSynthetic) =>
   new DataLoader(store, {
     load: async <T>(key: KeyType): Promise<T | null> => {
       if (isSyntheticSurfaceId(key)) {
-        // Generated on demand and memoized by the registry; the buffer is copied
-        // per request below, exactly as for a fetched grid.
-        const surface = getSyntheticSurface(key);
-        return (
-          surface ? surface.values.buffer : new Float32Array(0).buffer
-        ) as T;
+        // Generated once by the registry, if the story's store holds it; the buffer is
+        // copied per request below, exactly as for a fetched grid.
+        return (held.surface(key)?.values.buffer ?? null) as T | null;
       }
       // Raw little-endian float32, so there is nothing to parse — the JSON form
       // this replaced cost ~260 ms per field-scale grid, serially in this worker.
@@ -127,6 +129,18 @@ export const surfaceValuesLoader = (store: Store) =>
       return buffer as T;
     },
     transform: transferCopy,
+  });
+
+/**
+ * A generated column's units, shallowest first (`getSyntheticColumn`), by column key: a
+ * storybook-only data type, so a story lists them without generating the column itself.
+ * Uncached here, so a column the story's store no longer holds is refused.
+ */
+export const syntheticColumnLoader = (store: Store, held: HeldSynthetic) =>
+  new DataLoader(store, {
+    noCache: true,
+    load: async <T>(key: KeyType): Promise<T | null> =>
+      (held.column(String(key)) ?? null) as T | null,
   });
 
 // Outside /data, which generate-data wipes: the relief is the region's, not a field's.
@@ -155,10 +169,11 @@ type MadeRelief = {
 // as its `UtmArea` places it (their records name the UTM zone only).
 async function bakeSurface(
   store: Store,
+  held: HeldSynthetic,
   key: string,
 ): Promise<MadeRelief | null> {
   const id = key.slice(BAKED_RELIEF_PREFIX.length);
-  const synthetic = getSyntheticSurface(id);
+  const synthetic = isSyntheticSurfaceId(id) ? held.surface(id) : null;
   const meta =
     synthetic?.meta ?? (await store.get<SurfaceMeta>('surface-meta', id));
   const values =
@@ -176,14 +191,21 @@ async function bakeSurface(
 const madeReliefs = new Map<KeyType, Promise<MadeRelief | null>>();
 
 /** The relief a key makes in the store, or null for one read from a file. */
-function madeRelief(store: Store, key: KeyType) {
+function madeRelief(store: Store, held: HeldSynthetic, key: KeyType) {
   if (typeof key !== 'string') return null;
   const baked = key.startsWith(BAKED_RELIEF_PREFIX);
   if (!baked && !key.startsWith(STAGE_GROUND_PREFIX)) return null;
+  // A generated surface baked for an earlier story stays made, but is served only while
+  // the story's store holds it.
+  const surface = baked ? key.slice(BAKED_RELIEF_PREFIX.length) : '';
+  if (isSyntheticSurfaceId(surface) && !held.surface(surface))
+    return Promise.resolve(null);
   let made = madeReliefs.get(key);
   if (!made) {
     made = (
-      baked ? bakeSurface(store, key) : Promise.resolve(stageGroundRelief(key))
+      baked
+        ? bakeSurface(store, held, key)
+        : Promise.resolve(stageGroundRelief(key))
     ).then(found => {
       if (!found) madeReliefs.delete(key);
       return found;
@@ -193,10 +215,10 @@ function madeRelief(store: Store, key: KeyType) {
   return made;
 }
 
-export const reliefMetaLoader = (store: Store) =>
+export const reliefMetaLoader = (store: Store, held: HeldSynthetic) =>
   new DataLoader(store, {
     load: async <T>(key: KeyType): Promise<T | null> => {
-      const made = madeRelief(store, key);
+      const made = madeRelief(store, held, key);
       if (made) return ((await made)?.meta ?? null) as T | null;
       return ((await reliefFileRecords())[key as string] ?? null) as T | null;
     },
@@ -220,12 +242,12 @@ async function loadRelief(store: Store, key: KeyType) {
   return { meta, values: new Float32Array(buffer) };
 }
 
-export const reliefValuesLoader = (store: Store) =>
+export const reliefValuesLoader = (store: Store, held: HeldSynthetic) =>
   new DataLoader(store, {
     // Every window is a new array, cut from the relief kept above.
     noCache: true,
     load: async <T>(key: KeyType, args?: ReliefWindow): Promise<T | null> => {
-      const made = madeRelief(store, key);
+      const made = madeRelief(store, held, key);
       let relief: MadeRelief | null;
       if (made) {
         relief = await made;

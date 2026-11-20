@@ -77,8 +77,8 @@ import {
   stratLayerUnitName,
 } from '../../storybook/data/strat-units';
 import {
-  getSyntheticSurface,
   SYNTHETIC_SEABED_ID,
+  SYNTHETIC_SEABED_KEY,
 } from '../../storybook/data/synthetic-surfaces';
 import { useVidex3dLocate } from '../../storybook/debug/useVidex3dLocate';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
@@ -97,6 +97,7 @@ import { createOutputPanelDecorator } from '../../storybook/decorators/output-pa
 import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
 import { useChunkProgressPanel } from '../../storybook/hooks/useChunkProgressPanel';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
+import { useStoreRecord } from '../../storybook/hooks/useStoreRecord';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
@@ -235,11 +236,6 @@ const colorScale = scaleOrdinal([
  * overburden above it would be drawn as water.
  */
 const SEABED_ID = (storyArgs.seabedSurface as string | null) ?? null;
-
-// Cached by the generator, and generated anyway at store init, so this is a lookup.
-const GENERATED_SEABED = SEABED_ID
-  ? null
-  : (getSyntheticSurface(SYNTHETIC_SEABED_ID)?.meta ?? null);
 
 /**
  * ⚠️ `undefined` rather than 0 when nothing is peeled: with the stack's `prepareCuts`
@@ -738,6 +734,11 @@ function verticalRangeIntervals(
 
 const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const surfaceMetaDict = useSurfaceMetaDict();
+  // Generated where the field maps no sea bed of its own: the story's store holds it.
+  const generatedSeabed = useStoreRecord<SurfaceMeta>(
+    'surface-meta',
+    SEABED_ID ? null : SYNTHETIC_SEABED_ID,
+  );
   const wellboreHeaders = useWellboreHeaders();
 
   // Held HERE rather than in `FieldWells` because the wellbore fence reads it at
@@ -856,8 +857,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
       const from = all.findIndex(m => m.id === SEABED_ID);
       return from >= 0 ? all.slice(from) : all;
     }
-    return GENERATED_SEABED ? [GENERATED_SEABED, ...all] : all;
-  }, [surfaceMetaDict, props.seabed]);
+    return generatedSeabed ? [generatedSeabed, ...all] : all;
+  }, [surfaceMetaDict, props.seabed, generatedSeabed]);
 
   // The whole survey rectangle of the widest surface in the column.
   // ⚠️ Built through `surfaceGridToWorld` over the grid CORNERS, not from the
@@ -922,7 +923,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   // The dataset's sea bed, whether or not the column draws it: the sky's seabed lies
   // at it. While the sky's stage draws it, as the sea's, the column hides its own cap.
-  const seabedMeta = SEABED_ID ? surfaceMetaDict[SEABED_ID] : GENERATED_SEABED;
+  const seabedMeta = SEABED_ID ? surfaceMetaDict[SEABED_ID] : generatedSeabed;
   // Peeled, the column no longer has the sea bed on top.
   const drawsSeabed =
     !!seabedMeta && selected[0]?.id === seabedMeta.id && !(props.peel > 0);
@@ -1711,6 +1712,10 @@ const meta = {
   title: 'Spikes/Chunks/FieldColumn',
   component: FieldColumnStory,
   parameters: {
+    // The generated sea bed, where the field maps none (`storyStoreLoader`).
+    store: SEABED_ID
+      ? undefined
+      : { syntheticScenarios: [SYNTHETIC_SEABED_KEY] },
     // Framed for the DEFAULT `field` outline — the footprint buffered from the
     // wells. ⚠️ `grid` is an order of magnitude wider (~25 x 42 km here), so it
     // needs dollying out.

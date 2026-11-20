@@ -41,6 +41,7 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
 import { demoFrame } from '../../storybook/data/demo-crs';
+import { SYNTHETIC_SEABED_KEY } from '../../storybook/data/synthetic-surfaces';
 import { GeoRelief, GeoReliefProps } from '../Layers/GeoRelief';
 import { UtmArea } from '../UtmArea/UtmArea';
 import { World } from '../World/World';
@@ -316,6 +317,8 @@ const meta = {
     ...sceneryDecorators,
   ],
   parameters: {
+    // The generated sea bed, for the baked layer the `layers` control offers.
+    store: { syntheticScenarios: [SYNTHETIC_SEABED_KEY] },
     scale: 1000,
     // Past the horizon from 100 km up (1130 km).
     far: 3000000,

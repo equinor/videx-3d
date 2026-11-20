@@ -44,9 +44,8 @@ import {
 } from '../../storybook/decorators/progress-decorator';
 import { SceneryStoryRendering } from '../../storybook/components/scenery-story-rendering';
 import {
-  SYNTHETIC_COLUMN_PREFIX,
   SYNTHETIC_PREFIX,
-  syntheticSurfaceIds,
+  syntheticScenarioKeys,
 } from '../../storybook/data/synthetic-surfaces';
 import { Videx3dBridge } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -79,8 +78,8 @@ const crs = demoCrs;
 // Where the relief lies around the field: the UtmArea's map.
 const reliefFrame = geoFrameFromCrs(crs);
 // The generated scenarios, without the units of the generated columns.
-const SYNTHETIC_SEABEDS = syntheticSurfaceIds.filter(
-  id => !id.startsWith(SYNTHETIC_COLUMN_PREFIX),
+const SYNTHETIC_SEABEDS = syntheticScenarioKeys.map(
+  key => SYNTHETIC_PREFIX + key,
 );
 
 const CAMERA_POSITION: Vec3 = [-6000, 2000, 6000];
@@ -339,6 +338,8 @@ const range = (min: number, max: number, step: number, category: string) => ({
 const meta = {
   title: 'Spikes/Scenery/Baseline',
   component: ScenerySpike,
+  // Every scenario the `seabedSurface` control offers (`storyStoreLoader`).
+  parameters: { store: { syntheticScenarios: 'all' } },
   decorators: [
     GeneratorsProviderDecorator,
     DataProviderDecorator,

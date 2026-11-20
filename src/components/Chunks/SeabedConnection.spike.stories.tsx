@@ -16,9 +16,9 @@ import {
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { chunkTimings } from '../../storybook/data/chunk-timings';
 import {
-  getSyntheticSurface,
   isSyntheticSurfaceId,
   SYNTHETIC_SEABED_ID,
+  SYNTHETIC_SEABED_KEY,
 } from '../../storybook/data/synthetic-surfaces';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -27,6 +27,7 @@ import { GeneratorsProviderDecorator } from '../../storybook/decorators/generato
 import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
 import { useChunkProgressPanel } from '../../storybook/hooks/useChunkProgressPanel';
+import { useStoreRecord } from '../../storybook/hooks/useStoreRecord';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
@@ -55,11 +56,6 @@ const crs = new CRS(getProjectionDefFromUtmZone(utmZone), origin, 'utm');
  */
 const SEABED_ID = (storyArgs.seabedSurface as string | null) ?? null;
 const BASEMENT_ID = (storyArgs.basementSurface as string | null) ?? null;
-
-// Cached by the generator, and generated anyway at store init, so this is a lookup.
-const GENERATED_SEABED = SEABED_ID
-  ? null
-  : (getSyntheticSurface(SYNTHETIC_SEABED_ID)?.meta ?? null);
 
 // Always-on OIT pipeline (SMAA), matching the sibling chunk stories.
 const ChunkPipeline = () => {
@@ -103,6 +99,11 @@ type SeabedConnectionProps = {
 const SeabedConnectionStory = (props: SeabedConnectionProps) => {
   const surfaceMetaDict = useSurfaceMetaDict();
   const wellbores = useWellboreHeaders();
+  // Generated where the field maps no sea bed of its own: the story's store holds it.
+  const generatedSeabed = useStoreRecord<SurfaceMeta>(
+    'surface-meta',
+    SEABED_ID ? null : SYNTHETIC_SEABED_ID,
+  );
 
   // The whole column, shallowest first, so all three chunks are resolved together.
   const column = useMemo<SurfaceMeta[]>(() => {
@@ -115,8 +116,8 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
       const from = all.findIndex(m => m.id === SEABED_ID);
       return from >= 0 ? all.slice(from) : all;
     }
-    return GENERATED_SEABED ? [GENERATED_SEABED, ...all] : all;
-  }, [surfaceMetaDict]);
+    return generatedSeabed ? [generatedSeabed, ...all] : all;
+  }, [surfaceMetaDict, generatedSeabed]);
 
   const seabed = column[0];
   const basement = useMemo(
@@ -422,6 +423,10 @@ const meta = {
   title: 'Spikes/Chunks/SeabedConnection',
   component: SeabedConnectionStory,
   parameters: {
+    // The generated sea bed, where the field maps none (`storyStoreLoader`).
+    store: SEABED_ID
+      ? undefined
+      : { syntheticScenarios: [SYNTHETIC_SEABED_KEY] },
     // The seabed extent is ~25 x 42 km, so the default scale of 100 puts the
     // camera 100 m from origin with a 50 km far plane — inside the water.
     scale: 1000,

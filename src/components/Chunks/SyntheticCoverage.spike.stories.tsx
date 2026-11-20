@@ -238,6 +238,10 @@ const meta = {
   title: 'Spikes/Chunks/SyntheticCoverage',
   component: SyntheticCoverageStory,
   parameters: {
+    // Every scenario the `scenario` control offers (`storyStoreLoader`).
+    store: {
+      syntheticScenarios: [...new Set(Object.values(SCENARIOS).flat())],
+    },
     // The grids are 10 x 10 km, centred on the scene origin, and the surfaces sit
     // 800-1400 m down — so the camera has to start well outside the block or it
     // opens up inside it.

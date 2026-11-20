@@ -15,10 +15,12 @@ import {
 } from '../../sdk';
 import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import {
-  getSyntheticColumn,
+  SYNTHETIC_COLUMN,
+  SYNTHETIC_PREFIX,
   syntheticColumnKeys,
   SyntheticColumnUnit,
 } from '../../storybook/data/synthetic-surfaces';
+import { useStoreRecord } from '../../storybook/hooks/useStoreRecord';
 import {
   SUBSEA_ROUTES,
   SUBSEA_SITES,
@@ -148,8 +150,16 @@ const CLASS_COLOUR: Record<SedimentClass, string> = {
 
 /** The industry's fluid colours — the default the library also ships. */
 const CONTACT_DEFS = [
-  { id: 'goc', type: 'goc' as const, surfaceId: 'synthetic:contact-goc' },
-  { id: 'owc', type: 'owc' as const, surfaceId: 'synthetic:contact-owc' },
+  {
+    id: 'goc',
+    type: 'goc' as const,
+    surfaceId: `${SYNTHETIC_PREFIX}contact-goc`,
+  },
+  {
+    id: 'owc',
+    type: 'owc' as const,
+    surfaceId: `${SYNTHETIC_PREFIX}contact-owc`,
+  },
 ];
 
 // Always-on OIT pipeline (SMAA), matching the sibling chunk stories.
@@ -385,11 +395,13 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
   const store = useData();
 
   // The units, shallowest first — the order a chunk's layer array takes, which
-  // here is GUARANTEED right because the generator deposited them in it.
-  const units = useMemo<SyntheticColumnUnit[]>(
-    () => getSyntheticColumn(props.column),
-    [props.column],
+  // here is GUARANTEED right because the generator deposited them in it. Generated
+  // in the store's worker, which this story's `parameters.store` asks to hold them.
+  const columnUnits = useStoreRecord<SyntheticColumnUnit[]>(
+    SYNTHETIC_COLUMN,
+    props.column,
   );
+  const units = useMemo(() => columnUnits ?? [], [columnUnits]);
 
   const selected = useMemo(
     () => units.slice(props.from, props.from + props.count),
@@ -800,6 +812,13 @@ const meta = {
   title: 'Spikes/Chunks/SyntheticColumn',
   component: SyntheticColumnStory,
   parameters: {
+    // Every column the `column` control offers, and the contacts (`storyStoreLoader`).
+    store: {
+      syntheticColumns: 'all',
+      syntheticScenarios: CONTACT_DEFS.map(def =>
+        def.surfaceId.slice(SYNTHETIC_PREFIX.length),
+      ),
+    },
     scale: 5000,
     cameraPosition: [7000, 3500, 7000],
     cameraTarget: [0, -1400, 0],

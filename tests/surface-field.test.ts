@@ -8,7 +8,7 @@ import {
 } from '../src/sdk';
 import {
   getSyntheticSurface,
-  syntheticSurfaceIds,
+  syntheticSurfaceIdsOf,
 } from '../src/storybook/data/synthetic-surfaces';
 
 // A small grid, axis-aligned and centred on the scene origin, so a region given in
@@ -206,6 +206,9 @@ describe('generated surfaces read back through buildStackReference', () => {
 });
 
 describe('synthetic surface scenarios', () => {
+  // Every scenario and every column's units.
+  const syntheticSurfaceIds = syntheticSurfaceIdsOf('all', 'all').ids;
+
   it('generates every declared scenario with consistent meta and values', () => {
     expect(syntheticSurfaceIds.length).toBeGreaterThan(0);
 
