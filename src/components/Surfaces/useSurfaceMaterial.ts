@@ -149,7 +149,6 @@ export function useSurfaceMaterial(
       flatShading: false,
       transparent: true,
       opacity: 1,
-      debug: false,
       depthWrite: false,
     });
   }, []);

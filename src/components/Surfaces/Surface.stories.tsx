@@ -5,7 +5,6 @@ import { SurfaceMeta, Vec2 } from '../../sdk';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
-import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
 import { useSurfaceMeta } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea, UtmPosition } from '../UtmArea';
@@ -149,7 +148,6 @@ export const Default: Story = {
     contourLabelFlip: true,
     rampMin: 0,
     rampMax: 0,
-    debug: false,
     precomputeNormals: false,
   },
   argTypes: {
@@ -306,12 +304,8 @@ export const Default: Story = {
         step: 1,
       },
     },
-    debug: {
-      control: { type: 'boolean' },
-    },
   },
   decorators: [
-    GlyphsDecorator,
     Canvas3dDecorator,
     GeneratorsProviderDecorator,
     DataProviderDecorator,

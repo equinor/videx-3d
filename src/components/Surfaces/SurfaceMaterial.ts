@@ -41,7 +41,6 @@ export type SurfaceMaterialParameters = ShaderMaterialParameters &
     normalTexture?: Texture;
     usePrecomputedNormals?: boolean;
     geometryFallback?: boolean;
-    debug?: boolean;
   };
 
 const shader = {
@@ -49,11 +48,8 @@ const shader = {
   defines: {
     USE_COLOR_RAMP: false,
     USE_CONTOURS: false,
-    USE_UV: true,
-    USE_DEBUG: false,
     USE_PRECOMPUTED_NORMALS: false,
     USE_GEOMETRY_FALLBACK: false,
-    GLYPHS_LENGTH: 1,
   },
   uniforms: UniformsUtils.merge([
     UniformsUtils.clone(ShaderLib['lambert'].uniforms),
@@ -80,9 +76,6 @@ const shader = {
       size: { value: new Vector2() },
       scale: { value: new Vector2() },
       rotation: { value: 0 },
-      // for debug mode
-      glyphAtlas: { value: null },
-      digits: { value: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
     },
   ]),
   vertexShader,
@@ -212,15 +205,6 @@ export class SurfaceMaterial extends ShaderMaterial {
 
   set showContours(value) {
     this.defines.USE_CONTOURS = !!value;
-    this.needsUpdate = true;
-  }
-
-  get debug() {
-    return this.defines.USE_DEBUG || false;
-  }
-
-  set debug(value) {
-    this.defines.USE_DEBUG = !!value;
     this.needsUpdate = true;
   }
 

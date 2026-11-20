@@ -6,9 +6,7 @@ uniform float referenceDepth;
 uniform sampler2D elevationTexture;
 uniform vec2 scale;
 uniform float rotation;
-#ifndef USE_DEBUG
 uniform vec2 size;
-#endif
 
 #ifdef USE_COLOR_RAMP
 uniform sampler2D colorRampTexture;
@@ -84,18 +82,6 @@ varying vec3 vBitangent;
 
 #ifdef USE_OIT
 #include ../../../sdk/materials/shaderLib/oit.glsl
-#endif
-
-#ifdef USE_DEBUG
-#include ../../../sdk/materials/shaderLib/glyphs.glsl
-#include ../../../sdk/materials/shaderLib/render-number.glsl
-#include ../../../sdk/materials/shaderLib/grid.glsl
-
-vec4 drawGrid(vec4 color, vec2 uv, vec3 lineColor, vec2 lineWidth) {
-  float grid = pristineGrid(uv, lineWidth);
-  color = mix(color, vec4(lineColor, 1.0), grid);
-  return color;
-}
 #endif
 
 vec3 adjustColor(vec3 color, float saturation, float brightness) {
@@ -240,37 +226,6 @@ void main() {
   vec3 sampledColor = getColor(depth);
   diffuseColor = vec4(sampledColor, opacity);
 
-  #endif
-
-  // debug
-  #ifdef USE_DEBUG
-
-  vec2 pixelCoords = vec2(vUv.x, 1.0 - vUv.y) * gridSegments;
-
-  vec2 guv = vGridUv * size;
-  diffuseColor = drawGrid(diffuseColor, guv, vec3(0.), vec2(0.01));
-
-  float fontSize = .2;
-  float scale = glyphFontSize / fontSize;
-
-  float spacing = scale;
-
-  vec2 xy = pixelCoords.xy * scale;
-  vec2 ixy = round(xy / spacing);
-
-  vec2 p = xy - spacing * ixy;
-  vec2 px = vec2(p.x, p.y + 0.25 * scale);
-  vec2 py = vec2(p.x, p.y - 0.25 * scale);
-  vec3 clr = diffuseColor.rgb;
-  vec2 uv = ixy / gridSegments;
-  uv.y = 1.0 - uv.y;
-  uv = (gridUvMat * vec3(uv, 1.0)).xy;
-  float v = referenceDepth - getElevation(uv);
-  renderNumber(clr, p, v, 1u, 0., 0.5, vec3(1., 0., 1.), 0., scale);
-  renderNumber(clr, px, ixy.x, 0u, 0., 0.5, vec3(1., 0., 0.), 0., scale);
-  renderNumber(clr, py, ixy.y, 0u, 0., 0.5, vec3(0., 0., 1.), 0., scale);
-
-  diffuseColor.rgb = clr;
   #endif
 
   // contour lines

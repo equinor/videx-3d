@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BufferGeometry,
   DoubleSide,
@@ -11,7 +11,6 @@ import type { ColorRampRef } from '../../common/color-ramps';
 import { PointerEvents } from '../../events/interaction-events';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
-import { GlyphsContext } from '../../main';
 import { useRenderingState } from '../../rendering/rendering-state';
 import { SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk';
 import {
@@ -91,7 +90,6 @@ export type SurfaceProps = CommonComponentProps &
      * passes, at the cost of a little extra texture memory. Defaults to `false`.
      */
     precomputeNormals?: boolean;
-    debug?: boolean;
   };
 
 /**
@@ -141,7 +139,6 @@ export const Surface = ({
   position,
   renderOrder,
   visible = true,
-  debug = false,
   onPointerClick,
   onPointerEnter,
   onPointerLeave,
@@ -161,8 +158,6 @@ export const Surface = ({
   // correctly, so the back-face depth mask is not needed (and would wrongly
   // occlude the transparent surface).
   const oitActive = useRenderingState(s => s.transparencyMode === 'oit');
-
-  const glyphContext = useContext(GlyphsContext);
 
   // Its contours, by value: the deprecated props mapped in where `contours` is not given.
   const linesKey = JSON.stringify(
@@ -202,25 +197,6 @@ export const Surface = ({
     precomputeNormals,
     priority,
   });
-
-  useEffect(() => {
-    if (debug && glyphContext) {
-      material.uniformsGroups = [glyphContext.glyphData];
-      material.defines.GLYPHS_LENGTH = glyphContext.glyphsCount;
-      material.uniforms.glyphAtlas.value = glyphContext.glyphAtlas;
-      material.uniforms.digits.value = [
-        ...glyphContext.encodeText('0123456789.-').indices,
-      ];
-    } else {
-      material.uniformsGroups = [];
-      material.defines.GLYPHS_LENGTH = 1;
-      material.uniforms.glyphAtlas.value = null;
-      material.uniforms.digits.value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-    }
-    material.debug = debug;
-    material.needsUpdate = true;
-    material.uniformsNeedUpdate = true;
-  }, [debug, material, glyphContext]);
 
   /* This is used to write back-side faces to the depth buffer to avoid self-transparency issues when opacity < 1 */
   const maskMaterial = useMemo(() => {
@@ -294,8 +270,6 @@ export const Surface = ({
       maskMaterial.dispose();
     };
   }, [maskMaterial]);
-
-  if (debug && !glyphContext) return null;
 
   return (
     <group
