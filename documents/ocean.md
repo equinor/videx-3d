@@ -398,6 +398,15 @@ NVIDIA RTX A1000 (ANGLE D3D11):
   more low down (overcast stratocumulus at 30 m and 300 m).
 - What its draw spends, stand-alone at 300 m (`ab`): detail noise 4 → 1 octaves 0.47–0.49 of it;
   tonal patches off 0.81 (0.78–0.83 in the Scenery's stage); waves 16 → 8 or 32 within ±15 %.
+- The foam, in the Scenery's stage surface (2026-11-20, medium, wind 10 m/s, the waves paused;
+  each variant switched in the same page, the order alternated): all of it 2–4 % of the draw at
+  30 m and 300 m, perhaps 10 % from 2 km (as noisy), where it is an even tint over every pixel.
+  So an early-out has little to skip where the foam is drawn whole and nothing where it is a
+  tint; and its sky light taken from the air's lookup where it is below a pixel (scenery.md,
+  "The air") saved 2 % at most. Neither was built.
+- ⚠️ Time code variants in one page, with a temporary uniform switched between `frames()`
+  calls in alternating order. Loaded page by page, the same variant landed in GPU clock states
+  20 % apart (A1000), which read as savings that were not there.
 
 **The sea state's waves** ([ocean-waves.md](./ocean-waves.md), 2026-11-12): the baseline's
 build (its static Storybook) and the new in two tabs of one Chrome on the A1000, 1920 × 1080 at
