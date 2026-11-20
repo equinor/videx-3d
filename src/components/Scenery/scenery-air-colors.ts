@@ -16,6 +16,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import fragmentShader from './shaders/sky-air-colors-fragment.glsl';
 
 /** Bearings round the camera the air's colours are drawn for: 0.7° apart. */
@@ -107,22 +108,10 @@ export class SkyAirColors {
       return;
     this.drawnAt.copy(at);
     this.setFrame();
-
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    const shadows = renderer.shadowMap.autoUpdate;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    renderer.shadowMap.autoUpdate = false;
-    renderer.setRenderTarget(this.target);
-    renderer.render(this.scene, camera);
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
-    renderer.shadowMap.autoUpdate = shadows;
+    renderAside(renderer, () => {
+      renderer.setRenderTarget(this.target);
+      renderer.render(this.scene, camera);
+    });
     // Its own render counted: what draws after it in the same render finds it drawn.
     this.drawnFrame = renderer.info.render.frame;
   }

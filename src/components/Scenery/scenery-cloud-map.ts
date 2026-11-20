@@ -16,6 +16,7 @@ import {
   WebGLCubeRenderTarget,
   WebGLRenderer,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import {
   WEATHER_SYSTEM_COUNT,
   weatherSystemCentresAt,
@@ -407,16 +408,17 @@ export function bakeCloudMap(
   strips = 1,
 ): boolean {
   if (map.ready) return true;
-  const outer = renderer.getRenderTarget();
-  const cubeFace = renderer.getActiveCubeFace();
-  const mipLevel = renderer.getActiveMipmapLevel();
-  const autoClear = renderer.autoClear;
-  const autoReset = renderer.info.autoReset;
-  const shadows = renderer.shadowMap.autoUpdate;
-  renderer.autoClear = false;
-  renderer.info.autoReset = false;
-  renderer.shadowMap.autoUpdate = false;
+  renderAside(renderer, () => drawCloudMapStrips(renderer, map, strips));
+  return map.ready;
+}
 
+// `strips` more of `map`'s strips: its wind's faces first, then the cloud map's and the type
+// map's rows (bakeCloudMap).
+function drawCloudMapStrips(
+  renderer: WebGLRenderer,
+  map: CloudMap,
+  strips: number,
+) {
   const [flowGenerator, generator, typesGenerator] = map.generators;
   const flowUniforms = (flowGenerator.material as ShaderMaterial).uniforms;
   const uniforms = (generator.material as ShaderMaterial).uniforms;
@@ -484,10 +486,4 @@ export function bakeCloudMap(
   target.scissorTest = false;
   typesTarget.texture.generateMipmaps = false;
   typesTarget.scissorTest = false;
-
-  renderer.setRenderTarget(outer, cubeFace, mipLevel);
-  renderer.autoClear = autoClear;
-  renderer.info.autoReset = autoReset;
-  renderer.shadowMap.autoUpdate = shadows;
-  return map.ready;
 }

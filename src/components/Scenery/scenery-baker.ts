@@ -22,6 +22,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { precompile, PrecompileOptions } from '../../rendering/precompile';
 import { SphericalHarmonicsProjector } from '../../sdk/utils/spherical-harmonics';
 import { oceanWhitecapCover } from '../Ocean/ocean-material';
@@ -279,12 +280,11 @@ export class SceneryBaker {
     }
     // Made by three's own compile, for the target bound: one, as `fromCubemap` draws it.
     if (!pmrem._cubemapMaterial) {
-      const previous = renderer.getRenderTarget();
-      const face = renderer.getActiveCubeFace();
-      const mipmap = renderer.getActiveMipmapLevel();
-      renderer.setRenderTarget(this.probeTarget);
-      this.pmrem.compileCubemapShader();
-      renderer.setRenderTarget(previous, face, mipmap);
+      const pmremGenerator = this.pmrem;
+      renderAside(renderer, () => {
+        renderer.setRenderTarget(this.probeTarget);
+        pmremGenerator.compileCubemapShader();
+      });
     }
     const materials = [
       pmrem._ggxMaterial ?? pmrem._blurMaterial,

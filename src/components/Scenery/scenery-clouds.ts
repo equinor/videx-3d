@@ -37,6 +37,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { LAYERS } from '../../layers/layers';
 import { conformalOffset } from '../../sdk/projection/conformal-sphere';
 import type { Globe } from '../../sdk/projection/globe';
@@ -1739,8 +1740,6 @@ void main() {
     }
     this.generate(renderer);
     const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
     if (outer) size.set(outer.width, outer.height);
     else renderer.getDrawingBufferSize(size);
     // A share of the CSS pixels, whatever the screen's pixel ratio: soft as the clouds are, a 2×
@@ -1799,19 +1798,11 @@ void main() {
     this.fullPose = this.poseSerial;
     if (this.marchUnchanged(renderer, camera)) return;
 
-    // Nested in the scene's render: leave its counters, shadows and clearing alone.
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    const shadows = renderer.shadowMap.autoUpdate;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    renderer.shadowMap.autoUpdate = false;
-    renderer.setRenderTarget(this.target);
-    renderer.render(this.marchScene, camera);
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
-    renderer.shadowMap.autoUpdate = shadows;
+    // Nested in the scene's render: its target, counters, shadows and clearing left alone.
+    renderAside(renderer, () => {
+      renderer.setRenderTarget(this.target);
+      renderer.render(this.marchScene, camera);
+    });
     this.marchDrawn = true;
 
     (this.compositeMaterial.uniforms.uCloudImageSize.value as Vector2).set(
@@ -1866,77 +1857,69 @@ void main() {
           ? 1
           : PARTS;
 
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    const shadows = renderer.shadowMap.autoUpdate;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    renderer.shadowMap.autoUpdate = false;
+    renderAside(renderer, () => {
+      cameraAt.setFromMatrixPosition(camera.matrixWorld);
+      partView(camera, viewNow);
+      if (split) {
+        const s = this.splitMaterial.uniforms;
+        for (let k = 0; k < PARTS; k++) {
+          (s.uCloudOffset.value as Vector2).set(k & 1, k >> 1);
+          renderer.setRenderTarget(this.parts[k]);
+          renderer.render(this.splitScene, camera);
+          this.partViews[k].copy(viewNow);
+          this.partAt[k].copy(cameraAt);
+          this.partPose[k] = this.poseSerial;
+          this.partHeld[k] = true;
+        }
+      }
 
-    cameraAt.setFromMatrixPosition(camera.matrixWorld);
-    partView(camera, viewNow);
-    if (split) {
-      const s = this.splitMaterial.uniforms;
-      for (let k = 0; k < PARTS; k++) {
-        (s.uCloudOffset.value as Vector2).set(k & 1, k >> 1);
+      const u = this.marchMaterial.uniforms;
+      const rays = u.uCloudRays.value as Vector4;
+      const scaleX = (2 * partWidth) / width;
+      const scaleY = (2 * partHeight) / height;
+      let drawn = PART_ORDER[this.phase];
+      for (let n = 0; n < count; n++) {
+        const k = PART_ORDER[this.phase];
+        this.phase = (this.phase + 1) % PARTS;
+        drawn = k;
+        rays.set(
+          scaleX,
+          scaleY,
+          scaleX - 1 + (2 * (k & 1) - 1) / width,
+          scaleY - 1 + (2 * (k >> 1) - 1) / height,
+        );
+        u.uCloudDerivative.value = 0.5;
         renderer.setRenderTarget(this.parts[k]);
-        renderer.render(this.splitScene, camera);
+        renderer.render(this.marchScene, camera);
         this.partViews[k].copy(viewNow);
         this.partAt[k].copy(cameraAt);
         this.partPose[k] = this.poseSerial;
         this.partHeld[k] = true;
       }
-    }
+      rays.set(1, 1, 0, 0);
+      u.uCloudDerivative.value = 1;
+      this.partsFresh = Math.min(this.partsFresh + count, PARTS);
 
-    const u = this.marchMaterial.uniforms;
-    const rays = u.uCloudRays.value as Vector4;
-    const scaleX = (2 * partWidth) / width;
-    const scaleY = (2 * partHeight) / height;
-    let drawn = PART_ORDER[this.phase];
-    for (let n = 0; n < count; n++) {
-      const k = PART_ORDER[this.phase];
-      this.phase = (this.phase + 1) % PARTS;
-      drawn = k;
-      rays.set(
-        scaleX,
-        scaleY,
-        scaleX - 1 + (2 * (k & 1) - 1) / width,
-        scaleY - 1 + (2 * (k >> 1) - 1) / height,
-      );
-      u.uCloudDerivative.value = 0.5;
-      renderer.setRenderTarget(this.parts[k]);
-      renderer.render(this.marchScene, camera);
-      this.partViews[k].copy(viewNow);
-      this.partAt[k].copy(cameraAt);
-      this.partPose[k] = this.poseSerial;
-      this.partHeld[k] = true;
-    }
-    rays.set(1, 1, 0, 0);
-    u.uCloudDerivative.value = 1;
-    this.partsFresh = Math.min(this.partsFresh + count, PARTS);
-
-    const r = this.rebuildMaterial.uniforms;
-    r.uCloudPhase.value = drawn;
-    (r.uCloudImageSize.value as Vector2).set(width, height);
-    (r.uCloudPartSize.value as Vector2).set(partWidth, partHeight);
-    for (let k = 0; k < PARTS; k++) {
-      (r.uCloudPartUnview.value[k] as Matrix4).copy(this.partViews[k]).invert();
-      (r.uCloudPartAt.value[k] as Vector3).subVectors(this.partAt[k], cameraAt);
-      (r.uCloudPartState.value[k] as Vector2).set(
-        this.partHeld[k] ? 1 : 0,
-        this.partPose[k] === this.poseSerial ? 0 : 1,
-      );
-    }
-    renderer.setRenderTarget(this.target);
-    renderer.render(this.rebuildScene, camera);
-
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
-    renderer.shadowMap.autoUpdate = shadows;
+      const r = this.rebuildMaterial.uniforms;
+      r.uCloudPhase.value = drawn;
+      (r.uCloudImageSize.value as Vector2).set(width, height);
+      (r.uCloudPartSize.value as Vector2).set(partWidth, partHeight);
+      for (let k = 0; k < PARTS; k++) {
+        (r.uCloudPartUnview.value[k] as Matrix4)
+          .copy(this.partViews[k])
+          .invert();
+        (r.uCloudPartAt.value[k] as Vector3).subVectors(
+          this.partAt[k],
+          cameraAt,
+        );
+        (r.uCloudPartState.value[k] as Vector2).set(
+          this.partHeld[k] ? 1 : 0,
+          this.partPose[k] === this.poseSerial ? 0 : 1,
+        );
+      }
+      renderer.setRenderTarget(this.target);
+      renderer.render(this.rebuildScene, camera);
+    });
     this.marchDrawn = true;
     (this.compositeMaterial.uniforms.uCloudImageSize.value as Vector2).set(
       width,
@@ -2275,12 +2258,11 @@ void main() {
       .copy(globe.up)
       .applyMatrix3(this.earth)
       .normalize();
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    renderer.setRenderTarget(this.sceneCoverTarget);
-    renderer.render(this.sceneCoverScene, coverCamera);
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
+    // An opaque triangle over the one texel: nothing to clear first.
+    renderAside(renderer, () => {
+      renderer.setRenderTarget(this.sceneCoverTarget);
+      renderer.render(this.sceneCoverScene, coverCamera);
+    });
     this.sceneCoverReading = true;
     const pixel = this.sceneCoverPixel;
     renderer
@@ -2404,21 +2386,10 @@ void main() {
       );
       (u.uCloudShadowEast.value as Vector3).copy(eastward);
       (u.uCloudShadowNorth.value as Vector3).copy(north);
-      const outer = renderer.getRenderTarget();
-      const cubeFace = renderer.getActiveCubeFace();
-      const mipLevel = renderer.getActiveMipmapLevel();
-      const autoClear = renderer.autoClear;
-      const autoReset = renderer.info.autoReset;
-      const shadows = renderer.shadowMap.autoUpdate;
-      renderer.autoClear = false;
-      renderer.info.autoReset = false;
-      renderer.shadowMap.autoUpdate = false;
-      renderer.setRenderTarget(this.shadowTarget);
-      renderer.render(this.shadowScene, camera);
-      renderer.setRenderTarget(outer, cubeFace, mipLevel);
-      renderer.autoClear = autoClear;
-      renderer.info.autoReset = autoReset;
-      renderer.shadowMap.autoUpdate = shadows;
+      renderAside(renderer, () => {
+        renderer.setRenderTarget(this.shadowTarget);
+        renderer.render(this.shadowScene, camera);
+      });
       drawn.valid = true;
       drawn.version = this.version;
       drawn.terrain = this.terrain.version;

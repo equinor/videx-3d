@@ -18,6 +18,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { readFloatTargetAsync } from './read-target-async';
+import { renderAside } from './render-aside';
 
 const coord = new Vector3();
 const direction = new Vector3();
@@ -198,15 +199,10 @@ export class SphericalHarmonicsProjector {
     const uniforms = this.material.uniforms;
     uniforms.uCube.value = cube;
     uniforms.uSize.value = size;
-    const previous = renderer.getRenderTarget();
-    const face = renderer.getActiveCubeFace();
-    const mip = renderer.getActiveMipmapLevel();
-    const autoReset = renderer.info.autoReset;
-    renderer.info.autoReset = false;
-    renderer.setRenderTarget(this.target);
-    renderer.render(this.scene, this.camera);
-    renderer.setRenderTarget(previous, face, mip);
-    renderer.info.autoReset = autoReset;
+    renderAside(renderer, () => {
+      renderer.setRenderTarget(this.target);
+      renderer.render(this.scene, this.camera);
+    });
     uniforms.uCube.value = null;
     return readFloatTargetAsync(renderer, this.target).then(pixels => {
       const sh = target.zero();

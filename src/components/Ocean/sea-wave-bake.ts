@@ -16,6 +16,7 @@ import {
   type WebGLRenderer,
 } from 'three';
 import { FullscreenRenderer } from '../../rendering/fullscreen-renderer';
+import { renderAside } from '../../sdk/utils/render-aside';
 import type { SeaLayer, SeaLayerTable } from '../../sdk/weather/sea-state';
 import fragmentShader from './shaders/sea-bake-fragment.glsl';
 import vertexShader from './shaders/sea-bake-vertex.glsl';
@@ -101,23 +102,27 @@ export class SeaWaveBake {
     tables: readonly SeaLayerTable[],
     drawn?: (index: number) => boolean,
   ): void {
-    const previous = renderer.getRenderTarget();
     const uniforms = this.material.uniforms;
-    tables.forEach((table, i) => {
-      if (drawn && !drawn(i)) return;
-      const waves = this.tables[i];
-      (waves.image.data as Float32Array).set(table.data);
-      waves.needsUpdate = true;
-      uniforms.uWaves.value = waves;
-      uniforms.uCount.value = table.count;
-      uniforms.uSize.value = table.layer.size;
-      (uniforms.uTurn.value as Vector2).set(
-        Math.cos(table.layer.angle),
-        Math.sin(table.layer.angle),
-      );
-      this.fullscreen.renderMaterial(renderer, this.targets[i], this.material);
-    });
-    renderer.setRenderTarget(previous);
+    renderAside(renderer, () =>
+      tables.forEach((table, i) => {
+        if (drawn && !drawn(i)) return;
+        const waves = this.tables[i];
+        (waves.image.data as Float32Array).set(table.data);
+        waves.needsUpdate = true;
+        uniforms.uWaves.value = waves;
+        uniforms.uCount.value = table.count;
+        uniforms.uSize.value = table.layer.size;
+        (uniforms.uTurn.value as Vector2).set(
+          Math.cos(table.layer.angle),
+          Math.sin(table.layer.angle),
+        );
+        this.fullscreen.renderMaterial(
+          renderer,
+          this.targets[i],
+          this.material,
+        );
+      }),
+    );
   }
 
   dispose(): void {

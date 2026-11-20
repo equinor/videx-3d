@@ -8,6 +8,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { LAYERS } from '../layers/layers';
+import { renderAside } from '../sdk/utils/render-aside';
 import { isOitCapable, OitCapableMaterial, OitPass } from './oit-material';
 import type { Pass } from './Pass';
 import { OITRenderPass } from './passes/OITRenderPass';
@@ -408,26 +409,26 @@ function start(renderer: WebGLRenderer, job: Job): Set<Material> {
   }
   const forced = route === 'forced' ? capable.filter(m => m.transparent) : [];
 
-  const previous = renderer.getRenderTarget();
-  const face = renderer.getActiveCubeFace();
-  const mipmap = renderer.getActiveMipmapLevel();
   try {
-    renderer.setRenderTarget(job.offscreen ? offscreenTarget(renderer) : null);
-    for (const m of forced) m.transparent = false;
-    if (route === 'variants') {
-      for (const pass of passes) {
-        object.material = Array.isArray(original)
-          ? original.map(m => variantOf(m, pass))
-          : variantOf(original, pass);
+    renderAside(renderer, () => {
+      renderer.setRenderTarget(
+        job.offscreen ? offscreenTarget(renderer) : null,
+      );
+      for (const m of forced) m.transparent = false;
+      if (route === 'variants') {
+        for (const pass of passes) {
+          object.material = Array.isArray(original)
+            ? original.map(m => variantOf(m, pass))
+            : variantOf(original, pass);
+          compile();
+        }
+      } else {
         compile();
       }
-    } else {
-      compile();
-    }
+    });
   } finally {
     object.material = original;
     for (const m of forced) m.transparent = true;
-    renderer.setRenderTarget(previous, face, mipmap);
   }
   return materials;
 }

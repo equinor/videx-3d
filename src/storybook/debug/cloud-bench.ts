@@ -21,6 +21,7 @@ import {
 } from 'three';
 import { CloudsRenderer } from '../../components/Scenery/scenery-clouds';
 import type { CameraManager } from '../../sdk/managers/CameraManager';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { showAb, type AbImage, type AbStats } from './ab-viewer';
 import {
   frameWithin,
@@ -465,18 +466,10 @@ export function createCloudBench(
   // Draw `scene` into `target` as the volume draws its passes: nested state left alone.
   const draw = (scene: Scene, target: WebGLRenderTarget, camera: Camera) => {
     const gl = renderer();
-    const autoClear = gl.autoClear;
-    const autoReset = gl.info.autoReset;
-    const shadows = gl.shadowMap.autoUpdate;
-    gl.autoClear = false;
-    gl.info.autoReset = false;
-    gl.shadowMap.autoUpdate = false;
-    gl.setRenderTarget(target);
-    gl.render(scene, camera);
-    gl.setRenderTarget(null);
-    gl.autoClear = autoClear;
-    gl.info.autoReset = autoReset;
-    gl.shadowMap.autoUpdate = shadows;
+    renderAside(gl, () => {
+      gl.setRenderTarget(target);
+      gl.render(scene, camera);
+    });
   };
 
   // GPU ms of `run`, `reps` times back to back: their median. Throws rather than wait for ever

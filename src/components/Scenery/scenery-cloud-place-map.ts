@@ -17,6 +17,7 @@ import {
   WebGLArrayRenderTarget,
   WebGLRenderer,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { createSceneryGeometry } from './scenery-material';
 
 // Texels a side, at least and at most.
@@ -166,25 +167,17 @@ export class CloudPlaceMap {
   private draw(renderer: WebGLRenderer, size: number) {
     const target = this.targetOf(size);
     const material = this.material!;
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    this.scene.add(this.mesh!);
-    for (let layer = 0; layer < 2; layer++) {
-      material.uniforms.uCloudPlaceLayer.value = layer;
-      target.texture.generateMipmaps = layer === 1;
-      renderer.setRenderTarget(target, layer);
-      renderer.render(this.scene, camera);
-    }
-    target.texture.generateMipmaps = false;
-    this.scene.remove(this.mesh!);
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
+    renderAside(renderer, () => {
+      this.scene.add(this.mesh!);
+      for (let layer = 0; layer < 2; layer++) {
+        material.uniforms.uCloudPlaceLayer.value = layer;
+        target.texture.generateMipmaps = layer === 1;
+        renderer.setRenderTarget(target, layer);
+        renderer.render(this.scene, camera);
+      }
+      target.texture.generateMipmaps = false;
+      this.scene.remove(this.mesh!);
+    });
   }
 
   // Its target, `size` texels a side, made anew if it is not.

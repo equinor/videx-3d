@@ -25,6 +25,7 @@ import {
   type WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { GroundMap } from '../../sdk/materials/ground-map';
 import {
   geoReliefTileGrid,
@@ -490,42 +491,31 @@ export class SceneryGround {
     );
     u.uTerrainRadius.value = radius;
 
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    const shadows = renderer.shadowMap.autoUpdate;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    renderer.shadowMap.autoUpdate = false;
-    this.scene.add(this.generator);
-    if (!level) {
-      u.uTerrainMode.value = 0;
-      u.uMapSize.value = EARTH_FACE;
-      for (let face = 0; face < 6; face++) {
-        u.uMapFace.value = face;
-        // Its mipmaps once, after the last face.
-        this.earth.texture.generateMipmaps = face === 5;
-        renderer.setRenderTarget(this.earth, face);
+    renderAside(renderer, () => {
+      this.scene.add(this.generator);
+      if (!level) {
+        u.uTerrainMode.value = 0;
+        u.uMapSize.value = EARTH_FACE;
+        for (let face = 0; face < 6; face++) {
+          u.uMapFace.value = face;
+          // Its mipmaps once, after the last face.
+          this.earth.texture.generateMipmaps = face === 5;
+          renderer.setRenderTarget(this.earth, face);
+          renderer.render(this.scene, this.camera);
+        }
+        this.earth.texture.generateMipmaps = false;
+      } else if (frame) {
+        u.uTerrainMode.value = 1;
+        u.uMapSize.value = level.spec.size;
+        u.uTerrainNearReach.value = level.spec.reach / radius;
+        (u.uTerrainNearCentre.value as Vector3).copy(frame.centre);
+        (u.uTerrainNearEast.value as Vector3).copy(frame.east);
+        (u.uTerrainNearNorth.value as Vector3).copy(frame.north);
+        renderer.setRenderTarget(level.targets[level.index]);
         renderer.render(this.scene, this.camera);
       }
-      this.earth.texture.generateMipmaps = false;
-    } else if (frame) {
-      u.uTerrainMode.value = 1;
-      u.uMapSize.value = level.spec.size;
-      u.uTerrainNearReach.value = level.spec.reach / radius;
-      (u.uTerrainNearCentre.value as Vector3).copy(frame.centre);
-      (u.uTerrainNearEast.value as Vector3).copy(frame.east);
-      (u.uTerrainNearNorth.value as Vector3).copy(frame.north);
-      renderer.setRenderTarget(level.targets[level.index]);
-      renderer.render(this.scene, this.camera);
-    }
-    this.scene.remove(this.generator);
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
-    renderer.shadowMap.autoUpdate = shadows;
+      this.scene.remove(this.generator);
+    });
     u.uTerrainGrid.value = null;
     texture.dispose();
   }

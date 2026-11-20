@@ -21,6 +21,7 @@ import {
   softCoverStatistics,
   type SoftCoverStatistics,
 } from '../../sdk/weather/soft-clouds';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { createSceneryGeometry } from './scenery-material';
 import volumeShader from './shaders/cloud-cover-volume.glsl';
 
@@ -217,43 +218,36 @@ export class CloudCoverVolume {
     const size = CLOUD_COVER_VOLUME_SIZE;
     if (this.slice >= size) return this.read !== null && this.lost !== null;
 
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    scene.add(this.mesh);
-    const u = this.material.uniforms;
-    this.mesh.material = this.material;
-    const last = Math.min(this.slice + VOLUME_SLICES, size);
-    for (; this.slice < last; this.slice++) {
-      u.uCoverSlice.value = this.slice;
-      // Their mipmaps once, after the last slice.
-      const lastSlice = this.slice === size - 1;
-      for (const target of [this.moments, this.target]) {
-        target.texture.generateMipmaps = lastSlice;
-        renderer.setRenderTarget(target, this.slice);
-        renderer.render(scene, camera);
-        target.texture.generateMipmaps = false;
+    const done = renderAside(renderer, () => {
+      scene.add(this.mesh);
+      const u = this.material.uniforms;
+      this.mesh.material = this.material;
+      const last = Math.min(this.slice + VOLUME_SLICES, size);
+      for (; this.slice < last; this.slice++) {
+        u.uCoverSlice.value = this.slice;
+        // Their mipmaps once, after the last slice.
+        const lastSlice = this.slice === size - 1;
+        for (const target of [this.moments, this.target]) {
+          target.texture.generateMipmaps = lastSlice;
+          renderer.setRenderTarget(target, this.slice);
+          renderer.render(scene, camera);
+          target.texture.generateMipmaps = false;
+        }
       }
-    }
-    const done = this.slice >= size;
-    if (done) {
-      this.mesh.material = this.sampleMaterial;
-      u.uCoverSize.value = SAMPLES;
-      renderer.setRenderTarget(this.samples);
-      renderer.render(scene, camera);
-      u.uCoverSize.value = size;
-      this.mesh.material = this.spreadMaterial;
-      renderer.setRenderTarget(this.spreadSamples);
-      renderer.render(scene, camera);
-    }
-    scene.remove(this.mesh);
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
+      const finished = this.slice >= size;
+      if (finished) {
+        this.mesh.material = this.sampleMaterial;
+        u.uCoverSize.value = SAMPLES;
+        renderer.setRenderTarget(this.samples);
+        renderer.render(scene, camera);
+        u.uCoverSize.value = size;
+        this.mesh.material = this.spreadMaterial;
+        renderer.setRenderTarget(this.spreadSamples);
+        renderer.render(scene, camera);
+      }
+      scene.remove(this.mesh);
+      return finished;
+    });
 
     if (done) {
       const buffer = new Float32Array(SAMPLES * SAMPLES * 4);

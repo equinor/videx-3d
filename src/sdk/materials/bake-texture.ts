@@ -20,6 +20,7 @@ import {
   PRECOMPILE_PRIORITY,
   PrecompileOptions,
 } from '../../rendering/precompile';
+import { renderAside } from '../utils/render-aside';
 
 /**
  * A texture drawn once on the GPU by a fragment shader of its own ({@link bakeTexture}).
@@ -137,15 +138,10 @@ export function bakeTexture(
   };
   const draw = () => {
     if (disposed) return false;
-    const previous = renderer.getRenderTarget();
-    const face = renderer.getActiveCubeFace();
-    const mipmap = renderer.getActiveMipmapLevel();
-    const autoClear = renderer.autoClear;
-    renderer.autoClear = false;
-    renderer.setRenderTarget(target);
-    renderer.render(scene, camera);
-    renderer.setRenderTarget(previous, face, mipmap);
-    renderer.autoClear = autoClear;
+    renderAside(renderer, () => {
+      renderer.setRenderTarget(target);
+      renderer.render(scene, camera);
+    });
     release();
     return true;
   };

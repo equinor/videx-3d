@@ -14,6 +14,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { FullscreenRenderer } from '../../rendering/fullscreen-renderer';
+import { renderAside } from '../../sdk/utils/render-aside';
 import fragmentShader from './shaders/foam-life-fragment.glsl';
 import vertexShader from './shaders/foam-life-vertex.glsl';
 
@@ -226,9 +227,9 @@ export class SeaFoamLife {
     const from = this.targets[this.current];
     const into = this.targets[1 - this.current];
     u.uFoamPrev.value = this.fresh ? null : from.texture;
-    const previous = renderer.getRenderTarget();
-    this.fullscreen.renderMaterial(renderer, into, this.material);
-    renderer.setRenderTarget(previous);
+    renderAside(renderer, () =>
+      this.fullscreen.renderMaterial(renderer, into, this.material),
+    );
     this.current = 1 - this.current;
     this.fresh = false;
 

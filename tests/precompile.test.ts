@@ -35,6 +35,9 @@ function mockRenderer(ready: () => boolean = () => true) {
   const compiled: Compiled[] = [];
   const programs = new Map<Material, { isReady(): boolean }>();
   const renderer = {
+    autoClear: true,
+    info: { autoReset: true },
+    shadowMap: { autoUpdate: true },
     getRenderTarget: () => target,
     getActiveCubeFace: () => 0,
     getActiveMipmapLevel: () => 0,

@@ -1,4 +1,5 @@
 import { WebGLRenderer, WebGLRenderTarget } from 'three';
+import { renderAside } from './render-aside';
 
 /**
  * Read a float or half-float render target back without stalling the page: its pixels as
@@ -33,14 +34,12 @@ export function readFloatTargetAsync(
     floats * 4 * faces.length,
     gl.STREAM_READ,
   );
-  const previous = renderer.getRenderTarget();
-  const previousFace = renderer.getActiveCubeFace();
-  const previousMip = renderer.getActiveMipmapLevel();
-  faces.forEach((face, k) => {
-    renderer.setRenderTarget(target, face);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, k * floats * 4);
-  });
-  renderer.setRenderTarget(previous, previousFace, previousMip);
+  renderAside(renderer, () =>
+    faces.forEach((face, k) => {
+      renderer.setRenderTarget(target, face);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, k * floats * 4);
+    }),
+  );
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
   const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
   gl.flush();

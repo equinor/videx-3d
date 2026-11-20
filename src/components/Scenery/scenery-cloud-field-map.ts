@@ -17,6 +17,7 @@ import {
   WebGLArrayRenderTarget,
   WebGLRenderer,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { createSceneryGeometry } from './scenery-material';
 
 // Texels a side at most: some 200 m over a weather of 100 km's radius.
@@ -294,48 +295,40 @@ export class CloudFieldMap {
   private draw(renderer: WebGLRenderer, inputs: CloudFieldMapInputs) {
     const drawing = this.drawing!;
     const target = this.target(drawing.target, drawing.size, drawing.levels);
-    const outer = renderer.getRenderTarget();
-    const cubeFace = renderer.getActiveCubeFace();
-    const mipLevel = renderer.getActiveMipmapLevel();
-    const autoClear = renderer.autoClear;
-    const autoReset = renderer.info.autoReset;
-    renderer.autoClear = false;
-    renderer.info.autoReset = false;
-    this.scene.add(this.mesh!);
-    this.drawArea.value.set(0, 0, drawing.half, drawing.size);
-    const shift = this.drawShift.value;
-    let left = Math.max(
-      Math.floor(this.options.texelsAFrame / drawing.size),
-      1,
-    );
-    while (left > 0 && drawing.layer < drawing.levels) {
-      const rows = Math.min(left, drawing.size - drawing.row);
-      this.drawLevel.value = drawing.layer;
-      // Where the clouds of the drawing's time lie now.
-      shift
-        .copy(inputs.winds[drawing.layer] ?? shift.set(0, 0))
-        .multiplyScalar(inputs.time - drawing.time);
-      const last =
-        drawing.layer === drawing.levels - 1 &&
-        drawing.row + rows >= drawing.size;
-      target.texture.generateMipmaps = last;
-      target.scissor.set(0, drawing.row, drawing.size, rows);
-      target.scissorTest = true;
-      renderer.setRenderTarget(target, drawing.layer);
-      renderer.render(this.scene, camera);
-      target.texture.generateMipmaps = false;
-      drawing.row += rows;
-      left -= rows;
-      if (drawing.row >= drawing.size) {
-        drawing.row = 0;
-        drawing.layer++;
+    renderAside(renderer, () => {
+      this.scene.add(this.mesh!);
+      this.drawArea.value.set(0, 0, drawing.half, drawing.size);
+      const shift = this.drawShift.value;
+      let left = Math.max(
+        Math.floor(this.options.texelsAFrame / drawing.size),
+        1,
+      );
+      while (left > 0 && drawing.layer < drawing.levels) {
+        const rows = Math.min(left, drawing.size - drawing.row);
+        this.drawLevel.value = drawing.layer;
+        // Where the clouds of the drawing's time lie now.
+        shift
+          .copy(inputs.winds[drawing.layer] ?? shift.set(0, 0))
+          .multiplyScalar(inputs.time - drawing.time);
+        const last =
+          drawing.layer === drawing.levels - 1 &&
+          drawing.row + rows >= drawing.size;
+        target.texture.generateMipmaps = last;
+        target.scissor.set(0, drawing.row, drawing.size, rows);
+        target.scissorTest = true;
+        renderer.setRenderTarget(target, drawing.layer);
+        renderer.render(this.scene, camera);
+        target.texture.generateMipmaps = false;
+        drawing.row += rows;
+        left -= rows;
+        if (drawing.row >= drawing.size) {
+          drawing.row = 0;
+          drawing.layer++;
+        }
       }
-    }
-    target.scissorTest = false;
-    this.scene.remove(this.mesh!);
-    renderer.setRenderTarget(outer, cubeFace, mipLevel);
-    renderer.autoClear = autoClear;
-    renderer.info.autoReset = autoReset;
+      target.scissorTest = false;
+      this.scene.remove(this.mesh!);
+    });
     if (drawing.layer < drawing.levels) return;
 
     const index = drawing.target;

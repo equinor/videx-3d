@@ -127,6 +127,7 @@ export * from './utils/num-array';
 export * from './utils/numbers';
 export * from './utils/polyline-2d';
 export * from './utils/read-target-async';
+export * from './utils/render-aside';
 export * from './utils/scene';
 export * from './utils/segments';
 export * from './utils/solar-position';

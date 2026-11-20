@@ -12,6 +12,7 @@ import {
   WebGL3DRenderTarget,
   WebGLRenderer,
 } from 'three';
+import { renderAside } from '../../sdk/utils/render-aside';
 import { createSceneryGeometry } from './scenery-material';
 import fragmentShader from './shaders/cloud-noise-volume.glsl';
 
@@ -113,33 +114,20 @@ export function generateCloudNoiseVolumes(
 ) {
   if (noise.generated) return;
   noise.generated = true;
-  const outer = renderer.getRenderTarget();
-  const cubeFace = renderer.getActiveCubeFace();
-  const mipLevel = renderer.getActiveMipmapLevel();
-  const autoClear = renderer.autoClear;
-  const autoReset = renderer.info.autoReset;
-  const shadows = renderer.shadowMap.autoUpdate;
-  renderer.autoClear = false;
-  renderer.info.autoReset = false;
-  renderer.shadowMap.autoUpdate = false;
-
-  const uniforms = (noise.generator.material as ShaderMaterial).uniforms;
-  scene.add(noise.generator);
-  const target = noise.shape;
-  const size = target.depth;
-  uniforms.uNoiseSize.value = size;
-  for (let slice = 0; slice < size; slice++) {
-    uniforms.uNoiseSlice.value = slice;
-    // Its mipmaps once, after the last slice.
-    target.texture.generateMipmaps = slice === size - 1;
-    renderer.setRenderTarget(target, slice);
-    renderer.render(scene, camera);
-  }
-  target.texture.generateMipmaps = false;
-  scene.remove(noise.generator);
-
-  renderer.setRenderTarget(outer, cubeFace, mipLevel);
-  renderer.autoClear = autoClear;
-  renderer.info.autoReset = autoReset;
-  renderer.shadowMap.autoUpdate = shadows;
+  renderAside(renderer, () => {
+    const uniforms = (noise.generator.material as ShaderMaterial).uniforms;
+    scene.add(noise.generator);
+    const target = noise.shape;
+    const size = target.depth;
+    uniforms.uNoiseSize.value = size;
+    for (let slice = 0; slice < size; slice++) {
+      uniforms.uNoiseSlice.value = slice;
+      // Its mipmaps once, after the last slice.
+      target.texture.generateMipmaps = slice === size - 1;
+      renderer.setRenderTarget(target, slice);
+      renderer.render(scene, camera);
+    }
+    target.texture.generateMipmaps = false;
+    scene.remove(noise.generator);
+  });
 }
