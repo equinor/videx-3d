@@ -851,7 +851,7 @@ const meta = {
     mergeFront: {
       control: { type: 'boolean' },
       description:
-        'Render the exact front layer in the same geometry pass as the tail instead of a separate front pass.',
+        'Render the exact front layer in the same geometry pass as the tail instead of a separate front pass (the default). Off, every transparent fragment is shaded twice.',
       table: { category: 'Advanced (Diagnostics)' },
     },
     showDebugTargets: {
@@ -928,7 +928,7 @@ const commonArgs = {
   msaaSamples: 0 as const,
   smaaQuality: 'high' as const,
   skipFrontPeeling: false,
-  mergeFront: false,
+  mergeFront: true,
   showDebugTargets: false,
   profileTail: false,
   occlusionDepthStamp: false,

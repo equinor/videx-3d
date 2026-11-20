@@ -1398,7 +1398,8 @@ const meta = {
       control: 'boolean',
       description:
         'Render the exact front layer in the same geometry pass as the tail (a ' +
-        'second render-target attachment) instead of a separate front pass.',
+        'second render-target attachment) instead of a separate front pass (the ' +
+        'default). Off, every transparent fragment is shaded twice.',
       table: { category: 'Pipeline' },
     },
     tailSlices: {
@@ -1458,7 +1459,7 @@ const meta = {
     oitMaterials: true,
     frontPeelTolerance: DEFAULT_OIT_FRONT_TOLERANCE,
     skipFrontPeeling: false,
-    mergeFront: false,
+    mergeFront: true,
     tailSlices: 0,
     tailSliceSpacing: 'linear',
     supersample: 1,

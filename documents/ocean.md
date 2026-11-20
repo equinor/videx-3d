@@ -335,7 +335,10 @@ Time the sea on **debug / Ocean / Sea Bench**
 story `StandAloneOcean`) or a `Scenery`'s endless sea with a stage over the field as in its
 Timelapse (`Default`), with the same sun (10:00 on the scenery stories' date and place), wind
 and poses, in a canvas of a fixed size at a fixed pixel ratio (1920 × 1080 at 1 by default).
-`clouds` adds a sky preset's clouds (`SceneryClouds`, medium).
+`clouds` adds a sky preset's clouds (`SceneryClouds`, medium). `pipeline: 'oit'` draws the
+frame through an `OITRenderPass` (SMAA, then `OutputPass`), as a host with see-through data
+would; the sea is see-through, so it is drawn in that pass's passes, and the bench sums each
+draw's.
 
 The poses (`SEA_POSES`) look south about the origin from 2 m, 30 m, 300 m, 2 km, 20 km, 100 km
 and 1000 km up, and straight down from 2 km. The stand-alone plane's edge shows from 20 km, so
@@ -407,6 +410,16 @@ NVIDIA RTX A1000 (ANGLE D3D11):
 - ⚠️ Time code variants in one page, with a temporary uniform switched between `frames()`
   calls in alternating order. Loaded page by page, the same variant landed in GPU clock states
   20 % apart (A1000), which read as savings that were not there.
+- ⚠️ The poses hold the camera still, and `paused` the waves: right for a variant's ratio and
+  an image diff, not for what a frame costs in use, where the sea and the clouds reuse less.
+  For that, drive the camera along the same frame-indexed path for each variant, the clock
+  running.
+- **Through OIT** (2026-11-20, A1000, the camera orbiting, the clock running): a see-through
+  sea is drawn in the min-depth and tail passes, and with a separate front pass in that one
+  too, each shading it whole. The Timelapse's stage surface at 300 m: 2.20 ms drawn plainly,
+  4.12 ms through OIT with a separate front pass, 2.02 ms with `mergeFront` (the default); at
+  2 km 2.43 / 5.69 / 2.42 ms. The stand-alone `Ocean` near: its surface 0.95 / 1.72 / 1.04 ms,
+  its bed 0.45 / 0.94 / 0.59 ms (oit-guide.md, "What a transparent frame costs").
 
 **The sea state's waves** ([ocean-waves.md](./ocean-waves.md), 2026-11-12): the baseline's
 build (its static Storybook) and the new in two tabs of one Chrome on the A1000, 1920 × 1080 at

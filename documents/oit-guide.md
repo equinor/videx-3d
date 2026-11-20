@@ -291,7 +291,8 @@ object.layers.enable(LAYERS.OVERLAY); // keep layer 0 enabled too
 
 ## 5. Optional features
 
-All of these are fields on the `OITRenderPass` instance and default to off/cheap.
+All of these are fields on the `OITRenderPass` instance and default to the cheaper
+setting (`mergeFront` on, the rest off).
 Set them after constructing the pass (e.g. in an effect), not via the constructor,
 so you don't recreate the pass:
 
@@ -303,7 +304,7 @@ useEffect(() => { oitPass.occlusionDepthStamp = true; }, [oitPass]);
 | Field | Default | Purpose |
 |-------|---------|---------|
 | `skipFront` | `false` | Debug: disable the exact depth-peeled front layer; resolve *every* transparent fragment through the WBOIT tail. Useful for isolating tail behaviour. |
-| `mergeFront` | `false` | Render the exact front layer in the same geometry pass as the tail (a second render-target attachment) instead of a separate front pass — one transparent geometry pass fewer, same image. Not used when the output is multisampled. See [What a transparent frame costs](#what-a-transparent-frame-costs). |
+| `mergeFront` | `true` | Render the exact front layer in the same geometry pass as the tail (a second render-target attachment) instead of a separate front pass — one transparent geometry pass fewer, same image, and each transparent fragment shaded once instead of twice. Not used when the output is multisampled. Set `false` only to compare. See [What a transparent frame costs](#what-a-transparent-frame-costs). |
 | `tailSlices` | `0` | Split the weighted-blended tail into 2 or 3 per-pixel depth slices, composited back to front, so ordering errors stay within a slice. No extra geometry pass. See [Tail depth slices](#tail-depth-slices-tailslices). |
 | `tailSliceSpacing` | `'linear'` | How `tailSlices` divides each pixel's depth range: `'linear'` (equal depth) or `'log'` (equal depth ratio — thinner slices near the front). |
 | `frontPeelTolerance` | `1e-7` | How close to the per-pixel nearest transparent fragment a fragment may be and still count as the front layer — see below. |
@@ -413,6 +414,24 @@ targets); the separate front pass it replaces cost 4.7–18.7 ms. The images mat
 rounding: 0.0012 % (debug benchmark) and 0.0001 % (FieldColumn, no water) of the
 pixels differ by more than 1/255. `skipFront` (one pass) is cheaper still, but drops
 the exact front layer.
+
+A see-through surface across the whole view shows it most: with a separate front pass
+each transparent fragment is shaded twice, as the tail pass shades every fragment before
+it discards the front's, and the front pass every one before it discards the tail's.
+Merged, it is shaded once. The Scenery's staged sea, its surface the only object routed
+through OIT (2026-11-20, RTX A1000, 1975 × 970, the camera orbiting and the clock
+running; GPU ms of the surface's draws):
+
+| View | Plain render | Separate front (3 draws) | `mergeFront` (2 draws) |
+|---|---|---|---|
+| Timelapse, 300 m | 2.20 | 4.12 | 2.02 |
+| Timelapse, 2 km | 2.43 | 5.69 | 2.42 |
+| Clouds Earth, ~1000 km | 1.60 | 4.96 | 2.50 |
+
+The stand-alone `Ocean` near (OIT example): its surface 0.95 / 1.72 / 1.04 ms, its bed
+0.45 / 0.94 / 0.59 ms. Merged, the Sea Bench's images matched the separate front's but
+for 0.02–0.05 % of the pixels, single ones at foam and glint edges where SMAA's blend
+turned. Hence `mergeFront` is on by default.
 
 ### Tail depth slices (`tailSlices`)
 

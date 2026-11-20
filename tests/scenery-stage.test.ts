@@ -55,6 +55,26 @@ describe('sky stage', () => {
     }
   });
 
+  it('runs no edge along the stage’s centre lines, where a camera over one loses its pixels', () => {
+    const plane = createSceneryStagePlane(bounds, extent);
+    const index = plane.getIndex()!.array;
+    const p = plane.getAttribute('position') as BufferAttribute;
+    const cx = (bounds[0] + bounds[2]) / 2;
+    const cz = (bounds[1] + bounds[3]) / 2;
+    let along = 0;
+    for (let i = 0; i < index.length; i += 3) {
+      for (let e = 0; e < 3; e++) {
+        const a = index[i + e];
+        const b = index[i + ((e + 1) % 3)];
+        if (Math.abs(p.getX(a) - cx) < 1e-3 && Math.abs(p.getX(b) - cx) < 1e-3)
+          along++;
+        if (Math.abs(p.getZ(a) - cz) < 1e-3 && Math.abs(p.getZ(b) - cz) < 1e-3)
+          along++;
+      }
+    }
+    expect(along).toBe(0);
+  });
+
   it('builds a plane about a point too, out to the extent: a stage of no area', () => {
     const plane = createSceneryStagePlane([0, 0, 0, 0], [-3e6, -3e6, 3e6, 3e6]);
     const p = plane.getAttribute('position') as BufferAttribute;

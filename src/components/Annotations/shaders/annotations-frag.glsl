@@ -7,7 +7,9 @@ uniform vec2 resolution;
 
 varying vec2 vUv;
 
-layout(location = 0) out float value;
+// A vec4 into the single-channel target: a float output makes Direct3D warn (X3206, its
+// output copy truncated).
+layout(location = 0) out vec4 occlusion;
 
 const float epsilon = 1e-8;
 const vec4 viewSpace = vec4(-0.99, 0.99, -0.99, 0.99);
@@ -61,10 +63,10 @@ void main() {
     }
   }
 
-  value = 0.0;
+  float value = 0.0;
   if((sceneDepth + epsilon) < pointDepth)
     value += 1.0 / 255.0;
   if(inViewSpace)
     value += 2.0 / 255.0;
-
+  occlusion = vec4(value, 0.0, 0.0, 1.0);
 }

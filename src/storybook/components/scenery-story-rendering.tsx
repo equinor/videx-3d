@@ -8,8 +8,8 @@ import { OutputPass } from '../../rendering/passes/OutputPass';
 import type { SceneryArgs } from './scenery-controls';
 import { RendererToneMapping } from './tone-mapping-controls';
 
-// Order-independent transparency with SMAA, then the output pass.
-const OitPipeline = () => {
+/** Order-independent transparency with SMAA, then the output pass: the stories' `pipeline: 'oit'`. */
+export const StoryOitPipeline = () => {
   const scene = useThree(s => s.scene);
   const camera = useThree(s => s.camera);
   const passes = useMemo<Pass[]>(() => {
@@ -28,7 +28,7 @@ export const SceneryStoryRendering = ({ args }: { args: SceneryArgs }) => (
       toneMapping={args.toneMapping}
       exposure={args.exposure}
     />
-    {args.pipeline === 'oit' && <OitPipeline />}
+    {args.pipeline === 'oit' && <StoryOitPipeline />}
     {args.stats && <RenderStats origin="bottom-left" />}
   </>
 );

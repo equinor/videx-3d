@@ -692,8 +692,15 @@ Each occupant:
 an occupant's own top lies deeper, the flat seabed hides it unless the cutaway or
 `seabedOpacity` opens it.
 
-The stage's transparent parts are ready for the `OITRenderPass`. ⚠️ It assumes the
-default `up` (+Y), and renders nothing without a `<SceneryOcean>`.
+The stage's transparent parts are ready for the `OITRenderPass`: its surface always (its
+alpha is per fragment), its seabed when see-through. With nothing else see-through in view
+the surface is the only object that pass routes through OIT, so it alone runs its
+transparent passes; drawn in the min-depth and tail passes (the front merged into the tail,
+`mergeFront`, the default), it costs about what R3F's own render does near the sea (1.6×
+from ~1000 km up), and twice that or more with a separate front pass (oit-guide.md, "What a transparent frame costs"). Submerged see-through
+data sorts behind it there. The clouds draw once either way, on `LAYERS.OVERLAY`, after
+the transparency is resolved, their march within that draw. ⚠️ It assumes the default `up`
+(+Y), and renders nothing without a `<SceneryOcean>`.
 
 ### Boundaries
 
@@ -1012,10 +1019,13 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   the sea's and the water's draws unchanged. three.js's own PMREM shader still warns (X4122,
   its constants folded).
 - ⚠️ ANGLE on Direct3D compiles a program's pixel shader for one colour attachment,
-  and again at its first draw into several. `OITRenderPass` draws into several with
-  `mergeFront` or `tailSlices`, so the first frame that shows a stage's see-through
-  parts still stalls (~1.6 s for its surface, measured cold). Without either, nothing
-  stalls.
+  and again at its first draw into several, in the GPU process: no precompile reaches it,
+  and a warm-up draw would only move it. `OITRenderPass` draws into several with
+  `mergeFront` (the default) or `tailSlices`. Measured cold (every shader new, RTX A1000,
+  2026-11-20): switching the Timelapse to an OIT pipeline held one frame 18–20 s with the
+  front merged or not, the OIT variants compiling at their first draw; merged compiles no
+  front variant, which pays for the tail's second compile. Chrome's program cache keeps
+  both, so a warm load does not stall.
 - Adding or removing a feature compiles or drops only its own layer (see
   [Rendering](#rendering)); the seabed's `detail` and the sea's wave count recompile the
   sea's layers and its stages; `background: 'void'` the sky's own; and a stage recompiles
@@ -1169,11 +1179,20 @@ the shared preset out.
   `linger` keeps it longer for a replacement made later: a chunk's, whose rebuild lets the
   old one go first (`CHUNK_MATERIAL_LINGER`).
 - The water lies on one mesh (`createSceneryStagePlane`): the box holding the `boundary`
-  (`boundaryBox`) as a 4 × 4 grid, then rings
+  (`boundaryBox`) as a 5 × 5 grid, then rings
   each about twice as wide as the one inside, out to the far plane. The flat parts are
   shaded at the ray's exact hit, so their triangles only need to grow with their distance
   from the scene: ~1000 km triangles crack where the GPU clips them. Without a relief the
   flat seabed lies on the same mesh; with one, the relief's tiles are the seabed.
+- ⚠️ The grid and the rings have an ODD number of segments a side (`RING_SEGMENTS`), so no
+  edge runs through the stage's centre. A camera exactly over an edge and looking along
+  it draws that edge down a column of pixel centres; where the triangles on both sides
+  reach behind the camera and the GPU clips them at the near plane, neither covers those
+  centres, and the sea and the seabed show a 1-px gap up to the first vertex ahead. MSAA's
+  off-centre samples hide it; single-sample targets (`OITRenderPass`, a composer) show it.
+  With 4 segments the Timelapse story's camera (x = 0, looking along z, 1975 px wide) drew
+  it down the middle; a millimetre off the edge, or a near plane of 1 m, drew none
+  (measured 2026-11-20, RTX A1000). A camera exactly over another edge still would.
 - Below a `seabedOpacity` of 1 the seabed parts compile with `STAGE_SEE_THROUGH`:
   transparent, without depth writes, and with the seabed's opacity as their alpha rather
   than mixed toward the void behind them.

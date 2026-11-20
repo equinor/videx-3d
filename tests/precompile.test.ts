@@ -360,14 +360,14 @@ describe('releaseMaterial', () => {
 describe('oitVariantPasses', () => {
   const pass = () => new OITRenderPass(new Scene(), camera);
 
-  test('min depth, tail and front by default', () => {
-    expect(oitVariantPasses(pass())).toEqual(['depthMin', 'accum', 'front']);
+  test('min depth and the tail by default, the front merged into it', () => {
+    expect(oitVariantPasses(pass())).toEqual(['depthMin', 'accum']);
   });
 
-  test('no front pass when it is merged into the tail, nor any with skipFront', () => {
-    const merged = pass();
-    merged.mergeFront = true;
-    expect(oitVariantPasses(merged)).toEqual(['depthMin', 'accum']);
+  test('a front pass when it is not merged, and none with skipFront', () => {
+    const separate = pass();
+    separate.mergeFront = false;
+    expect(oitVariantPasses(separate)).toEqual(['depthMin', 'accum', 'front']);
     const skipped = pass();
     skipped.skipFront = true;
     expect(oitVariantPasses(skipped)).toEqual(['accum']);

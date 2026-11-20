@@ -21,7 +21,10 @@ import {
   skySunPosition,
   type SceneryArgs,
 } from '../../../storybook/components/scenery-controls';
-import { SceneryStoryRendering } from '../../../storybook/components/scenery-story-rendering';
+import {
+  SceneryStoryRendering,
+  StoryOitPipeline,
+} from '../../../storybook/components/scenery-story-rendering';
 import { SeaStoryLighting } from '../../../storybook/components/SeaStoryLighting';
 import {
   SEA_POSE_AZIMUTH,
@@ -154,6 +157,8 @@ type SeaBenchArgs = {
   /** the waves' (and clouds') pace: the `Weather`'s `timeScale` */
   timeScale: number;
   clouds: 'none' | SkyPreset;
+  /** what draws the frame: R3F's own render, or an `OITRenderPass` pipeline (as the scenery stories' `pipeline`) */
+  pipeline: 'default' | 'oit';
   /** the frame stats overlay (`RenderStats`), bottom left */
   stats: boolean;
 };
@@ -195,6 +200,7 @@ const foamTuningOf = (args: SeaBenchArgs): OceanFoamTuning => ({
 // The Scenery's args the bench sets; the rest as the scenery stories have them.
 const skyArgs = (args: SeaBenchArgs): SceneryArgs => ({
   ...sceneryArgs,
+  pipeline: args.pipeline,
   sunFromTime: true,
   sunHour: args.sunHour,
   hollow: false,
@@ -259,6 +265,7 @@ const StandAlone = ({
   const sunDirection = directionFromCompass(azimuth, elevation) as Vec3;
   return (
     <>
+      {args.pipeline === 'oit' && <StoryOitPipeline />}
       {/* The sky's sun, the Ocean's own default warm white: the sea's glint takes it. */}
       <SeaStoryLighting
         sunDirection={sunDirection}
@@ -855,6 +862,13 @@ const meta = {
         'A local weather’s sky (`SKY_PRESETS`), drawn by `SceneryClouds` at medium quality; the sea keeps its own wind.',
       if: { arg: 'scene', eq: 'scenery' },
     },
+    pipeline: {
+      table: { category: 'Bench' },
+      control: { type: 'inline-radio' },
+      options: ['default', 'oit'],
+      description:
+        '`default` lets R3F render; `oit` renders through an order-independent transparency pipeline (`OITRenderPass` with SMAA, then `OutputPass`), as a host with see-through data would. The sea is see-through, so it is drawn in the OIT passes there: `seaBench` sums each draw’s passes.',
+    },
     stats: {
       table: { category: 'Bench' },
       control: { type: 'boolean' },
@@ -909,6 +923,7 @@ const meta = {
     paused: false,
     timeScale: 1,
     clouds: 'none',
+    pipeline: 'default',
     stats: false,
   },
 } satisfies Meta<typeof SeaBenchStory>;

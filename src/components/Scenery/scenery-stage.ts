@@ -119,7 +119,13 @@ function outlineRings(outlines: PlanarPolygonGeometry[]): Vec2[][] {
 }
 
 // Points per side of every ring rectangle; the same for all of them, so rings share vertices.
-const RING_SEGMENTS = 4;
+// ⚠️ Odd, so no edge runs through the stage's centre, where cameras are most often placed
+// exactly (the scene's origin). A camera exactly over an edge and looking along it draws it
+// down a column of pixel centres, and there, where the triangles on both sides reach behind
+// the camera and the GPU clips them at the near plane, neither covers them: a 1-px gap in
+// the sea and the seabed, seen in single-sample targets (an OIT or composer pipeline), MSAA's
+// off-centre samples hiding it.
+const RING_SEGMENTS = 5;
 
 // A rectangle's outline with `RING_SEGMENTS` points per side, starting at its min corner.
 function perimeter([minX, minZ, maxX, maxZ]: SceneryStageBounds): Vec2[] {

@@ -270,14 +270,17 @@ export class OITRenderPass extends Pass {
    * Render the exact front layer in the same geometry pass as the weighted-blended
    * tail instead of in a separate pass. The tail target gets a second colour
    * attachment that front fragments write to, and the composite resolves both, so the
-   * transparent geometry is rasterised twice per frame instead of three times.
+   * transparent geometry is rasterised twice per frame instead of three times — and
+   * each transparent fragment is shaded once rather than twice (the separate passes
+   * each shade every fragment before discarding the other's). On by default: the
+   * image is the same to rounding.
    *
    * The front layer is then composited from a texture rather than drawn into the
    * output, so it is not used when the output is multisampled ({@link opaqueSamples}
    * or a multisample pipeline buffer) — the separate front pass keeps its MSAA edges
    * there. Has no effect with {@link skipFront}.
    */
-  mergeFront: boolean = false;
+  mergeFront: boolean = true;
 
   /**
    * Split the weighted-blended tail into this many depth slices (0 or 1 = a single
