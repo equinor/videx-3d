@@ -354,7 +354,10 @@ type VolumeInternals = {
   shadowScene: Scene;
   shadowTarget: WebGLRenderTarget;
   bakedVersion: number;
-  sky: { syncCamera: (camera: Camera) => void };
+  sky: {
+    syncCamera: (camera: Camera) => void;
+    prepareDraw: (renderer: WebGLRenderer, camera: Camera) => void;
+  };
   settings: {
     quality: {
       resolution: number;
@@ -512,9 +515,10 @@ export function createCloudBench(
     return median(ms);
   };
 
-  // The march's uniforms set for the view as the frame's own march has them.
+  // The march's uniforms set for the view as the frame's own march has them, the air's colours
+  // with them.
   const aimMarch = (v: VolumeInternals, camera: Camera) => {
-    v.sky.syncCamera(camera);
+    v.sky.prepareDraw(renderer(), camera);
     v.updateCamera(camera, v.target.height);
   };
 

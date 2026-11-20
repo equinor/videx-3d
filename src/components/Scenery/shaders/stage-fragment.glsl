@@ -119,7 +119,7 @@ void main() {
   SkyOceanWave wave = skyOceanWave(delta, globeUpAt(world), texel, dist);
   bool cutThrough = false;
   if(altitude > 0.0) {
-    vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend, world), cameraPosition, dir, dist, blend);
+    vec4 surface = skyOceanThroughAir(skyOceanSurfaceOf(wave, p, texel, dir, blend, world), cameraPosition, dir, dist);
     gl_FragColor = skyOceanCutawayMark(surface, world, rimAt);
   } else {
     vec3 underside = skyOceanUndersideOf(-wave.normal, dir, blend, -altitude);

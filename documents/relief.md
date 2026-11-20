@@ -141,7 +141,8 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   view would meet the sea over land the land comes in front.
 - Land, and a dry seabed, fade through the air as the sea does, channel by channel and
   blue a little fastest, so distant land turns blue before it fades into the horizon,
-  but keeps its own colour in most views. From space the sky's own dry seabed past the
+  but keeps its own colour in most views. The colours it fades into are read from the air's
+  lookup, drawn once for the camera's place (scenery.md, "The air"). From space the sky's own dry seabed past the
   tiles is lit and hazed as their ground is, so the two meet without a seam at their reach.
 - Over a dry sea the sky's own seabed lies as deep as the ground where the view meets it (the
   `Scenery`'s ground map, once it is in; the sea's `depth` until then), its edge eased over its

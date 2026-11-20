@@ -530,3 +530,5 @@ vec3 skyHorizonColor(vec3 way, float blend) {
   vec3 dir = way * sqrt(1.0 - sine * sine) + globeCameraLook() * sine;
   return skySurfaceSeen(dir, blend, sine, skyLight(skyLightShare(dir, height)));
 }
+
+#include ./sky-air-colors.glsl

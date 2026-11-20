@@ -58,6 +58,7 @@ import {
 } from '../Ocean/ocean-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
 import vertexShader from './shaders/sky-vertex.glsl';
+import { SkyAirColors } from './scenery-air-colors';
 import {
   SCENERY_EARTH_RADIUS,
   SCENERY_HOLLOW_RIM,
@@ -167,6 +168,12 @@ export class SceneryMaterial extends ShaderMaterial {
    * None until a `Scenery`'s ground draws them (`SceneryGround`); its uniforms are the sky's.
    */
   readonly groundMap = new GroundMap();
+  /**
+   * The colours the air fades what it hazes into, as the camera drawing sees them: drawn for
+   * each place it draws from ({@link prepareDraw}), read by the relief's, the sea's and the
+   * clouds' haze. Its owner precompiles its pass and sets it `ready`.
+   */
+  readonly airColors: SkyAirColors;
   // Whether the globe is the sky's own, which it then sets (curvature): not a World's.
   private readonly ownsGlobe: boolean;
   private bedDetail: SurfaceDetail | undefined;
@@ -378,6 +385,11 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyCloudShadowEast: new Uniform(new Vector3(1, 0, 0)),
         uSkyCloudShadowNorth: new Uniform(new Vector3(0, 0, -1)),
         uSkyCloudShadowLight: new Uniform(new Vector2(1, 0)),
+        // The colours the air fades what it hazes into, by bearing about the camera
+        // (SkyAirColors, sky-air-colors.glsl): its lookup, and its bearings' frame.
+        uSkyAirColors: new Uniform<Texture | null>(null),
+        uSkyAirEast: new Uniform(new Vector3(1, 0, 0)),
+        uSkyAirNorth: new Uniform(new Vector3(0, 0, -1)),
         uSkyStageInverseProjection: new Uniform(new Matrix4()),
         uSkyStageViewport: new Uniform(new Vector4()),
       },
@@ -407,6 +419,9 @@ export class SceneryMaterial extends ShaderMaterial {
       this.globe.enabled = this.uniforms.uSkyCurvature.value > 0;
     else this.syncCurvature();
     this.globe.level = this.oceanLevel;
+    // After the globe's uniforms: its frame follows the camera's look.
+    this.airColors = new SkyAirColors(this.uniforms, createSceneryGeometry());
+    this.uniforms.uSkyAirColors.value = this.airColors.texture;
 
     if (Object.keys(parameters).length) this.setValues(parameters);
   }
@@ -812,6 +827,7 @@ export class SceneryMaterial extends ShaderMaterial {
       this.uniforms.uSkyMoonMapped.value = 0;
       this.uniforms.uSkyMoonMap.value = null;
     }
+    this.airColors.dispose();
     super.dispose();
   }
 
@@ -1432,13 +1448,13 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uSkyStageInverseProjection.value.copy(
       camera.projectionMatrixInverse,
     );
-    this.syncCamera(camera);
+    this.prepareDraw(renderer, camera);
   }
 
   /**
    * The {@link globe}'s camera uniforms for `camera` (`Globe.setCamera`): what every shader
    * of this sky reads of the camera's height, up and horizon. Call it before each mesh drawn
-   * with them is drawn, with the camera drawing it, as {@link onBeforeDraw} does: a bake or a
+   * with them is drawn, with the camera drawing it, as {@link prepareDraw} does: a bake or a
    * second view draws from a camera of its own. Returns at once for the same place.
    */
   syncCamera(camera: Camera) {
@@ -1452,12 +1468,23 @@ export class SceneryMaterial extends ShaderMaterial {
     this.claimStage(cameraAt);
   }
 
-  /** An `onBeforeRender` for a mesh drawn with this sky's shaders: {@link syncCamera}. */
+  /**
+   * Everything this sky's shaders read of `camera`, for a mesh it is about to draw: its
+   * uniforms ({@link syncCamera}) and the air's colours as seen from there
+   * ({@link airColors}), drawn at most once per render for its place. Call it before each mesh
+   * drawn with them is drawn, as {@link onBeforeDraw} does.
+   */
+  prepareDraw(renderer: WebGLRenderer, camera: Camera) {
+    this.syncCamera(camera);
+    this.airColors.update(renderer, camera);
+  }
+
+  /** An `onBeforeRender` for a mesh drawn with this sky's shaders: {@link prepareDraw}. */
   readonly onBeforeDraw = (
-    _renderer: WebGLRenderer,
+    renderer: WebGLRenderer,
     _scene: Scene,
     camera: Camera,
-  ) => this.syncCamera(camera);
+  ) => this.prepareDraw(renderer, camera);
 }
 
 const cameraAt = new Vector3();

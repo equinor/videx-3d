@@ -785,7 +785,8 @@ less at a cloud's base under the cloud over it (`CLOUD_SKY_BASE`), and outweighs
 shade (`CLOUD_SKY`): by day a cloud's shadows are blue-grey, as in a photograph. With the sun low
 the sky lights them less (`CLOUD_SKY_LOW`), so sunset's colours carry. Calibrated under
 `toneMapping: 'none'`. Then the air's haze over the distance their light comes from on average,
-as the relief is hazed, and from space the air over them.
+as the relief is hazed, its colours from the air's lookup (`SkyAirColors`, drawn for the march's
+and the bake's own camera; scenery.md, "The air"), and from space the air over them.
 
 **Light maps (an option: `lightMap`, off by default; `CloudFieldMap` `'Light'`,
 `scenery-cloud-field-map.ts`, 2026-11-10).** A

@@ -88,10 +88,11 @@ float reliefDepthAt(vec3 dir, float t) {
 // `color` seen through the air from the camera, `dist` along `dir`, channel by channel:
 // into the sky's blue over short paths and the horizon's colour over long ones. Looking
 // down, into the sky overhead as seen from the sea, as the sea's haze does
-// (skyOceanThroughAir), so the sun's side cannot show as a wedge below. As much of the air as
-// is left there (`air`, hollowAirAt): toward the open hollow's rim it drains into it, and the
-// ground loses the sky's light, and its haze.
-vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend, float air) {
+// (skyOceanThroughAir), so the sun's side cannot show as a wedge below. The colours from the
+// air's lookup (sky-air-colors.glsl). As much of the air as is left there (`air`,
+// hollowAirAt): toward the open hollow's rim it drains into it, and the ground loses the
+// sky's light, and its haze.
+vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float air) {
   color *= mix(HOLLOW_AIR_GROUND, 1.0, air);
   float haze = skyAirHaze(cameraPosition, dir, dist) * air;
   if(haze <= 0.0)
@@ -101,12 +102,12 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float blend, float air) 
   float n2 = dot(level, level);
   vec3 way = n2 > 1e-8 ? level * inversesqrt(n2) : uSkyEast;
   // The sky some 25 degrees up along the view's bearing.
-  vec3 blue = skySurfaceAt(normalize(way + look * 0.47), blend, 0.0);
-  vec3 horizon = skyHorizonColor(way, blend);
+  vec3 blue = skyAirBlue(way);
+  vec3 horizon = skyAirHorizon(way);
   float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
   float toward = pow(n2, 2.0 + 14.0 * dusk);
   if(toward < 0.999) {
-    vec3 overhead = skySurfaceAt(look, blend, 0.0);
+    vec3 overhead = skyAirOverhead();
     blue = mix(overhead, blue, toward);
     horizon = mix(overhead, horizon, toward);
   }
@@ -220,7 +221,6 @@ void main() {
   float hollowInPixel = fwidth(hollowIn);
   if(hollowIn > 2.0 * hollowPixel)
     discard;
-  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
 
   #ifdef RELIEF_FAR
   // The ground from the tiles (the index's coordinates: east and south), and the slope as
@@ -323,7 +323,7 @@ void main() {
 
   #ifdef RELIEF_FAR
   // From high up, as lit where it lies (skyFromSpaceOver): dark over the Earth's night side.
-  color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend, hollowAirAt(hollowIn)), lit, world);
+  color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, hollowAirAt(hollowIn)), lit, world);
   #else
   // The triangles' chords sag under the globe's sea, by up to tens of metres on the coarse
   // tiles far off. So the ground's height decides which of the two shows: the seabed stays
@@ -363,7 +363,7 @@ void main() {
     if(altitude > 0.0 && dist < sea * 1.0001)
       gl_FragDepth = reliefDepthAt(dir, sea * 1.0001);
   } else if(altitude > 0.0) {
-    color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, blend, hollowAirAt(hollowIn)), lit, world);
+    color = skyFromSpaceOver(reliefThroughAir(color, dir, dist, hollowAirAt(hollowIn)), lit, world);
     // Also where the land only just clears the sea: there the two depths tie, and the sea
     // won. Land met in front of the sea clears it, however near: its own depth lay within the
     // depth buffer's grain of the sea's, and the two fought along every coast, speckled as tiles

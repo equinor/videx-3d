@@ -1526,6 +1526,25 @@ export const Scenery = ({
     ].join('|');
     if (key === compiling.current) return;
     compiling.current = key;
+    // The air's colours first: the relief's, the sea's and the clouds' haze read them, so
+    // they are drawn before anything that does (SkyAirColors.ready).
+    const airColors = material.airColors;
+    const airWait = precompile(
+      gl,
+      airColors.mesh,
+      sceneCamera,
+      airColors.scene,
+      'offscreen',
+      {
+        priority: PRECOMPILE_PRIORITY.first,
+        onProgress: progress.compiles.track(),
+      },
+    );
+    if (airWait)
+      airWait.then(() => {
+        airColors.ready = true;
+      });
+    else airColors.ready = true;
     // Of the background's layers, those the camera's zone draws first, the others after them.
     const now = sceneryLayersShown(
       layerView(material.heightOf(sceneCamera.position), false),
@@ -1546,6 +1565,7 @@ export const Scenery = ({
         }),
       )
       .filter(wait => wait !== null);
+    if (airWait) shown.push(airWait);
     setReady(shown.length === 0);
     if (shown.length > 0)
       Promise.all(shown).then(() => {

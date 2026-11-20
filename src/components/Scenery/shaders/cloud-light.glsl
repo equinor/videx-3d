@@ -4,7 +4,6 @@
 // above and below as ambient; then the air's haze over the distance their light comes from, and
 // from space the air over them.
 
-uniform float uSkyHorizonBlend;
 uniform vec3 uSkyEast;
 uniform vec3 uSkyMoonDirection;
 uniform vec3 uSkyMoonColor;
@@ -103,8 +102,9 @@ vec3 cloudLit(CloudLighting l, float h, float depth) {
 
 // `color` seen through the air from the camera, `dist` along `dir`, as the relief is
 // (reliefThroughAir): into the sky's blue over short paths and the horizon's colour over long
-// ones; looking down, into the sky overhead.
-vec3 cloudThroughAir(vec3 color, vec3 dir, float dist, float blend) {
+// ones; looking down, into the sky overhead. The colours from the air's lookup
+// (sky-air-colors.glsl).
+vec3 cloudThroughAir(vec3 color, vec3 dir, float dist) {
   float haze = skyAirHaze(cameraPosition, dir, dist);
   if(haze <= 0.0)
     return color;
@@ -112,12 +112,12 @@ vec3 cloudThroughAir(vec3 color, vec3 dir, float dist, float blend) {
   vec3 level = dir - look * dot(dir, look);
   float n2 = dot(level, level);
   vec3 way = n2 > 1e-8 ? level * inversesqrt(n2) : uSkyEast;
-  vec3 blue = skySurfaceAt(normalize(way + look * 0.47), blend, 0.0);
-  vec3 horizon = skyHorizonColor(way, blend);
+  vec3 blue = skyAirBlue(way);
+  vec3 horizon = skyAirHorizon(way);
   float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
   float toward = pow(n2, 2.0 + 14.0 * dusk);
   if(toward < 0.999) {
-    vec3 overhead = skySurfaceAt(look, blend, 0.0);
+    vec3 overhead = skyAirOverhead();
     blue = mix(overhead, blue, toward);
     horizon = mix(overhead, horizon, toward);
   }

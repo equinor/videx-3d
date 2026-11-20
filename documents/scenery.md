@@ -277,6 +277,13 @@ sea, the scene's light and the bakes keep the sea's light.
 The bakes film near the level, so the scene's light does not change with the camera's
 height. The sea's surface is hazed; the seabed seen through cut-away water is not.
 
+The haze fades what it covers into three colours that change with the bearing alone: the
+horizon's along it and the sky's some 25° up it, and looking down, the sky overhead. They are
+drawn into a small lookup, 512 bearings by those three, once for each place a camera draws
+from (`SkyAirColors`, `sky-air-colors.glsl`), and the relief's, the sea's and the clouds' haze
+read them there rather than each working out the sky three times for every pixel. They match
+it within 0.25 % (see [Performance](#performance)).
+
 ### From space (built 2026-10-26)
 
 The sky's gradient, its light and the sea's shading take their elevations from the scene's
@@ -851,6 +858,11 @@ surface layer, drawing themselves. Transparent parts draw after everything. It w
   below the seabed only the void; from the air the void only while something opens the
   seabed onto it. Each shader still finds where it draws itself, so near a level both
   sides are drawn and nothing is missed.
+- The air's colours (`SkyAirColors`) are drawn before what reads them, at most once a render
+  for each place a camera draws from: `SceneryMaterial.prepareDraw`, from every layer's
+  `onBeforeDraw`, a stage's view and the clouds' march and bake. A second view, or a bake from
+  its own point, gets its own. Its pass compiles first (`PRECOMPILE_PRIORITY.first`), and the
+  sky waits for it as for its layers.
 - The compositing is exact in linear light: in a `RenderingPipeline` the
   layers give what one program would (measured: identical to the last two decimals of a
   block mean in every pose). Without one, R3F draws to the canvas and three tone maps and
@@ -977,6 +989,17 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   the cover's scales and cells as loops (a slice 0.45 → 0.61 ms, 32 a frame for 8 frames),
   the cover's sampler (1.9 → 1.6 s for 0.3 ms more), the weather's wind (0.7 → 0.6 s for
   17% more of its drawing) and the cloud maps' passes (no gain).
+- The haze's colours come from a lookup drawn per camera place (`SkyAirColors`, see
+  [The air](#the-air)) instead of the sky worked out three times a pixel in every program
+  that hazes. Measured 2026-11-20 (RTX A1000, the Timelapse's programs each alone and cold,
+  the GPU process held to the performance cores): the clouds' march 5.9 → 4.7 s, their bake
+  2.0 → 1.2 s, the relief 2.1 → 1.3 s (seen from below 1.2 → 0.9 s), the surface layer 4.6 →
+  3.9 s, the sea layer 2.9 → 2.5 s, a stage's surface 6.6 → 6.3 s. Its own pass compiles in
+  0.13 s and draws in 0.007 ms, with 0.06–0.12 ms of CPU a frame for its checks and the
+  redraw. Its colours match the sky's within 0.23 % (mean 0.05 %), sun hours 6–20.5, from
+  the sea to 2000 km up. Of the draws that read it, a stage's surface took 13 % less and the
+  sea layer 5 % less (40 m over the sea at 17:30, two rounds each); the frame as a whole
+  differed by less than its run-to-run noise (±1 ms).
 - ⚠️ ANGLE on Direct3D compiles a program's pixel shader for one colour attachment,
   and again at its first draw into several. `OITRenderPass` draws into several with
   `mergeFront` or `tailSlices`, so the first frame that shows a stage's see-through
@@ -1095,6 +1118,7 @@ the shared preset out.
 | `shaders/sky.glsl` | the background's layers: `skyAir`, `skyAbyssLayer`, `skySeaLayer`, `skyWaterLayer`, and the sky and void they draw |
 | `shaders/sky-fragment.glsl`, `sky-layer-fragment.glsl` | the sky's layer, and the others over it (one by its `SKY_LAYER_*` define) |
 | `shaders/sky-gradient.glsl` | the gradient alone |
+| `scenery-air-colors.ts`, `shaders/sky-air-colors.glsl`, `sky-air-colors-fragment.glsl` | `SkyAirColors`: the colours the haze fades into, drawn per camera place into a lookup, and its readers |
 | `shaders/sky-void.glsl` | the void's gradient alone: its colours, the depths' gradient, and the whole of it as the stand-in and `background: 'void'` draw it |
 | `shaders/sky-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
 | `shaders/sky-ocean.glsl` | the sea: surface, water, seabed, cutaway |

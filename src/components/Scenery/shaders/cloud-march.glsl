@@ -1379,9 +1379,8 @@ void main() {
 void main() {
   vec3 dir = normalize(vCloudDirection);
   // Derivatives first, before anything branches: of the full image's pixels, the quarter march's
-  // spanning two (uCloudDerivative 0.5).
-  float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())) * uCloudDerivative);
-  // A march pixel's width (radians), for the levels' tops (cloudTopCover).
+  // spanning two (uCloudDerivative 0.5). A march pixel's width (radians), for the levels' tops
+  // (cloudTopCover).
   float pixel = length(fwidth(dir)) * uCloudDerivative;
 
   float R = uGlobe.x;
@@ -1520,7 +1519,7 @@ void main() {
   vec3 seen = lit;
   if(uCloudAir > 0.5 && uCloudDebug == 0) {
     vec3 p = cameraPosition + dir * mean;
-    seen = cloudFromSpace(cloudThroughAir(lit, dir, mean, blend), lit, p, globeAltitude(p));
+    seen = cloudFromSpace(cloudThroughAir(lit, dir, mean), lit, p, globeAltitude(p));
   }
   // Stopped short (uCloudDetail.z): as opaque as where it stops, over what it hides once
   // stopped, so a view stopped there hides all behind it.

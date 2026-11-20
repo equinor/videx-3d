@@ -1374,8 +1374,8 @@ void main() {
         blending: NoBlending,
       }),
     );
-    bake.onBeforeRender = (_renderer, _scene, camera) => {
-      this.sky.syncCamera(camera);
+    bake.onBeforeRender = (renderer, _scene, camera) => {
+      this.sky.prepareDraw(renderer, camera);
       this.updateCamera(camera, BAKE_SIZE);
     };
     return {
@@ -1748,7 +1748,7 @@ void main() {
     // `medium`: 33.8 ms against 11.3).
     size.divideScalar(Math.max(renderer.getPixelRatio(), 1e-3));
 
-    this.sky.syncCamera(camera);
+    this.sky.prepareDraw(renderer, camera);
     const share = MathUtils.clamp(settings.quality.resolution, 0.25, 1);
     const width = Math.max(Math.round(size.x * share), 1);
     const height = Math.max(Math.round(size.y * share), 1);

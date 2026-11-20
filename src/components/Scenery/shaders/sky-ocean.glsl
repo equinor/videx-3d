@@ -141,10 +141,11 @@ vec3 skyOceanBedAlbedo(vec3 world, float depth) {
 // view's bearing toward the horizon; looking down, the sky overhead as seen from the sea,
 // which also has no bearing, so the sun's side cannot show as a wedge where all of them meet.
 // At twilight the horizon's glow keeps to the far sea, and the air below is the dusk overhead.
+// The colours from the air's lookup (sky-air-colors.glsl).
 // From high up, as space sees it where it lies (skyFromSpaceOver): the sea, or `dry`, the
 // seabed as the relief's ground is lit there, so the two meet without a seam at its reach.
 // `keep` is how much of `surface.rgb` the result keeps: the rest is the air's own.
-vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, float blend, bool dry, out float keep) {
+vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, bool dry, out float keep) {
   // Toward the open hollow's rim its air is draining into it (hollowAir): the surface loses
   // the sky's light, and its haze.
   float air = hollowAir(origin + dir * dist);
@@ -156,11 +157,11 @@ vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, flo
     vec3 look = globeCameraLook();
     vec3 level = dir - look * dot(dir, look);
     float n2 = dot(level, level);
-    vec3 horizon = n2 > 1e-8 ? skyHorizonColor(level * inversesqrt(n2), blend) : vec3(0.0);
+    vec3 horizon = n2 > 1e-8 ? skyAirHorizon(level) : vec3(0.0);
     float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);
     float toward = pow(n2, 2.0 + 14.0 * dusk);
     if(toward < 0.999)
-      horizon = mix(skySurfaceAt(look, blend, 0.0), horizon, toward);
+      horizon = mix(skyAirOverhead(), horizon, toward);
     float alpha = haze + (1.0 - haze) * surface.a;
     near = vec4((haze * horizon + (1.0 - haze) * surface.a * surface.rgb) / alpha, alpha);
     keep = (1.0 - haze) * surface.a / alpha;
@@ -176,13 +177,13 @@ vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, flo
   return vec4(skyFromSpaceOver(near.rgb, lit, p), mix(near.a, 1.0, space));
 }
 
-vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, float blend, bool dry) {
+vec4 skyOceanThroughAirOver(vec4 surface, vec3 origin, vec3 dir, float dist, bool dry) {
   float keep;
-  return skyOceanThroughAirOver(surface, origin, dir, dist, blend, dry, keep);
+  return skyOceanThroughAirOver(surface, origin, dir, dist, dry, keep);
 }
 
-vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist, float blend) {
-  return skyOceanThroughAirOver(surface, origin, dir, dist, blend, false);
+vec4 skyOceanThroughAir(vec4 surface, vec3 origin, vec3 dir, float dist) {
+  return skyOceanThroughAirOver(surface, origin, dir, dist, false);
 }
 
 // The surface seen from above at `p`, `surface` its colour and opacity, with the cutaway
@@ -717,7 +718,7 @@ vec4 skyOceanFromAir(vec3 dir, vec3 origin, float blend, vec3 reach, vec3 bed, o
   float space = skyFromSpace();
   if(!wet && space > 0.0) {
     float keep;
-    vec3 air = skyOceanThroughAirOver(vec4(vec3(0.0), 1.0), origin, dir, reach.x, blend, true, keep).rgb;
+    vec3 air = skyOceanThroughAirOver(vec4(vec3(0.0), 1.0), origin, dir, reach.x, true, keep).rgb;
     seen = mix(seen, vec4(keep * seen.rgb + air, 1.0 - keep * (1.0 - seen.a)), space);
   }
 
@@ -827,7 +828,7 @@ vec4 skyOceanSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   // zero, so a colour from those derivatives cannot reach the blend.
   if(reach.z > 0.5 || skyOceanOnStage(p, t, texel))
     return vec4(0.0);
-  vec4 seen = skyOceanCutawayMark(skyOceanThroughAir(surface, origin, dir, t, blend), origin + dir * t, rimAt);
+  vec4 seen = skyOceanCutawayMark(skyOceanThroughAir(surface, origin, dir, t), origin + dir * t, rimAt);
   return seen;
 }
 
