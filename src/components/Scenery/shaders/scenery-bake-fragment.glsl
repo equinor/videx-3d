@@ -73,9 +73,12 @@ vec3 bakeAir(vec3 dir) {
   return mix(sea, foam, uBakeSea.z);
 }
 
+// One return: from within a branch, Direct3D took the function's value for one that may be
+// left unset (warning X4000).
 vec3 bakeWater(vec3 dir) {
   float y = dot(dir, uSkyUp);
   float depth = uBakeDepth;
+  vec3 seen;
   if(y > 0.0) {
     // Up to the surface: the water mirrored, and through the window the sky over it.
     vec3 mirrored = uSkyOceanWaterColor * bakeWaterLight(depth, depth, 1e6) * waterGlow(-y);
@@ -86,11 +89,13 @@ vec3 bakeWater(vec3 dir) {
       above = mix(skySurfaceAt(exit, uSkyHorizonBlend, 0.0), mirrored, bakeFresnel(dot(exit, uSkyUp)));
     }
     float path = depth / max(y, 1e-3);
-    return waterFog(above, path, uSkyOceanExtinction, uSkyOceanWaterColor, bakeWaterLight(depth, 0.0, path), y);
+    seen = waterFog(above, path, uSkyOceanExtinction, uSkyOceanWaterColor, bakeWaterLight(depth, 0.0, path), y);
+  } else {
+    // Down to the seabed, as far as it lies.
+    float path = max(uSkyOceanDepth - depth, 0.0) / max(-y, 1e-3);
+    seen = waterFog(bakeSeabed(), path, uSkyOceanExtinction, uSkyOceanWaterColor, bakeWaterLight(depth, uSkyOceanDepth, path), y);
   }
-  // Down to the seabed, as far as it lies.
-  float path = max(uSkyOceanDepth - depth, 0.0) / max(-y, 1e-3);
-  return waterFog(bakeSeabed(), path, uSkyOceanExtinction, uSkyOceanWaterColor, bakeWaterLight(depth, uSkyOceanDepth, path), y);
+  return seen;
 }
 
 // Each panel: compass bearing and elevation, angular radius (degrees), share of the light.

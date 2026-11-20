@@ -30,41 +30,49 @@ uniform vec4 uWaterBodyBedInfo;
 uniform vec4 uWaterBodyGround;
 
 // How far down the seabed lies under the surface at `world`: the bed's map where it covers
-// it, else the scene's ground where it does, else the flat floor.
+// it, else the scene's ground where it does, else the flat floor. One return: from within a
+// branch, Direct3D took the function's value for one that may be left unset (warning X4000).
 float waterBodyFloorAt(vec3 world) {
+  float depth = uWaterBodyFloor.x;
+  bool found = false;
   if(uWaterBodyBedInfo.x > 0.0) {
     float bedY;
     float covered = sampleDepthMap(uWaterBodyBed, uWaterBodyBedToUv, uWaterBodyBedInfo.xy, world.xz, bedY);
-    if(covered > 0.5)
-      return uWaterBody.w - (uWaterBodyBedInfo.z * bedY + uWaterBodyBedInfo.w);
+    if(covered > 0.5) {
+      depth = uWaterBody.w - (uWaterBodyBedInfo.z * bedY + uWaterBodyBedInfo.w);
+      found = true;
+    }
   }
-  if(uWaterBodyGround.x > 0.5) {
+  if(!found && uWaterBodyGround.x > 0.5) {
     float covered;
     float height = groundMapHeight(world, covered);
     if(covered > 0.5)
-      return max(uWaterBody.w - (uWaterBodyGround.y * height + uWaterBodyGround.z), 0.0);
+      depth = max(uWaterBody.w - (uWaterBodyGround.y * height + uWaterBodyGround.z), 0.0);
   }
-  return uWaterBodyFloor.x;
+  return depth;
 }
 
-// The part of the segment from `a` to `b` (as shares of it) that lies over the water's extent.
+// The part of the segment from `a` to `b` (as shares of it) that lies over the water's extent:
+// both axes at once, as vectors. Written per axis by a loop's index, ANGLE emulated the
+// indexing and Direct3D warned of a division by zero in its copy of the loop.
 vec2 waterBodyInExtent(vec3 a, vec3 b) {
   vec2 range = vec2(0.0, 1.0);
-  if(uWaterBodyExtent.x < -1e29)
-    return range;
-  vec2 d = b.xz - a.xz;
-  for(int i = 0; i < 2; i++) {
-    float o = a.xz[i];
-    float lo = uWaterBodyExtent[i];
-    float hi = uWaterBodyExtent[i + 2];
-    if(abs(d[i]) < 1e-6) {
-      if(o < lo || o > hi)
-        return vec2(1.0, 0.0);
-    } else {
-      float ta = (lo - o) / d[i];
-      float tb = (hi - o) / d[i];
-      range = vec2(max(range.x, min(ta, tb)), min(range.y, max(ta, tb)));
-    }
+  if(uWaterBodyExtent.x >= -1e29) {
+    vec2 o = a.xz;
+    vec2 d = b.xz - o;
+    vec2 lo = uWaterBodyExtent.xy;
+    vec2 hi = uWaterBodyExtent.zw;
+    // An axis the segment barely moves along: inside the extent's span there, or nowhere.
+    bvec2 still = lessThan(abs(d), vec2(1e-6));
+    vec2 beyond = vec2(still) * (vec2(lessThan(o, lo)) + vec2(greaterThan(o, hi)));
+    vec2 run = mix(d, vec2(1.0), still);
+    vec2 ta = (lo - o) / run;
+    vec2 tb = (hi - o) / run;
+    vec2 enter = mix(min(ta, tb), vec2(0.0), still);
+    vec2 leave = mix(max(ta, tb), vec2(1.0), still);
+    range = vec2(max(range.x, max(enter.x, enter.y)), min(range.y, min(leave.x, leave.y)));
+    if(beyond.x + beyond.y > 0.0)
+      range = vec2(1.0, 0.0);
   }
   return range;
 }

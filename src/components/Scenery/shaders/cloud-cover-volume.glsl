@@ -77,8 +77,9 @@ float coverGradient(vec3 p, float cells, uint layer) {
 float coverMasses(vec3 p, float cells, uint layer) {
   float broad = 0.5 * cells;
   vec3 warp = vec3(0.0);
+  // warp[k], without writing a component by the loop's index, which ANGLE emulates.
   for(int k = 0; k < 3 * uCoverLoops; k++)
-    warp[k] = coverGradient(p, broad, layer + 32u + 16u * uint(k));
+    warp += coverGradient(p, broad, layer + 32u + 16u * uint(k)) * vec3(equal(ivec3(0, 1, 2), ivec3(k)));
   vec3 q = p * cells + 0.6 * warp;
   vec3 cell = floor(q);
   vec3 f = q - cell;

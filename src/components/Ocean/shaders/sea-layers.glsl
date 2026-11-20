@@ -55,7 +55,8 @@ vec4 seaShallowFactors(float depth, out float limit) {
   for(int i = 0; i < SEA_LAYERS; i++) {
     vec2 s = uSeaLayerStats[i];
     float ks = s.y > 0.0 ? seaShoaling(sqrt(s.x / s.y), depth) : 1.0;
-    f[i] = ks;
+    // f[i] = ks, without writing a component by the loop's index, which ANGLE emulates.
+    f += ks * vec4(equal(ivec4(0, 1, 2, 3), ivec4(i)));
     variance += ks * ks * s.y;
   }
   float r = 4.0 * sqrt(variance) * max(uSeaBreakDepth, 0.0) / depth;

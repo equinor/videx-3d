@@ -605,10 +605,12 @@ vec4 skyOceanSurfaceOf(SkyOceanWave wave, vec2 p, float texel, vec3 dir, float b
   // where the sun has set, dark as by night (skyDayFrom).
   surface.rgb *= skyDayFrom(globeCameraLook(), wave.up);
 
-  // ⚠️ Debug views (foamTuning.debug): opaque, in place of the surface.
+  // ⚠️ Debug views (foamTuning.debug): opaque, in place of the surface. One return: from
+  // within the branch, Direct3D took the function's value for one that may be left unset.
+  vec4 seen = oceanStraight(surface);
   if(uFoamGrain.w > 0.5)
-    return vec4(oceanDebugView(oceanStraight(surface).rgb, wave.crest, foamBlend), 1.0);
-  return oceanStraight(surface);
+    seen = vec4(oceanDebugView(seen.rgb, wave.crest, foamBlend), 1.0);
+  return seen;
 }
 
 // The surface seen from below, its `normal` facing down, `depth` under it: the sky
@@ -651,14 +653,17 @@ vec4 skyOceanInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 be
   vec3 above = skyOceanFog(underside, pathUp, skyOceanLightAlong(depth, 0.0, pathUp), dir);
 
   // In a trench the sea's own seabed lies over the camera: below, water, down to the relief's
-  // ground, which is drawn over it.
-  if(uSkyOceanTrench > 0.5)
-    return y > 0.0 ? vec4(above, 1.0) : skyOceanFogOver(vec4(0.0), 1e6, skyOceanLight(depth), dir);
-  vec3 bedPoint = origin + dir * tBed;
-  float cutaway = skyOceanCutawayAlong(origin, bedPoint);
-  float pathDown = skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway));
-  vec4 below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), pathDown, skyOceanBedPathLight(origin, uSkyOceanDepth, pathDown), dir);
-
+  // ground, which is drawn over it. One return: from within the branch, Direct3D took the
+  // function's value for one that may be left unset.
+  vec4 below;
+  if(uSkyOceanTrench > 0.5) {
+    below = skyOceanFogOver(vec4(0.0), 1e6, skyOceanLight(depth), dir);
+  } else {
+    vec3 bedPoint = origin + dir * tBed;
+    float cutaway = skyOceanCutawayAlong(origin, bedPoint);
+    float pathDown = skyOceanCutawayPath(tBed, wall, skyOceanCutawayWater(cutaway));
+    below = skyOceanFogOver(skyOceanFloorOver(bed, cutaway, bedPoint), pathDown, skyOceanBedPathLight(origin, uSkyOceanDepth, pathDown), dir);
+  }
   return y > 0.0 ? vec4(above, 1.0) : below;
 }
 

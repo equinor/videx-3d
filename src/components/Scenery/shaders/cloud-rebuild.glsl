@@ -64,37 +64,48 @@ ivec2 cloudPartOffset(int k) {
   return ivec2(k & 1, k >> 1);
 }
 
+// The part readers return once each: from within a branch, Direct3D took a function's value for
+// one that may be left unset (warning X4000).
 vec4 cloudPartTexel(int k, ivec2 at) {
+  vec4 texel;
   if(k == 0)
-    return texelFetch(uCloudPart0, at, 0);
-  if(k == 1)
-    return texelFetch(uCloudPart1, at, 0);
-  if(k == 2)
-    return texelFetch(uCloudPart2, at, 0);
-  return texelFetch(uCloudPart3, at, 0);
+    texel = texelFetch(uCloudPart0, at, 0);
+  else if(k == 1)
+    texel = texelFetch(uCloudPart1, at, 0);
+  else if(k == 2)
+    texel = texelFetch(uCloudPart2, at, 0);
+  else
+    texel = texelFetch(uCloudPart3, at, 0);
+  return texel;
 }
 
 // Part `k` at `c` (its texels, their middles at whole numbers), filtered.
 vec4 cloudPartAt(int k, vec2 c) {
   vec2 uv = (c + 0.5) / uCloudPartSize;
+  vec4 texel;
   if(k == 0)
-    return texture(uCloudPart0, uv);
-  if(k == 1)
-    return texture(uCloudPart1, uv);
-  if(k == 2)
-    return texture(uCloudPart2, uv);
-  return texture(uCloudPart3, uv);
+    texel = texture(uCloudPart0, uv);
+  else if(k == 1)
+    texel = texture(uCloudPart1, uv);
+  else if(k == 2)
+    texel = texture(uCloudPart2, uv);
+  else
+    texel = texture(uCloudPart3, uv);
+  return texel;
 }
 
 float cloudPartDepth(int k, ivec2 at) {
   at = clamp(at, ivec2(0), ivec2(uCloudPartSize) - 1);
+  float depth;
   if(k == 0)
-    return texelFetch(uCloudPartDepth0, at, 0).r;
-  if(k == 1)
-    return texelFetch(uCloudPartDepth1, at, 0).r;
-  if(k == 2)
-    return texelFetch(uCloudPartDepth2, at, 0).r;
-  return texelFetch(uCloudPartDepth3, at, 0).r;
+    depth = texelFetch(uCloudPartDepth0, at, 0).r;
+  else if(k == 1)
+    depth = texelFetch(uCloudPartDepth1, at, 0).r;
+  else if(k == 2)
+    depth = texelFetch(uCloudPartDepth2, at, 0).r;
+  else
+    depth = texelFetch(uCloudPartDepth3, at, 0).r;
+  return depth;
 }
 
 // The nearest of part `k`'s four texels' depths about `c`, a clear one having none (1).

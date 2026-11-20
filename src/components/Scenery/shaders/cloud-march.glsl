@@ -673,20 +673,27 @@ vec2 cloudCoverAt(CloudLevel L, vec3 foot, float extent) {
 // newer drawing fades in); else from the volume.
 vec2 cloudCoverOf(CloudLevel L, vec3 foot, vec2 field, float extent) {
 #if !defined(CLOUD_GLOBAL) && !defined(CLOUD_COVER_MAP)
-  // Returned from within: written as one return after a branch, the volume was read anyway.
   float side = 2.0 * uCloudCoverArea.z;
   int layer = int(L.kind.w);
   vec2 on = (field - uCloudCoverArea.xy) / side + 0.5;
   vec2 at = on - uCloudCoverDrift[2 * layer] / side;
-  if(uCloudCoverMode > 0 && all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0)))) {
+  bool mapped = uCloudCoverMode > 0 && all(greaterThanEqual(at, vec2(0.0))) && all(lessThanEqual(at, vec2(1.0)));
+  vec2 seen = vec2(0.0);
+  if(mapped) {
     float lod = log2(max(extent * uCloudCoverArea.w / side, 1.0));
     float cover = textureLod(uCloudCoverNewer, vec3(at, L.kind.w), lod).x;
     if(uCloudCoverFade < 1.0)
       cover = mix(textureLod(uCloudCoverOlder, vec3(on - uCloudCoverDrift[2 * layer + 1] / side, L.kind.w), lod).x, cover, uCloudCoverFade);
-    return vec2(cover, cloudSpreadOf(L, extent));
-  }
-#endif
+    seen = vec2(cover, cloudSpreadOf(L, extent));
+  } else
+    seen = cloudCoverAt(L, foot, extent);
+  // One return. Returned from within the map's branch, Direct3D warned of an unset value
+  // (X4000), and the march was slower: 1.67 ms against 1.33 (Timelapse at noon, the cover map
+  // on, 2026-11-20). The volume in a loop run once or not at all was slower still (2.14).
+  return seen;
+#else
   return cloudCoverAt(L, foot, extent);
+#endif
 }
 
 // The normal distribution's CDF at `z` (Abramowitz and Stegun 7.1.26, its tail taken directly so

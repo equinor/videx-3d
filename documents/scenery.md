@@ -1000,6 +1000,17 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   the sea to 2000 km up. Of the draws that read it, a stage's surface took 13 % less and the
   sea layer 5 % less (40 m over the sea at 17:30, two rounds each); the frame as a whole
   differed by less than its run-to-run noise (±1 ms).
+- The shaders compile without warnings from Direct3D's compiler, which three.js prints with
+  each program (2026-11-20, surveyed cold over the Timelapse, StageDebug, a global weather,
+  the hollow, the Sea Bench, the stand-alone Ocean and a chunk column). Two habits keep it so:
+  a function returns once, at its end (returned from within a branch, Direct3D took its value
+  for one that may be left unset, X4000); and no vector's component is written by a loop's
+  index (ANGLE emulates that, and Direct3D warned of a division by zero in its copy of one
+  such loop): add the value times a mask instead,
+  `f += ks * vec4(equal(ivec4(0, 1, 2, 3), ivec4(i)))`. Measured (Timelapse at noon, RTX
+  A1000, two rounds each): the clouds' march 1.67 → 1.33 ms, their rebuild 0.22 → 0.13 ms,
+  the sea's and the water's draws unchanged. three.js's own PMREM shader still warns (X4122,
+  its constants folded).
 - ⚠️ ANGLE on Direct3D compiles a program's pixel shader for one colour attachment,
   and again at its first draw into several. `OITRenderPass` draws into several with
   `mergeFront` or `tailSlices`, so the first frame that shows a stage's see-through
