@@ -442,8 +442,10 @@ For mountains on the horizon, set the far plane past it from the highest the cam
 about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories
 use 3000 km, so no overview is made). With a logarithmic depth buffer that costs almost
 nothing (about 1 m of depth resolution at 1000 km); with a standard one, a far plane that
-far from a near plane of centimetres has no resolution left, so use a logarithmic or
-reversed depth buffer. Either way the GPU clips by the ordinary clip depth, which that far
+far from a near plane of centimetres has no resolution left, so use a logarithmic depth
+buffer, or a reversed one drawn into a float depth texture (a reversed fixed-point one, as
+the canvas's own, gains nothing: [architecture.md, Depth buffers](./architecture.md#depth-buffers)).
+Either way the GPU clips by the ordinary clip depth, which that far
 from a near plane of centimetres rounds past the far plane and drops vertices at random:
 the tiles, and the stage's sea and seabed, keep their vertices just inside it.
 

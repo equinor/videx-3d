@@ -846,6 +846,10 @@ and the sea hold still against each other as the camera moves or turns.
     — buried less than 1e-4 of the distance under shallow seabed, say a wellbore's top — shows
     through the seabed there; and the band is ten times what the land's tie takes, which is
     still some eight times the depth buffer's grain and could be used instead.
+  - Both need a depth buffer that tells apart less than 1e-5 of the distance: a logarithmic
+    one, or a reversed one drawn into a float depth texture. A linear one, or a reversed one
+    with the canvas's fixed-point buffer, ties them (the seabed speckles through the sea, the
+    coast's land sinks under it): [architecture.md, Depth buffers](./architecture.md#depth-buffers).
 - **Skirts are shaded as the edge they hang from (2026-11-17)**, not at their own height,
   except where one hangs from land down under the sea (seabed there, under the water). Seen
   through the cracks a coarser tile's straight edge leaves under its finer neighbour's as the

@@ -98,6 +98,25 @@ Every component works with whichever depth buffer the host's renderer has:
 Logarithmic and reversed together are not supported: three's own log-depth shader chunk has
 no reversed form, so its materials break with both on.
 
+**Precision.** All three draw correctly; what differs is the depth they tell apart, and so
+the scene they suit. A scene from centimetres to thousands of kilometres — a `Scenery` with
+its relief, a near plane of 0.1 m and a far one of 3000 km — needs to tell apart less than
+1e-5 of the distance: the relief's coast and its shallow seabed are kept on the right side of
+the sea by that much ([tiles.md](./tiles.md), "The coast's ties with the sea"). At that range:
+
+- **logarithmic** tells apart some 1e-6 of the distance, anywhere;
+- **reversed** with a 32-bit float depth buffer, some 1e-7;
+- **linear**, and **reversed** with a fixed-point one, about 2% at 30 km — hundreds of
+  metres. The canvas's own depth buffer is fixed point (24 bits in practice) and cannot be
+  float, so reversed depth gains precision only when the scene is drawn into a render target
+  with a `FloatType` `DepthTexture`.
+
+Short of it, the seabed speckles through the sea (linear), and land near the horizon sinks
+under the sea at the coast (reversed into the canvas). For such a scene use a logarithmic
+buffer (as the stories do), or a reversed one drawn into a float depth texture. Nothing else
+— zones, wellbores, layers away from the sea — relies on a tie that fine: there what counts
+is the buffer's ordinary resolution at the distances seen, which the near plane sets.
+
 Most code needs none of this: three's chunks and its depth test handle it. Code that does
 depth by hand must handle all three:
 
