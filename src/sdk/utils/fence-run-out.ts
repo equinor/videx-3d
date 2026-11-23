@@ -2,7 +2,7 @@ import { Vec2 } from '../types/common';
 import { convexPolygonDistance, marginCrossings } from './margin-band';
 import {
   DEFAULT_OFFSET_TOLERANCE,
-  FREE_ROD_STIFFNESS,
+  FREE_BATTEN_STIFFNESS,
   FenceSideName,
   TraceProblemSpan,
   TracePocketSpan,
@@ -32,7 +32,7 @@ import {
   polylineWorstTurn,
   segmentPolylineCrossingParams,
 } from './polyline-2d';
-import { settleRodConstrained } from './stiff-rod-constrained';
+import { settleBattenConstrained } from './batten-constrained';
 
 /**
  * Run-out arms for a wellbore fence — the extrapolated extensions that carry each side's cut
@@ -85,8 +85,8 @@ export type FenceArmsOptions = {
   maxRelativeTurn?: number;
   /** diagnostics sink — one entry per built arm, even when it is degraded. */
   debug?: FenceArmDebug[];
-  /** the arm joins' bending length — see `OneSidedOffsetOptions.rodStiffness`. Default 1. */
-  rodStiffness?: number;
+  /** the arm joins' bending length — see `OneSidedOffsetOptions.battenStiffness`. Default 1. */
+  battenStiffness?: number;
   /** the planned head arm ({@link planHeadArm}); the cores must be offsets of its `trace` */
   headArm?: HeadArmPlan | null;
   /**
@@ -274,7 +274,7 @@ const HAIRPIN_MOUTH_WIDTHS = 1.5;
 /**
  * The TRAPEZOID a laid U-turn is framed as: its long side from the head anchor `p` to the guide's
  * start `q`, legs at 45° and a far side {@link TURN_FRAME_DEPTH} as deep as `arc` bulged, leaning
- * {@link TURN_FRAME_LEAN} about `p` towards the arm — a rod round it runs straight where the arc's
+ * {@link TURN_FRAME_LEAN} about `p` towards the arm — a batten round it runs straight where the arc's
  * D bulged towards the well beyond.
  */
 function turnTrapezoid(p: Vec2, q: Vec2, arc: Vec2[]): Vec2[] {
@@ -409,7 +409,7 @@ export type HeadWrap = {
  * the apex.
  *
  * ⭐ Any of `obstacles` (the mid-trace fold hulls) that OVERLAPS the finished ring, or lies too
- * close along the well for the rods round both ({@link rodsCrowd}), is merged into the wrap and
+ * close along the well for the battens round both ({@link battensCrowd}), is merged into the wrap and
  * listed in {@link HeadWrap.merged}: two frames sharing ground would give the prune two blockers
  * to attribute one gap to, and the well between them is degenerate either way.
  *
@@ -451,12 +451,12 @@ export function headWrapRegion(
 }
 
 /**
- * Atoms of run each rod round a margin band is allowed between two margin bands before the two are framed as ONE
- * obstacle ({@link rodsCrowd}). The MEDIAN anchor measured — 4.1 atoms over 1064 rods on 12 wells
- * at margins 0.1–1.9 (p25 3.0, p75 6.7, p90 10) — one atom over the floor of 3, since two rods at
- * their floors would still meet. A longer anchor is caught when the rod is laid (`RodOverlapError`).
+ * Atoms of run each batten round a margin band is allowed between two margin bands before the two are framed as ONE
+ * obstacle ({@link battensCrowd}). The MEDIAN anchor measured — 4.1 atoms over 1064 battens on 12 wells
+ * at margins 0.1–1.9 (p25 3.0, p75 6.7, p90 10) — one atom over the floor of 3, since two battens at
+ * their floors would still meet. A longer anchor is caught when the batten is laid (`BattenOverlapError`).
  */
-const ROD_MERGE_ATOMS = 4;
+const BATTEN_MERGE_ATOMS = 4;
 
 /**
  * The arc length of the shortest stretch of `trace` running from the margin band of hull `a` to the margin band
@@ -497,12 +497,12 @@ export function freeRunBetween(
 }
 
 /**
- * Whether the stretch of `trace` between two hulls' margin bands is too short to hold the rods round
- * both — each needs {@link ROD_MERGE_ATOMS} atoms of run off its margin band — so the two are ONE obstacle.
+ * Whether the stretch of `trace` between two hulls' margin bands is too short to hold the battens round
+ * both — each needs {@link BATTEN_MERGE_ATOMS} atoms of run off its margin band — so the two are ONE obstacle.
  *
  * @group Utils
  */
-export function rodsCrowd(
+export function battensCrowd(
   trace: Vec2[],
   a: Vec2[],
   b: Vec2[],
@@ -510,7 +510,7 @@ export function rodsCrowd(
 ): boolean {
   if (a.length < 3 || b.length < 3) return false;
   const reach =
-    ROD_MERGE_ATOMS *
+    BATTEN_MERGE_ATOMS *
     (ringAtom(hullDiameter(a) + 2 * margin, margin) +
       ringAtom(hullDiameter(b) + 2 * margin, margin));
   // the stretch between two margin bands is at least as long as the gap between them
@@ -551,10 +551,10 @@ function wrapHead(
     let grew = false;
     for (const h of obstacles) {
       if (merged.includes(h)) continue;
-      // within the head's margin band, or too near along the well for the rods round both
+      // within the head's margin band, or too near along the well for the battens round both
       if (
         convexPolygonDistance(h, hull) >= margin &&
-        !rodsCrowd(well, hull, h, margin)
+        !battensCrowd(well, hull, h, margin)
       ) {
         continue;
       }
@@ -572,7 +572,7 @@ function wrapHead(
 /**
  * The angle, in radians, between the well where it leaves a head wrap and the hull edge beside it —
  * the one that does NOT carry the well in. A cut rounding that corner turns by π minus it, so a
- * small angle is a steep concave turn. Read over one rod atom, the scale the rod rounds the ring at.
+ * small angle is a steep concave turn. Read over one batten atom, the scale the batten rounds the ring at.
  *
  * @returns π when the well never leaves the wrap
  *
@@ -735,7 +735,7 @@ export type HeadArmPlan = {
  * ⭐⭐ NO ROUTING HERE — the plan is a VIRTUAL WELL ({@link HeadArmPlan.trace}) plus its obstacle
  * ({@link HeadArmPlan.wrap}). Feeding those to `oneSidedOffset` makes the head one more fold the
  * cores wrap: each side leaves the follow where its offset enters the ring, walks the ring on its
- * own hand and lands on the guide's offset, eased by the same rod as any mid-trace fold. A SHIFTED
+ * own hand and lands on the guide's offset, eased by the same batten as any mid-trace fold. A SHIFTED
  * exit is folded into the hull so the guide starts on a hull vertex — otherwise the stub from the
  * hull out to the exit would be followed as a spur.
  *
@@ -1083,7 +1083,7 @@ export function planHeadArm(
       continue;
     }
     // ⭐ A head grown over the well and a well that hooks back right after it: the hook is taken into
-    // the wrap, once, so the rods anchor past it rather than bend round it (F-15 D, Z13, Z21).
+    // the wrap, once, so the battens anchor past it rather than bend round it (F-15 D, Z13, Z21).
     if (grown && !hooked) {
       hooked = true;
       const hook = hookEnd();
@@ -1094,7 +1094,7 @@ export function planHeadArm(
       }
     }
     // ⭐ A wrap over the TD obstacle too: the well "approaching" it is the TD tail, and a turn laid off
-    // it left both arms from the same tip of the ring (Z01: 90 m apart, the rod between them crossed).
+    // it left both arms from the same tip of the ring (Z01: 90 m apart, the batten between them crossed).
     const tdHull = options.tdPlan?.hull ?? [];
     const overTd =
       tdHull.length >= 3 && convexPolygonDistance(tdHull, wrap.hull) === 0;
@@ -1182,7 +1182,7 @@ export function planHeadArm(
     const start = along(front, approach, margin);
     const hand = Math.sign(approach[0] * dir[1] - approach[1] * dir[0]) || 1;
     // ⛔ Never tighter than the ring it leaves: at margin 7.6–20 a 100 m turnout laid R ≈ 52 m off
-    // 111–276 m rings and the rods failed (F-12, F-15 D). The width across the bearing was not enough.
+    // 111–276 m rings and the battens failed (F-12, F-15 D). The width across the bearing was not enough.
     turnRadius = Math.max(
       turnout / (2 * Math.sin(approachAngle / 2)),
       hullDiameter(wrap.ring),
@@ -1209,7 +1209,7 @@ export function planHeadArm(
       }
     }
     // ⭐ A U-turn (over 90°) is FRAMED, not followed: a trapezoid on the line from the head anchor to
-    // the guide's start, so the cuts go round it by the rod; where the well comes back level with
+    // the guide's start, so the cuts go round it by the batten; where the well comes back level with
     // the guide's start (a hairpin) the frame takes it too, and the inner cut crosses that mouth.
     if (approachAngle > Math.PI / 2) {
       // ⭐ Nothing follows a framed turn, so the ring floor on its radius does not apply: sized from the
@@ -1249,10 +1249,10 @@ export function planHeadArm(
       exit = turn[0];
     }
   }
-  // ⭐ The guide is as long as the ROD needs to land on it: a rod round a ring of diameter D leaves
+  // ⭐ The guide is as long as the BATTEN needs to land on it: a batten round a ring of diameter D leaves
   // the ring a fraction of D past its exit and tapers onto `guide ± margin` at θ. `guideFrom` alone
   // is ~0 for a hull aligned with the bearing, and MEASURED the cores were then left a 2 m stub to
-  // land on — every landing came out at ~90°. Lengthening to this took the rod census 26/66 → 44/66.
+  // land on — every landing came out at ~90°. Lengthening to this took the batten census 26/66 → 44/66.
   const ringDiameter = hullDiameter(wrap.ring);
   // `guideFrom` is the ring's convergence onto the axis — behind a laid turn, which the cores follow.
   const guideLength = laid
@@ -1342,7 +1342,7 @@ export function planHeadArm(
 
 /**
  * One end's synthesized guide off a hull: from the ring (`margin` along `dir` from the hull's
- * support vertex — its most forward one) out to where a rod round the ring has landed, densified,
+ * support vertex — its most forward one) out to where a batten round the ring has landed, densified,
  * plus the gather and tip past it. Shared by the degenerate plan's two ends.
  */
 function guideOffHull(
@@ -1401,7 +1401,7 @@ function guideOffHull(
  * every well this branch exists for to the fallback. A 6:1 sliver has a direction however small it
  * is; a round scatter blob has none at any size. Both ends get a synthesized guide
  * ({@link guideOffHull}), and the virtual well is `head guide → centroid → TD guide` — the cores
- * are then the two flanks of a rod round one ring, the same construction as any fold.
+ * are then the two flanks of a batten round one ring, the same construction as any fold.
  *
  * @param extra points framed with the well ({@link HeadWrap.extra})
  */
@@ -1542,7 +1542,7 @@ export type TdArmPlan = {
 };
 
 /**
- * Plan the TD end when an obstacle covers it: the cores round that hull by the same rod as any
+ * Plan the TD end when an obstacle covers it: the cores round that hull by the same batten as any
  * fold and land on a synthesized guide past it ({@link guideOffHull}), instead of stopping at its
  * margin band and joining the TD arm straight across the hook inside.
  *
@@ -1933,17 +1933,17 @@ function assemblePieces(
 }
 
 /**
- * The free stiff rod joining a core end onto an arm axis: leaving `from` along `fromDir` and arriving
+ * The free batten joining a core end onto an arm axis: leaving `from` along `fromDir` and arriving
  * at `gather` along `dir`, clamped at both so the core is untouched, with no ring and no well to keep
- * off — the assembled side's gates judge it. Scaled by its own span, as a ring rod by its ring.
+ * off — the assembled side's gates judge it. Scaled by its own span, as a ring batten by its ring.
  */
-function rodJoin(
+function battenJoin(
   from: Vec2,
   fromDir: Vec2,
   gather: Vec2,
   dir: Vec2,
   margin: number,
-  rodStiffness: number,
+  battenStiffness: number,
 ): Vec2[] {
   const D = Math.hypot(gather[0] - from[0], gather[1] - from[1]);
   if (!(D > 1e-6)) return [from, gather];
@@ -1958,13 +1958,13 @@ function rodJoin(
     ]);
   }
   seed.push(along(gather, dir, atom));
-  const rod = settleRodConstrained(seed, {
+  const batten = settleBattenConstrained(seed, {
     obstacles: [],
     keepOut: [],
     margin,
-    bending: ((FREE_ROD_STIFFNESS * rodStiffness * D) / (D / count)) ** 2,
+    bending: ((FREE_BATTEN_STIFFNESS * battenStiffness * D) / (D / count)) ** 2,
   });
-  return rod.points.slice(1, -1);
+  return batten.points.slice(1, -1);
 }
 
 /**
@@ -1975,7 +1975,7 @@ function attachTdArm(
   curve: Vec2[],
   end: FenceArmEnd,
   side: FenceSideName,
-  rodStiffness: number,
+  battenStiffness: number,
   margin: number,
   leadPast: Vec2 | null,
   onGuide: boolean,
@@ -1988,7 +1988,7 @@ function attachTdArm(
   const fromDir = onGuide ? end.dir : coreEndDir(curve, false, EXIT_ARC);
   // ⭐ The core first runs on straight until it is `margin` past the TD, so the join cannot cut the
   // corner round it: from a core end level with the TD it dipped inside the margin (F-1 B at
-  // margin 5, biarc 0.034 m, rod 0.102 m).
+  // margin 5, biarc 0.034 m, batten 0.102 m).
   // ⛔ Holding it off the whole well does not fix that: MEASURED, contacts piled up round the well's
   // TD end (0.09 m chords, 129°) and broke F-1 B / F-7 / F-9 / F-11 T2 at margin 5.
   // ⛔ Nor `holdPolylineChords2D`: over 26 wells × margins 0.1/0.5/1/5/20 it traded the dip for
@@ -2000,13 +2000,13 @@ function attachTdArm(
     ? Math.max(0, margin - dot(sub(coreEnd, leadPast), fromDir))
     : 0;
   const start = lead > 1e-9 ? along(coreEnd, fromDir, lead) : coreEnd;
-  const join = rodJoin(
+  const join = battenJoin(
     start,
     fromDir,
     end.gather,
     end.dir,
     margin,
-    rodStiffness,
+    battenStiffness,
   );
   if (start !== coreEnd) join.unshift(coreEnd);
   if (debug) {
@@ -2028,25 +2028,25 @@ function attachTdArm(
 
 /**
  * Attach the head run-out to one side's cut — {@link attachTdArm} mirrored onto the core's head,
- * which already follows the planned guide, so the join is the same rod off the core's own end.
+ * which already follows the planned guide, so the join is the same batten off the core's own end.
  */
 function attachHeadArm(
   curve: Vec2[],
   end: FenceArmEnd,
   side: FenceSideName,
-  rodStiffness: number,
+  battenStiffness: number,
   margin: number,
   debug?: FenceArmDebug[],
 ): { points: Vec2[]; pieces: CurvePiece[] } {
   // The core's head end sits ON the guide (trimmed there by the caller), so it leaves along the
-  // arm's own bearing — an averaged end direction would reach back into the rod's curl.
-  const join = rodJoin(
+  // arm's own bearing — an averaged end direction would reach back into the batten's curl.
+  const join = battenJoin(
     curve[0],
     end.dir,
     end.gather,
     end.dir,
     margin,
-    rodStiffness,
+    battenStiffness,
   );
   if (debug) {
     debug.push({
@@ -2101,19 +2101,19 @@ export function buildFenceArms(
   const degenerateSpan = options.degenerateSpan ?? DEFAULT_DEGENERATE_SPAN;
   const fallbackAngle = options.fallbackAngle ?? 0;
   const maxRelativeTurn = options.maxRelativeTurn ?? DEFAULT_MAX_RELATIVE_TURN;
-  const rodStiffness = Math.max(0, options.rodStiffness ?? 1);
+  const battenStiffness = Math.max(0, options.battenStiffness ?? 1);
   const wellIndex = options.wellIndex ?? createPolylineIndex(well);
   const plan = options.headArm;
 
-  // ⭐ The taper STARTS where the rod lands on the guide, and still ENDS at the plan's gather. The
-  // guide is sized for the worst rod (one arriving across the hull's full width); a core that has
+  // ⭐ The taper STARTS where the batten lands on the guide, and still ENDS at the plan's gather. The
+  // guide is sized for the worst batten (one arriving across the hull's full width); a core that has
   // landed metres past the exit would otherwise run parallel to the axis for the rest of the guide
   // and then converge over the gather alone — F-10 at margin 5 ran 40 m straight and pinched. Each
   // core is trimmed back to its landing (both to the later of the two, so the taper is symmetric),
   // and the whole remaining axis is the convergence. Cores are given GUIDE END FIRST.
-  // ⛔ "On the guide" is BOTH at `±margin` laterally AND heading along it: the rod's own vertices
+  // ⛔ "On the guide" is BOTH at `±margin` laterally AND heading along it: the batten's own vertices
   // pass through `±margin` while still curling off the hull flank, and a lateral test alone took
-  // the rod's start for its landing — the whole rod was trimmed and the taper launched from the
+  // the batten's start for its landing — the whole batten was trimmed and the taper launched from the
   // hull. The landing is the LAST guide-following vertex before the core departs, found by walking
   // from the guide end (on the guide by construction) until either test fails.
   const trimToGuide = (
@@ -2145,7 +2145,7 @@ export function buildFenceArms(
     };
     // The taper starts at the LATER of the two landings: the earlier core runs on along its dashed
     // line until the other has landed too, so both leave the guide from the same station. Bounded
-    // by the guide, whose far end is the apex — unless a core runs on past it: a rod anchored beyond
+    // by the guide, whose far end is the apex — unless a core runs on past it: a batten anchored beyond
     // the guide's end ships whole and lands out there (an offset of the apex ends within `margin`).
     const reach = Math.max(fwd(a[0]), fwd(b[0]));
     const bound = reach > fwd(apex) + margin ? reach : fwd(apex);
@@ -2221,7 +2221,7 @@ export function buildFenceArms(
         GATHER_FACTOR * Math.max(margin / Math.tan(theta / 2), tangentArc),
         headGather,
       );
-      // A rod anchored past the TD ships whole, so the arm starts beyond the cores' ends (an offset
+      // A batten anchored past the TD ships whole, so the arm starts beyond the cores' ends (an offset
       // of the TD itself ends within `margin` of it).
       const past = Math.max(
         dot(sub(tdLeft[tdLeft.length - 1], tdApex), tdDir),
@@ -2247,7 +2247,7 @@ export function buildFenceArms(
           curve,
           td,
           side,
-          rodStiffness,
+          battenStiffness,
           margin,
           leadPast,
           !!tdGuide,
@@ -2282,14 +2282,14 @@ export function buildFenceArms(
     }
   }
   const sideLeft = plan
-    ? attachHeadArm(headLeft, head, 'left', rodStiffness, margin, options.debug)
+    ? attachHeadArm(headLeft, head, 'left', battenStiffness, margin, options.debug)
     : tdArmedLeft;
   const sideRight = plan
     ? attachHeadArm(
         headRight,
         head,
         'right',
-        rodStiffness,
+        battenStiffness,
         margin,
         options.debug,
       )

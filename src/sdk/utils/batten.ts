@@ -6,18 +6,20 @@ import {
 } from './polyline-2d';
 
 /**
- * The STIFF ROD — a fence transition settled as a beam rather than walked along a ring.
+ * The BATTEN — a fence transition settled as a beam rather than walked along a ring. Named after
+ * the loftsman's batten: a flexible strip clamped at its ends and pressed against pins, which
+ * settles into the fairest curve between them.
  *
  * ⭐ A cut that follows an obstacle ring turns every corner of it at the ring's own mitre fan, so
- * in 3D it wraps a head like a jigsaw. The rod starts from the ring PATH between the two run ends
+ * in 3D it wraps a head like a jigsaw. The batten starts from the ring PATH between the two run ends
  * — on the right flank by construction — extends it by an anchored stretch of each run, clamps both
  * anchors (position AND tangent), and settles the span to the least-bending path that holds the
- * margin from every hull and the well (`stiff-rod-constrained.ts`). It touches them only where it
+ * margin from every hull and the well (`batten-constrained.ts`). It touches them only where it
  * presses and leaves the runs far back at a shallow angle. This file lays the seed and its anchors.
  *
  * ⭐ The anchor is ANALYTIC, never searched: `max(3, c · φ/θ) · atom` of run, where φ is the turn
  * from the run's heading onto the ring path's first atom and θ the per-vertex turn limit — the
- * atoms a rod turning θ per vertex needs to make that turn, times a multiple `c` by the clamp's
+ * atoms a batten turning θ per vertex needs to make that turn, times a multiple `c` by the clamp's
  * convexity. MEASURED (1440 clamps × 11 anchor lengths, wedge/sliver 100×20 and 100×8 at well
  * turns 0/45/90°, margins 0.5/2/8, each clamp swept with the other held far back): the shortest
  * anchor that builds is `0.55–0.9 · φ/θ` atoms in every φ bin above 20°, for both convexities,
@@ -27,25 +29,25 @@ import {
  * enters through the margin band — the run end, the path and the atom move with it. A searched
  * setback flipped between neighbouring margins.
  *
- * ⭐ TWO multiples, by the clamp's CONVEXITY. A rod on the OUTSIDE of the well's turn wraps the
+ * ⭐ TWO multiples, by the clamp's CONVEXITY. A batten on the OUTSIDE of the well's turn wraps the
  * hull — its first bend off the run, towards the path, is AGAINST the well's own turn between the
- * two runs (or the well runs straight through and both rods wrap). That clamp is CONVEX, and a
+ * two runs (or the well runs straight through and both battens wrap). That clamp is CONVEX, and a
  * longer anchor is FREE: measured over the same sweep, its worst turn keeps falling (16° at 3×
- * the minimum, 7° at 4×, 1° at 32 atoms) while the rod's greatest distance from the well stays
- * flat (67 → 51 m). The rod on the INSIDE of the turn bends WITH it, away from the hull, and is
+ * the minimum, 7° at 4×, 1° at 32 atoms) while the batten's greatest distance from the well stays
+ * flat (67 → 51 m). The batten on the INSIDE of the turn bends WITH it, away from the hull, and is
  * CONCAVE: its turn plateaus at ~7° beyond 4× the minimum while that distance BALLOONS
  * (19 → 35 → 70 → 158 m at 1/6/12/32 atoms) — out round the hull and back is an S, and a
  * long anchor only stretches it. Departure and arrival clamps measured alike (34/20/15/12/7/6°
  * at 1/1.5/2/3/4/6× the minimum on both).
  *
  * ⭐ A REVERSAL FLOOR on both clamps: `2 · max(0, Ψ − 90°)/θ` atoms, Ψ the well's turn between
- * the two runs. Past 90° the rod must turn the excess whatever φ says, and φ alone left it too
- * short (F-12 at margin 3.1 below 560 m: 56°, failed). MEASURED over the field census (780 rods):
- * 0 failures either way, p99 worst turn 34 → 26°, rods over 30° 16 → 3, 45 better / 4 worse;
- * F-12 builds at 11°. ⛔ Not c by convexity (4/2): fewer bad turns, but convex rods hugged
+ * the two runs. Past 90° the batten must turn the excess whatever φ says, and φ alone left it too
+ * short (F-12 at margin 3.1 below 560 m: 56°, failed). MEASURED over the field census (780 battens):
+ * 0 failures either way, p99 worst turn 34 → 26°, battens over 30° 16 → 3, 45 better / 4 worse;
+ * F-12 builds at 11°. ⛔ Not c by convexity (4/2): fewer bad turns, but convex battens hugged
  * (X07 right: 2 → 9 contacts).
  * ⛔ Not `W / tan θ` with W the WHOLE ring's offset from the run's line: topology-blind — it
- * charged the sliver's far tips, which the rod never passes (corner sliver at 40°: 29 and 24 m
+ * charged the sliver's far tips, which the batten never passes (corner sliver at 40°: 29 and 24 m
  * for a flank 14–17 m off), and F-11 B left's far west end 251 m AHEAD of the exit (122 m → a
  * 295 m anchor along a run 0.1 m off the well). ⛔ Nor a fillet `R·tan(φ/2)` floored at one
  * atom (census 26 → 16/26). ⛔ Nor a tangent from the clamp over the path held to an attack
@@ -54,7 +56,7 @@ import {
  */
 
 /** What placed one clamp — for drawing and diagnosis. */
-export type StiffRodTurn = {
+export type BattenTurn = {
   /** the run's clipped end on the ring */
   runEnd: Vec2;
   /** the run's unit heading INTO the ring */
@@ -63,15 +65,15 @@ export type StiffRodTurn = {
   flankDir: Vec2;
   /** the turn between them, radians */
   phi: number;
-  /** whether the rod wraps the hull on the outside of the well's turn (first bend against it) */
+  /** whether the batten wraps the hull on the outside of the well's turn (first bend against it) */
   convex: boolean;
   /** the multiple applied, and the anchor in atoms before the floor */
   multiple: number;
   atoms: number;
 };
 
-/** The anchor scale of {@link seedStiffRod} — see the file header. */
-export type StiffRodAnchor = {
+/** The anchor scale of {@link seedBatten} — see the file header. */
+export type BattenAnchor = {
   /** a global multiple on the measured anchor lengths; 1 = as measured */
   scale: number;
   /** diagnostics: force the anchor LENGTH (metres) of clamp A / clamp B */
@@ -91,8 +93,8 @@ const ANCHOR_FLOOR = 3;
 /** atoms per atom of the well's reversal past 90°, on BOTH clamps — see the file header */
 const REVERSAL_MULTIPLE = 2;
 
-/** What {@link seedStiffRod} lays out for the settle. */
-export type StiffRodSeed = {
+/** What {@link seedBatten} lays out for the settle. */
+export type BattenSeed = {
   /** the anchored span, resampled uniformly — its first two and last two vertices are the clamps */
   seed: Vec2[];
   /** the seed's vertex spacing, in metres — the atom, halved where the atom's chords crossed the well */
@@ -100,7 +102,7 @@ export type StiffRodSeed = {
   /** metres of run included before the seam and after it */
   anchor: [number, number];
   /** the turn each anchor is set by */
-  turn: [StiffRodTurn, StiffRodTurn];
+  turn: [BattenTurn, BattenTurn];
   /** vertices of the source curve kept BEFORE the seed: `curve.slice(0, head)` */
   head: number;
   /** where the source curve resumes AFTER the seed: `curve.slice(tail)` */
@@ -122,27 +124,27 @@ const headingAt = (curve: Vec2[], i: number, side: -1 | 1): Vec2 | null => {
 };
 
 /**
- * Lay out the span a stiff rod is settled over: the seam `curve[seamStart..seamEnd]` plus, before
+ * Lay out the span a batten is settled over: the seam `curve[seamStart..seamEnd]` plus, before
  * and after it, `max(3, c · φ/θ, 2 · (Ψ − 90°)/θ)` atoms of run (see the file header),
  * resampled at `atom`.
  *
- * ⭐ φ is read off the SEAM — the ring path, the way round the rod takes — over its first atom out
+ * ⭐ φ is read off the SEAM — the ring path, the way round the batten takes — over its first atom out
  * of each run end (`flanks`, read off the ring, when the seam is shorter), against the run's
  * heading over its SECOND atom from the seam (its first when the run is shorter than two). The path moves
  * continuously with the margin; the hugging seam of the old construction did not — its departure
- * vertex and its fillet/walk branch jump — and anchors read off it made the whole rod snap between
+ * vertex and its fillet/walk branch jump — and anchors read off it made the whole batten snap between
  * neighbouring margins. The anchor is measured from the run's CLIPPED end `E`/`S` (where it met
  * the ring), for the same reason.
  *
  * When a run is shorter than its anchor the span runs on STRAIGHT past the curve's end, along the
  * curve's own heading over its last atom there, so the clamp sits where the rule puts it rather
- * than up against the ring. The settled rod ships WHOLE, past the curve's end: an arm attached
+ * than up against the ring. The settled batten ships WHOLE, past the curve's end: an arm attached
  * off that end starts beyond it (see `buildFenceArms`), and an open end is outside the block.
  *
  * @param curve the assembled curve the seam sits in
  * @param seamStart index of the seam's first vertex (on run A)
  * @param seamEnd index of the seam's last vertex (on run B)
- * @param atom the rod's vertex spacing, in metres
+ * @param atom the batten's vertex spacing, in metres
  * @param theta the per-vertex turn limit, in radians
  * @param anchor the global anchor scale (and diagnostics overrides)
  * @param ends the clipped run ends `[E, S]` the seam was built between
@@ -150,26 +152,26 @@ const headingAt = (curve: Vec2[], i: number, side: -1 | 1): Vec2 | null => {
  * are split at the run's own points until they do
  * @param flanks the path's unit heading out of `E` / back from `S` over its first atom, for a seam
  * shorter than one atom (whose own chord shows none); `null` reads the seam
- * @param spacing the spacing the resample starts at — the atom, or finer for a rod re-laid because
+ * @param spacing the spacing the resample starts at — the atom, or finer for a batten re-laid because
  * it over-turned; never below a quarter atom
  *
  * @group Utils
  */
-export function seedStiffRod(
+export function seedBatten(
   curve: Vec2[],
   seamStart: number,
   seamEnd: number,
   atom: number,
   theta: number,
-  anchor: StiffRodAnchor,
+  anchor: BattenAnchor,
   ends: [Vec2, Vec2],
   clear: (a: Vec2, b: Vec2) => boolean,
   flanks?: [Vec2 | null, Vec2 | null],
   spacing: number = atom,
-): StiffRodSeed {
+): BattenSeed {
   if (seamEnd <= seamStart || seamEnd >= curve.length) {
     throw new Error(
-      'seedStiffRod: the seam must span at least two curve vertices',
+      'seedBatten: the seam must span at least two curve vertices',
     );
   }
   const arc = polylineArcLengths(curve);
@@ -199,7 +201,7 @@ export function seedStiffRod(
       : null) ??
     headingAt(curve, seamEnd, -1);
   if (!dirA || !dirB) {
-    throw new Error('seedStiffRod: the seam has no heading at one of its ends');
+    throw new Error('seedBatten: the seam has no heading at one of its ends');
   }
   const [E, S] = ends;
   // the well's own turn between the runs, signed; a run reversed (clamp B's view) turns the other way
@@ -225,8 +227,8 @@ export function seedStiffRod(
     dir: Vec2,
     flank: Vec2,
     turn: number,
-  ): StiffRodTurn => {
-    // the rod's hand: the side of the run's line the path LEAVES on. ⛔ Not the sum over the seam's
+  ): BattenTurn => {
+    // the batten's hand: the side of the run's line the path LEAVES on. ⛔ Not the sum over the seam's
     // vertices — that is a centroid test, and with the hull straddling the run's line it flipped
     // between hull angles 7.5° and 10° (wedge 100×25), halving clamp B's multiple: 174 → 95 m.
     const sign = cross(dir, flank) >= 0 ? 1 : -1;
@@ -291,7 +293,7 @@ export function seedStiffRod(
     arc[seamStart] + Math.hypot(E[0] - P0[0], E[1] - P0[1]) - anchorA;
   const to = arc[seamEnd] - Math.hypot(S[0] - P1[0], S[1] - P1[1]) + anchorB;
   // ⭐ A run shorter than its anchor is continued straight past the curve's end, never clamped
-  // there: a clamp held on the run's last vertices pinned the rod against the ring (F-11 A cropped:
+  // there: a clamp held on the run's last vertices pinned the batten against the ring (F-11 A cropped:
   // 8.3 atoms short, 47° over 8 contacts).
   // ⛔ Only where that continuation holds the margin: a 1 m stub's heading over an atom reaches into
   // the ring path, and on F-15 left at margins 1–2 it ran straight across the wellhead.
@@ -415,10 +417,10 @@ function resampleClear(
   }
 }
 
-/** A settled rod — see `settleRodConstrained`. */
-export type StiffRod = {
+/** A settled batten — see `settleBattenConstrained`. */
+export type Batten = {
   points: Vec2[];
-  /** where the rod presses on a hull or the well at rest, one per chord resting on a piece */
+  /** where the batten presses on a hull or the well at rest, one per chord resting on a piece */
   contacts: Vec2[];
   /** rounds spent */
   rounds: number;

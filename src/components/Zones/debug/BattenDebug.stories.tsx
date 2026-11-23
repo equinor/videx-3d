@@ -16,7 +16,7 @@ import {
   FenceSideName,
   hullDiameter,
   oneSidedOffset,
-  RodOverlapError,
+  BattenOverlapError,
   TransitionDebug,
 } from '../../../sdk/utils/one-sided-offset';
 import {
@@ -40,11 +40,11 @@ import { HullShape, syntheticObstacle, syntheticWell } from './synthetic-scene';
 type HullPivot = 'centre' | 'start' | 'end';
 
 /**
- * The STIFF ROD — how a cut gets round an obstacle ring, on its own.
+ * The BATTEN — how a cut gets round an obstacle ring, on its own.
  *
  * ⭐ PLAN view of ONE thing: each obstacle transition of the two cores, with the ring path it is
  * seeded from (purple), the anchored span it is settled over (dashed, clamps as white dots) and
- * the rod that ships (red). A synthetic scene gives a clean ring — a well turning by a chosen
+ * the batten that ships (red). A synthetic scene gives a clean ring — a well turning by a chosen
  * angle at an obstacle of a chosen shape, length and width — before the same construction is
  * looked at on a real head. Nothing here touches the production fence.
  *
@@ -108,8 +108,8 @@ type Props = {
   hullAngle: number;
   hullPivot: HullPivot;
   side: FenceSideName | 'both';
-  rodStiffness: number;
-  /** a global multiple on the rod's measured anchor lengths; 1 = as measured */
+  battenStiffness: number;
+  /** a global multiple on the batten's measured anchor lengths; 1 = as measured */
   anchorScale: number;
   /** diagnostics (candidate): aligned concave clamps */
   anchorBalanced: boolean;
@@ -122,7 +122,7 @@ type Props = {
   showSeed: boolean;
   showAnchors: boolean;
   showAnchorLabels: boolean;
-  showRod: boolean;
+  showBatten: boolean;
   showFailures: boolean;
   size: number;
   /** injected by the decorator: write a report row's settings into the story args */
@@ -141,7 +141,7 @@ const COLOURS = {
   hug: '#ba68c8',
   seed: '#80d8ff',
   clamp: '#ffffff',
-  rod: '#ff5252',
+  batten: '#ff5252',
   contact: '#ffffff',
   brush: '#00e5ff',
   runA: '#69f0ae',
@@ -178,7 +178,7 @@ type Scene = {
   /** why the production build rejects this scene before the cores (e.g. an unplannable head) */
   failed: string | null;
   notes: string[];
-  /** the scene re-planned with the two hulls of a rod overlap fused, as `buildWellboreFence` does */
+  /** the scene re-planned with the two hulls of a batten overlap fused, as `buildWellboreFence` does */
   replan?: (hulls: [Vec2[], Vec2[]]) => Scene | null;
 };
 
@@ -186,7 +186,7 @@ type SideResult = {
   core: Vec2[] | null;
   transitions: TransitionDebug[];
   error: string | null;
-  /** the two hulls whose rods overlapped */
+  /** the two hulls whose battens overlapped */
   overlap?: [Vec2[], Vec2[]];
 };
 
@@ -294,7 +294,7 @@ function wellboreScene(
   }
   const { headArm, reach, tdPlan } = inputs;
   notes.push(`cores run on past the block: head ${reach[0].toFixed(0)} m · TD ${reach[1].toFixed(0)} m`);
-  if (fuse.length > 0) notes.push(`rods overlapped: re-planned with ${fuse.length} hull pair(s) fused`);
+  if (fuse.length > 0) notes.push(`battens overlapped: re-planned with ${fuse.length} hull pair(s) fused`);
   if (tdPlan?.divert) {
     notes.push(`TD: diverted ${((tdPlan.divert * 180) / Math.PI).toFixed(0)}° so the head clears the well`);
   } else if (tdPlan) notes.push('TD: routed round the obstacle over it');
@@ -331,7 +331,7 @@ function wellboreScene(
 function buildModel(
   scene: Scene | null,
   margin: number,
-  rodStiffness: number,
+  battenStiffness: number,
   anchorScale: number,
   anchorBalanced = false,
 ): Model | null {
@@ -356,8 +356,8 @@ function buildModel(
     try {
       const off = oneSidedOffset(scene.trace, side, margin, {
         obstacles: scene.obstacles,
-        rodStiffness,
-        rodAnchor: { scale: anchorScale, balanced: anchorBalanced },
+        battenStiffness,
+        battenAnchor: { scale: anchorScale, balanced: anchorBalanced },
         keep: scene.trim,
         debug: transitions,
       });
@@ -367,7 +367,7 @@ function buildModel(
         core: null,
         transitions,
         error: e instanceof Error ? e.message : String(e),
-        overlap: e instanceof RodOverlapError ? e.hulls : undefined,
+        overlap: e instanceof BattenOverlapError ? e.hulls : undefined,
       };
     }
   };
@@ -375,11 +375,11 @@ function buildModel(
   const overlap = sides.left.overlap ?? sides.right.overlap;
   const replanned = overlap && scene.replan ? scene.replan(overlap) : null;
   if (replanned && (replanned.failed || replanned.obstacles.length < scene.obstacles.length)) {
-    return buildModel(replanned, margin, rodStiffness, anchorScale, anchorBalanced);
+    return buildModel(replanned, margin, battenStiffness, anchorScale, anchorBalanced);
   }
   for (const side of ['left', 'right'] as const) {
     const s = sides[side];
-    const rods = s.transitions.filter(t => t.seed);
+    const battens = s.transitions.filter(t => t.seed);
     const describe = (t: TransitionDebug) => {
       const shipped = t.seam ?? [];
       const turn = shipped.length >= 3 ? polylineWorstTurn(shipped).turn : 0;
@@ -393,15 +393,15 @@ function buildModel(
           `anchor A ${t.anchor[0].toFixed(0)} m · B ${t.anchor[1].toFixed(0)} m`,
         );
         bits.push(`seed ${t.seed?.length ?? 0}v`);
-        bits.push(`rod ${shipped.length}v · ${t.contacts?.length ?? 0} contact(s)`);
+        bits.push(`batten ${shipped.length}v · ${t.contacts?.length ?? 0} contact(s)`);
       }
       bits.push(`worst turn ${((turn * 180) / Math.PI).toFixed(0)}°`);
       return bits.join(' · ');
     };
     notes.push(
-      `${side}: ${s.core ? `BUILT ${s.core.length}pt` : 'FAILED'} · ${rods.length} transition(s)`,
+      `${side}: ${s.core ? `BUILT ${s.core.length}pt` : 'FAILED'} · ${battens.length} transition(s)`,
     );
-    for (const t of rods) notes.push(`  ${describe(t)}`);
+    for (const t of battens) notes.push(`  ${describe(t)}`);
     if (s.error) notes.push(`  ✖ ${s.error}`);
   }
   let cut: Model['cut'] = null;
@@ -421,7 +421,7 @@ function buildModel(
           tdArm: scene.tdArm,
           bearingWell: scene.bearing,
           allowDefects: true,
-          rodStiffness,
+          battenStiffness,
         },
       );
       cut = { left: built.left, right: built.right };
@@ -451,7 +451,7 @@ function buildModel(
   };
 }
 
-function RodPlanView({
+function BattenPlanView({
   model,
   size,
   fitKey,
@@ -474,7 +474,7 @@ function RodPlanView({
     | 'showSeed'
     | 'showAnchors'
     | 'showAnchorLabels'
-    | 'showRod'
+    | 'showBatten'
     | 'showFailures'
   >;
 }) {
@@ -793,9 +793,9 @@ function RodPlanView({
             );
           }
         }
-        if (layers.showRod && t.seam && t.seam.length >= 2) {
-          stroke(t.seam, COLOURS.rod, 2.5);
-          for (const p of t.seam) dot(p, COLOURS.rod, 2);
+        if (layers.showBatten && t.seam && t.seam.length >= 2) {
+          stroke(t.seam, COLOURS.batten, 2.5);
+          for (const p of t.seam) dot(p, COLOURS.batten, 2);
           for (const p of t.contacts ?? []) {
             context.strokeStyle = COLOURS.contact;
             context.lineWidth = 1.5;
@@ -812,7 +812,7 @@ function RodPlanView({
     }
 
     // FAILURE INDICATOR: a red banner per failed side, and a red ✖ on EVERY spot the gate tripped
-    // on (recorded by `finish`); a failure thrown elsewhere marks the rod's worst turn instead.
+    // on (recorded by `finish`); a failure thrown elsewhere marks the batten's worst turn instead.
     let bannerY = 22;
     for (const s of ['left', 'right'] as const) {
       const result = model.sides[s];
@@ -927,16 +927,16 @@ type ReportRow = {
   label: string;
   /** planning the scene: block, head plan, TD diversion, obstacles */
   planMs: number;
-  /** the rods and the cut */
+  /** the battens and the cut */
   ms: number;
   /** the head hull's diameter, m */
   head?: number;
-  /** seed vertices of every rod, both sides */
-  rodVertices: number;
+  /** seed vertices of every batten, both sides */
+  battenVertices: number;
   obstacles: number;
   /** TD diversion, degrees */
   divert?: number;
-  bucket: 'built' | 'rod' | 'runaway' | 'arms' | 'flags' | 'other' | 'outside';
+  bucket: 'built' | 'batten' | 'runaway' | 'arms' | 'flags' | 'other' | 'outside';
   detail: string;
   /** the args that reproduce this build */
   pick: Partial<Props>;
@@ -944,7 +944,7 @@ type ReportRow = {
 
 const BUCKET_ORDER: ReportRow['bucket'][] = [
   'built',
-  'rod',
+  'batten',
   'runaway',
   'arms',
   'flags',
@@ -953,7 +953,7 @@ const BUCKET_ORDER: ReportRow['bucket'][] = [
 ];
 const BUCKET_COLOURS: Record<ReportRow['bucket'], string> = {
   built: '#69f0ae',
-  rod: '#ff5252',
+  batten: '#ff5252',
   runaway: '#ff8a65',
   arms: '#ffd54f',
   flags: '#ffab40',
@@ -961,45 +961,45 @@ const BUCKET_COLOURS: Record<ReportRow['bucket'], string> = {
   outside: '#546e7a',
 };
 
-/** Bucket one model: the rod gates first, then the arms, then the cut's flags. */
+/** Bucket one model: the batten gates first, then the arms, then the cut's flags. */
 function bucketOf(m: Model | null): Pick<ReportRow, 'bucket' | 'detail'> {
   if (!m) return { bucket: 'other', detail: 'no scene' };
   if (m.scene.outside) return { bucket: 'outside', detail: 'never enters the block' };
   if (m.scene.failed) return { bucket: 'other', detail: m.scene.failed.slice(0, 90) };
-  const rodBits: string[] = [];
+  const battenBits: string[] = [];
   for (const s of ['left', 'right'] as const) {
     const err = m.sides[s].error;
     if (!err) continue;
-    const short = err.replace('oneSidedOffset: ', '').replace(/^the (left|right) stiff rod round a /, '');
-    rodBits.push(`${s[0].toUpperCase()}: ${short.slice(0, 90)}`);
+    const short = err.replace('oneSidedOffset: ', '').replace(/^the (left|right) batten round a /, '');
+    battenBits.push(`${s[0].toUpperCase()}: ${short.slice(0, 90)}`);
   }
-  if (rodBits.some(b => /ran away/.test(b))) return { bucket: 'runaway', detail: rodBits.join(' · ') };
-  if (rodBits.length > 0) {
-    return { bucket: rodBits.some(b => /stiff rod/.test(b) || /obstacle ring fails/.test(b)) ? 'rod' : 'other', detail: rodBits.join(' · ') };
+  if (battenBits.some(b => /ran away/.test(b))) return { bucket: 'runaway', detail: battenBits.join(' · ') };
+  if (battenBits.length > 0) {
+    return { bucket: battenBits.some(b => /batten/.test(b) || /obstacle ring fails/.test(b)) ? 'batten' : 'other', detail: battenBits.join(' · ') };
   }
   if (m.cutError) return { bucket: 'arms', detail: m.cutError.slice(0, 90) };
   if (m.cutFlags.length > 0) return { bucket: 'flags', detail: m.cutFlags.join(', ') };
   const turns = (['left', 'right'] as const).map(s => {
-    const rods = m.sides[s].transitions.filter(t => t.seam && t.seam.length >= 3);
-    const worst = rods.reduce((w, t) => Math.max(w, polylineWorstTurn(t.seam!).turn), 0);
-    const contacts = rods.reduce((c, t) => c + (t.contacts?.length ?? 0), 0);
+    const battens = m.sides[s].transitions.filter(t => t.seam && t.seam.length >= 3);
+    const worst = battens.reduce((w, t) => Math.max(w, polylineWorstTurn(t.seam!).turn), 0);
+    const contacts = battens.reduce((c, t) => c + (t.contacts?.length ?? 0), 0);
     return `${s[0].toUpperCase()} ${((worst * 180) / Math.PI).toFixed(0)}°/${contacts}c`;
   });
   return { bucket: 'built', detail: turns.join(' ') };
 }
 
 /** What a build's cost may follow, read off its model. */
-function costOf(m: Model | null): Pick<ReportRow, 'head' | 'rodVertices' | 'obstacles' | 'divert'> {
-  if (!m) return { rodVertices: 0, obstacles: 0 };
+function costOf(m: Model | null): Pick<ReportRow, 'head' | 'battenVertices' | 'obstacles' | 'divert'> {
+  if (!m) return { battenVertices: 0, obstacles: 0 };
   const hull = m.scene.headArm?.wrap.hull;
   const divert = m.scene.tdPlan?.divert;
-  let rodVertices = 0;
+  let battenVertices = 0;
   for (const s of ['left', 'right'] as const) {
-    for (const t of m.sides[s].transitions) rodVertices += t.seed?.length ?? 0;
+    for (const t of m.sides[s].transitions) battenVertices += t.seed?.length ?? 0;
   }
   return {
     head: hull && hull.length >= 3 ? hullDiameter(hull) : undefined,
-    rodVertices,
+    battenVertices,
     obstacles: m.scene.obstacles.length,
     divert: divert !== undefined ? (divert * 180) / Math.PI : undefined,
   };
@@ -1043,17 +1043,17 @@ function SlowestBuilds({
   const labelled = new Set(rows.map(row => row.label)).size > 1;
   return (
     <div style={{ marginTop: 8, borderTop: '1px solid #333', paddingTop: 6 }}>
-      <div style={{ fontWeight: 700 }}>slowest builds (plan + rods/cut)</div>
+      <div style={{ fontWeight: 700 }}>slowest builds (plan + battens/cut)</div>
       <div style={{ opacity: 0.6, marginBottom: 4 }}>
-        r(time, head Ø) {r(withHead.map(total), withHead.map(row => row.head!))} over {withHead.length} · r(time, rod
-        vertices) {r(built.map(total), built.map(row => row.rodVertices))} over {built.length} built
+        r(time, head Ø) {r(withHead.map(total), withHead.map(row => row.head!))} over {withHead.length} · r(time, batten
+        vertices) {r(built.map(total), built.map(row => row.battenVertices))} over {built.length} built
       </div>
       {slowest.map((row, i) => (
         <div key={i} style={{ marginLeft: 8 }}>
           {link(row, labelled ? row.label : row.margin)}
           {labelled ? ` m${row.margin}` : ''} — {total(row).toFixed(0)} ms ({row.planMs.toFixed(0)} +{' '}
-          {row.ms.toFixed(0)}) · head Ø {row.head !== undefined ? `${row.head.toFixed(0)} m` : '—'} · rod{' '}
-          {row.rodVertices}v · {row.obstacles} obst
+          {row.ms.toFixed(0)}) · head Ø {row.head !== undefined ? `${row.head.toFixed(0)} m` : '—'} · batten{' '}
+          {row.battenVertices}v · {row.obstacles} obst
           {row.divert !== undefined ? ` · divert ${row.divert.toFixed(0)}°` : ''}
           {row.bucket !== 'built' ? ` · ${row.bucket}` : ''}
         </div>
@@ -1202,7 +1202,7 @@ const buttonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-const StiffRodDebug = (props: Props) => {
+const BattenDebug = (props: Props) => {
   const data = useVolve();
   const crs = useMemo(
     () =>
@@ -1339,8 +1339,8 @@ const StiffRodDebug = (props: Props) => {
   ]);
 
   const model = useMemo(
-    () => buildModel(scene, props.margin, props.rodStiffness, props.anchorScale, props.anchorBalanced),
-    [scene, props.margin, props.rodStiffness, props.anchorScale, props.anchorBalanced],
+    () => buildModel(scene, props.margin, props.battenStiffness, props.anchorScale, props.anchorBalanced),
+    [scene, props.margin, props.battenStiffness, props.anchorScale, props.anchorBalanced],
   );
 
   // ⭐ THE REPORT — on demand, never as a control: every subject of the current scene kind (all
@@ -1394,7 +1394,7 @@ const StiffRodDebug = (props: Props) => {
       const t0 = performance.now();
       const scene = subject.scene(margin);
       const planMs = performance.now() - t0;
-      const m = buildModel(scene, margin, props.rodStiffness, props.anchorScale, props.anchorBalanced);
+      const m = buildModel(scene, margin, props.battenStiffness, props.anchorScale, props.anchorBalanced);
       rows.push({
         margin,
         label: subject.label,
@@ -1421,7 +1421,7 @@ const StiffRodDebug = (props: Props) => {
       showSeed: props.showSeed,
       showAnchors: props.showAnchors,
       showAnchorLabels: props.showAnchorLabels,
-      showRod: props.showRod,
+      showBatten: props.showBatten,
       showFailures: props.showFailures,
     }),
     [
@@ -1434,7 +1434,7 @@ const StiffRodDebug = (props: Props) => {
       props.showSeed,
       props.showAnchors,
       props.showAnchorLabels,
-      props.showRod,
+      props.showBatten,
       props.showFailures,
     ],
   );
@@ -1456,7 +1456,7 @@ const StiffRodDebug = (props: Props) => {
         alignItems: 'flex-start',
       }}
     >
-      <RodPlanView
+      <BattenPlanView
         model={model}
         size={props.size}
         fitKey={`${props.scene}|${props.wellbore}|${props.hull}|${props.hullPivot}|${props.wellTurn}|${props.crop}|${props.tvdFrom}|${props.tvdTo}`}
@@ -1465,7 +1465,7 @@ const StiffRodDebug = (props: Props) => {
       />
       <div style={{ fontSize: 12, maxWidth: 400 }}>
         <div style={{ fontWeight: 700, marginBottom: 4 }}>
-          {subject} · margin {props.margin} m · stiffness ×{props.rodStiffness} · anchor ×{props.anchorScale}
+          {subject} · margin {props.margin} m · stiffness ×{props.battenStiffness} · anchor ×{props.anchorScale}
           {props.anchorBalanced ? ' · balanced' : ''}
         </div>
         <div style={{ opacity: 0.6, marginBottom: 6 }}>
@@ -1482,7 +1482,7 @@ const StiffRodDebug = (props: Props) => {
             disabled={report?.running}
             onClick={() => runReport([props.margin])}
             style={buttonStyle}
-            title={`every ${props.scene === 'wellbore' ? 'well' : 'angle'} at margin ${props.margin}, stiffness ×${props.rodStiffness}`}
+            title={`every ${props.scene === 'wellbore' ? 'well' : 'angle'} at margin ${props.margin}, stiffness ×${props.battenStiffness}`}
           >
             report @ margin {props.margin}
           </button>
@@ -1523,10 +1523,10 @@ const StiffRodDebug = (props: Props) => {
           white = well (dashed grey = the planned head's virtual guide) · yellow
           hull = obstacle · dashed purple = the MARGIN BAND, the points within the margin of the
           hull (drawn rounded, within 2% of the margin outside it): the ring path follows the
-          line, the runs stop at the margin band and the rod keeps out of it by distance ·
-          thick purple = the ring PATH (the flank the rod must pass on) · dashed
+          line, the runs stop at the margin band and the batten keeps out of it by distance ·
+          thick purple = the ring PATH (the flank the batten must pass on) · dashed
           light blue = the anchored seed, white dots = the clamped vertices ·
-          red = the rod that ships, the least-bending shape that holds the margin — white rings
+          red = the batten that ships, the least-bending shape that holds the margin — white rings
           = contacts, where it presses on the margin of a hull or of the well · thin cyan/yellow
           = the left/right cores, thick = the finished cut with arms
         </div>
@@ -1536,8 +1536,8 @@ const StiffRodDebug = (props: Props) => {
 };
 
 const meta: Meta<Props> = {
-  title: 'debug/Zones/Stiff Rod (prototype)',
-  component: StiffRodDebug,
+  title: 'debug/Zones/Batten (prototype)',
+  component: BattenDebug,
   // `useArgs` is a preview hook — only valid in a decorator, not inside the React component.
   decorators: [
     (Story, context) => {
@@ -1603,7 +1603,7 @@ const meta: Meta<Props> = {
     },
     margin: {
       control: { type: 'range', min: 0.1, max: 20, step: 0.1 },
-      table: { category: 'rod' },
+      table: { category: 'batten' },
       description: 'cut clearance (m)',
     },
     tvdFrom: {
@@ -1644,25 +1644,25 @@ const meta: Meta<Props> = {
     side: {
       control: 'inline-radio',
       options: ['both', 'left', 'right'],
-      table: { category: 'rod' },
+      table: { category: 'batten' },
     },
-    rodStiffness: {
+    battenStiffness: {
       control: { type: 'range', min: 0, max: 5, step: 0.1 },
-      table: { category: 'rod' },
+      table: { category: 'batten' },
       description:
-        'the rod’s bending length as a multiple of the ring’s diameter: 0 = taut string (straight chords between contacts), larger = leaves the runs earlier and rounds every corner over a longer stretch',
+        'the batten’s bending length as a multiple of the ring’s diameter: 0 = taut string (straight chords between contacts), larger = leaves the runs earlier and rounds every corner over a longer stretch',
     },
     anchorScale: {
       control: { type: 'range', min: 0.25, max: 3, step: 0.25 },
-      table: { category: 'rod' },
+      table: { category: 'batten' },
       description:
-        'a global multiple on the rod’s anchor lengths. Each clamp sits max(3, c·φ/θ, 2·(Ψ − 90°)/θ) atoms back along its run, φ the turn from the run onto the ring path, c the measured optimum by convexity (4 for a rod wrapping the outside of the well’s turn, 2 on the inside) and Ψ the well’s turn between the two runs; this scales both multiples',
+        'a global multiple on the batten’s anchor lengths. Each clamp sits max(3, c·φ/θ, 2·(Ψ − 90°)/θ) atoms back along its run, φ the turn from the run onto the ring path, c the measured optimum by convexity (4 for a batten wrapping the outside of the well’s turn, 2 on the inside) and Ψ the well’s turn between the two runs; this scales both multiples',
     },
     anchorBalanced: {
       control: 'boolean',
-      table: { category: 'rod' },
+      table: { category: 'batten' },
       description:
-        'CANDIDATE, for a rod with both clamps on the inside of the turn: both clamps at the same height along the bisector of the two runs, max(3, 2·mean φ/θ) atoms beyond the farther run end — instead of each clamp from its own run end and its own φ',
+        'CANDIDATE, for a batten with both clamps on the inside of the turn: both clamps at the same height along the bisector of the two runs, max(3, 2·mean φ/θ) atoms beyond the farther run end — instead of each clamp from its own run end and its own φ',
     },
     showWell: { control: 'boolean', table: { category: 'view' } },
     showHull: { control: 'boolean', table: { category: 'view' } },
@@ -1670,7 +1670,7 @@ const meta: Meta<Props> = {
       control: 'boolean',
       table: { category: 'view' },
       description:
-        'the margin band: the points within the margin of the hull, drawn as hull + margin rounded to within 2% of the margin outside it. The ring path follows the drawn line; the runs stop, and the rod and every gate keep the margin, by distance to the hull',
+        'the margin band: the points within the margin of the hull, drawn as hull + margin rounded to within 2% of the margin outside it. The ring path follows the drawn line; the runs stop, and the batten and every gate keep the margin, by distance to the hull',
     },
     showCores: { control: 'boolean', table: { category: 'view' } },
     showCut: {
@@ -1681,7 +1681,7 @@ const meta: Meta<Props> = {
     showPath: {
       control: 'boolean',
       table: { category: 'view' },
-      description: 'the ring path the rod is seeded from',
+      description: 'the ring path the batten is seeded from',
     },
     showSeed: {
       control: 'boolean',
@@ -1699,10 +1699,10 @@ const meta: Meta<Props> = {
       table: { category: 'view' },
       description: 'per clamp: convexity, the anchor in metres and atoms, φ, φ/θ and the multiple',
     },
-    showRod: {
+    showBatten: {
       control: 'boolean',
       table: { category: 'view' },
-      description: 'the rod that ships',
+      description: 'the batten that ships',
     },
     showFailures: {
       control: 'boolean',
@@ -1731,7 +1731,7 @@ const meta: Meta<Props> = {
     hullAngle: 0,
     hullPivot: 'centre',
     side: 'both',
-    rodStiffness: 1,
+    battenStiffness: 1,
     anchorScale: 1,
     anchorBalanced: false,
     showWell: true,
@@ -1743,7 +1743,7 @@ const meta: Meta<Props> = {
     showSeed: true,
     showAnchors: true,
     showAnchorLabels: false,
-    showRod: true,
+    showBatten: true,
     showFailures: true,
     size: 900,
   },

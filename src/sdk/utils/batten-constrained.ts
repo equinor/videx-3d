@@ -1,10 +1,10 @@
 import { Vec2 } from '../types/common';
 import { segmentConvexNearest } from './margin-band';
 import { PolylineIndex } from './polyline-2d';
-import type { StiffRod } from './stiff-rod';
+import type { Batten } from './batten';
 
 /**
- * The stiff rod settled as a CONSTRAINED MINIMUM — the contacts are the constraints the rod
+ * The batten settled as a CONSTRAINED MINIMUM — the contacts are the constraints the batten
  * actually presses on, and nothing else.
  *
  * ⭐ The energy is `tension·Σ|Δp|² + bending·Σ|Δ²p|²` with both clamps fixed (position AND tangent),
@@ -15,28 +15,28 @@ import type { StiffRod } from './stiff-rod';
  * anywhere along it, so this is the chord's clearance, exactly, with no ring to lift and no
  * sagitta.
  *
- * ⭐ The lines are re-read from the rod after every solve (sequential convex programming): each
+ * ⭐ The lines are re-read from the batten after every solve (sequential convex programming): each
  * round is a quadratic programme with one half-plane per vertex constraint, solved EXACTLY by a
  * dual active set, so a constraint is held only while its multiplier is positive — only where
- * the rod presses. Each line lies in free space (the margin set of a convex piece is convex), and
- * pieces are gathered out to the round's trust radius, so every round is feasible and the rod
+ * the batten presses. Each line lies in free space (the margin set of a convex piece is convex), and
+ * pieces are gathered out to the round's trust radius, so every round is feasible and the batten
  * never jumps across an obstacle: the seed's flank is kept by construction.
  *
  * MEASURED against the pin-and-release settle it replaced, full census (43 wells × 15 margins):
  * 7 → 0 builds throwing, worst turn 293 better / 5 worse by 1–1.3°, core time 40 → 34 s; on 104
- * rods, 223 → 128 contacts and worst rod turn 180° → 25°.
+ * battens, 223 → 128 contacts and worst batten turn 180° → 25°.
  *
  * @module
  */
 
-/** {@link settleRodConstrained} options. */
-export type ConstrainedRodOptions = {
-  /** convex hulls the rod keeps `margin` from — every obstacle near it, its own included */
+/** {@link settleBattenConstrained} options. */
+export type ConstrainedBattenOptions = {
+  /** convex hulls the batten keeps `margin` from — every obstacle near it, its own included */
   obstacles: Vec2[][];
-  /** the reliable well pieces the rod keeps `margin` from */
+  /** the reliable well pieces the batten keeps `margin` from */
   keepOut: PolylineIndex[];
   /**
-   * The hand of every keep-out segment the rod lies on: `hand · leftNormal2D` of the segment's own
+   * The hand of every keep-out segment the batten lies on: `hand · leftNormal2D` of the segment's own
    * direction. A chord crossing a segment is pushed to that side; without it, to the side of the
    * chord's end further off the line.
    */
@@ -62,7 +62,7 @@ export type ConstrainedRodOptions = {
   trace?: (line: string) => void;
 };
 
-/** `n · x[v] ≥ c`, from chord `key`'s line against one piece, touching the rod at `touch` */
+/** `n · x[v] ≥ c`, from chord `key`'s line against one piece, touching the batten at `touch` */
 type Constraint = { v: number; n: Vec2; c: number; key: string; touch: Vec2 };
 
 const TENSION = 1;
@@ -71,7 +71,7 @@ const TENSION = 1;
 const MAX_REMESH = 4;
 
 /**
- * The rod's free-vertex system, for one vertex count: the pentadiagonal Hessian (the same for
+ * The batten's free-vertex system, for one vertex count: the pentadiagonal Hessian (the same for
  * both coordinates), its banded Cholesky factor, and the unconstrained rest position.
  */
 function freeSystem(x: Vec2[], bending: number) {
@@ -185,7 +185,7 @@ function solveDense(
 
 /**
  * The quadratic programme of one round: the rest position of the free vertices subject to `cons`,
- * by the DUAL active set of Goldfarb & Idnani. It starts from the free rod and adds only the most
+ * by the DUAL active set of Goldfarb & Idnani. It starts from the free batten and adds only the most
  * violated constraint at a time, so its work follows the contacts, not the constraint count —
  * a primal active set walked from the seed took 1258 iterations over 1588 constraints (F-11 A).
  * Returns the free vertices' positions and the constraints held (positive multipliers).
@@ -305,17 +305,17 @@ function solveRound(
 }
 
 /**
- * Settle a clamped rod to rest outside every convex piece near it — see the module header.
+ * Settle a clamped batten to rest outside every convex piece near it — see the module header.
  *
  * `seed` gives the clamps (its first two and last two vertices), the spacing and the starting
  * shape, which must lie on the right flank of every obstacle; its interior is re-solved.
  *
  * @group Utils
  */
-export function settleRodConstrained(
+export function settleBattenConstrained(
   seed: Vec2[],
-  opts: ConstrainedRodOptions,
-): StiffRod {
+  opts: ConstrainedBattenOptions,
+): Batten {
   let x = seed.map(p => [p[0], p[1]] as Vec2);
   if (x.length < 5)
     return { points: x, contacts: [], rounds: 0, converged: true };
@@ -327,7 +327,7 @@ export function settleRodConstrained(
   for (let i = 1; i < x.length; i++)
     h0 += Math.hypot(x[i][0] - x[i - 1][0], x[i][1] - x[i - 1][1]);
   h0 /= x.length - 1;
-  // ⭐ The trust radius doubles while steps keep reaching it: F-15 D's rod travelled ~230 m from its
+  // ⭐ The trust radius doubles while steps keep reaching it: F-15 D's batten travelled ~230 m from its
   // seed at a fixed half spacing, 71 rounds. Pieces are gathered out to it, so every step is safe.
   let trust = 0.5 * h0;
   const maxTrust = 8 * h0;

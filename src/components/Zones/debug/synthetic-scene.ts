@@ -1,7 +1,7 @@
 import { Vec2 } from '../../../sdk';
 import { convexHull2D } from '../../../sdk/utils/polyline-2d';
 
-/** The synthetic obstacle shapes of the stiff-rod debug story and its sweep probes. */
+/** The synthetic obstacle shapes of the batten debug story and its sweep probes. */
 export type HullShape = 'disc' | 'blob' | 'sliver' | 'wedge';
 
 /** Obstacle shapes about the origin, roughly unit length along x, before stretching and turning. */

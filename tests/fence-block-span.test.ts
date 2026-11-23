@@ -149,12 +149,12 @@ describe('fence block span', { timeout: 30_000 }, () => {
     expect(fenceCoreTrace(curve, span, [0, 0])).toBeNull();
   });
 
-  it('cuts a core back at the block end, never through a rod', () => {
+  it('cuts a core back at the block end, never through a batten', () => {
     const core: Vec2[] = Array.from({ length: 11 }, (_, i) => [i * 10, 0]);
     const endOf = (c: Vec2[]) => c[c.length - 1][0];
     expect(endOf(trimFenceCore(core, { td: [60, 1] }))).toBeCloseTo(60, 9);
     expect(endOf(trimFenceCore(core, { td: [60, 1] }, [[[50, 0], [70, 0]]]))).toBeCloseTo(70, 9);
-    // overlapping rods are stepped out of one after the other
+    // overlapping battens are stepped out of one after the other
     const head = trimFenceCore(core, { head: [42, -1] }, [
       [[20, 0], [41, 0]],
       [[45, 0], [40, 0]],

@@ -795,7 +795,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     const wellbore = fence?.report.wellbore;
     const range = fence?.report.verticalRange;
     if (fence) {
-      // tvdFrom/tvdTo as the stiff rod debug story takes them
+      // tvdFrom/tvdTo as the batten debug story takes them
       const tvd = range
         ? ` · tvdFrom ${(-range[1]).toFixed(0)} tvdTo ${(-range[0]).toFixed(0)}`
         : '';

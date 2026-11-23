@@ -17,7 +17,7 @@ import {
   planHeadArm,
   planTdArm,
   planTdDiversion,
-  rodsCrowd,
+  battensCrowd,
   TdArmPlan,
   tdDiversionAngles,
   tdPlanTrace,
@@ -29,7 +29,7 @@ import {
   isTracePocket,
   oneSidedOffset,
   pointInConvex,
-  RodOverlapError,
+  BattenOverlapError,
   sideNormalSign,
   TracePocketSpan,
   TraceProblemOptions,
@@ -108,7 +108,7 @@ export const fenceSideSign = sideNormalSign;
  * with that — `prepareFenceTrace` keeps it as drilled, and the cut instead ROUTES
  * AROUND the defects: `fenceObstacles` frames each pocket and kink in a convex hull, the head
  * is framed as one more, and `oneSidedOffset` rounds each hull's margin-inflated ring with the
- * stiff rod rather than measuring the degenerate trace inside it. A well with no plan shape at
+ * batten rather than measuring the degenerate trace inside it. A well with no plan shape at
  * all is framed whole as its head, with guides at both ends.
  *
  * @module
@@ -604,7 +604,7 @@ export type FenceObstacleOptions = {
   detector?: TraceProblemOptions;
   /** spans already detected on the same trace, when the source is `'trace-problems'` */
   spans?: TraceProblemSpan[];
-  /** hulls to fuse with whatever they overlap — pairs whose rods overlapped when laid ({@link RodOverlapError}) */
+  /** hulls to fuse with whatever they overlap — pairs whose battens overlapped when laid ({@link BattenOverlapError}) */
   fuse?: Vec2[][];
 };
 
@@ -668,8 +668,8 @@ export function fenceObstacles(
  * region when they come within `2 · margin` of each other: two features metres apart are separate
  * at margin 0.1 and one region at margin 20. That is why this needs the margin.
  *
- * ⭐ Two margin bands apart are still ONE region when the trace between them is too short for the rods
- * round both ({@link rodsCrowd}): each rod runs on along it by its anchor, and two that meet cross.
+ * ⭐ Two margin bands apart are still ONE region when the trace between them is too short for the battens
+ * round both ({@link battensCrowd}): each batten runs on along it by its anchor, and two that meet cross.
  *
  * Each pass fuses one pair, so it terminates after at most `hulls.length - 1` of them — the count
  * strictly falls and there is no iteration cap standing in for convergence.
@@ -687,7 +687,7 @@ function mergeOverlappingObstacles(
         const gap = convexPolygonDistance(current[i], current[j]);
         if (
           !(gap === 0 || gap < 2 * margin) &&
-          !(margin > 0 && rodsCrowd(trace, current[i], current[j], margin))
+          !(margin > 0 && battensCrowd(trace, current[i], current[j], margin))
         ) {
           continue;
         }
@@ -1979,10 +1979,10 @@ export type WellboreFenceOptions = {
    * on its margin from reading as buried through float noise.
    */
   tolerance?: number;
-  /** the stiff rod's bending length as a multiple of the obstacle ring's diameter — see `OneSidedOffsetOptions.rodStiffness`. Default 1. */
-  rodStiffness?: number;
-  /** the stiff rod's anchor scale — see `OneSidedOffsetOptions.rodAnchor`. */
-  rodAnchor?: { scale?: number };
+  /** the batten's bending length as a multiple of the obstacle ring's diameter — see `OneSidedOffsetOptions.battenStiffness`. Default 1. */
+  battenStiffness?: number;
+  /** the batten's anchor scale — see `OneSidedOffsetOptions.battenAnchor`. */
+  battenAnchor?: { scale?: number };
   /** identifier carried into the report */
   wellbore?: string;
 };
@@ -2316,9 +2316,9 @@ export type FenceCoreTrace = {
  * The plan trace a fence's cores are built on: the block's stretch of `curve` run on `reach`
  * metres past its head and TD, clamped to the trajectory.
  *
- * ⭐ A core cut off at the block's edge left a rod there nothing to anchor on but a straight
+ * ⭐ A core cut off at the block's edge left a batten there nothing to anchor on but a straight
  * stand-in, refused where it crossed the well (F-11 B cropped at margin 4.7: 6.5 of 26.3 atoms
- * laid), so the same rod came out differently wherever the block ended. Run on, it settles on the
+ * laid), so the same batten came out differently wherever the block ended. Run on, it settles on the
  * real well; {@link trimFenceCore} cuts it back.
  *
  * @returns null when neither end has anything to add
@@ -2564,7 +2564,7 @@ export function fenceCoreInputs(
   if (tdPlan && tdRunOn && !pointInConvex(well[well.length - 1], tdPlan.ring)) {
     tdPlan = null;
   }
-  // The head is one more obstacle: planned first, so each core rounds its ring by the same rod
+  // The head is one more obstacle: planned first, so each core rounds its ring by the same batten
   // as any mid-trace fold and lands on the guide the head arm leaves from.
   const planHead = (td: TdArmPlan | null, headOffset?: number) =>
     span.headArm
@@ -2726,7 +2726,7 @@ export function buildWellboreFence(
   // The stretches the cut must route AROUND rather than follow — see THE ONE RULE in
   // `one-sided-offset.ts`: the trace inside one of these is degenerate and cannot be measured.
   // ⭐ The cores run on past an open end or a cut — see {@link fenceRunOn} — and are cut back to
-  // the block after, so a rod near its edge settles on the real well wherever the block ends.
+  // the block after, so a batten near its edge settles on the real well wherever the block ends.
   const attempt = (
     head: Pick<WellboreFenceOptions, 'headBearing' | 'headMinTdAngle'>,
   ) => {
@@ -2748,11 +2748,11 @@ export function buildWellboreFence(
     const coreOf = (side: FenceSideName): Vec2[] =>
       oneSidedOffset(inputs.trace, side, margin, {
         obstacles: inputs.route,
-        rodStiffness: options.rodStiffness,
-        rodAnchor: options.rodAnchor,
+        battenStiffness: options.battenStiffness,
+        battenAnchor: options.battenAnchor,
         keep: inputs.trim,
       }).points;
-    // ⭐ Two rods that need more run than lies between their rings: the pair is re-planned as ONE
+    // ⭐ Two battens that need more run than lies between their rings: the pair is re-planned as ONE
     // obstacle, for both sides. Each round routes one hull fewer, so it ends.
     const fuse: Vec2[][] = [];
     const cores = (): { left: Vec2[]; right: Vec2[] } => {
@@ -2760,7 +2760,7 @@ export function buildWellboreFence(
         try {
           return { left: coreOf('left'), right: coreOf('right') };
         } catch (e) {
-          if (!(e instanceof RodOverlapError)) throw e;
+          if (!(e instanceof BattenOverlapError)) throw e;
           fuse.push(convexHull2D([...e.hulls[0], ...e.hulls[1]]));
           const next = plan([...fuse]);
           if (next.route.length >= inputs.route.length) throw e;
@@ -2785,7 +2785,7 @@ export function buildWellboreFence(
         tdPlan: inputs.tdPlan,
         tdArm: span.tdArm,
         bearingWell: inputs.bearing,
-        rodStiffness: options.rodStiffness,
+        battenStiffness: options.battenStiffness,
       },
     );
     stages.arms = now() - at;

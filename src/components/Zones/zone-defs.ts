@@ -912,13 +912,13 @@ export type ZoneFence = {
    */
   margin?: number;
   /**
-   * How stiffly the cut bends round the well's folds and its head: the stiff rod's bending length
+   * How stiffly the cut bends round the well's folds and its head: the batten's bending length
    * as a multiple of the obstacle ring's diameter. Larger leaves the trace earlier and rounds every
    * corner over a longer stretch; 0 is a taut string. Default 1.
    *
    * ⚠️ Baked into the curve, so changing it rebuilds the fence (not the zones).
    */
-  rodStiffness?: number;
+  stiffness?: number;
   /**
    * Which way the head arm leaves: exactly opposite the TD arm (default), or `'free'` — through
    * the head, at least {@link ZoneFence.headMinTdAngle} off the TD arm.

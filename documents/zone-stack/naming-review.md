@@ -6,8 +6,10 @@
 >
 > **Decided and applied (2026-11-23):** `Chunk` → `Zone` throughout
 > ([2](#2-the-core-component-pair)); a zone's footprint is its **boundary**
-> (`ZoneBoundary`, the `boundary` prop — [3.4](#34-boundary-sources)); and a layer,
-> called a "boundary" before, is a **horizon** in the docs. Everything else is open.
+> (`ZoneBoundary`, the `boundary` prop — [3.4](#34-boundary-sources)); a layer, called a
+> "boundary" before, is a **horizon** in the docs; and the fence's stiff rod is the
+> **batten**, its `rodStiffness` now `ZoneFence.stiffness` ([3.8](#38-section-and-fence)).
+> Everything else is open.
 
 - [1. Cross-cutting issues](#1-cross-cutting-issues)
 - [2. The core component pair](#2-the-core-component-pair)
@@ -204,7 +206,7 @@ reaches host geometry.
 | `ZoneSectionState`, `ZoneSectionFace`, `useZoneSection` | also used for fence faces | `CutFace`, `useCutFaces` |
 | `ZoneFence.side` | names the half **removed**, while `FenceSideInfo.side` is documented as "the side shown, i.e. the half removed", and `onFenceSide` reports "the SHOWN side" | `removedSide` (or `open`) |
 | `ZoneFence.margin` | it is the clearance around the trajectory | `clearance` |
-| `rodStiffness` | exposes the algorithm | `stiffness` |
+| ~~`rodStiffness`~~ | exposes the algorithm | **decided (2026-11-23):** `ZoneFence.stiffness`; the stiff rod itself is now the **batten** (`seedBatten`, `battenStiffness` in the SDK) |
 | `headBearing: 'opposite-td' \| 'free'`, `headMinTdAngle` | jargon (fine for well specialists) | `headArm: 'opposite' \| 'free'`, `headArmMinAngle` |
 | `scope: 'stack' \| 'touched'` | "touched" is vague | `reach: 'all' \| 'intersected'` |
 | `ZoneFenceOverlay`, `FenceOverlayTexture { values, along, y }`, `FenceSideInfo { verticalRange }`, `ZoneFenceOverlayShading` | mixed prefixes; terse fields | `FenceOverlay`; `alongRange`, `yRange` |
@@ -302,4 +304,4 @@ The FieldColumn story's controls are evidence of what reads naturally:
 3. One meaning each for "cut" and "section"; one word for interval/unit.
 4. Restructure `resolve` and the debug props.
 5. Trim the export surface.
-6. Leaf renames (`material` → `color`, `margin` → `clearance`, `rodStiffness`, …).
+6. Leaf renames (`material` → `color`, `margin` → `clearance`, …).

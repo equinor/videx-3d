@@ -29,7 +29,7 @@ DEGENERATE, and no measurement may be taken from it.** Where the trace loops, ho
 doubles back, `fenceObstacles` frames the fold in a convex hull. The points within the
 margin of that hull are its **margin band**, tested by distance to the hull, and the margin band — not the
 trace — dictates the route past the obstacle. Each side rounds its own side of the margin band with
-a stiff rod, and that rod *is* the cut there. Nearly every bug this feature has had came
+a batten, and that batten *is* the cut there. Nearly every bug this feature has had came
 from measuring the trace where the margin band should have stood in for it.
 
 ## Pipeline
@@ -42,11 +42,11 @@ Curve3D (spline through the position log)
   ├─ prepareFenceTrace      the plan path, deduped and simplified — AS DRILLED.
   │                         It is NOT straightened; folds are routed around, not removed
   ├─ fenceObstacles         convex hulls framing each fold; the margin band is the points within
-  │                         `margin` of a hull. Hulls whose margin bands touch, or whose rods
+  │                         `margin` of a hull. Hulls whose margin bands touch, or whose battens
   │                         would crowd, are merged into one
   │
   ├─ oneSidedOffset  ×2     each side's CORE: the one-sided offset of the trace, its runs
-  │                         joined across each margin band by a stiff rod
+  │                         joined across each margin band by a batten
   │                         (`sdk/utils/one-sided-offset.ts`)
   ├─ buildFenceCut          the SHARED run-out arms, decided from both cores together
   │                         (`sdk/utils/fence-run-out.ts`); takes the `near-vertical`
@@ -80,12 +80,12 @@ stretch alone (`report.block`). The window itself is echoed as `report.verticalR
 - **The cores run on past an open end, and past a TD cut by the bottom** once the block is past
   its kickoff: `runOutMargin` (500 m) further along the well (`fenceRunOn`, `fenceCoreTrace`,
   option `coreReach`, `report.coreReach`), then are cut back to the block (`trimFenceCore`) —
-  never through a rod, which is kept whole past the cut. A rod near the block's edge then settles
+  never through a batten, which is kept whole past the cut. A batten near the block's edge then settles
   on the real well instead of a straight stand-in, so it comes out the same wherever the block
   ends (F-11 B cropped at margin 4.7 laid only 6.5 of the 26.3 atoms its rule wanted). The well,
   its field and the burial check stay on the block's stretch. Measured against the field build
   over 120 cropped builds, head left out: 107 unchanged, 7 closer (F-11 T2 cropped 3.4 → 0.1 m),
-  6 further — where the head's own rod reaches the open end (F-11 B: a 480 m head ring), whose
+  6 further — where the head's own batten reaches the open end (F-11 B: a 480 m head ring), whose
   shape follows the crop's head bearing.
   - An armed head never runs on: the cores follow its planned guide. ⛔ Arming a cut head like
     the TD instead (along the well's own bearing, no plan) broke 16 of 207 builds at 808/1500 m
@@ -93,11 +93,11 @@ stretch alone (`report.block`). The window itself is echoed as `report.verticalR
   - A TD cut still in the vertical column does not run on: it crossed the kickoff and failed at
     a fold (F-14 cut at 2000 m, kickoff at MD 2136).
   - ⭐ Only what ships is built and judged. The offset is handed the block's ends
-    (`OneSidedOffsetOptions.keep`): a rod lying wholly past them is never laid, and the curve is
+    (`OneSidedOffsetOptions.keep`): a batten lying wholly past them is never laid, and the curve is
     cut back before the fold repair and the gates — so a failure out there no longer rejects the
     fence; one touching the kept stretch still does. It rejected F-1 C cut at 1900 m at 7 of 200
-    margins (a rod past the TD failing at 7.7–8.1, an unrepairable fold at 2 and 2.2) and laid a
-    discarded rod at 55 more. Over 1720 builds: 1 fixed, none broken, no worst turn moved > 1°.
+    margins (a batten past the TD failing at 7.7–8.1, an unrepairable fold at 2 and 2.2) and laid a
+    discarded batten at 55 more. Over 1720 builds: 1 fixed, none broken, no worst turn moved > 1°.
   - A block cut short at an open head reads its TD bearing on the run-on in front of it
     (`FenceArmsOptions.bearingWell`). X13 enters a 1.5 km crop for its last 10 m: an end spanning
     9.99 m, under the 10 m degenerate span, fell back to +X against a well heading −X, and the TD
@@ -110,14 +110,14 @@ stretch alone (`report.block`). The window itself is echoed as `report.verticalR
   - ⭐ That bearing is read where the well enters the HULL, not its margin band. Read at the margin band, it slid
     back along a curving well as the margin grew and turned the head arm with it — Z01's 22° between
     margins 10 and 11.75 — until at 11.8 the head wrap swallowed the TD hull, the plan was dropped,
-    the head was planned off the tangent INSIDE the hull, and the rod failed (49°) at every margin
+    the head was planned off the tangent INSIDE the hull, and the batten failed (49°) at every margin
     from 11.8 to 20. Read at the hull the bearing is the same at every margin, and Z01 builds at all
     of them; it is the only well of 72 with a TD obstacle plan at margins 0.1–20.
     A core landed on a TD guide (this plan or a degenerate one) leaves along the arm, as at the
     head: joined off its own end, still converging by 1–8°, the two sides' 300–780 m joins
     crossed each other by up to 7 m (35 ends over the census below; now none).
   - A degenerate head plan owns its TD guide, so its trace is not run on past it — appended
-    after the guide's apex, the trace doubled back and the rod failed (F-11 A/B/T2 at 2000 m and
+    after the guide's apex, the trace doubled back and the batten failed (F-11 A/B/T2 at 2000 m and
     below). Measured over bottom cuts 1500–2500 m and crops 1.5/0.8 km, every well and extra at
     margins 0.5/2/4: 44 of 609 builds fixed, none broken.
   - ⭐ The one fallback: if the cores fail with the run-on past an open head — it can reach the
@@ -141,11 +141,11 @@ turn).
 (`planHeadArm`, option `headTurnout`, default 100 m): an arc leaves the head ring's front along
 the well's own heading and turns onto the bearing, its chord `headTurnout` long, and the guide
 starts where it ends. Its radius is never less than the head ring's diameter: at margins 7.6–20 a
-100 m chord laid R ≈ 52 m off 111–276 m rings and the rods failed (F-12, F-15 D). Its vertices
+100 m chord laid R ≈ 52 m off 111–276 m rings and the battens failed (F-12, F-15 D). Its vertices
 turn at most `acos(1 − tol / (2·margin))` (≤ 3°, `tol` = `DEFAULT_OFFSET_TOLERANCE`), so the
 inner offset loses at most half the prune's slack at a vertex. ⛔ At a flat 3° the inner side lost
 `margin·(1 − cos 3°)` — over the 0.01 m slack above margin ~7.3 — and was pruned whole (2 of 55
-points left at 9.4): the rod bridging it seeded its end clamp inside the margin (F-15 A/B at
+points left at 9.4): the batten bridging it seeded its end clamp inside the margin (F-15 A/B at
 9.2–9.5 "still dips") or buried the well (19 A/B/BT2, F-15 B at 10–20). Over the 19 wells of the
 F-1, F-11, F-15, 19 families and F-4, margins 0.1–19.9: 17 → 0 throws, none broken. It is part of
 the virtual well — the cores follow it like any bend — never
@@ -164,7 +164,7 @@ limb that crowded the old one. `headTurnout: 0` restores the shift (bit-identica
 (`tdDiversionAngles`, `planTdDiversion`). Where the opposite-TD axis runs into the well, `planHeadArm` grows the wrap
 over the WHOLE well up to the crossing — right for a hook beside the head (F-15 D, 188 m out), but
 on a well whose two ends point the same way the crossing is kilometres down: 46 failing wells of a
-large field had head hulls of 0.8–4 km grown from 7–21 m frames, and the rods round them failed.
+large field had head hulls of 0.8–4 km grown from 7–21 m frames, and the battens round them failed.
 When the head grew (and the TD is armed and not a run-on), the TD arm instead runs on along its
 bearing for its gather distance, turns on an arc of chord `headTurnout` and leaves on a bearing up
 to 90° off, always AWAY from the head's side of the TD bearing; the head is then planned opposite
@@ -173,7 +173,7 @@ frame and the obstacles — a kink on the axis is wrapped, not met — else the 
 axis meets the well nearest WITHOUT a reversal (the well there heading back towards the head
 folds the cut round the grown wrap). An arm that would cross the well is never taken, and the
 diversion is kept only when it shrinks the head hull. Measured at margins 0.1/0.5: 7 of those
-wells (Z03, Z10, Z22, Z24, Z27, Z44, Z46) went from rod failures or 2.5–4 km hulls to builds with
+wells (Z03, Z10, Z22, Z24, Z27, Z44, Z46) went from batten failures or 2.5–4 km hulls to builds with
 9–294 m hulls; F-12 diverts 85° (hull 96 → 29 m), F-15 D −90° (260 → 174 m, worst turn 3 → 14°).
 - ⭐ **No corridor along the arm** (`armPocket`): the trace problem detector run over the planned
   head arm in front of the virtual well finds the arm running back alongside the well as a POCKET
@@ -188,7 +188,7 @@ wells (Z03, Z10, Z22, Z24, Z27, Z44, Z46) went from rod failures or 2.5–4 km h
 ⭐ **A laid U-turn (over 90°) is FRAMED, not followed** (`turnTrapezoid`): a trapezoid on the line
 from the head anchor to the guide's start, half as deep as the arc would bulge, legs at 45° and
 leaning 15° towards the arm, folded into the head wrap. The well's path hops through it and the
-cuts go round it by the rod, so the inner cut leaves the head straight onto the guide instead of
+cuts go round it by the batten, so the inner cut leaves the head straight onto the guide instead of
 following the turn round it. A widening only moves the guide's start sideways (a longer frame, not
 a deeper one). Inside a frame nothing follows the turn, so its radius is `headTurnout` alone — sized
 off the ring, a 2 km loop head framed a 2 km turn (Z01 2019 → 4594 m, Z34 1668 → 4078 m).
@@ -198,7 +198,7 @@ off the ring, a 2 km loop head framed a 2 km turn (Z01 2019 → 4594 m, Z34 1668
   of it, the frame takes that well too and the inner cut crosses the hairpin's mouth. Further off it
   is a long run, not a hairpin (Z04 at 0.5: 1345 m; a synthetic U: 1859 m).
 - **A hook past a grown head.** A head that GREW and a well that turns more than 90° within 1.5 hull
-  diameters of leaving it: the hook is taken into the wrap, once, so the rods anchor past it rather
+  diameters of leaving it: the hook is taken into the wrap, once, so the battens anchor past it rather
   than bend round it. Those two together picked out exactly F-15 D, Z13 and Z21 of 14 wells (grown
   Z10/Z12 barely turn; Z34/Z46 turn 107–115° but did not grow): F-15 D 16 → 3°, Z21 9 → 5–6° and
   its corridor gone. At 2 diameters Z13 was clean too but its hull 1275 → 2738 m; at 1 Z21 missed its hook.
@@ -250,7 +250,7 @@ continuous in the margin (`sdk/utils/margin-band.ts`: `convexSignedDistance`,
 
 One polygon is left: `bandRing`, the hull grown by the margin with no corner turning more than
 `maxRelativeTurn / 2` — outside the margin band everywhere, and within 2% of the margin of it. It is
-the outline the story draws, the path the rod is seeded along, and the margin band's extent (the rod's
+the outline the story draws, the path the batten is seeded along, and the margin band's extent (the batten's
 atom). Whether a point is IN the margin band is never read from it.
 ⭐ **An obstacle's hull is coarsened where it is made** (`obstacleHull`): a dense trace leaves every
 vertex of a bend on its hull (Z06's head: 1479), and every distance to it costs per vertex — half of a
@@ -266,22 +266,25 @@ one worst turn moved (Z34 at 0.1: right 6° → 11°).
   rounded margin band, and one kept strung a run round X12's TD hook at margin 4 (a 60° reversal).
 - **Run ends** are the exact point where the run enters the margin band (`marginCrossings`), so they
   move continuously with the margin.
-- **The reliable well** — the stretches the rod is held off — runs right up to the margin band
-  crossing. Stopped at the last vertex outside, it left a gap that X07's rod slipped through at
+- **The reliable well** — the stretches the batten is held off — runs right up to the margin band
+  crossing. Stopped at the last vertex outside, it left a gap that X07's batten slipped through at
   margin 1.
 - **Merges.** Two obstacles are one when their hulls are within `2 · margin` (their margin bands touch),
-  or when the well between the two margin bands is too short for both rods (`rodsCrowd`: 4 atoms of run
-  each, measured by `freeRunBetween`). A rod whose anchor still runs onto the next margin band throws
-  `RodOverlapError`, and the pair is fused and the cores re-planned. The head wrap and the TD plan
+  or when the well between the two margin bands is too short for both battens (`battensCrowd`: 4 atoms of run
+  each, measured by `freeRunBetween`). A batten whose anchor still runs onto the next margin band throws
+  `BattenOverlapError`, and the pair is fused and the cores re-planned. The head wrap and the TD plan
   use the same distance and `bandRing`.
 
-## The transition: a stiff rod
+## The transition: a batten
 
-Each gap between two runs is joined by one construction, whatever its size: a **stiff rod**.
-`seedStiffRod` (`sdk/utils/stiff-rod.ts`) lays the seed — the `bandRing` path between the two
-run ends in the walk direction, plus an anchored stretch of each run, resampled at the rod's
+Each gap between two runs is joined by one construction, whatever its size: a **batten**.
+The name is the loftsman's: a thin, flexible strip clamped at its ends and pressed against
+pins, which settles into the fairest curve between them — here, clamped on both runs and held
+off the hulls and the well only where it presses.
+`seedBatten` (`sdk/utils/batten.ts`) lays the seed — the `bandRing` path between the two
+run ends in the walk direction, plus an anchored stretch of each run, resampled at the batten's
 atom `max(0.25, margin / 2, D / 8)`. The anchor rule and its measurements are in that file's
-header. `settleRodConstrained` (`sdk/utils/stiff-rod-constrained.ts`) settles it.
+header. `settleBattenConstrained` (`sdk/utils/batten-constrained.ts`) settles it.
 
 - **Fixed vertices.** Tension plus bending, both clamps fixed in position and tangent, over the
   seed's vertices. Nothing is inserted, so no contact can make a short chord.
@@ -290,28 +293,28 @@ header. `settleRodConstrained` (`sdk/utils/stiff-rod-constrained.ts`) settles it
   straight over a big ring's atom (42–139 m) that chord cut a curving core: F-15 D, Z21 and Z46
   failed at margin 0.1 "clr 0.00 x2 dips", crossing the well 0–34 m from a clamp, and shorter anchors
   did not help. The settle keeps the full-length pair; only what ships follows the core there
-  (`StiffRodSeed.clamps`). All three built.
+  (`BattenSeed.clamps`). All three built.
 - **Separating lines.** Each chord is held `margin` from every convex piece near it — each hull
   and each reliable well segment — by the line through their closest points: both chord ends at
   least `margin` beyond it. That is the chord's exact clearance, with no sagitta and no lifted ring.
-- **Contacts only where the rod presses.** Each round is a quadratic programme solved exactly by
+- **Contacts only where the batten presses.** Each round is a quadratic programme solved exactly by
   a dual active set, so a line is held only while its multiplier is positive. The lines are
-  re-read after every round, within a trust radius of 0.5–8 seed spacings, so the rod never jumps
+  re-read after every round, within a trust radius of 0.5–8 seed spacings, so the batten never jumps
   across an obstacle.
 - ⚠️ **Carried lines.** A line held last round and not re-read this round is carried into the
-  next; without that, rods alternated between two solutions forever. Carrying every line piled up
+  next; without that, battens alternated between two solutions forever. Carrying every line piled up
   copies instead (F-5 at margin 20 held 335 lines on 167 vertices).
-- **Stiffness floor.** The bending length is never below the rod's own 8 atoms. Margin-20 joins
+- **Stiffness floor.** The bending length is never below the batten's own 8 atoms. Margin-20 joins
   across a 0.4 m gap had a 0.8 m bending length on 10 m chords, a taut string with its whole turn
   on one vertex (F-1, F-1 A, F-1 B, F-12: 57–95°).
 - **Run ends that meet.** When the path between E and S is shorter than an atom, each clamp's
   turn φ is read over one atom of the ring round from its run end. The E→S chord reverses when S
   passes E: F-5 at margin 19.2 mirrored φ from 37°/112° to 143°/68° and anchor A from 50 to 244 m.
   And S less than an atom BEHIND E gets no path at all — read as a lap round the ring, the same
-  F-5 rod took 36 ring vertices and turned 179°.
+  F-5 batten took 36 ring vertices and turned 179°.
 
 MEASURED against the pin-and-release settle it replaced, full census (43 wells × 15 margins):
-7 → 0 builds throwing; on 104 rods, 223 → 128 contacts and worst rod turn 180° → 25°. With the
+7 → 0 builds throwing; on 104 battens, 223 → 128 contacts and worst batten turn 180° → 25°. With the
 margin bands moved to distance as well: 0 builds throwing, worst turn better on 296 builds and worse on 38.
 
 ## Why the clearance is baked into the curve
@@ -349,11 +352,11 @@ mechanisms exist for it, and both are load-bearing:
   half-chords dip again and a zero tolerance never terminates.
   ⚠️ It throws only when a dipping chord ENDS inside the margin (a vertex no midpoint can move),
   or at a 64-round safety cap. A fixed 8 rounds was too few once the holds aimed at 1 mm (F-15 D:
-  a 22 m rod chord needed 9), and "the worst dip must shrink every round" is false — a half-chord
+  a 22 m batten chord needed 9), and "the worst dip must shrink every round" is false — a half-chord
   can come nearer another part of the well than its parent did (it failed 10 F-12 / 19 B builds).
 - ⭐⭐ **Construction holds the FULL margin; `tolerance` is the gates' slack only.** The offset's
   chord holds use the hold's own convergence tolerance (1 mm), the ring walk and fold-repair lifts
-  raise anything under `margin`, and a stiff rod's free vertices are lifted back onto the margin
+  raise anything under `margin`, and a batten's free vertices are lifted back onto the margin
   after the settle (it holds linearised lines and left some 1.4–7.3 mm inside, which a hold that
   only inserts midpoints can never fix). Built to `margin − tolerance`, every build sat on the
   gate's own line and anything after the hold could tip it over. Over 1273 builds of the F-1,
@@ -660,13 +663,13 @@ evidence.
 - **A margin-scaled fold detector.** It makes detection non-monotone — measured, the obstacle
   vanishes exactly when the margin gets big enough to need it.
 - **An obstacle as a polygon grown by the margin.** There were three — a miter-2 margin band for the prune,
-  merges and the final check, the walk ring, and a ring lifted by a sagitta to hold the rod off its
+  merges and the final check, the walk ring, and a ring lifted by a sagitta to hold the batten off its
   own hull — and they disagreed by up to a margin at every sharp hull corner. A miter-2 corner stands
   up to a whole margin outside the true margin band and switches from one vertex to two as the corner
   crosses 120°: X13's head tip did that between margins 1.1 and 1.2, and the cut snapped to a 118°
-  turn. Lowering only the rod ring's miter measured much worse (24 failed sides per well). The
+  turn. Lowering only the batten ring's miter measured much worse (24 failed sides per well). The
   distance to the hull is exact and continuous; see "Obstacles are margin bands".
-- **The pin-and-release rod settle.** It inserted or snapped a vertex at each violation, walked
+- **The pin-and-release batten settle.** It inserted or snapped a vertex at each violation, walked
   contacts from corner to corner and released them by an edge-normal test. It needs ring corners to
   pin, and its inserted vertices made short chords that needed hand pins, dip splits and a
   short-chord guard. Replaced by the constrained settle: 7 → 0 builds throwing, 223 → 128 contacts.

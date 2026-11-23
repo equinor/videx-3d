@@ -7,7 +7,7 @@ import {
   polylineArcLengths,
   polylineWorstTurn,
 } from '../src/sdk/utils/polyline-2d';
-import { settleRodConstrained } from '../src/sdk/utils/stiff-rod-constrained';
+import { settleBattenConstrained } from '../src/sdk/utils/batten-constrained';
 
 const square: Vec2[] = [
   [-5, -5],
@@ -28,32 +28,37 @@ function seedOver(via: Vec2[], spacing = 2): Vec2[] {
   return [[-32, 0], [-30, 0], ...interior, [30, 0], [32, 0]];
 }
 
-const chordClearance = (rod: Vec2[], hull: Vec2[]) => {
+const chordClearance = (batten: Vec2[], hull: Vec2[]) => {
   let d = Infinity;
-  for (let i = 1; i < rod.length; i++)
-    d = Math.min(d, segmentConvexNearest(rod[i - 1], rod[i], hull).distance);
+  for (let i = 1; i < batten.length; i++)
+    d = Math.min(
+      d,
+      segmentConvexNearest(batten[i - 1], batten[i], hull).distance,
+    );
   return d;
 };
 
-describe('settleRodConstrained', () => {
+describe('settleBattenConstrained', () => {
   it('rounds an obstacle on the seed flank, holding the margin on every chord', () => {
     const seed = seedOver([
       [-8, 7],
       [8, 7],
     ]);
-    const rod = settleRodConstrained(seed, {
+    const batten = settleBattenConstrained(seed, {
       obstacles: [square],
       keepOut: [],
       margin: 1,
       bending: 49,
     });
-    expect(rod.converged).toBe(true);
-    expect(chordClearance(rod.points, square)).toBeGreaterThanOrEqual(1 - 1e-6);
+    expect(batten.converged).toBe(true);
+    expect(chordClearance(batten.points, square)).toBeGreaterThanOrEqual(
+      1 - 1e-6,
+    );
     // over the top, not through or under
-    expect(Math.max(...rod.points.map(p => p[1]))).toBeGreaterThan(5);
-    expect(rod.contacts.length).toBeGreaterThan(0);
-    expect(rod.contacts.length).toBeLessThanOrEqual(6);
-    expect(polylineWorstTurn(rod.points).turn).toBeLessThan(Math.PI / 4);
+    expect(Math.max(...batten.points.map(p => p[1]))).toBeGreaterThan(5);
+    expect(batten.contacts.length).toBeGreaterThan(0);
+    expect(batten.contacts.length).toBeLessThanOrEqual(6);
+    expect(polylineWorstTurn(batten.points).turn).toBeLessThan(Math.PI / 4);
   });
 
   it('keeps the seed flank when started under the obstacle', () => {
@@ -61,14 +66,16 @@ describe('settleRodConstrained', () => {
       [-8, -7],
       [8, -7],
     ]);
-    const rod = settleRodConstrained(seed, {
+    const batten = settleBattenConstrained(seed, {
       obstacles: [square],
       keepOut: [],
       margin: 1,
       bending: 49,
     });
-    expect(Math.min(...rod.points.map(p => p[1]))).toBeLessThan(-5);
-    expect(chordClearance(rod.points, square)).toBeGreaterThanOrEqual(1 - 1e-6);
+    expect(Math.min(...batten.points.map(p => p[1]))).toBeLessThan(-5);
+    expect(chordClearance(batten.points, square)).toBeGreaterThanOrEqual(
+      1 - 1e-6,
+    );
   });
 
   it('touches nothing when nothing is in the way', () => {
@@ -77,16 +84,18 @@ describe('settleRodConstrained', () => {
       [-8, 3],
       [8, 3],
     ]);
-    const rod = settleRodConstrained(seed, {
+    const batten = settleBattenConstrained(seed, {
       obstacles: [far],
       keepOut: [],
       margin: 1,
       bending: 49,
     });
-    expect(rod.converged).toBe(true);
-    expect(rod.contacts).toHaveLength(0);
-    // the free rod between collinear clamps is the straight line
-    expect(Math.max(...rod.points.map(p => Math.abs(p[1])))).toBeLessThan(1e-6);
+    expect(batten.converged).toBe(true);
+    expect(batten.contacts).toHaveLength(0);
+    // the free batten between collinear clamps is the straight line
+    expect(Math.max(...batten.points.map(p => Math.abs(p[1])))).toBeLessThan(
+      1e-6,
+    );
   });
 
   it('holds the margin from a well segment', () => {
@@ -94,24 +103,24 @@ describe('settleRodConstrained', () => {
       [-8, 0],
       [8, 0],
     ]);
-    // the clamps sit on the line; a bump in the well toward it pushes the rod down
+    // the clamps sit on the line; a bump in the well toward it pushes the batten down
     const bumped: Vec2[] = [
       [-40, 3],
       [0, 0.5],
       [40, 3],
     ];
-    const rod = settleRodConstrained(seed, {
+    const batten = settleBattenConstrained(seed, {
       obstacles: [],
       keepOut: [createPolylineIndex(bumped)],
       margin: 1,
       bending: 49,
     });
     let d = Infinity;
-    for (let i = 1; i < rod.points.length; i++) {
+    for (let i = 1; i < batten.points.length; i++) {
       for (let j = 1; j < bumped.length; j++) {
         d = Math.min(
           d,
-          segmentConvexNearest(rod.points[i - 1], rod.points[i], [
+          segmentConvexNearest(batten.points[i - 1], batten.points[i], [
             bumped[j - 1],
             bumped[j],
           ]).distance,

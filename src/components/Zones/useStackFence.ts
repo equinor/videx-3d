@@ -155,7 +155,7 @@ export function useStackFence(
 
   const wellbore = fence?.wellbore;
   const margin = fence?.margin ?? DEFAULT_FENCE_MARGIN;
-  const rodStiffness = fence?.rodStiffness ?? 1;
+  const battenStiffness = fence?.stiffness ?? 1;
   const headBearing = fence?.headBearing;
   const headMinTdAngle = fence?.headMinTdAngle;
   const tolerance = fence?.tolerance ?? DEFAULT_FENCE_TOLERANCE;
@@ -218,7 +218,7 @@ export function useStackFence(
             rings,
             mask,
             margin,
-            rodStiffness,
+            battenStiffness,
             headBearing,
             headMinTdAngle,
             wellbore,
@@ -334,7 +334,7 @@ export function useStackFence(
     islands,
     scope,
     margin,
-    rodStiffness,
+    battenStiffness,
     headBearing,
     headMinTdAngle,
     tolerance,

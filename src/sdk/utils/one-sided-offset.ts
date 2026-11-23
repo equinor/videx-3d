@@ -29,8 +29,8 @@ import {
   polylineWorstTurn,
   removePolylineLoops,
 } from './polyline-2d';
-import { seedStiffRod, StiffRodAnchor, StiffRodTurn } from './stiff-rod';
-import { settleRodConstrained } from './stiff-rod-constrained';
+import { seedBatten, BattenAnchor, BattenTurn } from './batten';
+import { settleBattenConstrained } from './batten-constrained';
 
 /**
  * Which side of a wellbore a cut curve lies on, read against the HEAD→TD tangent.
@@ -102,29 +102,29 @@ export type OneSidedOffsetOptions = {
    */
   obstacles?: Vec2[][];
   /**
-   * The stiff rod's BENDING LENGTH as a multiple of the obstacle ring's diameter — the scale
+   * The batten's BENDING LENGTH as a multiple of the obstacle ring's diameter — the scale
    * below which it behaves as a stiff beam and above which as a taut string. `0` is the taut
    * string (straight chords between contacts); larger leaves the runs earlier and rounds every
-   * corner over a longer stretch. Default 1. See `stiff-rod.ts`.
+   * corner over a longer stretch. Default 1. See `batten.ts`.
    */
-  rodStiffness?: number;
+  battenStiffness?: number;
   /**
-   * The stiff rod's ANCHOR SCALE: a global multiple on the measured anchor lengths (each clamp
+   * The batten's ANCHOR SCALE: a global multiple on the measured anchor lengths (each clamp
    * sits `max(3, c · φ/θ, 2 · (Ψ − 90°)/θ)` atoms back along its run, `c` by the clamp's
    * convexity, Ψ the well's turn between the runs). 1 = as
-   * measured; larger = the rod leaves the runs earlier. See `stiff-rod.ts`.
+   * measured; larger = the batten leaves the runs earlier. See `batten.ts`.
    */
-  rodAnchor?: Partial<StiffRodAnchor>;
+  battenAnchor?: Partial<BattenAnchor>;
   /**
    * The stretch that ships, when the well was run on past it: its first / last point, as
-   * {@link trimFenceCore} takes them. A rod lying wholly outside it is never laid, and the curve is
+   * {@link trimFenceCore} takes them. A batten lying wholly outside it is never laid, and the curve is
    * cut back to it before the fold repair and the gates — a failure out there cannot reject the cut.
    */
   keep?: { head?: Vec2; td?: Vec2 };
   /** diagnostics sink — the per-transition ring/seed/seam are appended here, even on failure. */
   debug?: TransitionDebug[];
-  /** diagnostics: the stiff rod's rounds, one line each — see `ConstrainedRodOptions.trace`. */
-  rodTrace?: (line: string) => void;
+  /** diagnostics: the batten's rounds, one line each — see `ConstrainedBattenOptions.trace`. */
+  battenTrace?: (line: string) => void;
 };
 
 /** What {@link oneSidedOffset} measured about the curve it produced. */
@@ -147,23 +147,23 @@ export type OneSidedOffsetMetrics = {
 
 /** The grown obstacle and its connector for one transition — diagnostics only. */
 export type TransitionDebug = {
-  /** the walk ring of the obstacle the rod rounds — the rounded margin band boundary, and the path's source; empty for a join with no obstacle between the runs */
+  /** the walk ring of the obstacle the batten rounds — the rounded margin band boundary, and the path's source; empty for a join with no obstacle between the runs */
   ring: Vec2[];
-  /** the ring PATH between the two clipped run ends — the rod's seed through the ring */
+  /** the ring PATH between the two clipped run ends — the batten's seed through the ring */
   traced: Vec2[];
   /** the connector actually produced — present even when it failed to clear */
   seam?: Vec2[];
-  /** the rod's vertex spacing, in metres — the ring's diameter over {@link RING_ROD_ATOMS} */
+  /** the batten's vertex spacing, in metres — the ring's diameter over {@link RING_BATTEN_ATOMS} */
   atom?: number;
-  /** the anchored span the stiff rod settles from — ring path plus both run stretches, at the atom */
+  /** the anchored span the batten settles from — ring path plus both run stretches, at the atom */
   seed?: Vec2[];
   /** metres of run A and of run B the seed reaches into */
   anchor?: [number, number];
-  /** the turn each anchor is set by — see `seedStiffRod` */
-  turn?: [StiffRodTurn, StiffRodTurn];
-  /** the rod vertices pressed against a ring or the margin at rest */
+  /** the turn each anchor is set by — see `seedBatten` */
+  turn?: [BattenTurn, BattenTurn];
+  /** the batten vertices pressed against a ring or the margin at rest */
   contacts?: Vec2[];
-  /** every spot where the rod failed its gate, and why — the places to look at */
+  /** every spot where the batten failed its gate, and why — the places to look at */
   failures?: Array<{ point: Vec2; reason: string }>;
 };
 
@@ -173,7 +173,7 @@ export type OneSidedOffset = {
   points: Vec2[];
   /** how many run-to-run transitions were traced */
   bridges: number;
-  /** the ring, seed and rod per transition, in build order — diagnostics only */
+  /** the ring, seed and batten per transition, in build order — diagnostics only */
   transitions: TransitionDebug[];
   metrics: OneSidedOffsetMetrics;
 };
@@ -547,24 +547,24 @@ const DEFAULT_MAX_COVERAGE = 0.6;
 const COVERAGE_RATIO_MARGIN = 2;
 
 /**
- * Vertices the rod round an obstacle ring is built from, per ring DIAMETER — the one scale of a
+ * Vertices the batten round an obstacle ring is built from, per ring DIAMETER — the one scale of a
  * ring transition. MEASURED on 26 wells + synthetic presets: 8 gives 4–12 segment connectors that
- * seat at half a diameter of setback; 4 lifts the rod 200–300 m off a big hull (its standoff grows
+ * seat at half a diameter of setback; 4 lifts the batten 200–300 m off a big hull (its standoff grows
  * with the atom) and 16 chords the ring on small hulls.
  */
-export const RING_ROD_ATOMS = 8;
+export const RING_BATTEN_ATOMS = 8;
 
-/** Bending-length multiple of a rod with no ring to round, on top of `rodStiffness`. */
-export const FREE_ROD_STIFFNESS = 2;
+/** Bending-length multiple of a batten with no ring to round, on top of `battenStiffness`. */
+export const FREE_BATTEN_STIFFNESS = 2;
 
 /**
- * The rod's ATOM for a ring of diameter `D` at `margin`: the vertex spacing the rod rounds the ring
- * at, `D / RING_ROD_ATOMS`, never finer than half a margin or 0.25 m.
+ * The batten's ATOM for a ring of diameter `D` at `margin`: the vertex spacing the batten rounds the ring
+ * at, `D / RING_BATTEN_ATOMS`, never finer than half a margin or 0.25 m.
  *
  * @group Utils
  */
 export const ringAtom = (D: number, margin: number): number =>
-  Math.max(Math.max(0.25, margin * 0.5), D / RING_ROD_ATOMS);
+  Math.max(Math.max(0.25, margin * 0.5), D / RING_BATTEN_ATOMS);
 
 /**
  * An obstacle's MARGIN BAND as a polygon: its hull grown by `margin` with no corner turning more than
@@ -588,18 +588,18 @@ const offsetStep = (margin: number): number =>
   Math.min(4, Math.max(0.5, margin * 0.5));
 
 /**
- * Thrown by {@link oneSidedOffset} when a rod's anchor runs past its run onto the next obstacle's
- * ring, or back into the previous rod: the two need more run than lies between their rings, so
+ * Thrown by {@link oneSidedOffset} when a batten's anchor runs past its run onto the next obstacle's
+ * ring, or back into the previous batten: the two need more run than lies between their rings, so
  * the two hulls are ONE obstacle and the trace must be re-planned with them fused.
  *
  * @group Utils
  */
-export class RodOverlapError extends Error {
+export class BattenOverlapError extends Error {
   /** the two obstacle hulls, in walk order, as given in `obstacles` */
   readonly hulls: [Vec2[], Vec2[]];
   constructor(message: string, hulls: [Vec2[], Vec2[]]) {
     super(message);
-    this.name = 'RodOverlapError';
+    this.name = 'BattenOverlapError';
     this.hulls = hulls;
   }
 }
@@ -762,9 +762,9 @@ export function traceProblemSpans(
     const a = Math.max(0, vertex[p.i]);
     const b = Math.min(trace.length - 1, vertex[p.j] + 1);
     // ⭐ THE NECK. Arms that stay closer together than the pocket is wide leave the cut inside the
-    // fold a V narrower than a rod scaled by that pocket can turn round in — so they belong to it.
+    // fold a V narrower than a batten scaled by that pocket can turn round in — so they belong to it.
     // Walked by equal arc from the mouth. MEASURED on X07: a 2 m mouth whose arms are 7.6 m apart
-    // 20 m out and 18 m at its head, 52 m back — framed at the mouth, the two rods overlapped.
+    // 20 m out and 18 m at its head, 52 m back — framed at the mouth, the two battens overlapped.
     const loopHull = convexHull2D(trace.slice(a, b + 1));
     const width = hullDiameter(loopHull);
     const a0 = arcAll[a];
@@ -1691,32 +1691,32 @@ export function computeOffsetRuns(
 
 /**
  * Cut a core built on a run-on trace back to the block: at the point nearest each given
- * block end, moved OUTWARD past any rod straddling it (at the TD, inward past one bending back).
+ * block end, moved OUTWARD past any batten straddling it (at the TD, inward past one bending back).
  *
- * ⛔ Never through a rod: cut back mid-span, F-11 A's cropped rod ended 114 m off the axis.
- * ⭐ At the TD, a rod that bends back — its far end not ahead of the block end along its own start —
+ * ⛔ Never through a batten: cut back mid-span, F-11 A's cropped batten ended 114 m off the axis.
+ * ⭐ At the TD, a batten that bends back — its far end not ahead of the block end along its own start —
  * is cut BEFORE instead: kept whole round F-12's hook at 2000 m (margins 18–20), the core ended
  * 47–92 m off the TD on the returning leg and the TD arm turned 53–75° to leave it.
  *
  * @param ends the block trace's first / last point, for each end that was run on
- * @param rods the connectors spliced into the core (`OneSidedOffset.transitions[].seam`)
+ * @param battens the connectors spliced into the core (`OneSidedOffset.transitions[].seam`)
  *
  * @group Geometries
  */
 export function trimFenceCore(
   core: Vec2[],
   ends: { head?: Vec2; td?: Vec2 },
-  rods: Vec2[][] = [],
+  battens: Vec2[][] = [],
 ): Vec2[] {
   if (core.length < 2 || (!ends.head && !ends.td)) return core;
   const arcs = polylineArcLengths(core);
   const along = (p: Vec2) => nearestOnPolyline(core, p[0], p[1])?.along ?? 0;
-  const spans = rods
+  const spans = battens
     .filter(r => r.length >= 2)
     .map(r => {
       const a = along(r[0]);
       const b = along(r[r.length - 1]);
-      return { from: Math.min(a, b), to: Math.max(a, b), rod: r };
+      return { from: Math.min(a, b), to: Math.max(a, b), batten: r };
     });
   const bendsBack = (r: Vec2[], p: Vec2) => {
     const z = r[r.length - 1];
@@ -1725,23 +1725,23 @@ export function trimFenceCore(
       0
     );
   };
-  // rods can abut, so step on until none straddles the cut
-  const clearOfRods = (at: number, end: Vec2, head: boolean): number => {
+  // battens can abut, so step on until none straddles the cut
+  const clearOfBattens = (at: number, end: Vec2, head: boolean): number => {
     const done = new Set<number>();
     for (let moved = true; moved; ) {
       moved = false;
       spans.forEach((s, k) => {
         if (done.has(k) || !(s.from < at - 1e-9 && at < s.to - 1e-9)) return;
         done.add(k);
-        at = head || bendsBack(s.rod, end) ? s.from : s.to;
+        at = head || bendsBack(s.batten, end) ? s.from : s.to;
         moved = true;
       });
     }
     return at;
   };
-  const from = ends.head ? clearOfRods(along(ends.head), ends.head, true) : 0;
+  const from = ends.head ? clearOfBattens(along(ends.head), ends.head, true) : 0;
   const to = ends.td
-    ? clearOfRods(along(ends.td), ends.td, false)
+    ? clearOfBattens(along(ends.td), ends.td, false)
     : arcs[arcs.length - 1];
   if (!(to > from)) return core;
   const out: Vec2[] = [pointAtArcLength(core, arcs, from)];
@@ -1760,7 +1760,7 @@ export function trimFenceCore(
  * then every candidate whose TRUE nearest-well distance is less than `margin` is pruned with the
  * segment index — the exact Minkowski boundary, in O(n log n), never O(n²). Where a concave fold
  * is narrower than `2·margin` the walls prune away and leave a gap; the gap is closed by a STIFF
- * ROD (`stiff-rod.ts`) settled round the fold's grown convex hull, or straight across when nothing
+ * BATTEN (`batten.ts`) settled round the fold's grown convex hull, or straight across when nothing
  * lies between the runs. Never a fitted arc the path must conform to.
  *
  * ⭐⭐ It is NOT a shortest path. The boundary is defined locally, at exactly `margin` from the
@@ -1794,7 +1794,7 @@ export function oneSidedOffset(
   const sharpTurn = options.sharpTurn ?? (30 * Math.PI) / 180;
   const sharpArm = options.sharpArm ?? 10;
   const maxRelativeTurn = options.maxRelativeTurn ?? (45 * Math.PI) / 180;
-  const rodStiffness = Math.max(0, options.rodStiffness ?? 1);
+  const battenStiffness = Math.max(0, options.battenStiffness ?? 1);
   const cuspRadius = Math.max(1.0001, options.cuspTurnFactor ?? 3) * margin;
   const index = options.wellIndex ?? createPolylineIndex(well);
   const obstacles = options.obstacles ?? [];
@@ -1826,7 +1826,7 @@ export function oneSidedOffset(
   // fact about where the cut may go. The margin band boundary stands in for it: it already holds the
   // margin, so keeping off the hull IS the constraint there. Every measurement and every gate below
   // therefore reads the well OUTSIDE the margin bands, kept as the contiguous pieces between them.
-  // ⭐ A margin band is a DISTANCE, never a polygon: the one definition the prune, the run ends, the rod
+  // ⭐ A margin band is a DISTANCE, never a polygon: the one definition the prune, the run ends, the batten
   // and the gates all read. ⚠⚠ Same filter and test as `computeOffsetRuns`, so `gaps` indexes it.
   const solidHulls = obstacles.filter(h => h.length >= 3);
   const bandOf = hullsWithin(solidHulls, margin + tolerance);
@@ -1835,20 +1835,20 @@ export function oneSidedOffset(
   /** the signed distance from `p` to the hull's margin — negative inside its margin band */
   const beyond = (p: Vec2, hull: Vec2[]) =>
     convexSignedDistance(p, hull).distance - margin;
-  // ⭐⭐ The PATH a rod is seeded along: each hull grown by `margin` with no corner turning more than
+  // ⭐⭐ The PATH a batten is seeded along: each hull grown by `margin` with no corner turning more than
   // θ = maxRelativeTurn / 2 — the rounded margin band boundary to within 2% of the margin. It is also what
-  // the story draws as the margin band, and its diameter sets the rod's atom.
+  // the story draws as the margin band, and its diameter sets the batten's atom.
   const theta = maxRelativeTurn / 2;
-  const rodAnchor: StiffRodAnchor = {
-    scale: Math.max(0, options.rodAnchor?.scale ?? 1),
-    byEnd: options.rodAnchor?.byEnd,
-    balanced: options.rodAnchor?.balanced,
+  const battenAnchor: BattenAnchor = {
+    scale: Math.max(0, options.battenAnchor?.scale ?? 1),
+    byEnd: options.battenAnchor?.byEnd,
+    balanced: options.battenAnchor?.balanced,
   };
   const walkBands = solidHulls.map(h => bandRing(h, margin, maxRelativeTurn));
   // Each reliable piece keeps the arc it started at, so an arc along the whole well is still
   // addressable without ever asking the degenerate stretch where it is.
   // ⭐ A piece runs right up to the margin band, ending where the well enters it: cut at its last vertex
-  // outside, the segment on into the margin band was nobody's, and a rod slipped between a stub of well
+  // outside, the segment on into the margin band was nobody's, and a batten slipped between a stub of well
   // outside a hull corner and the hull itself (X07 left at margin 1: 6 contacts, 32°).
   const outside: Array<{ index: PolylineIndex; arc0: number }> = [];
   if (solidHulls.length > 0) {
@@ -1903,7 +1903,7 @@ export function oneSidedOffset(
    * `cutCusps` splice a repair straight across a head hull.
    *
    * ⛔ Chords, not only vertices: two feasible vertices on opposite flanks of a hull have a chord
-   * straight through it, and a rod round an 85 m wedge at 90° shipped exactly that.
+   * straight through it, and a batten round an 85 m wedge at 90° shipped exactly that.
    */
   const entersBand = (path: Vec2[], slack: number = tolerance): boolean =>
     bandEntries(path, slack, true).length > 0;
@@ -2024,9 +2024,9 @@ export function oneSidedOffset(
 
   const transitions: TransitionDebug[] = options.debug ?? [];
   const firstTransition = transitions.length;
-  // the obstacle the last rod rounded, and the arc along the curve where that rod ends
-  let lastRod: { hull: Vec2[] | null; end: number } | null = null;
-  // set once a rod lies wholly before `keep.head`: nothing further toward the head ships
+  // the obstacle the last batten rounded, and the arc along the curve where that batten ends
+  let lastBatten: { hull: Vec2[] | null; end: number } | null = null;
+  // set once a batten lies wholly before `keep.head`: nothing further toward the head ships
   let stop = false;
   const arcOn = (p: Vec2) =>
     nearestOnIndexedPolyline(index, p[0], p[1], hit)?.along ?? 0;
@@ -2034,7 +2034,7 @@ export function oneSidedOffset(
   const keepTd = options.keep?.td ? arcOn(options.keep.td) : Infinity;
 
   /**
-   * Settle the stiff rod for one transition and splice it into `merged`, whose seam — the ring
+   * Settle the batten for one transition and splice it into `merged`, whose seam — the ring
    * path from run A's clipped end to run B's, or just the two ends when nothing lies between the
    * runs — spans `seamStart..seamEnd`; `scale` is the ring the seam rounds (`lifted` empty and `D`
    * the gap for a join with no obstacle), `hull` the obstacle behind it and `next` the one behind
@@ -2052,7 +2052,7 @@ export function oneSidedOffset(
       flanks?: [Vec2 | null, Vec2 | null];
       hull: Vec2[] | null;
       next: Vec2[] | null;
-      /** the hull this rod rounds — an obstacle's, or a fold's own local hull; none across a gap */
+      /** the hull this batten rounds — an obstacle's, or a fold's own local hull; none across a gap */
       own?: Vec2[];
     },
     entry: TransitionDebug,
@@ -2061,13 +2061,13 @@ export function oneSidedOffset(
     const what = scale.own
       ? `round a ${scale.D.toFixed(0)} m obstacle ring`
       : `across a ${scale.D.toFixed(1)} m gap`;
-    const laid = seedStiffRod(
+    const laid = seedBatten(
       merged,
       seamStart,
       seamEnd,
       scale.atom,
       theta,
-      rodAnchor,
+      battenAnchor,
       scale.ends,
       (a, b) => outsideClearance([a, b]) >= margin - tolerance,
       scale.flanks,
@@ -2076,11 +2076,11 @@ export function oneSidedOffset(
     entry.seed = laid.seed;
     entry.anchor = laid.anchor;
     entry.turn = laid.turn;
-    // ⭐ A rod wholly outside the stretch that ships is never laid: the curve beyond it is dropped
+    // ⭐ A batten wholly outside the stretch that ships is never laid: the curve beyond it is dropped
     // instead (the walk is TD→head, so everything laid before it at the TD, everything after at the head).
     if (laid.seed.every(p => arcOn(p) > keepTd)) {
       transitions.length = firstTransition;
-      lastRod = null;
+      lastBatten = null;
       return merged.slice(seamEnd);
     }
     if (laid.seed.every(p => arcOn(p) < keepHead)) {
@@ -2095,28 +2095,28 @@ export function oneSidedOffset(
       laid.anchor[1] > arcs[merged.length - 1] - arcs[seamEnd]
         ? [scale.hull, scale.next]
         : scale.hull &&
-            lastRod?.hull &&
-            laid.anchor[0] > arcs[seamStart] - lastRod.end
-          ? [lastRod.hull, scale.hull]
+            lastBatten?.hull &&
+            laid.anchor[0] > arcs[seamStart] - lastBatten.end
+          ? [lastBatten.hull, scale.hull]
           : null;
     if (overlap) {
-      throw new RodOverlapError(
-        `oneSidedOffset: the ${side} stiff rod ${what} needs more run than lies between its ring and the ${overlap[0] === scale.hull ? 'next' : 'last'} one (anchors ${laid.anchor[0].toFixed(1)}/${laid.anchor[1].toFixed(1)} m)`,
+      throw new BattenOverlapError(
+        `oneSidedOffset: the ${side} batten ${what} needs more run than lies between its ring and the ${overlap[0] === scale.hull ? 'next' : 'last'} one (anchors ${laid.anchor[0].toFixed(1)}/${laid.anchor[1].toFixed(1)} m)`,
         overlap,
       );
     }
     // ⭐ Held `margin` off every hull and every reliable well segment by distance — see
-    // `stiff-rod-constrained.ts`. It touches them only where the rod presses.
-    // ⭐ The bending length is never below the rod's own 8 atoms: a free rod across a 0.4 m gap at
+    // `batten-constrained.ts`. It touches them only where the batten presses.
+    // ⭐ The bending length is never below the batten's own 8 atoms: a free batten across a 0.4 m gap at
     // margin 20 had λ = 0.8 m on 10 m chords, a taut string that put its whole turn on one vertex
     // (F-1/F-1 A/F-1 B/F-12, 57–95°).
     const bending =
-      (((scale.own ? 1 : FREE_ROD_STIFFNESS) *
-        rodStiffness *
-        Math.max(scale.D, RING_ROD_ATOMS * scale.atom)) /
+      (((scale.own ? 1 : FREE_BATTEN_STIFFNESS) *
+        battenStiffness *
+        Math.max(scale.D, RING_BATTEN_ATOMS * scale.atom)) /
         laid.spacing) **
       2;
-    const settled = settleRodConstrained(laid.seed, {
+    const settled = settleBattenConstrained(laid.seed, {
       obstacles:
         scale.own && !solidHulls.includes(scale.own)
           ? [...solidHulls, scale.own]
@@ -2126,15 +2126,15 @@ export function oneSidedOffset(
       margin,
       bending,
       tolerance,
-      trace: options.rodTrace,
+      trace: options.battenTrace,
     });
-    let rod = settled.points;
+    let batten = settled.points;
     // ⭐ The locked clamp pairs ship as the core under them: the settle needs them a full spacing long
     // (its energy reads unequal chords as bending), but straight over a big ring's atom they cut a
     // curving core (F-15 D, Z21, Z46 at margin 0.1: crossings 0–34 m from the clamp).
-    rod = [...laid.clamps[0], ...rod.slice(2, -2), ...laid.clamps[1]];
-    // recorded before the hold so a throwing build still shows the rod it settled
-    entry.seam = rod;
+    batten = [...laid.clamps[0], ...batten.slice(2, -2), ...laid.clamps[1]];
+    // recorded before the hold so a throwing build still shows the batten it settled
+    entry.seam = batten;
     entry.contacts = settled.contacts;
     if (settled.contacts.length > laid.seed.length) {
       entry.failures = settled.contacts.map(c => ({
@@ -2142,13 +2142,13 @@ export function oneSidedOffset(
         reason: 'runaway',
       }));
       throw new Error(
-        `oneSidedOffset: the ${side} stiff rod ${what} ran away: ${settled.contacts.length} contacts on ${laid.seed.length} seed vertices`,
+        `oneSidedOffset: the ${side} batten ${what} ran away: ${settled.contacts.length} contacts on ${laid.seed.length} seed vertices`,
       );
     }
     // ⛔ The settle holds LINEARISED lines, so a free vertex can rest a few mm inside the margin (F-4,
     // 19 B/S/BT2: 1.4–7.3 mm), which the chord hold — it only inserts midpoints — can never fix.
-    rod = rod.map((p, i) => {
-      if (i < 2 || i > rod.length - 3) return p;
+    batten = batten.map((p, i) => {
+      if (i < 2 || i > batten.length - 3) return p;
       const near = outsideNearest(p);
       if (near.distance >= margin || near.distance <= 1e-6) return p;
       const s = margin / near.distance;
@@ -2158,21 +2158,21 @@ export function oneSidedOffset(
       ];
     });
     for (const oi of reliable) {
-      rod = holdPolylineChords2D(rod, oi, margin, {
+      batten = holdPolylineChords2D(batten, oi, margin, {
         // ⛔ Between the well and a ring the lift can cut into the ring: X08 at margin 1.9–2.1, 2 cm.
         blocked: (a, p, b) => inBand(a, p) >= 0 || inBand(p, b) >= 0,
-        label: 'oneSidedOffset: stiff rod',
+        label: 'oneSidedOffset: batten',
       });
     }
-    rod = dedupePolyline2D(rod, tolerance);
-    entry.seam = rod;
-    const v = verifyOutside(rod);
+    batten = dedupePolyline2D(batten, tolerance);
+    entry.seam = batten;
+    const v = verifyOutside(batten);
     const failures: Array<{ point: Vec2; reason: string }> = [];
-    for (let i = 1; i < rod.length; i++) {
-      const chord = [rod[i - 1], rod[i]];
+    for (let i = 1; i < batten.length; i++) {
+      const chord = [batten[i - 1], batten[i]];
       const mid: Vec2 = [
-        (rod[i - 1][0] + rod[i][0]) / 2,
-        (rod[i - 1][1] + rod[i][1]) / 2,
+        (batten[i - 1][0] + batten[i][0]) / 2,
+        (batten[i - 1][1] + batten[i][1]) / 2,
       ];
       if (outsideClearance(chord) < margin - tolerance) {
         failures.push({ point: mid, reason: 'chord dips inside the margin' });
@@ -2181,25 +2181,25 @@ export function oneSidedOffset(
         failures.push({ point: mid, reason: 'crosses the well' });
       }
     }
-    for (const p of bandEntries(rod)) {
+    for (const p of bandEntries(batten)) {
       failures.push({ point: p, reason: 'inside the ring' });
     }
-    for (let i = 1; i + 1 < rod.length; i++) {
-      const ux = rod[i][0] - rod[i - 1][0];
-      const uz = rod[i][1] - rod[i - 1][1];
-      const vx = rod[i + 1][0] - rod[i][0];
-      const vz = rod[i + 1][1] - rod[i][1];
+    for (let i = 1; i + 1 < batten.length; i++) {
+      const ux = batten[i][0] - batten[i - 1][0];
+      const uz = batten[i][1] - batten[i - 1][1];
+      const vx = batten[i + 1][0] - batten[i][0];
+      const vz = batten[i + 1][1] - batten[i][1];
       const turn = Math.abs(Math.atan2(ux * vz - uz * vx, ux * vx + uz * vz));
       if (turn > maxRelativeTurn) {
         failures.push({
-          point: rod[i],
+          point: batten[i],
           reason: `turn ${((turn * 180) / Math.PI).toFixed(0)}°`,
         });
       }
     }
-    const worst = polylineWorstTurn(rod);
+    const worst = polylineWorstTurn(batten);
     if (!v.ok || failures.length > 0) {
-      // ⭐ A rod that only over-turns is re-laid finer, down to the seed's floor: F-15 D's head rod
+      // ⭐ A batten that only over-turns is re-laid finer, down to the seed's floor: F-15 D's head batten
       // wrapped 126° round the wellhead corner on 28 vertices at margin 0.1 (57°), 16° on 110.
       const finer = laid.spacing / 2;
       if (
@@ -2212,13 +2212,13 @@ export function oneSidedOffset(
       entry.failures = failures;
       const dips = failures.some(f => f.reason.startsWith('chord dips'));
       throw new Error(
-        `oneSidedOffset: the ${side} stiff rod ${what} fails: clr ${v.clearance.toFixed(2)} x${v.crossings}${dips ? ' dips' : ''} turn ${((worst.turn * 180) / Math.PI).toFixed(0)}°${settled.converged ? '' : ' (not at rest)'}`,
+        `oneSidedOffset: the ${side} batten ${what} fails: clr ${v.clearance.toFixed(2)} x${v.crossings}${dips ? ' dips' : ''} turn ${((worst.turn * 180) / Math.PI).toFixed(0)}°${settled.converged ? '' : ' (not at rest)'}`,
       );
     }
-    const upTo = polylineArcLengths([...merged.slice(0, laid.head), ...rod]);
-    lastRod = { hull: scale.hull, end: upTo[upTo.length - 1] };
+    const upTo = polylineArcLengths([...merged.slice(0, laid.head), ...batten]);
+    lastBatten = { hull: scale.hull, end: upTo[upTo.length - 1] };
     return dedupePolyline2D(
-      [...merged.slice(0, laid.head), ...rod, ...merged.slice(laid.tail)],
+      [...merged.slice(0, laid.head), ...batten, ...merged.slice(laid.tail)],
       tolerance,
     );
   };
@@ -2236,7 +2236,7 @@ export function oneSidedOffset(
     // ⭐⭐ The hull is the one the PRUNE recorded for this gap — never re-derived from the run-end
     // geometry, which is guesswork a thin hull defeats. A blocked fold with no obstacle behind it
     // (`blocker === null`) frames its own local hull; an unobstructed fold that already clears
-    // is joined by the same rod with no ring.
+    // is joined by the same batten with no ring.
     let hull: Vec2[] | null = blocker !== null ? solidHulls[blocker] : null;
     let ring: Vec2[] | null = blocker !== null ? walkBands[blocker] : null;
     if (!hull) {
@@ -2280,23 +2280,23 @@ export function oneSidedOffset(
       const ccwDir = ringArea > 0 ? 1 : -1;
       const walkDir: 1 | -1 =
         sideNormalSign(side) > 0 ? ccwDir : ((-ccwDir | 0) as 1 | -1);
-      // ⭐⭐ THE ROD. The transition is a STIFF ROD settled round the hull: its seed is the ring's
+      // ⭐⭐ THE BATTEN. The transition is a BATTEN settled round the hull: its seed is the ring's
       // own boundary between the two run ends plus an anchored stretch of each run, and the settle
       // finds the least-bending path that holds the margin from the hull and the well, CHORDS
-      // included (`stiff-rod-constrained.ts`). Only the ATOM `D / RING_ROD_ATOMS` carries a scale,
+      // included (`batten-constrained.ts`). Only the ATOM `D / RING_BATTEN_ATOMS` carries a scale,
       // so a 3 m fold and a 500 m head get the same construction.
       // ⛔⛔ NO FILLETS, NO WALK. The hugging construction that preceded this — a departure fillet,
       // a one-vertex-per-atom walk, a landing fillet — failed on 17 of 36 corner-wedge cases:
       // its "small ring" shortcut joined two fillet ends straight through the hull (a chord from
       // boundary to boundary has no proper crossing), and a fillet whose tangent point fell on a
       // mitre fan turned by the hull's whole corner at the junction. Non-monotone in margin, and
-      // every one of those failures was a rod that never got built.
+      // every one of those failures was a batten that never got built.
       const D = hullDiameter(ring);
       const atom = ringAtom(D, margin);
       const own = hull;
       // ⭐ Each run is clipped to where it enters the margin band — the point `margin` from the hull, exact
       // and continuous in the margin. The well INSIDE the hull is ignored entirely; the margin band holds
-      // the margin there, so the rod is judged only against the well OUTSIDE the margin bands.
+      // the margin there, so the batten is judged only against the well OUTSIDE the margin bands.
       const edge = margin + tolerance;
       const within = (p: Vec2) => beyond(p, own) < tolerance;
       /** where the chord from `kept` (outside) to `dropped` (inside) enters the margin band */
@@ -2318,7 +2318,7 @@ export function oneSidedOffset(
       }
       // ⭐ The run ends ON the margin band, not at its last vertex outside it: snapped to a vertex, the end
       // moved by a whole guide step when the trace's sampling changed (19 S at margin 0.1: 0.5 m)
-      // and the anchors read off it tipped the rod past 45°.
+      // and the anchors read off it tipped the batten past 45°.
       if (droppedA && !within(A[A.length - 1])) {
         const c = crossing(A[A.length - 1], droppedA);
         if (c) A = [...A, c];
@@ -2402,7 +2402,7 @@ export function oneSidedOffset(
       const arcE = arcOf(E, eEdge);
       const arcS = arcOf(S, sEdge);
       // ⭐ The ring PATH: every walk-ring vertex strictly between the two footings in the walk
-      // direction — the seed the rod settles from, on the right flank by construction. A vertex
+      // direction — the seed the batten settles from, on the right flank by construction. A vertex
       // within `margin` of the reliable well (an entry gap, where the well leaves the hull alongside
       // the ring) is pushed out onto the margin's tangent polygon; one that would land back inside
       // the margin band marks a corridor narrower than the margin and is left out.
@@ -2415,7 +2415,7 @@ export function oneSidedOffset(
         const ahead =
           ((((arcS - arcE) * walkDir) % perimeter) + perimeter) % perimeter;
         if (perimeter - ahead < atom) {
-          // ⭐ S under one atom BEHIND E is the same point to the rod, and the step back is clear of
+          // ⭐ S under one atom BEHIND E is the same point to the batten, and the step back is clear of
           // the margin band; read as a lap round the ring it ran F-5 right away at margin 19.2 (0 → 36
           // path vertices, 179°) while both ends moved 0.1 m.
           count = 0;
@@ -2491,7 +2491,7 @@ export function oneSidedOffset(
         entry,
       );
     }
-    // Nothing lies between the runs: the same rod with no ring, scaled by the gap it closes.
+    // Nothing lies between the runs: the same batten with no ring, scaled by the gap it closes.
     const gap = Math.hypot(S[0] - E[0], S[1] - E[1]);
     const atom = ringAtom(gap, margin);
     const entry: TransitionDebug = { ring: [], traced: [E, S], atom };

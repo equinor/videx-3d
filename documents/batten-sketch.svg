@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="940" height="430" viewBox="0 0 940 430" font-family="monospace" font-size="12">
   <rect width="940" height="430" fill="#12151a"/>
-  <text x="20" y="26" fill="#e0e0e0" font-size="14">Stiff rod around an obstacle's margin band (plan view, cut on the upper side)</text>
+  <text x="20" y="26" fill="#e0e0e0" font-size="14">Batten around an obstacle's margin band (plan view, cut on the upper side)</text>
 
   <!-- the margin band ring: hull grown by margin, rounded -->
   <polygon points="376,258 412,184 468,168 530,188 552,254 526,316 457,332 394,312" fill="none" stroke="#ba68c8" stroke-width="1" stroke-dasharray="5 4"/>
@@ -22,7 +22,7 @@
     <circle cx="412" cy="184" r="2"/><circle cx="468" cy="168" r="2"/><circle cx="530" cy="188" r="2"/>
   </g>
 
-  <!-- the settled rod: clamped at both anchors, contacts only where it presses -->
+  <!-- the settled batten: clamped at both anchors, contacts only where it presses -->
   <path d="M152,246 C270,246 360,168 468,168 C576,168 660,246 778,246" fill="none" stroke="#ff5252" stroke-width="2.5"/>
   <g fill="#ffffff">
     <circle cx="152" cy="246" r="3.5"/><circle cx="168" cy="246" r="3.5"/>
@@ -48,13 +48,13 @@
   <text x="560" y="330" fill="#ffd54f">hull</text>
   <text x="560" y="346" fill="#ba68c8">margin band: within margin of the hull, by distance</text>
   <text x="250" y="160" fill="#ba68c8">ring path: the seed</text>
-  <text x="470" y="150" fill="#ff5252">settled rod: contacts only where it presses</text>
+  <text x="470" y="150" fill="#ff5252">settled batten: contacts only where it presses</text>
   <text x="100" y="228" fill="#ffffff">two clamped vertices: position + tangent</text>
 
   <!-- rules -->
   <g fill="#b0bec5">
     <text x="20" y="384">1. seed = ring path (right flank by construction) + max(3, c·φ/θ) atoms of each run, resampled at the atom</text>
     <text x="20" y="400">2. settle: least tension + bending, clamps fixed; every chord kept margin past a separating line from each hull and well piece</text>
-    <text x="20" y="416">3. gate: outside every margin band, ≥ margin on every chord, worst turn ≤ 45° — a rod that fails throws</text>
+    <text x="20" y="416">3. gate: outside every margin band, ≥ margin on every chord, worst turn ≤ 45° — a batten that fails throws</text>
   </g>
 </svg>

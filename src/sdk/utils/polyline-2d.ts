@@ -803,7 +803,7 @@ export function nearestOnIndexedPolyline(
  *
  * @throws when a dipping chord ENDS inside the margin — a vertex no midpoint can move — or `rounds`
  * (a safety cap, default 64) run out: the path cannot hold the margin, which must be said rather
- * than returned as if it had succeeded. ⛔ Not a fixed round count: aiming at 1 mm, a 22 m rod
+ * than returned as if it had succeeded. ⛔ Not a fixed round count: aiming at 1 mm, a 22 m batten
  * chord needed 9 rounds (F-15 D). Nor "the worst dip must shrink every round": a half-chord can
  * come nearer another part of the well than its parent did (F-12, 19 B built within 8 anyway).
  *
