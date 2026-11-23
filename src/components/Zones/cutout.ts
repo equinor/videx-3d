@@ -33,9 +33,8 @@ export type WellboreCutoutOptions = Omit<WellboreOutlineOptions, 'shapeFn'> & {
   mode?: WellboreOutlineMode;
   /**
    * What to do where a bounding surface has no data at a trajectory sample
-   * (default `'exclude'`). See {@link TrajectoryWindowOptions.unmapped} — this is
-   * what decides whether a hole in a zone's DEEP base surface also removes that
-   * area from its boundary.
+   * (default `'exclude'`): this decides whether a hole in a zone's DEEP base
+   * surface also removes that area from its boundary.
    */
   unmapped?: 'exclude' | 'ignore';
   /**

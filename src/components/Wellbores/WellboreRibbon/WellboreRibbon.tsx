@@ -10,9 +10,9 @@ import {
   cameraFocusAtPointEventType,
   CameraSetPositionEvent,
   cameraSetPositionEventType,
-  useData,
-  useWellboreContext,
-} from '../../../main';
+} from '../../../events/camera-events';
+import { useData } from '../../../hooks/useData';
+import { useWellboreContext } from '../../../hooks/useWellboreContext';
 import {
   calculateFrenetFrames,
   getCurvePositions,

@@ -365,8 +365,8 @@ export function simplifyRing(ring: Vec2[], tolerance: number): Vec2[] {
  * clip machinery classify membership by even-odd crossing, so only the
  * outer/hole grouping matters.
  *
- * Rings must not cross one another (as produced by {@link traceValidBoundary} or
- * {@link marchingSquares}); a single representative vertex per ring then suffices
+ * Rings must not cross one another (as produced by `traceValidBoundary` or
+ * `marchingSquares`); a single representative vertex per ring then suffices
  * to test containment. Rings with fewer than three points are dropped.
  *
  * @group Geometries

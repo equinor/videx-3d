@@ -6,29 +6,39 @@ import {
   SurfaceZoneStackSpec,
 } from '../components/Zones/zone-defs';
 import {
-  clampStackToCarrier,
-  layEmptyStackLayers,
   PlanarPolygonGeometry,
+  ReadonlyStore,
+  surfaceGridToWorld,
+} from '../sdk';
+import {
+  clampStackToCarrier,
   planStackReference,
   rasterizeStackOutline,
-  ReadonlyStore,
-  ReliefReader,
-  ReliefSource,
   resolveStackGrid,
-  sampleReliefSource,
-  sealStackChannels,
-  splitVoidChannels,
-  STACK_MASK_DATA,
   stackCarrierLevel,
   StackLayer,
   StackPairStats,
   StackReference,
+} from '../sdk/geometries/surface-stack';
+import {
+  layEmptyStackLayers,
+  STACK_MASK_DATA,
   StackReferencePlan,
-  SurfaceZonePhase,
-  surfaceGridToWorld,
+} from '../sdk/geometries/surface-stack-resample';
+import {
+  ReliefReader,
+  ReliefSource,
+  sampleReliefSource,
+} from '../sdk/geometries/relief-tiles';
+import {
+  sealStackChannels,
+  splitVoidChannels,
+} from '../sdk/geometries/surface-seal';
+import { SurfaceZonePhase } from '../sdk/geometries/surface-zone-streaming';
+import {
   SurfaceStackOptions,
   SurfaceStackPlan,
-} from '../sdk';
+} from '../sdk/geometries/surface-stack-geometry';
 import type { ThicknessLines } from '../sdk/geometries/surface-stack-terminations';
 import type { GridRing } from '../sdk/geometries/triangulate-grid-delaunay';
 import {

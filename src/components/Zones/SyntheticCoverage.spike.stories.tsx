@@ -5,12 +5,8 @@ import { useData } from '../../hooks/useData';
 import { OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
-import {
-  PlanarPolygonGeometry,
-  SurfaceZoneMetrics,
-  SurfaceMeta,
-  Vec2,
-} from '../../sdk';
+import { PlanarPolygonGeometry, SurfaceMeta, Vec2 } from '../../sdk';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 import { SYNTHETIC_PREFIX } from '../../storybook/data/synthetic-surfaces';
 import { zoneTimings } from '../../storybook/data/zone-timings';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';

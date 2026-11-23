@@ -9,7 +9,7 @@ import { densifyPolygon } from './surface-zone';
 import { buildIntervalWalls } from './surface-walls';
 
 /**
- * How the levelled top of a {@link createLevelledBase} is decided: an absolute
+ * How the levelled top of a `createLevelledBase` is decided: an absolute
  * scene Y, or which of the terrain's own heights under the footprint to take.
  *
  * `'max'` is a pure FILL — the top clears the highest ground in the footprint, so

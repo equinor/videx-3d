@@ -1,5 +1,5 @@
 import { BufferGeometry } from 'three';
-import { SurfaceZone } from '../../sdk';
+import { SurfaceZone } from '../../sdk/geometries/surface-zone';
 
 /**
  * Bytes of GPU upload to allow per frame when a zone is revealed. three uploads

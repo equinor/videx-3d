@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Object3D, Vector3 } from 'three';
+import type { Object3D } from 'three';
 import { LAYERS } from '../../layers/layers';
 import {
   geoFeaturesFromGeoJson,
@@ -13,11 +13,7 @@ import {
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { Globe } from '../../sdk/projection/globe';
 import type { CameraSite } from '../../sdk/utils/camera-site';
-import {
-  useSceneryOcean,
-  type SceneryOceanState,
-} from '../Scenery/scenery-context';
-import { sceneryLidOverCamera } from '../Scenery/scenery-model';
+import { useSceneryOcean } from '../Scenery/scenery-context';
 import { useWorld } from '../World/world-context';
 
 /**
@@ -52,44 +48,11 @@ export function layerShownAt(
   globe: Globe,
   visibility: LayerVisibility,
   lies: LayerLies,
-): number;
-/**
- * @deprecated Pass the camera site (`useCameraSite().get(camera)`): it is worked out once a
- * frame for every layer.
- */
-export function layerShownAt(
-  position: Vector3,
-  globe: Globe,
-  ocean: SceneryOceanState | null,
-  visibility: LayerVisibility,
-  lies: LayerLies,
-): number;
-export function layerShownAt(
-  at: CameraSite | Vector3,
-  globe: Globe,
-  ...rest:
-    | [LayerVisibility, LayerLies]
-    | [SceneryOceanState | null, LayerVisibility, LayerLies]
 ): number {
-  if ('isVector3' in at) {
-    const [ocean, visibility, lies] = rest as [
-      SceneryOceanState | null,
-      LayerVisibility,
-      LayerLies,
-    ];
-    const altitude = globe.altitude(at);
-    const shown = layerVisibilityAt(altitude, visibility);
-    if (shown <= 0 || !ocean) return shown;
-    const sky = ocean.material;
-    const lid = sceneryLidOverCamera(sky.oceanLevel + altitude, sky);
-    if (lid === null) return shown;
-    return lies === 'ground' || sky.oceanLevel + lies >= lid ? 0 : shown;
-  }
-  const [visibility, lies] = rest as [LayerVisibility, LayerLies];
-  const altitude = at.altitude ?? globe.altitude(at.position);
+  const altitude = site.altitude ?? globe.altitude(site.position);
   const shown = layerVisibilityAt(altitude, visibility);
-  if (shown <= 0 || at.lid === null || at.seaLevel === null) return shown;
-  return lies === 'ground' || at.seaLevel + lies >= at.lid ? 0 : shown;
+  if (shown <= 0 || site.lid === null || site.seaLevel === null) return shown;
+  return lies === 'ground' || site.seaLevel + lies >= site.lid ? 0 : shown;
 }
 
 /** The `renderOrder` of what is drawn over the sea without an `OITRenderPass`: after everything see-through. */

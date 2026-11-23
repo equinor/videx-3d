@@ -9,16 +9,15 @@ import {
   Uniform,
 } from 'three';
 import { createSeismicTexture } from '../../../common/seismic-texture';
+import { colorRampTexture } from '../../../common/color-ramps';
+import { CommonComponentProps } from '../../../common/types';
 import {
-  colorRampTexture,
-  CommonComponentProps,
-  createLayers,
   EventEmitterCallback,
-  LAYERS,
-  PointerEvents,
   useEventEmitter,
-  useGenerator,
-} from '../../../main';
+} from '../../EventEmitter/EventEmitterContext';
+import { PointerEvents } from '../../../events/interaction-events';
+import { useGenerator } from '../../../hooks/useGenerator';
+import { createLayers, LAYERS } from '../../../layers/layers';
 import { attachOitVariants } from '../../../rendering/oit-material';
 import { useSharedTextures } from '../../../hooks/useSharedTextures';
 import { unpackBufferGeometry } from '../../../sdk';

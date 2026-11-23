@@ -13,14 +13,12 @@ import {
   Quaternion,
   Vector3,
 } from 'three';
+import { SurfaceSampler, Vec2, Vec3 } from '../../sdk';
 import {
   createTinSampler,
-  SurfaceSampler,
   TinSample,
   TinSampler,
-  Vec2,
-  Vec3,
-} from '../../sdk';
+} from '../../sdk/geometries/tin-sampler';
 
 /**
  * One drawn surface a zone offers for sampling.

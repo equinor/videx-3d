@@ -10,15 +10,15 @@ import {
 } from '../geo-map-context';
 
 /**
- * GeoMapTracks props: as `TrackLayer`'s, give the same tracks (and `annotations`) to both.
+ * GeoMapTracks props: as `GeoTracks`'s, give the same tracks (and `annotations`) to both.
  * @expand
  */
 export type GeoMapTracksProps<T extends Track> = LayerExtentVisibility & {
-  /** where each thing was last reported, as a `TrackLayer` takes them */
+  /** where each thing was last reported, as a `GeoTracks` takes them */
   tracks: T[];
   /** carry each track on along its speed and course between fixes (dead reckoning). Default true */
   extrapolate?: boolean;
-  /** a label per track, as a `TrackLayer`'s annotations give it (`text`); its `layer` and `height` are the scene's */
+  /** a label per track, as a `GeoTracks`'s annotations give it (`text`); its `layer` and `height` are the scene's */
   annotations?: { text: (track: T) => string; layer?: string; height?: number };
   /** each track's colour: one for all, or by track. Default white */
   color?: string | ((track: T) => string);
@@ -34,7 +34,7 @@ export type GeoMapTracksProps<T extends Track> = LayerExtentVisibility & {
 const MOVE_MS = 200;
 
 /**
- * A `TrackLayer`'s things that move — ships, vehicles — on a {@link GeoMap}: an arrow each,
+ * A `GeoTracks`'s things that move — ships, vehicles — on a {@link GeoMap}: an arrow each,
  * turned to its course on the map, carried on between fixes along its speed and course as the
  * scene carries them (`advanceTrack`), with its annotation's text. Drawn on the map's canvas
  * over the data, a few times a second while they move.

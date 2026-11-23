@@ -1,12 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useMemo } from 'react';
 import { ContourColorMode } from '../../common/types';
+import { SurfaceMeta, Vec2 } from '../../sdk';
 import {
   SURFACE_DETAIL_PRESET_NAMES,
   SurfaceDetailPreset,
-  SurfaceMeta,
-  Vec2,
-} from '../../sdk';
+} from '../../sdk/materials/surface-detail';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';

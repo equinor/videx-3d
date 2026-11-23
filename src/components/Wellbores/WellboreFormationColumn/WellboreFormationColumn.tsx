@@ -8,13 +8,10 @@ import {
   Uniform,
   UniformsUtils,
 } from 'three';
-import {
-  CommonComponentProps,
-  createLayers,
-  LAYERS,
-  useGenerator,
-  useWellboreContext,
-} from '../../../main';
+import { CommonComponentProps } from '../../../common/types';
+import { useGenerator } from '../../../hooks/useGenerator';
+import { useWellboreContext } from '../../../hooks/useWellboreContext';
+import { createLayers, LAYERS } from '../../../layers/layers';
 import { makeOitCompatible } from '../../../rendering/oit-material';
 import { unpackBufferGeometry } from '../../../sdk';
 import fragmentShader from './shaders/fragment.glsl';

@@ -8,7 +8,8 @@ import vertexShader from './shaders/vertex.glsl';
 const WIDTH = 800;
 const HEIGHT = 600;
 
-type Props = {
+/** {@link SDFTest} props. */
+export type SDFTestProps = {
   text: string;
   inBias?: number;
   outBias?: number;
@@ -28,7 +29,7 @@ export const SDFTest = ({
   spacing = 0,
   verticalAlign = 0.0,
   horizontalAlign = 0.0,
-}: Props) => {
+}: SDFTestProps) => {
   const glyphContext = useContext(GlyphsContext);
 
   const uniforms = useMemo(() => {

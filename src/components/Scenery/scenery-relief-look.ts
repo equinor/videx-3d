@@ -125,7 +125,7 @@ export type ReliefContourLabels = {
   spacing?: number;
   /** the text's size on screen, CSS pixels. Default 16 */
   size?: number;
-  /** Default monospace ({@link RELIEF_CONTOUR_LABEL_FONT}) */
+  /** Default monospace (`RELIEF_CONTOUR_LABEL_FONT`) */
   fontFamily?: string;
   /** Default 700: the monospace fonts have no face between regular and bold, which draws thin */
   fontWeight?: string | number;

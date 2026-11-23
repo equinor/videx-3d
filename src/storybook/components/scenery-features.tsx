@@ -2,19 +2,19 @@ import { useMemo, type ReactNode } from 'react';
 import { GeoMapCameraMarker } from '../../components/Html/GeoMap/GeoMapMarkers';
 import { Minimap } from '../../components/Html/Minimap/Minimap';
 import { Overlay } from '../../components/Html/Overlay/Overlay';
-import { SceneryAbyss } from '../../components/Scenery/SceneryAbyss';
+import { SceneryVoid } from '../../components/Scenery/SceneryVoid';
 import { SceneryClouds } from '../../components/Scenery/SceneryClouds';
 import { SceneryCutaway } from '../../components/Scenery/SceneryCutaway';
 import { GeoGraticule } from '../../components/Layers/GeoGraticule';
 import { SceneryOcean } from '../../components/Scenery/SceneryOcean';
 import type {
-  SceneryAbyssProps,
+  SceneryVoidProps,
   SceneryOceanProps,
 } from '../../components/Scenery/scenery-model';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import {
   SceneryArgs,
-  sceneryAbyssFromArgs,
+  sceneryVoidFromArgs,
   sceneryCloudsFromArgs,
   sceneryGraticuleFromArgs,
   sceneryMinimapLayers,
@@ -39,7 +39,7 @@ export const SceneryArgsFeatures = ({
 }: {
   args: SceneryArgs;
   ocean: Partial<SceneryOceanProps> | false;
-  abyss: Partial<SceneryAbyssProps> | false;
+  abyss: Partial<SceneryVoidProps> | false;
   weather?: boolean;
   clouds?: boolean;
 }) => {
@@ -57,7 +57,7 @@ export const SceneryArgsFeatures = ({
       {ocean && (
         <SceneryOcean {...sceneryOceanFromArgs(args, weather)} {...ocean} />
       )}
-      {abyss && <SceneryAbyss {...sceneryAbyssFromArgs(args)} {...abyss} />}
+      {abyss && <SceneryVoid {...sceneryVoidFromArgs(args)} {...abyss} />}
       {cutaway && <SceneryCutaway {...cutaway} />}
       {clouds && cloudsElement}
     </>

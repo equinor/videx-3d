@@ -230,10 +230,8 @@ export const World = ({
     [stable, boundary, globe],
   );
 
-  // The relief's: what it shares (the tiles it draws, the ground under the camera), and the
-  // sky and the stage that join it.
+  // The relief's: what it shares (the tiles it draws), and the sky and the stage that join it.
   const [tiles] = useState(() => new SceneryReliefHub());
-  const [ground] = useState(() => ({ current: null as number | null }));
   const [reliefs, setReliefs] = useState(0);
   const [sky, setSky] = useState<SceneryOceanState | null>(null);
   const [stage, setStage] = useState<WorldReliefStage | null>(null);
@@ -257,7 +255,6 @@ export const World = ({
   const relief = useMemo<WorldReliefState>(
     () => ({
       tiles,
-      ground,
       present: reliefs > 0,
       sky,
       stage,
@@ -269,7 +266,6 @@ export const World = ({
     }),
     [
       tiles,
-      ground,
       reliefs,
       sky,
       stage,

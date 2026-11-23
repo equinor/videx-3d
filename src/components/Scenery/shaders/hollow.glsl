@@ -1,4 +1,4 @@
-// The hollow under the seabed (SceneryAbyss's `hollow`, scenery-hollow.ts): the void as a
+// The hollow under the seabed (SceneryVoid's `hollow`, scenery-hollow.ts): the void as a
 // confined gap in the crust, under a cap of the globe about the field's disc centre, its rim
 // `radius` out along the sea, wandering in and out round it. While its opening is open (the
 // sea's seabed peeled), the relief and the sea's seabed are cut inside the rim and stay whole

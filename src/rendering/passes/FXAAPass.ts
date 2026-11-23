@@ -3,7 +3,7 @@ import { FxaaResolver } from '../fxaa-resolver';
 import { Pass } from '../Pass';
 
 /**
- * Standalone FXAA post pass. Wraps a {@link FxaaResolver} and composites it in
+ * Standalone FXAA post pass. Wraps a `FxaaResolver` and composites it in
  * place into the shared pipeline buffer, so it works after any base pass
  * ({@link RenderPass} or {@link OITRenderPass}) — unlike the OIT-internal SMAA /
  * temporal modes it does not require order-independent transparency.

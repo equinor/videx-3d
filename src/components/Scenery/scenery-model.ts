@@ -264,7 +264,7 @@ export type SkyColors = {
  * an endless lid overhead and a bottomless gradient below the horizon. It is part of the
  * background, so it never hides anything in the scene, including objects above the level.
  */
-export type SceneryAbyssProps = {
+export type SceneryVoidProps = {
   /** height of the lid along `up`, in world units; with a sea, its seabed's. Default 0 */
   level?: number;
   colors?: {
@@ -313,7 +313,7 @@ export type SceneryAbyssProps = {
 export type SceneryHollowStyle = 'calm' | 'molten' | 'simple';
 
 /**
- * The hollow under a {@link Scenery}'s seabed ({@link SceneryAbyssProps.hollow}): the void
+ * The hollow under a {@link Scenery}'s seabed ({@link SceneryVoidProps.hollow}): the void
  * as a gap in the crust, from the seabed down to a floor where the mantle would begin, closed
  * by walls of rock about the field — dark, dull rock that frames the data in it. Centred on
  * the field (the `World`'s anchor, the globe's disc), a fixed size: from the sea over the
@@ -446,12 +446,6 @@ export type SceneryOceanProps = SceneryOceanWater & {
   level?: number;
   /** depth of the seabed below the surface, in world units. Default 100 */
   depth?: number;
-  /**
-   * @deprecated the water's look is its `optics` (`'realistic'` by default, `'clear'` to see
-   * the seabed and what lies under the sea); still honoured where no `optics` is given, as a
-   * clarity of `WATER_FADE` over it
-   */
-  bodyFogDensity?: number;
   /**
    * How much of the sea it draws, as `Ocean`'s `quality` (`SEA_QUALITY`,
    * `OCEAN_QUALITY_DEFINES`); at `low` its reflection takes the sky's gradient alone, without
@@ -682,7 +676,7 @@ export const sceneryDefaults = {
   horizonBlend: 0.04,
   globe: true,
   discScale: 1,
-  abyss: {
+  void: {
     level: 0,
     colors: { ceiling: '#2a2d32', horizon: '#4a5058', depth: '#0e1013' },
     fadeDistance: 20000,

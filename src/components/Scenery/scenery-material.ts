@@ -214,7 +214,7 @@ export class SceneryMaterial extends ShaderMaterial {
    *   ({@link globeEnabled} then follows it). Default a globe of its own.
    */
   constructor(parameters: ShaderMaterialParameters = {}, globe?: Globe) {
-    const { sun, colors, abyss, ocean } = sceneryDefaults;
+    const { sun, colors, void: abyss, ocean } = sceneryDefaults;
     const oceanOptics = waterOpticsOf();
     super({
       vertexShader,
@@ -864,7 +864,7 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uSkyDebug.value = value ? 1 : 0;
   }
 
-  /** the void below the level (see {@link SceneryAbyssProps}); changing it recompiles the layers that draw it */
+  /** the void below the level (see {@link SceneryVoidProps}); changing it recompiles the layers that draw it */
   get abyss(): boolean {
     return this.switches.SKY_ABYSS !== undefined;
   }
@@ -1092,7 +1092,7 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   /**
-   * The hollow under the seabed is drawn (`SceneryAbyssProps.hollow`): the void confined to a
+   * The hollow under the seabed is drawn (`SceneryVoidProps.hollow`): the void confined to a
    * gap in the crust about the field, its lid the hollow's, curved down inside the rim. Set once
    * the hollow can be drawn, its textures baked and the sky's programs compiled: until then the
    * void is the plain void. A uniform: nothing recompiles.

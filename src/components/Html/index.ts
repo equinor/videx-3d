@@ -5,13 +5,6 @@ export * from './hud';
 export * from './OutputPanel';
 export * from './Overlay';
 export * from './Panel/Panel';
-export {
-  panelHandleCursor,
-  panelHandles,
-  resizePanel,
-  type PanelAnchor,
-  type PanelHandle,
-} from './Panel/panel-resize';
 export * from './Minimap';
 export * from './RenderStats/RenderStats';
 export * from './WellMap';

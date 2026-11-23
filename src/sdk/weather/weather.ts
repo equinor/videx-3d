@@ -87,7 +87,7 @@ export type CloudLayer = {
   top: number;
   /**
    * the wind at its height, which its clouds drift with. Default the weather's wind turned and
-   * strengthened aloft ({@link cloudWindAt})
+   * strengthened aloft (`cloudWindAt`)
    */
   wind?: WeatherWind;
 };

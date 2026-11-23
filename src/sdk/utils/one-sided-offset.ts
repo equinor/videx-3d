@@ -37,7 +37,7 @@ import { settleBattenConstrained } from './batten-constrained';
  *
  * ⭐ `'left'` means the curve appears on the LEFT of the direction the well is drilled
  * (head → terminal depth), as seen in a PLAN VIEW FROM ABOVE. One vocabulary, everywhere:
- * never `1 | -1`, never `onePlus` / `oneMinus` — see {@link sideNormalSign} for the one
+ * never `1 | -1`, never `onePlus` / `oneMinus` — see `sideNormalSign` for the one
  * place a side is turned back into a sign.
  */
 export type FenceSideName = 'left' | 'right';

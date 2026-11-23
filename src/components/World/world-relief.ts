@@ -38,11 +38,6 @@ export type WorldReliefStage = {
 export type WorldReliefState = {
   /** the relief tiles drawn, as drawn: what a layer lying on the ground meets (a `GeoTileLayer`'s `drape`). Stable */
   tiles: SceneryReliefHub;
-  /**
-   * the relief's ground under the camera, world Y, written each frame it is drawn; null where none is in. Stable
-   * @deprecated Read the camera site's `ground` (`useCameraSite().get(camera)`): worked out once a frame for all.
-   */
-  ground: { current: number | null };
   /** a `GeoRelief` with layers is in the world */
   present: boolean;
   /** the sky that shades it, a `Scenery`'s ocean: null without one */

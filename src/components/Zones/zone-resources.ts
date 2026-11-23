@@ -1,5 +1,5 @@
 import { BufferGeometry } from 'three';
-import { SurfaceZone } from '../../sdk';
+import { SurfaceZone } from '../../sdk/geometries/surface-zone';
 
 /**
  * What the built zones currently on the main thread cost.

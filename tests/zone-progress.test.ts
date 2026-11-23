@@ -9,7 +9,7 @@ import {
   createProgressStore,
   describeProgress,
 } from '../src/components/Progress/progress-store';
-import { SurfaceZoneMetrics } from '../src/sdk';
+import { SurfaceZoneMetrics } from '../src/sdk/geometries/surface-zone';
 
 const metrics = (triangles: number) => ({ triangles }) as SurfaceZoneMetrics;
 

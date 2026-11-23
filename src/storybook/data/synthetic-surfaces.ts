@@ -20,20 +20,24 @@
  */
 
 import {
-  ColumnSpec,
-  ColumnStep,
   CRS,
-  ErosionEncoding,
-  generateColumn,
-  generateSurfaceValues,
   getProjectionDefFromUtmZone,
   ReliefSpec,
   reliefDepth,
-  SedimentClass,
-  SurfaceFieldSpec,
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
+import {
+  ColumnSpec,
+  ColumnStep,
+  ErosionEncoding,
+  generateColumn,
+  SedimentClass,
+} from '../../sdk/geometries/surface-column';
+import {
+  generateSurfaceValues,
+  SurfaceFieldSpec,
+} from '../../sdk/geometries/surface-field';
 import storyArgs from '../story-args.json';
 
 const crs = new CRS(

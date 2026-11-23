@@ -9,7 +9,7 @@ import type {
 } from 'three';
 import type { SceneryMaterial } from './scenery-material';
 import type {
-  SceneryAbyssProps,
+  SceneryVoidProps,
   SceneryOceanProps,
   SceneryZone,
 } from './scenery-model';
@@ -37,7 +37,7 @@ export type SceneryCutawayFeature = {
 /** What a scenery's feature components hand it, each null while there is none. */
 export type SceneryFeatures = {
   ocean: SceneryOceanProps | null;
-  abyss: SceneryAbyssProps | null;
+  abyss: SceneryVoidProps | null;
   cutaway: SceneryCutawayFeature | null;
 };
 
@@ -134,7 +134,7 @@ export const SceneryRegistryContext = createContext<SceneryRegistry | null>(
 
 const COMPONENTS: Record<keyof SceneryFeatures, string> = {
   ocean: 'SceneryOcean',
-  abyss: 'SceneryAbyss',
+  abyss: 'SceneryVoid',
   cutaway: 'SceneryCutaway',
 };
 

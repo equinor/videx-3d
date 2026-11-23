@@ -110,7 +110,7 @@ The globe is the `Scenery`'s; read it with `useWorld().globe` (or `useScenery`).
 | Component | Use |
 |--|--|
 | `GeoPolygons`, `GeoLabels` | GeoJSON polygons and their names, by longitude and latitude, on the globe (or flat without one) |
-| `TrackLayer` | moving things from a tracking feed |
+| `GeoTracks` | moving things from a tracking feed |
 | `Minimap` | a 2D map of the same relief, following the camera, in a resizable, closable panel. Draws in the scene's map, or in Web Mercator, Equal Earth or Lambert conformal conic (`projection`), switching for wide views with `'auto'` |
 | `GeoMap` | the map on its own: a full view over the 3D one, or a page of its own with no 3D view; panned and zoomed by the user |
 | `GeoMapCamera`, `GeoMapCameraMarker`, `GeoMapTargetMarker` | the camera on a map, following it, moved by dropping its markers |

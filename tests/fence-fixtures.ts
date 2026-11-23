@@ -1,14 +1,6 @@
 import { readFileSync } from 'fs';
-import {
-  buildWellboreFence,
-  createWellboreOutline,
-  getSplineCurve,
-  PlanarPolygonCoordinates,
-  PlanarPolygonGeometry,
-  Vec2,
-  Vec3,
-  WellboreFence,
-} from '../src/sdk';
+import { createWellboreOutline, getSplineCurve, PlanarPolygonCoordinates, PlanarPolygonGeometry, Vec2, Vec3 } from '../src/sdk';
+import { buildWellboreFence, WellboreFence } from '../src/sdk/geometries/wellbore-fence';
 import { Curve3D } from '../src/sdk/geometries/curve/curve-3d';
 import { CRS, getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import {

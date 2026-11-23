@@ -305,14 +305,6 @@ export const GeoRelief = ({
     () => (mounted && loader ? provideLoader?.(loader) : undefined),
     [mounted, loader, provideLoader],
   );
-  // The ground under the camera: none while not shown.
-  const ground = relief?.ground;
-  useEffect(() => {
-    if (!shown || !ground) return;
-    return () => {
-      ground.current = null;
-    };
-  }, [shown, ground]);
 
   // Compiled with the sky's own before either is drawn; again when its parts may have changed.
   const root = useRef<Group>(null);
@@ -348,7 +340,7 @@ export const GeoRelief = ({
         visible={visible && shown}
         onStats={onStats}
         onLoading={progress.loading}
-        cameraGround={shown ? relief.ground : undefined}
+        cameraGround={shown}
         stage={stage?.boundary ?? world.boundary}
         fields={fields}
         seeThrough={sky ? sky.seabedOpacity < 1 : fieldOpacity < 1}

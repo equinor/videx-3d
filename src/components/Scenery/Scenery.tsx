@@ -102,7 +102,7 @@ import { SceneryGround } from './scenery-ground';
 import { sceneryOceanDefines } from './scenery-stage';
 import {
   SKY_HDR_SUN_RADIANCE,
-  SceneryAbyssProps,
+  SceneryVoidProps,
   SkyAir,
   SkyColors,
   skyDaylight,
@@ -180,7 +180,7 @@ export type SceneryLayer =
   | 'background'
   | 'sky'
   | 'clouds'
-  | 'abyss'
+  | 'void'
   | 'sea'
   | 'water'
   | 'surface';
@@ -303,7 +303,7 @@ export type SceneryProps = {
   /** the texts of its progress (see {@link SCENERY_PROGRESS_LABELS}) */
   progressLabels?: Partial<SceneryProgressLabels>;
   /**
-   * What it holds: its features (`SceneryClouds`, `SceneryOcean`, `SceneryAbyss`,
+   * What it holds: its features (`SceneryClouds`, `SceneryOcean`, `SceneryVoid`,
    * `SceneryCutaway`), in any order and at any depth, and its stages and the scene, which
    * read its sun and sea (`useScenery`, `useSceneryOcean`).
    */
@@ -362,7 +362,7 @@ const NO_FEATURES: SceneryFeatures = {
 // Each layer mesh's own, for which compiles first (sceneryLayersShown).
 const LAYER_DATA = {
   sky: { sceneryLayer: 'sky' },
-  abyss: { sceneryLayer: 'abyss' },
+  void: { sceneryLayer: 'void' },
   sea: { sceneryLayer: 'sea' },
   water: { sceneryLayer: 'water' },
 };
@@ -372,7 +372,7 @@ const LAYER_DATA = {
  * are, and the light that comes from it — a directional sun light, an environment map and
  * a light probe, all from the same sky — and whatever else it holds: clouds that draw
  * themselves (`SceneryClouds`), an endless sea (`SceneryOcean`) with the void below it
- * (`SceneryAbyss`) and a cut through it (`SceneryCutaway`), and stages that draw the sea
+ * (`SceneryVoid`) and a cut through it (`SceneryCutaway`), and stages that draw the sea
  * and the relief on real geometry (`SceneryStage`). Each is drawn as a layer of its own and
  * compiled on its own (see `SceneryBackgroundLayer`), so a scenery without a sea compiles
  * none of it. Nothing else in the library depends on this component.
@@ -514,9 +514,9 @@ export const Scenery = ({
   }, [geoFrame, geoPlace]);
   const [northX, northY, northZ] = north ?? trueNorth ?? DEFAULT_NORTH;
 
-  const abyssOptions: SceneryAbyssProps | null = features.abyss;
+  const abyssOptions: SceneryVoidProps | null = features.abyss;
   const hasAbyss = abyssOptions !== null;
-  const abyssDefaults = sceneryDefaults.abyss;
+  const abyssDefaults = sceneryDefaults.void;
   const abyssLevel = abyssOptions?.level ?? abyssDefaults.level;
   const abyssCeiling = toHex(
     abyssOptions?.colors?.ceiling ?? abyssDefaults.colors.ceiling,
@@ -596,7 +596,6 @@ export const Scenery = ({
       : (seabedOptions?.detail ?? bedDefaults.detail);
   const oceanOptics = waterOpticsOf(oceanOptions?.optics, {
     deepColor: oceanOptions?.deepColor,
-    bodyFogDensity: oceanOptions?.bodyFogDensity,
   });
   const oceanOpticsColor = oceanOptics.color;
   const oceanClarity = oceanOptics.clarity;
@@ -679,7 +678,7 @@ export const Scenery = ({
           onHollowRadius.current?.(radius);
         },
         reset: () => {
-          const radius = sceneryDefaults.abyss.hollow.radius;
+          const radius = sceneryDefaults.void.hollow.radius;
           hollowDragged.current = radius;
           material.hollowRadius = radius;
           onHollowRadius.current?.(radius);
@@ -748,7 +747,7 @@ export const Scenery = ({
   // The background's layers over the sky, each with only the switches it needs.
   const abyssLayer = useSceneryLayerMaterial(
     material,
-    'abyss',
+    'void',
     hasAbyss || hasOcean,
   );
   const seaLayer = useSceneryLayerMaterial(material, 'sea', hasOcean);
@@ -1888,7 +1887,7 @@ export const Scenery = ({
           !debug?.hide?.includes('background');
     };
     showLayer(skyMesh.current, 'sky');
-    showLayer(abyssMesh.current, 'abyss');
+    showLayer(abyssMesh.current, 'void');
     // The hollow, where it can show: through an opening in the seabed, or from below it inside
     // its rim. Below it outside the rim the camera is in solid crust: the void's own layer.
     if (hollowLook) {
@@ -1904,7 +1903,7 @@ export const Scenery = ({
         drawn &&
         (voidOpen || belowBed) &&
         (inHollow || !belowBed) &&
-        !debug?.hide?.includes('abyss') &&
+        !debug?.hide?.includes('void') &&
         !debug?.hide?.includes('background');
       hollow.floor.visible = hollowShown;
       hollow.walls.visible = hollowShown;
@@ -2070,9 +2069,9 @@ export const Scenery = ({
             geometry={geometry}
             material={abyssLayer}
             frustumCulled={false}
-            renderOrder={renderOrder + SCENERY_LAYER_ORDER.abyss}
+            renderOrder={renderOrder + SCENERY_LAYER_ORDER.void}
             visible={false}
-            userData={LAYER_DATA.abyss}
+            userData={LAYER_DATA.void}
             onBeforeRender={material.onBeforeDraw}
             dispose={null}
           />

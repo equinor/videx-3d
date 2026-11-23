@@ -81,7 +81,7 @@ Five ideas carry the whole design:
 | `Zone.tsx` | One block. Resolves a boundary, assembles a build spec, drives the generator. |
 | `ZoneMeshes.tsx` | Presentational. Turns a built zone + layer declarations into meshes and materials. |
 | `ZoneContext.ts` | `ZoneStackContextValue` — everything the stack publishes downward. |
-| `zone-defs.ts` | The public type surface: `ZoneLayer`, `ZoneResolveOptions`, `ZoneSection`, `ZoneFence`, `StackWater`, generator keys, defaults. |
+| `zone-defs.ts` | The public type surface: `ZoneLayer`, `ZoneResolveOptions`, `ZoneSection`, `ZoneFence`, `ZoneStackWater`, generator keys, defaults. |
 | `zone-spec.ts` | Pure main-thread spec builders (`buildSurfaceZoneSpec`, `stackColumnSpec`, `buildStackWaterSpec`, `buildWellboreOutlineSpec`). |
 | `cutout.ts` | `CutoutSource` / `ZoneBoundary` and the per-zone override merge. |
 | `resolveWellboreOutline.ts` | Calls the `wellboreOutline` generator and turns its rings into the footprint polygon. |

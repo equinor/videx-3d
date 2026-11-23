@@ -26,7 +26,7 @@ export type MapView = {
    * scene's map does
    */
   lonLat?: Vec2;
-  /** drawn in a projection's plane, not the scene's map (see {@link projectMapView}) */
+  /** drawn in a projection's plane, not the scene's map (see `projectMapView`) */
   projected?: MapViewProjection;
 };
 

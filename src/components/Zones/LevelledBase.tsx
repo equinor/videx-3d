@@ -1,11 +1,11 @@
 import { ReactNode, useEffect, useMemo, useRef } from 'react';
 import { Material, MeshStandardMaterial } from 'three';
+import { PlanarPolygonGeometry } from '../../sdk';
 import {
   createLevelledBase,
   LevelledBaseLevel,
   LevelledBaseMetrics,
-  PlanarPolygonGeometry,
-} from '../../sdk';
+} from '../../sdk/geometries/levelled-base';
 import { useSurfaceSampler } from './surface-sampler';
 
 /**

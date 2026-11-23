@@ -366,7 +366,7 @@ export class OITRenderPass extends Pass {
    *   opaque-edge AA in an opaque-only close-up; transparent/additive edges stay
    *   un-anti-aliased, and MSAA leaves a background-coloured fringe over transparent
    *   surfaces (see {@link opaqueSamples}).
-   * - `'temporal'`: temporal supersampling (see {@link TemporalResolver}). The camera
+   * - `'temporal'`: temporal supersampling (see `TemporalResolver`). The camera
    *   is sub-pixel jittered each frame and the composited frame is accumulated into a
    *   running average **while the camera is still**, converging to a genuinely
    *   supersampled image (thin trajectory lines, transparent-surface edges, contour
@@ -381,7 +381,7 @@ export class OITRenderPass extends Pass {
    *   while the camera is still (crisp, recovers sub-pixel detail) and SMAA while it
    *   moves. SMAA never softens the converged still image and only costs GPU time
    *   during motion.
-   * - `'taa'` (default): reprojected temporal anti-aliasing (see {@link TaaResolver}).
+   * - `'taa'` (default): reprojected temporal anti-aliasing (see `TaaResolver`).
    *   Like `'temporal'` the camera is sub-pixel jittered, but the history is
    *   reprojected every frame using the nearest visible surface's depth (opaque
    *   hardware depth refined by the OIT front-layer depth), so anti-aliasing is
@@ -390,7 +390,7 @@ export class OITRenderPass extends Pass {
    *   default for the OIT pipeline — it anti-aliases both still and moving frames.
    *   Use `'temporal'` instead if you need guaranteed ghost-free stills and don't
    *   mind losing motion AA.
-   * - `'fxaa'`: fast approximate AA (see {@link FxaaResolver}) applied as a single
+   * - `'fxaa'`: fast approximate AA (see `FxaaResolver`) applied as a single
    *   cheap spatial post pass every frame. Cheaper and softer than `'smaa'`, with no
    *   OIT or temporal coupling. Like all spatial techniques it cannot recover
    *   sub-pixel features. Also available as the standalone {@link FXAAPass} for

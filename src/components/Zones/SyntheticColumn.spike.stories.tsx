@@ -6,13 +6,9 @@ import { useData } from '../../hooks/useData';
 import { OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
-import {
-  PlanarPolygonGeometry,
-  SedimentClass,
-  SurfaceZoneMetrics,
-  SurfaceMeta,
-  Vec2,
-} from '../../sdk';
+import { PlanarPolygonGeometry, SurfaceMeta, Vec2 } from '../../sdk';
+import { SedimentClass } from '../../sdk/geometries/surface-column';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import {
   SYNTHETIC_COLUMN,
@@ -49,8 +45,8 @@ import {
   ZoneLayer,
   ZonePeel,
   ZoneResolveOptions,
-  StackImmersion,
-  StackWater,
+  ZoneStackImmersion,
+  ZoneStackWater,
 } from './zone-defs';
 import { ZoneContact } from './zone-contacts';
 import { ZoneStack } from './ZoneStack';
@@ -550,7 +546,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
 
   // The sea is the COLUMN's, not a zone layer: one lid over the whole stack,
   // drawn once however many zones are cut from it.
-  const water = useMemo<StackWater | undefined>(() => {
+  const water = useMemo<ZoneStackWater | undefined>(() => {
     if (!props.water) return undefined;
     const angle = (props.windDirection * Math.PI) / 180;
     return {
@@ -605,7 +601,7 @@ const SyntheticColumnStory = (props: SyntheticColumnProps) => {
 
   // Absent unless asked for — its presence is what installs `scene.fog`, and that
   // is not free even when it would fog nothing.
-  const immersion = useMemo<StackImmersion | undefined>(
+  const immersion = useMemo<ZoneStackImmersion | undefined>(
     () =>
       props.immersion
         ? {
@@ -1381,7 +1377,7 @@ export const Default: Story = {
     keepBed: {
       control: 'boolean',
       description:
-        'Leave the sea bed CAP whole when the cut takes the sea (`StackWater.keepBed`): the bed stays as a sheet over the removed half while the rock under it is cut. No effect while `sectionWater` is off — a sea kept whole keeps its bed anyway.',
+        'Leave the sea bed CAP whole when the cut takes the sea (`ZoneStackWater.keepBed`): the bed stays as a sheet over the removed half while the rock under it is cut. No effect while `sectionWater` is off — a sea kept whole keeps its bed anyway.',
       table: { category: 'Section' },
     },
     sectionCarrier: {

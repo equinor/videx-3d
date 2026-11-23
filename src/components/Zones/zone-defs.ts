@@ -1,24 +1,23 @@
 import { ColorRepresentation, Plane, Texture } from 'three';
 import {
-  FenceField,
-  FenceSegmentIndex,
-  FenceSideName,
   PackedBufferGeometry,
-  PackedSurfaceZone,
   PlanarPolygonCoordinates,
-  ReliefSource,
-  SealMode,
-  StackCarrier,
   StackRelief,
-  StackSectionSource,
   SurfaceClipHeader,
-  SurfaceZoneMetrics,
-  SurfaceZonePhase,
   SurfaceMeta,
   Vec2,
-  WellboreFence,
   WellboreOutlineCoordinates,
 } from '../../sdk';
+import { FenceField, WellboreFence } from '../../sdk/geometries/wellbore-fence';
+import { FenceSegmentIndex } from '../../sdk/geometries/fence-segments';
+import { FenceSideName } from '../../sdk/utils/one-sided-offset';
+import { PackedSurfaceZone } from '../../sdk/geometries/surface-zone-packing';
+import { ReliefSource } from '../../sdk/geometries/relief-tiles';
+import { SealMode } from '../../sdk/geometries/surface-seal';
+import { StackCarrier } from '../../sdk/geometries/surface-stack';
+import { StackSectionSource } from '../../sdk/geometries/surface-section';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
+import { SurfaceZonePhase } from '../../sdk/geometries/surface-zone-streaming';
 import { OceanBodyProps, OceanWaterProps } from '../Ocean/ocean-material-sync';
 import { ZoneDetail } from './zone-detail';
 import type { WellboreCutoutOptions } from './cutout';
@@ -387,7 +386,7 @@ export type ZoneLayer = {
   /**
    * Leave this layer's CAP whole under the section and the fence, while the unit below
    * it is cut as usual: the cap stays as a sheet over the removed half. What
-   * {@link StackWater.keepBed} does for the sea bed, without needing a sea. Default false.
+   * {@link ZoneStackWater.keepBed} does for the sea bed, without needing a sea. Default false.
    */
   keepCap?: boolean;
   /**
@@ -453,19 +452,6 @@ export type ZoneLayer = {
  */
 export type ZoneWaterTint = {
   /**
-   * Strength of the tint deep down (0..1, 0 = off). Follows
-   * {@link OceanWaterProps.waterOpacity} when omitted, so the bed reads denser as
-   * the water does — the same coupling the `Ocean` component uses.
-   * @deprecated the bed is seen through the water over it by `optics`; no effect
-   */
-  bedTint?: number;
-  /**
-   * Depth below the water level at which the tint reaches ~86% of `bedTint`, in
-   * metres. Default {@link DEFAULT_BED_TINT_DEPTH}.
-   * @deprecated the bed is seen through the water over it by `optics`; no effect
-   */
-  bedTintDepth?: number;
-  /**
    * Depth of the WET band just below the waterline, in metres. 0 (the default)
    * is off.
    *
@@ -489,7 +475,7 @@ export type ZoneWaterTint = {
  * @expand
  * @group Components
  */
-export type StackWater = OceanWaterProps &
+export type ZoneStackWater = OceanWaterProps &
   OceanBodyProps &
   ZoneWaterTint & {
     /** sea level, metres below datum (POSITIVE-DOWN, as surfaces are given). Default 0. */
@@ -539,7 +525,7 @@ export type StackWater = OceanWaterProps &
  * @expand
  * @group Components
  */
-export type StackImmersion = {
+export type ZoneStackImmersion = {
   /** fog inside the sea. Default true (when the stack declares water) */
   water?: boolean;
   /** fog inside the block. Default true */
@@ -591,7 +577,7 @@ export type StackImmersion = {
 
 /**
  * The flat floor a whole column terminates against, as a `ZoneStack` declares it:
- * a {@link StackCarrier} plus how it is drawn.
+ * a `StackCarrier` plus how it is drawn.
  *
  * @group Components
  */
@@ -1050,9 +1036,8 @@ export type ZoneSectionState = {
 };
 
 /**
- * Depth over which a {@link ZoneWaterTint.bedTint} builds up when the water names
- * no {@link ZoneWaterTint.bedTintDepth} of its own. Shallow enough that a shoreline
- * reads as one.
+ * Depth below the water level over which the bed's tint builds up. Shallow enough
+ * that a shoreline reads as one.
  *
  * @group Components
  */
@@ -1060,7 +1045,7 @@ export const DEFAULT_BED_TINT_DEPTH = 80;
 
 /**
  * Target lid resolution (metres) used when the sea displaces its vertices and
- * names no {@link StackWater.resolution} of its own. Coarse enough that a
+ * names no {@link ZoneStackWater.resolution} of its own. Coarse enough that a
  * field-sized footprint stays affordable, fine enough for the long swells that
  * are the only ones displaced.
  *
@@ -1444,7 +1429,7 @@ export type SurfaceZoneSpec = {
   /**
    * The column's sea, given to the zone that draws its bed (`bed`, a column
    * surface id) at its level (`depth`, metres below the scene's zero, as
-   * `StackWater.depth`). The bed's coastline is then constrained into the build
+   * `ZoneStackWater.depth`). The bed's coastline is then constrained into the build
    * (`SurfaceStackOptions.levelLines`), so its cap meets the sea's flat lid where
    * the grid puts the shore. Column builds only.
    */

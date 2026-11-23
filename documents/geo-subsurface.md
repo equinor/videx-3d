@@ -3,7 +3,7 @@
 > **Status (2026-11-03): draft, nothing of it built.** Saved to be picked up on demand, a part at
 > a time; each part gets its own review before it is built. Settled with the user on
 > 2026-11-03 (the answers are recorded under [Decided](#decided-draft)). Built with it: only
-> `TrackLayer` anywhere on the globe ([layers.md, Tracks](./layers.md#tracks-tracklayer)),
+> `GeoTracks` anywhere on the globe ([layers.md, Tracks](./layers.md#tracks-tracklayer)),
 > whose `globeUprightMatrix` the models below would share.
 >
 > **Revised 2026-11-19:** a level of detail told by the `World` to any content (LOD clients,
@@ -238,7 +238,7 @@ where the scene has no relief or sea.
 
 | # | Part | Ends with |
 |--|--|--|
-| 1 | `TrackLayer` anywhere on the globe | ✅ built (2026-11-03): placed to a millimetre on the curved sea 150 km to 2 900 km off and on the far side of the Earth (`track-placement.test.ts`); the `Ships` story's `far` adds ships there |
+| 1 | `GeoTracks` anywhere on the globe | ✅ built (2026-11-03): placed to a millimetre on the curved sea 150 km to 2 900 km off and on the far side of the Earth (`track-placement.test.ts`); the `Ships` story's `far` adds ships there |
 | 2 | Models and LOD: the LOD registry and clients, `GeoModel`, `PixelLod`, the glTF helper | — |
 | 3 | Wells: `WellboreHeader.crs`, `GeoWells`, the demo's exploration wells | — |
 | 4 | `GeoSurface` | — |

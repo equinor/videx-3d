@@ -25,7 +25,7 @@ type Sea = {
 };
 
 /**
- * The sea under a `Weather`: one {@link SeaState} for each quality asked for, the weather's
+ * The sea under a `Weather`: one `SeaState` for each quality asked for, the weather's
  * wind and swells its input, on the weather's clock, and its layers' tiles (`SeaWaveBake`).
  * Every sea under the weather that takes its wind and swells from it draws these, so all of
  * them are one sea, moved and baked once a frame however many draw it (`OceanMaterial.sea`).

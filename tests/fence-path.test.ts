@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { sampleFencePath, Vec2 } from '../src/sdk';
+import { Vec2 } from '../src/sdk';
+import { sampleFencePath } from '../src/sdk/geometries/fence-path';
 
 const square = (h: number): Vec2[] => [
   [-h, -h],

@@ -22,7 +22,7 @@ import {
   TilePool,
   viewTilePool,
 } from '../src/components/Zones/zone-lod';
-import type { StackTiling } from '../src/sdk';
+import type { StackTiling } from '../src/sdk/geometries/surface-stack';
 import { LOD_COARSEN_MARGIN, pixelsPerUnit } from '../src/sdk/utils/lod';
 
 // 2 x 1 tiles of 10 cells, 50 m cells, grid column = x / 50 and row = -z / 50 + 3.

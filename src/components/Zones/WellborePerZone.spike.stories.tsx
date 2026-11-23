@@ -14,15 +14,15 @@ import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import {
   CRS,
-  darkenColor,
   getProjectionDefFromUtmZone,
   PositionLog,
-  SurfaceZoneMetrics,
   SurfaceMeta,
   Vec2,
   Vec3,
   WellboreHeader,
 } from '../../sdk';
+import { darkenColor } from '../../sdk/utils/colors';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { zoneTimings } from '../../storybook/data/zone-timings';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';

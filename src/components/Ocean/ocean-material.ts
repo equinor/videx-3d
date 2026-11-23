@@ -78,7 +78,7 @@ export const DEFAULT_OCEAN_SHOAL_DEPTH = 25;
 
 /**
  * Default depth at which waves break, as a multiple of the significant wave
- * height ({@link SEA_BREAK_DEPTH}): waves break at roughly 1.3x their own height.
+ * height (`SEA_BREAK_DEPTH`): waves break at roughly 1.3x their own height.
  */
 export const DEFAULT_OCEAN_SHORE_BREAK_DEPTH = SEA_BREAK_DEPTH;
 
@@ -149,7 +149,7 @@ export type OceanMaterialParameters = ShaderMaterialParameters & {
    * ⭐ Read PER FRAGMENT, so a lid of a handful of triangles is cut at the
    * resolution of the curve rather than of its own tessellation.
    *
-   * ⚠️ Read at CONSTRUCTION, like {@link OceanMaterialParameters.sectionPlane}.
+   * ⚠️ Read at CONSTRUCTION, like `sectionPlane`.
    */
   fence?: FenceFieldUniforms;
   /**
@@ -434,7 +434,7 @@ export function oceanWhitecapCover(windSpeed: number, foamAmount: number) {
 
 /**
  * The defines the surface's shading compiles with besides its waves: its quality's
- * ({@link OCEAN_QUALITY_DEFINES}) and its options' (`sparkle`, `fresnelPower`, `foamLife`). A
+ * (`OCEAN_QUALITY_DEFINES`) and its options' (`sparkle`, `fresnelPower`, `foamLife`). A
  * material drawing an {@link OceanMaterial}'s water takes them over (a `Scenery`'s sea:
  * `SceneryMaterial.linkOcean`), in this order.
  */
@@ -753,7 +753,7 @@ export class OceanMaterial extends ShaderMaterial {
     attachOitVariants(this);
   }
 
-  /** the sea's waves, which floating objects ride ({@link SeaState.heightAt}): the weather's while it draws that ({@link OceanMaterial.sea}), else its own */
+  /** the sea's waves, which floating objects ride (`SeaState.heightAt`): the weather's while it draws that ({@link OceanMaterial.sea}), else its own */
   get seaState(): SeaState {
     return this._sea?.state(this.quality) ?? this._ownState;
   }
@@ -856,7 +856,7 @@ export class OceanMaterial extends ShaderMaterial {
   /**
    * The weather's gusts and slicks over the sea ({@link WeatherGusts}): the short waves
    * roughen in a gust and calm in a lull and a slick. `null`, as the wind gives them; with
-   * `strength` and `slicks` 0, none. Not drawn at `low` quality ({@link OCEAN_QUALITY_DEFINES}).
+   * `strength` and `slicks` 0, none. Not drawn at `low` quality (`OCEAN_QUALITY_DEFINES`).
    */
   get gusts(): WeatherGusts | null {
     return this._gusts;
@@ -915,7 +915,7 @@ export class OceanMaterial extends ShaderMaterial {
    *
    * Given the `camera` and its `distance` to the nearest of the sea (its height over it, the
    * nearest a pixel is finest), a layer whose whole tile a pixel there spans (with a margin,
-   * {@link SEA_BAKE_PIXEL_MARGIN}) is left as it was: the surface reads none of it, only its
+   * `SEA_BAKE_PIXEL_MARGIN`) is left as it was: the surface reads none of it, only its
    * variance. From high up that is all but the longest layers, or all of them.
    *
    * With the whitecaps' life on ({@link foamLife}), `at`, the camera's point in the wave plane
@@ -1241,7 +1241,7 @@ export class OceanMaterial extends ShaderMaterial {
 
   /**
    * Depth at which waves break, as a multiple of the significant wave height.
-   * Default 1.3 ({@link SEA_BREAK_DEPTH}) — the measured breaking criterion. The
+   * Default 1.3 (`SEA_BREAK_DEPTH`) — the measured breaking criterion. The
    * waves are cut down to it as the water shallows (`sea-shallow.ts`), and the
    * surf zone sits where they are, so both widen and narrow with the sea state.
    *
@@ -1433,7 +1433,7 @@ export class OceanMaterial extends ShaderMaterial {
   }
 
   /**
-   * Reflect the sky of `scene` ({@link sceneSky}): a `Scenery`'s, else the scene's environment
+   * Reflect the sky of `scene` (`sceneSky`): a `Scenery`'s, else the scene's environment
    * and brightest directional light, else its own gradient ({@link skyColor},
    * {@link horizonColor}) and sun. Once a frame, before it is drawn: it may prefilter the
    * scene's environment. The `Ocean` and `ZoneStack` do.
@@ -1505,7 +1505,7 @@ export class OceanMaterial extends ShaderMaterial {
    * How much of the sun's light through the waves' crests is drawn, with the sun behind them:
    * the water's own light tinted by the short path through a crest. 0 none, 1 (the default)
    * as modelled, more for more. A few operations a pixel; not drawn at `low` quality
-   * ({@link OCEAN_QUALITY_DEFINES}).
+   * (`OCEAN_QUALITY_DEFINES`).
    */
   get crestLight(): number {
     return this.uniforms.uCrestLight.value;

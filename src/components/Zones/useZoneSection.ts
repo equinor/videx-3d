@@ -9,7 +9,7 @@ import {
   StackSectionPlane,
   StackSectionSource,
   StackSectionTarget,
-} from '../../sdk';
+} from '../../sdk/geometries/surface-section';
 import { ZoneLayer, ZoneSectionState } from './zone-defs';
 import { registerSectionTargets, releaseGeometry } from './zone-resources';
 

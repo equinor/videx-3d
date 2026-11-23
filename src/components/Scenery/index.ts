@@ -1,22 +1,56 @@
 export * from './Scenery';
-export * from './SceneryAbyss';
+export * from './SceneryVoid';
 export * from './SceneryAnchor';
 export * from './SceneryClouds';
-export {
-  CLOUDS_CHAINS,
-  CLOUDS_LEVELS,
-  CLOUDS_LOOKS,
-  CLOUDS_QUALITY,
-  cloudsChainLayer,
-} from './scenery-clouds';
-export type { CloudsLook, CloudsQualityLevel } from './scenery-clouds';
 export * from './SceneryCutaway';
 export * from './SceneryOcean';
 export * from './SceneryStage';
-export type { SceneryReliefTileStats } from './SceneryStageReliefTiles';
-export { RELIEF_SURFACE } from './scenery-relief-sampler';
-export type { ReliefSampler } from './scenery-relief-sampler';
-export * from './scenery-relief-source';
+export * from './useLevelHorizon';
+export { useScenery, useSceneryOcean } from './scenery-context';
+export type { SceneryOceanState, SceneryState } from './scenery-context';
+export { CLOUDS_LEVELS, CLOUDS_LOOKS, CLOUDS_QUALITY } from './scenery-clouds';
+export type { CloudsLook, CloudsQualityLevel } from './scenery-clouds';
+export { sceneryReliefTile } from './scenery-defs';
+export type {
+  SceneryReliefGridResponse,
+  SceneryReliefTileResponse,
+} from './scenery-defs';
+export { SCENERY_EARTH_RADIUS, sceneryDefaults } from './scenery-model';
+export type {
+  SceneryVoidProps,
+  SceneryCloudLook,
+  SceneryCloudsDebug,
+  SceneryCloudsProps,
+  SceneryCloudsQuality,
+  SceneryCloudsTemporal,
+  SceneryHollow,
+  SceneryHollowStyle,
+  SceneryOceanProps,
+  SceneryOceanWater,
+  ScenerySeabed,
+  ScenerySubsurface,
+  ScenerySubsurfaceColors,
+  ScenerySubsurfaceLight,
+  ScenerySubsurfacePanel,
+  SkyAir,
+  SkyColors,
+  SkyMoon,
+  SkyObserver,
+  SkyStars,
+  SkySun,
+} from './scenery-model';
+export {
+  RELIEF_PROGRESS_LABELS,
+  SCENERY_PROGRESS_LABELS,
+} from './scenery-progress';
+export type {
+  SceneryProgressLabels,
+  SceneryReliefLoading,
+} from './scenery-progress';
+export type {
+  SceneryReliefDrawn,
+  SceneryReliefHub,
+} from './scenery-relief-hub';
 export type {
   ReliefColor,
   ReliefColorRamp,
@@ -25,21 +59,9 @@ export type {
   ReliefLookProps,
   ReliefSeabedRamp,
 } from './scenery-relief-look';
+export type { ReliefSampler } from './scenery-relief-sampler';
+export * from './scenery-relief-source';
+export type { ReliefContourLabels } from './scenery-relief-look';
+export type { ReliefProgressLabels } from './scenery-progress';
 export type { SceneryReliefTileDebug } from './scenery-relief-tiles';
-export type {
-  SceneryReliefDrawn,
-  SceneryReliefHub,
-} from './scenery-relief-hub';
-export * from './scenery-context';
-export * from './scenery-defs';
-export { SCENERY_LAYER_ORDER } from './scenery-layers';
-export type { SceneryBackgroundLayer } from './scenery-layers';
-export * from './scenery-material';
-export * from './scenery-model';
-export { SCENERY_PROGRESS_LABELS } from './scenery-progress';
-export type {
-  SceneryProgressLabels,
-  SceneryReliefLoading,
-} from './scenery-progress';
-export * from './scenery-stage';
-export * from './useLevelHorizon';
+export type { SceneryReliefTileStats } from './SceneryStageReliefTiles';

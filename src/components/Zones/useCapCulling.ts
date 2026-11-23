@@ -1,11 +1,11 @@
 import { RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { BufferGeometry, Object3D, PerspectiveCamera, Vector3 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
+import { PlanarPolygonCoordinates } from '../../sdk';
 import {
-  PlanarPolygonCoordinates,
   SurfaceZone,
   SurfaceZoneMesh,
-} from '../../sdk';
+} from '../../sdk/geometries/surface-zone';
 import {
   capVisibilityKey,
   createCapView,

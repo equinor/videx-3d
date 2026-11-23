@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { FenceSideName } from '../../sdk';
+import { FenceSideName } from '../../sdk/utils/one-sided-offset';
 import { ZoneFenceOverlay, ZoneFenceOverlayShading } from './zone-defs';
 import {
   ZoneFenceOverlayUniforms,

@@ -1,16 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildWellboreFence,
-  fenceCoreTrace,
-  fenceKickoff,
-  fenceObstacles,
-  getSplineCurve,
-  planFenceHead,
-  prepareFenceTrace,
-  sampleTrajectoryPlan,
-  trimFenceCore,
-  Vec2,
-} from '../src/sdk';
+import { getSplineCurve, Vec2 } from '../src/sdk';
+import { buildWellboreFence, fenceCoreTrace, fenceKickoff, fenceObstacles, planFenceHead, prepareFenceTrace, sampleTrajectoryPlan } from '../src/sdk/geometries/wellbore-fence';
+import { trimFenceCore } from '../src/sdk/utils/one-sided-offset';
 import { syntheticTrajectory } from '../src/storybook/data/synthetic-trajectories';
 
 const MARGIN = 0.5;

@@ -11,5 +11,15 @@
   "projectDocuments": ["documents/architecture.md", "documents/data.md", "documents/generators.md", "documents/index.md"],
   "out": "./static/docs",
   "visibilityFilters": {},
-  "externalSymbolLinkMappings": { "@types/three": { "WebGLRenderer": "#" }}
+  "validation": {
+    "notExported": false,
+    "invalidLink": true,
+    "rewrittenLink": true
+  },
+  "externalSymbolLinkMappings": {
+    "@types/three": {
+      "BufferGeometry": "https://threejs.org/docs/#api/en/core/BufferGeometry",
+      "WebGLRenderer": "https://threejs.org/docs/#api/en/renderers/WebGLRenderer"
+    }
+  }
 }

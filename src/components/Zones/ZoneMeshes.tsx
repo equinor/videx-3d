@@ -15,12 +15,12 @@ import {
 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import { precompile, releaseMaterial } from '../../rendering/precompile';
+import { PlanarPolygonCoordinates } from '../../sdk';
 import {
-  PlanarPolygonCoordinates,
   SurfaceZone,
   SurfaceZoneMesh,
-  StackTiling,
-} from '../../sdk';
+} from '../../sdk/geometries/surface-zone';
+import { StackTiling } from '../../sdk/geometries/surface-stack';
 import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
 import { DEFAULT_OCEAN_DEEP_COLOR } from '../Ocean/ocean-material';
 import {
@@ -53,7 +53,7 @@ import {
   DEFAULT_BED_TINT_DEPTH,
   DEFAULT_PALETTE,
   resolvePeel,
-  StackWater,
+  ZoneStackWater,
 } from './zone-defs';
 import {
   ZoneInferenceStyle,
@@ -109,7 +109,7 @@ export type ZoneMeshesProps = {
    * The sea the enclosing `ZoneStack` declares, if any. Only its TINT is used
    * here: the sea's own geometry belongs to the stack.
    */
-  water?: StackWater | null;
+  water?: ZoneStackWater | null;
   /** 1 while the stack draws its sea, 0 while not: the bed tint follows it */
   waterTintShown?: IUniform<number>;
   /** the stack's own water, which its sea bed's cap is seen through (`ZoneStackContextValue.waterBody`) */
@@ -123,7 +123,7 @@ export type ZoneMeshesProps = {
   /**
    * Whether layer 0 is the stack's sea BED. A sea a cut leaves whole keeps its bed
    * cap whole with it, the way a kept unit keeps the cap that floors it — and so
-   * does a cut sea under `StackWater.keepBed`.
+   * does a cut sea under `ZoneStackWater.keepBed`.
    */
   seaBed?: boolean;
   /** whether the section takes the sea with it (see `ZoneSection.water`) */

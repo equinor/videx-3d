@@ -6,12 +6,14 @@ import {
   FIELD_COLUMN_SEISMIC_SECTION,
   FieldColumnSeismicSection,
   FieldColumnSeismicSectionQuery,
-  FencePathSamples,
-  FenceSideName,
-  sampleFencePath,
   Vec2,
-  WellboreFence,
 } from '../../sdk';
+import {
+  FencePathSamples,
+  sampleFencePath,
+} from '../../sdk/geometries/fence-path';
+import { FenceSideName } from '../../sdk/utils/one-sided-offset';
+import { WellboreFence } from '../../sdk/geometries/wellbore-fence';
 import {
   ZoneFenceOverlay,
   FenceOverlayTexture,

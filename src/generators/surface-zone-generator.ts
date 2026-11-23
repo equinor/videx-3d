@@ -7,50 +7,61 @@ import {
   SurfaceZoneResponse,
   SurfaceZoneSpec,
 } from '../components/Zones/zone-defs';
+import { PlanarPolygonGeometry, ReadonlyStore } from '../sdk';
 import {
   assembleZone,
   AssembleZoneLayer,
-  buildStackReference,
-  buildSurfaceStack,
-  buildSyntheticChannel,
   zoneHorizons,
   zoneSurfaceMesh,
   zoneWallMeshes,
-  clampStackToCarrier,
-  collectStackCandidateLevels,
-  DEFAULT_STACK_COLLAPSE_THRESHOLD,
   densifyZoneRim,
-  emitPartial,
+  SurfaceZone,
+  SurfaceZoneDiagnostics,
+} from '../sdk/geometries/surface-zone';
+import {
+  buildStackReference,
+  buildSyntheticChannel,
+  clampStackToCarrier,
   measureStackCoverage,
-  PackedSurfaceZone,
-  packSurfaceZone,
-  packSurfaceZoneBase,
-  packSurfaceZoneCap,
-  PartialSink,
-  PlanarPolygonGeometry,
-  planSurfaceStack,
   previewStackCandidates,
   rasterizeStackOutline,
-  ReadonlyStore,
-  releasePartialSink,
-  sealStackChannels,
-  splitVoidChannels,
-  STACK_MASK_DATA,
   stackCarrierLevel,
-  StackGeometryLayer,
   StackLayer,
   StackPairStats,
   StackReference,
   StackSyntheticLayer,
-  SurfaceZone,
-  SurfaceZoneDiagnostics,
-  SurfaceZonePacket,
+} from '../sdk/geometries/surface-stack';
+import {
+  buildSurfaceStack,
+  DEFAULT_STACK_COLLAPSE_THRESHOLD,
+  planSurfaceStack,
+  StackGeometryLayer,
   SurfaceStackBuild,
   SurfaceStackOptions,
   SurfaceStackPlan,
   SurfaceStackShared,
   SurfaceStackStream,
-} from '../sdk';
+} from '../sdk/geometries/surface-stack-geometry';
+import { collectStackCandidateLevels } from '../sdk/geometries/surface-stack-candidates';
+import {
+  emitPartial,
+  PartialSink,
+  releasePartialSink,
+} from '../sdk/data/partial-results';
+import {
+  PackedSurfaceZone,
+  packSurfaceZone,
+} from '../sdk/geometries/surface-zone-packing';
+import {
+  packSurfaceZoneBase,
+  packSurfaceZoneCap,
+  SurfaceZonePacket,
+} from '../sdk/geometries/surface-zone-streaming';
+import {
+  sealStackChannels,
+  splitVoidChannels,
+} from '../sdk/geometries/surface-seal';
+import { STACK_MASK_DATA } from '../sdk/geometries/surface-stack-resample';
 import type {
   LevelLines,
   ThicknessLoops,
@@ -1335,7 +1346,7 @@ export function toAssembleLayers(
  *
  * Pass `onPartial` to have the zone STREAMED instead: the shared parts, walls
  * and section first, then each cap as soon as it is built (see
- * {@link SurfaceZonePacket} and `documents/zone-stack/streaming.md`). The
+ * `SurfaceZonePacket` and `documents/zone-stack/streaming.md`). The
  * return value then carries only the metrics, flagged `streamed`.
  *
  * @group Generators

@@ -17,7 +17,7 @@ import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
 import { useWeatherOceanSea } from '../Weather/useWeatherOceanSea';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import { ZoneDepthMap } from './zone-depth-map';
-import { StackWater } from './zone-defs';
+import { ZoneStackWater } from './zone-defs';
 import { ZoneFenceUniforms } from './zone-material';
 import { ZONE_MATERIAL_LINGER } from './zone-resources';
 
@@ -62,7 +62,7 @@ export type StackWaterMaterials = {
  * @group Components
  */
 export function useStackWater(
-  water: StackWater | undefined,
+  water: ZoneStackWater | undefined,
   wireframe = false,
   sectionPlane?: IUniform<Vector4>,
   bathymetry?: ZoneDepthMap | null,

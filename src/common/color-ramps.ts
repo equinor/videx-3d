@@ -355,7 +355,7 @@ export type ColorRampStop = { at: number; color: ColorRepresentation };
  * @group Utils
  */
 export type ColorRamp = {
-  /** its name, by which it is found ({@link colorRampIndex}); registering a ramp of a name taken replaces that one */
+  /** its name, by which it is found (`colorRampIndex`); registering a ramp of a name taken replaces that one */
   name: string;
   /** at least one, in any order */
   stops: ColorRampStop[];
@@ -473,9 +473,9 @@ export const builtInColorRamps: readonly ColorRamp[] = [
 const rampData = new Uint8Array(COLOR_RAMP_WIDTH * COLOR_RAMP_CAPACITY * 4);
 
 /**
- * The colour ramps, a row each, {@link COLOR_RAMP_WIDTH} wide and {@link COLOR_RAMP_CAPACITY}
+ * The colour ramps, a row each, `COLOR_RAMP_WIDTH` wide and {@link COLOR_RAMP_CAPACITY}
  * high whatever is registered, so a shader's row count never changes. Sample row `i` at
- * `(i + 0.5) / COLOR_RAMP_CAPACITY` ({@link colorRampRow}). sRGB, so it samples linear. Kept
+ * `(i + 0.5) / COLOR_RAMP_CAPACITY` (`colorRampRow`). sRGB, so it samples linear. Kept
  * for the page: each renderer lets go of it as one that drew with it goes, and those still
  * drawing upload it again.
  *

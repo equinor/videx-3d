@@ -159,7 +159,7 @@ export function domeRelief(
 }
 
 /** What every relief component carries, whatever shape it has. */
-type ReliefBase = {
+export type ReliefBase = {
   /** perturbation of the base, in world units — see {@link ReliefBase.mode} */
   amplitude: number;
   /**

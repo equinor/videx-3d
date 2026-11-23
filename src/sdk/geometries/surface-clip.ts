@@ -82,7 +82,7 @@ export type SurfaceClipOptions = {
 /**
  * The window of a surface's grid a polygon mask covers — the same crop
  * {@link clipSurfaceRaw} triangulates. Useful to restrict any per-node pre-pass
- * (e.g. {@link clampSurfaceUnder}) to the part of the grid that can actually end
+ * (a clamp of the grid's heights, say) to the part of the grid that can actually end
  * up in the clipped geometry.
  *
  * @param header grid geometry

@@ -86,7 +86,7 @@ export type TankerProps = {
  * A tanker: its hull, superstructure and deck, floating on an `<Ocean>`'s waves (or a
  * `Scenery`'s) when inside one. Its ref is its group: move it (`position.x`, `position.z`,
  * `rotation.y`) to sail it without a React render — buoyancy only sets its height, pitch
- * and roll, so it follows — as a `TrackLayer` does.
+ * and roll, so it follows — as a `GeoTracks` does.
  *
  * @group Components
  */

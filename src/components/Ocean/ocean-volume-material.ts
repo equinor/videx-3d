@@ -26,9 +26,9 @@ export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
    * from `uv.y` — for a zone's interval wall, whose uv is metric.
    */
   wallAttribute?: boolean;
-  /** see {@link OceanMaterialParameters.sectionPlane} */
+  /** see `sectionPlane` in {@link OceanMaterialParameters} */
   sectionPlane?: IUniform<Vector4>;
-  /** see {@link OceanMaterialParameters.fence} */
+  /** see `fence` in {@link OceanMaterialParameters} */
   fence?: FenceFieldUniforms;
 };
 

@@ -1,10 +1,20 @@
-export * from './label-atlas';
-export * from './label-colors';
-export * from './label-geometry';
-export * from './label-group';
-export * from './label-placement';
-export * from './label-records';
-export * from './label-text';
 export * from './LabelLayer';
-export * from './Labels';
-export * from './types';
+export { Labels } from './Labels';
+export type { LabelsProps } from './Labels';
+export {
+  LABEL_FONT_FAMILY,
+  LABEL_SIZE_PRESETS,
+  LABEL_STYLE_DEFAULTS,
+} from './types';
+export type {
+  Label,
+  LabelAlign,
+  LabelBaseline,
+  LabelPlace,
+  LabelSizePreset,
+  LabelSizePresetStyle,
+  LabelSizing,
+  LabelsProvider,
+  LabelStyle,
+  LabelsView,
+} from './types';

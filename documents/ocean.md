@@ -225,7 +225,7 @@ there (`OceanSampler.heightAtWorld`, `stillSeaAt`; `chartedSeaHeights`): a point
 up onto the still sea, into the chart it lies in, its waves kept by how far it lies from where
 two charts meet, as the drawn ones are. `useBuoyancy` then samples in the world and poses the
 object in its parent's frame, whose +Y it takes for up there (a `Wgs84Position`, a
-`TrackLayer`'s group). Past the stage's disc the plane's own heights (`getHeightAt`) part from
+`GeoTracks`'s group). Past the stage's disc the plane's own heights (`getHeightAt`) part from
 the drawn waves' by metres (the chart is stereographic, the plane the map's: 11 m 108 km out),
 so a `Scenery`'s floating objects read the world's everywhere. A contact footprint given in a
 frame of its own (`OceanContact.frame`) is taken through the world into the plane the sea draws

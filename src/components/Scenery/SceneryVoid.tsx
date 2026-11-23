@@ -1,5 +1,5 @@
 import { useSceneryFeature } from './scenery-registry';
-import type { SceneryAbyssProps } from './scenery-model';
+import type { SceneryVoidProps } from './scenery-model';
 
 /**
  * The void under a {@link Scenery}'s sky, below a level (with a `SceneryOcean`, below its
@@ -14,12 +14,12 @@ import type { SceneryAbyssProps } from './scenery-model';
  * @example
  * <Scenery>
  *   <SceneryOcean seabed={false} />
- *   <SceneryAbyss hollow={{ radius: 400000, pulse: 0.1 }} />
+ *   <SceneryVoid hollow={{ radius: 400000, pulse: 0.1 }} />
  * </Scenery>
  *
  * @group Components
  */
-export const SceneryAbyss = (props: SceneryAbyssProps) => {
+export const SceneryVoid = (props: SceneryVoidProps) => {
   useSceneryFeature('abyss', props);
   return null;
 };

@@ -5,22 +5,22 @@ import {
   CAMERA_PROBE_ORDER,
   type CameraProbe,
 } from '../../sdk/utils/camera-site';
-import { fenceSideAt } from '../../sdk';
+import { fenceSideAt } from '../../sdk/geometries/fence-segments';
 import { DEFAULT_OCEAN_DEEP_COLOR } from '../Ocean/ocean-material';
 import { DEFAULT_OCEAN_BODY_FOG_DENSITY } from '../Ocean/ocean-volume-material';
 import {
   ZoneFenceState,
   ZoneSectionState,
-  StackImmersion,
-  StackWater,
+  ZoneStackImmersion,
+  ZoneStackWater,
 } from './zone-defs';
 import { SurfaceSampler } from './surface-sampler';
 import { ImmersionMedium, useImmersionFog } from './useImmersionFog';
 
 /** {@link StackImmersionFog} props. */
 export type StackImmersionFogProps = {
-  immersion: StackImmersion;
-  water: StackWater | null;
+  immersion: ZoneStackImmersion;
+  water: ZoneStackWater | null;
   /** the drawn caps, for the sea bed and the top of the block alike */
   sampler: SurfaceSampler | null;
   /** the block's base in the stack's own frame — the carrier is not sampleable */

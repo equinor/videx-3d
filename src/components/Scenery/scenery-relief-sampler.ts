@@ -33,7 +33,8 @@ type Square = [number, number, number, number];
 export type ReliefSampler = SurfaceSampler & {
   /** the width of the cells of the tile that answers at X/Z: how fine the answer is */
   cellAt(x: number, z: number): number | null;
-  pin(squares: Square[]): () => void;
+  /** keeps the relief tiles over each square (min X, min Z, max X, max Z, scene) loaded while held; returns the release */
+  pin(squares: [number, number, number, number][]): () => void;
 };
 
 /** A relief tile in, and where a point lies on it. */

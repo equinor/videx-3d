@@ -1,14 +1,14 @@
 import { transfer } from 'comlink';
 import { BufferAttribute, BufferGeometry } from 'three';
-import { SurfaceTexturesResponse } from '../main';
+import { SurfaceTexturesResponse } from '../components/Surfaces/surface-defs';
 import {
   computeSurfaceNormalsRG,
   packBufferGeometry,
   PackedBufferGeometry,
   ReadonlyStore,
   SurfaceMeta,
-  triangulateGridConstrained,
 } from '../sdk';
+import { triangulateGridConstrained } from '../sdk/geometries/triangulate-grid-delaunay';
 
 const nullValue = -1;
 

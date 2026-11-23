@@ -28,22 +28,22 @@ import { DEFAULT_OIT_FRONT_TOLERANCE, OITRenderPass, Pass } from '../../main';
 import { OutputPass } from '../../rendering/passes/OutputPass';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline';
 import {
-  CutUniforms,
-  HeightFieldClip,
-  FenceSideName,
-  fenceViewPose,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   pointInPolygon,
   PositionLog,
   readCameraTarget,
-  SurfaceZoneMetrics,
   surfaceGridToWorld,
   SurfaceMeta,
   Vec2,
   Vec3,
-  WellboreFence,
 } from '../../sdk';
+import { CutUniforms } from '../../sdk/materials/fence-field';
+import { HeightFieldClip } from '../../sdk/materials/height-field-clip';
+import { FenceSideName } from '../../sdk/utils/one-sided-offset';
+import { fenceViewPose } from '../../sdk/geometries/fence-view';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
+import { WellboreFence } from '../../sdk/geometries/wellbore-fence';
 import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
 import { SeabedFacility } from '../../storybook/components/SeabedFacility';
@@ -130,8 +130,8 @@ import {
   ZoneSection,
   ZoneStackProgress,
   FenceSideInfo,
-  StackImmersion,
-  StackWater,
+  ZoneStackImmersion,
+  ZoneStackWater,
 } from './zone-defs';
 import { ZONE_DETAIL_PRESET_NAMES, ZoneDetailPreset } from './zone-detail';
 import { zoneProgressReport } from './zone-progress';
@@ -1118,7 +1118,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   );
 
   // The sea belongs to the COLUMN, not to a zone: one lid over the whole stack.
-  const water = useMemo<StackWater | undefined>(
+  const water = useMemo<ZoneStackWater | undefined>(
     () =>
       props.water
         ? {
@@ -1145,7 +1145,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   // Absent unless asked for — its presence is what installs `scene.fog`, and that
   // is not free even when it would fog nothing.
-  const immersion = useMemo<StackImmersion | undefined>(
+  const immersion = useMemo<ZoneStackImmersion | undefined>(
     () =>
       props.immersion
         ? {
@@ -2377,7 +2377,7 @@ export const Default: Story = {
     },
     keepBed: {
       description:
-        'Leave the sea bed CAP — the first layer’s — whole under the cut: the bed stays as a sheet over the removed half while the rock under it is cut (`ZoneLayer.keepCap`; for the column’s own sea also `StackWater.keepBed`, which only matters with `sectionWater` on — a sea kept whole keeps its bed anyway).',
+        'Leave the sea bed CAP — the first layer’s — whole under the cut: the bed stays as a sheet over the removed half while the rock under it is cut (`ZoneLayer.keepCap`; for the column’s own sea also `ZoneStackWater.keepBed`, which only matters with `sectionWater` on — a sea kept whole keeps its bed anyway).',
       table: { category: 'Section' },
     },
     sectionCarrier: {

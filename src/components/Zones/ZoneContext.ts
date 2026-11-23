@@ -1,10 +1,7 @@
 import { createContext } from 'react';
 import { IUniform, Vector4 } from 'three';
-import {
-  PlanarPolygonGeometry,
-  SurfaceZoneMetrics,
-  SurfaceMeta,
-} from '../../sdk';
+import { PlanarPolygonGeometry, SurfaceMeta } from '../../sdk';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
 import type { WaterBody } from '../../sdk/materials/water-body';
 import { ZoneContactTexture } from './zone-contacts';
@@ -16,7 +13,7 @@ import {
   ZoneFenceState,
   ZoneResolveOptions,
   ZoneSectionState,
-  StackWater,
+  ZoneStackWater,
 } from './zone-defs';
 import { ZoneDepthMap } from './zone-depth-map';
 import { ZoneDetail } from './zone-detail';
@@ -106,7 +103,7 @@ export type ZoneStackContextValue = {
    * APPEARANCE only — the bed tint on the sea bed's cap; the sea's own geometry
    * belongs to the stack.
    */
-  water?: StackWater | null;
+  water?: ZoneStackWater | null;
   /** the sea bed's surface id, when declared and the column holds it (see `ZoneStackProps.seabed`) */
   seabed?: string | null;
   /**

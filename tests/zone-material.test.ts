@@ -5,7 +5,8 @@ import {
   createTileUniforms,
 } from '../src/components/Zones/zone-material';
 import { buildSurfaceDepthMap } from '../src/components/Zones/zone-depth-map';
-import { StackTiling, SurfaceMeta } from '../src/sdk';
+import { SurfaceMeta } from '../src/sdk';
+import { StackTiling } from '../src/sdk/geometries/surface-stack';
 
 const defines = (material: ZoneMaterial) =>
   material.defines as Record<string, unknown>;

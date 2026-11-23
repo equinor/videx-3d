@@ -1,7 +1,7 @@
 import { Vec3 } from '../types/common';
 
 /**
- * One sample taken from a {@link TinSampler}.
+ * One sample taken from a `TinSampler`.
  *
  * @group Geometries
  */

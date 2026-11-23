@@ -1,4 +1,4 @@
-import { SurfaceZonePhase } from '../../sdk';
+import { SurfaceZonePhase } from '../../sdk/geometries/surface-zone-streaming';
 import {
   formatProgressStep,
   ProgressItem,

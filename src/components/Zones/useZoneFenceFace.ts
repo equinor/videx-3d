@@ -3,9 +3,9 @@ import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import {
   buildFenceRibbons,
   FenceRibbon,
-  FenceSideName,
-  StackSectionSource,
-} from '../../sdk';
+} from '../../sdk/geometries/fence-ribbon';
+import { FenceSideName } from '../../sdk/utils/one-sided-offset';
+import { StackSectionSource } from '../../sdk/geometries/surface-section';
 import { ZoneFenceState, ZoneLayer } from './zone-defs';
 import { ZoneSectionFace } from './useZoneSection';
 

@@ -8,11 +8,11 @@ import {
   CRS,
   getProjectionDefFromUtmZone,
   PlanarPolygonGeometry,
-  SurfaceZoneMetrics,
   surfaceGridToWorld,
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { zoneTimings } from '../../storybook/data/zone-timings';
 import {
@@ -36,7 +36,7 @@ import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds';
 import { Zone } from './Zone';
-import { ZoneLayer, ZoneResolveOptions, StackWater } from './zone-defs';
+import { ZoneLayer, ZoneResolveOptions, ZoneStackWater } from './zone-defs';
 import { ZoneStack } from './ZoneStack';
 import { WellboreOutlineMode } from './cutout';
 
@@ -274,7 +274,7 @@ const SeabedConnectionStory = (props: SeabedConnectionProps) => {
 
   // One sea for the whole column, declared on the stack rather than on whichever
   // tier happens to sit under it.
-  const water = useMemo<StackWater>(
+  const water = useMemo<ZoneStackWater>(
     () => ({
       depth: props.seaLevel,
       waterOpacity: props.waterOpacity,

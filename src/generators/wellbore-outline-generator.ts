@@ -3,14 +3,16 @@ import {
   WellboreOutlineSpec,
 } from '../components/Zones/zone-defs';
 import {
-  collectTrajectoryRuns,
-  createSurfaceDepthSampler,
   PositionLog,
   ReadonlyStore,
   Vec3,
   WellboreHeader,
   WellborePath,
 } from '../sdk';
+import {
+  collectTrajectoryRuns,
+  createSurfaceDepthSampler,
+} from '../sdk/geometries/wellbore-outline';
 import { buildOutlineCoordinates } from './workers/stack-worker-pool';
 
 /**

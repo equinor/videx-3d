@@ -15,25 +15,27 @@ import {
   Vector4,
 } from 'three';
 import {
-  assertFenceInvariants,
-  buildWellboreFence,
-  fenceAutoSide,
-  fenceBlockTrace,
-  fenceFieldPlacement,
-  FenceReport,
-  FenceSideName,
   getSplineCurve,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   pointInRing,
   PositionLog,
   Store,
-  subdividePolyline2D,
   Vec2,
   Vec3,
-  WellboreFence,
   WellboreHeader,
 } from '../../sdk';
+import {
+  assertFenceInvariants,
+  buildWellboreFence,
+  fenceBlockTrace,
+  fenceFieldPlacement,
+  FenceReport,
+  WellboreFence,
+} from '../../sdk/geometries/wellbore-fence';
+import { fenceAutoSide } from '../../sdk/geometries/fence-segments';
+import { FenceSideName } from '../../sdk/utils/one-sided-offset';
+import { subdividePolyline2D } from '../../sdk/utils/polyline-2d';
 import {
   ZoneFence,
   ZoneFenceState,

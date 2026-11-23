@@ -8,7 +8,11 @@ import {
   LineSegments,
 } from 'three';
 import { createLayers, LAYERS } from '../../layers/layers';
-import { sectionPlaneOutline, StackSectionPlane, Vec3 } from '../../sdk';
+import { Vec3 } from '../../sdk';
+import {
+  sectionPlaneOutline,
+  StackSectionPlane,
+} from '../../sdk/geometries/surface-section';
 import { ZoneSectionState } from './zone-defs';
 
 /** {@link ZoneSectionDebug} props. */

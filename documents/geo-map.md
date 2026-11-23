@@ -211,7 +211,7 @@ const discoveries = {
 | `GeoSymbols` | `GeoMapSymbols` | dots `radius` pixels across; a radius per feature |
 | `GeoLabels` | `GeoMapLabels` | text with a halo: a polygon's where it has the most room (`polygonLabelPoint`), a line's at its middle, a point's beside it; left out where one would cover another |
 | `GeoGraticule` | `GeoMapGraticule` | latitude and longitude by the same steps (`graticuleStep`), thinned toward the poles as the scene's are (`graticuleMeridianThinning`); the UTM zones' edges; the time zones' meridians; named along the edges and in the cells |
-| `TrackLayer` | `GeoMapTracks` | an arrow per track turned to its course, carried on between fixes by the same dead reckoning (`advanceTrack`), its annotation's text beside it; drawn again five times a second while they move |
+| `GeoTracks` | `GeoMapTracks` | an arrow per track turned to its course, carried on between fixes by the same dead reckoning (`advanceTrack`), its annotation's text beside it; drawn again five times a second while they move |
 | the `World`'s fields | `GeoMapFields` | each `UtmArea` with a `boundary` where it lies now, and the anchored stage's area highlighted |
 
 - **What shows when.** A twin takes the scene layer's band of camera heights (`minHeight`,

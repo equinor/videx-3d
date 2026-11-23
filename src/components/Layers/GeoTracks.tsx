@@ -24,10 +24,10 @@ import { layerShownAt, useLayerGlobe } from './layer-globe';
 import { placeTrackOnGlobe, type TrackPlacement } from './track-placement';
 
 /**
- * TrackLayer props
+ * GeoTracks props
  * @expand
  */
-export type TrackLayerProps<T extends Track> = LayerVisibility & {
+export type GeoTracksProps<T extends Track> = LayerVisibility & {
   /**
    * where each thing was last reported. Give a new array with a new fix (a new `time`, or a
    * new position, speed or course) to move it on; the same object keeps its course
@@ -104,13 +104,13 @@ const wrapDegrees = (degrees: number) =>
  * See `documents/layers.md`.
  *
  * @example
- * <TrackLayer tracks={ships}>
+ * <GeoTracks tracks={ships}>
  *   {(ship, ref) => <Tanker ref={ref} length={ship.length} />}
- * </TrackLayer>
+ * </GeoTracks>
  *
  * @group Components
  */
-export const TrackLayer = <T extends Track>({
+export const GeoTracks = <T extends Track>({
   tracks,
   children,
   extrapolate = true,
@@ -122,7 +122,7 @@ export const TrackLayer = <T extends Track>({
   minHeight,
   maxHeight,
   fade,
-}: TrackLayerProps<T>) => {
+}: GeoTracksProps<T>) => {
   const placed = useLayerGlobe(frame);
   const cameraSite = useCameraSite();
   const world = useWorld();

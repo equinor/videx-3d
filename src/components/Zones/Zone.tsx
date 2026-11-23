@@ -11,17 +11,21 @@ import {
 import { Group } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
 import {
-  createSurfaceZoneProgress,
-  createSurfaceZoneReceiver,
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
   polygonArea,
+  SurfaceMeta,
+} from '../../sdk';
+import {
+  createSurfaceZoneProgress,
+  createSurfaceZoneReceiver,
+  SurfaceZonePacket,
+} from '../../sdk/geometries/surface-zone-streaming';
+import {
   SurfaceZone,
   SurfaceZoneMetrics,
-  SurfaceZonePacket,
-  SurfaceMeta,
-  unpackSurfaceZone,
-} from '../../sdk';
+} from '../../sdk/geometries/surface-zone';
+import { unpackSurfaceZone } from '../../sdk/geometries/surface-zone-packing';
 import { UtmAreaContext } from '../UtmArea';
 import {
   EventEmitterCallback,

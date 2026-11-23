@@ -40,12 +40,16 @@ import {
   type GeoMapPreparedFeature,
 } from './geo-map-features';
 
-type Data<P> = GeoJsonFeatureCollection<P> | GeoFeature<P>[] | null;
+/** A map layer's features, in longitude and latitude: GeoJSON, or features read from it. */
+export type GeoMapFeatureData<P> =
+  | GeoJsonFeatureCollection<P>
+  | GeoFeature<P>[]
+  | null;
 
 // The features of `data` that `filter` keeps, and a way to have them ready for the map's
 // frame: made again only for new features or another frame.
 function useGeoMapPrepared<P>(
-  data: Data<P>,
+  data: GeoMapFeatureData<P>,
   filter: ((feature: GeoFeature<P>) => boolean) | undefined,
   kind: GeoMapFeatureKind,
 ) {
@@ -104,7 +108,7 @@ function useStyles<P, S>(
 export type GeoMapPolygonsProps<P = Record<string, unknown>> =
   GeoMapLayerOptions<P> & {
     /** the polygons, in longitude and latitude: GeoJSON, or features read from it. Other kinds are left out */
-    data: Data<P>;
+    data: GeoMapFeatureData<P>;
     /** one style for all, or one per feature, as `GeoPolygons` takes it. Keep a function stable (`useCallback`) */
     style?: GeoPolygonStyle | ((feature: GeoFeature<P>) => GeoPolygonStyle);
     /** the outline's width in pixels. Default 1.5 */
@@ -221,7 +225,7 @@ export const GeoMapPolygons = <P,>({
 export type GeoMapLinesProps<P = Record<string, unknown>> =
   GeoMapLayerOptions<P> & {
     /** the lines, in longitude and latitude: GeoJSON, or features read from it. Other kinds are left out */
-    data: Data<P>;
+    data: GeoMapFeatureData<P>;
     /** one style for all, or one per feature, as `GeoTubes` takes it (its `diameter` aside). Keep a function stable (`useCallback`) */
     style?: GeoTubeStyle | ((feature: GeoFeature<P>) => GeoTubeStyle);
     /** the lines' width in pixels: one for all, or one per feature (keep it stable). Default 1.5 */
@@ -340,7 +344,7 @@ export const GeoMapLines = <P,>({
 export type GeoMapSymbolsProps<P = Record<string, unknown>> =
   GeoMapLayerOptions<P> & {
     /** the points, in longitude and latitude: GeoJSON, or features read from it. Other kinds are left out */
-    data: Data<P>;
+    data: GeoMapFeatureData<P>;
     /** one style for all, or one per feature, as `GeoSymbols` takes it (its `size` aside). Keep a function stable (`useCallback`) */
     style?: GeoSymbolStyle | ((feature: GeoFeature<P>) => GeoSymbolStyle);
     /** a dot's radius in pixels: one for all, or one per feature (keep it stable). Default 3 */
@@ -430,7 +434,7 @@ export type GeoMapLabelsProps<P = Record<string, unknown>> = Omit<
   'order'
 > & {
   /** the features, in longitude and latitude: GeoJSON, or features read from it */
-  data: Data<P>;
+  data: GeoMapFeatureData<P>;
   /** each feature's text; null or empty for none. Keep it stable (`useCallback`) */
   text: (feature: GeoFeature<P>) => string | null | undefined;
   /** the text's size in CSS pixels on the map. Default 10 */

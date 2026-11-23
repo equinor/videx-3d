@@ -24,7 +24,7 @@ describe('sceneryLayers', () => {
     sky.ocean = true;
     expect(sceneryLayers(sky)).toEqual([
       'sky',
-      'abyss',
+      'void',
       'sea',
       'water',
       'surface',
@@ -47,19 +47,19 @@ describe('sceneryLayerDefines', () => {
     const sky = new SceneryMaterial();
     sky.ocean = true;
     sky.abyss = true;
-    const abyss = key(sceneryLayerDefines(sky, 'abyss'));
+    const abyss = key(sceneryLayerDefines(sky, 'void'));
     const sea = key(sceneryLayerDefines(sky, 'sea'));
     // The default seabed has a detail of its own: off is a change.
     sky.oceanBedDetail = undefined;
     expect(key(sceneryLayerDefines(sky, 'sea'))).not.toBe(sea);
-    expect(key(sceneryLayerDefines(sky, 'abyss'))).toBe(abyss);
+    expect(key(sceneryLayerDefines(sky, 'void'))).toBe(abyss);
   });
 
   it('gives each layer a define of its own, so each is its own program', () => {
     const sky = new SceneryMaterial();
     sky.ocean = true;
     sky.abyss = true;
-    const keys = (['abyss', 'sea', 'water'] as const).map(layer =>
+    const keys = (['void', 'sea', 'water'] as const).map(layer =>
       key(sceneryLayerDefines(sky, layer)),
     );
     expect(new Set(keys).size).toBe(3);
@@ -96,7 +96,7 @@ describe('sceneryLayerDefines', () => {
     sky.ocean = true;
     sky.abyss = true;
     sky.linkOcean(new OceanMaterial({ quality: 'low' }));
-    for (const layer of ['sea', 'water', 'abyss'] as const)
+    for (const layer of ['sea', 'water', 'void'] as const)
       for (const name of OCEAN_QUALITY_DEFINES.low)
         expect(sceneryLayerDefines(sky, layer)).toHaveProperty(name);
     sky.linkOcean(new OceanMaterial({ quality: 'medium' }));
@@ -121,7 +121,7 @@ describe('sceneryLayersShown', () => {
       sceneryLayersShown(view({ ocean: null, abyss: null, height: 500 })),
     ).toEqual({
       sky: true,
-      abyss: false,
+      void: false,
       sea: false,
       water: false,
     });
@@ -130,17 +130,17 @@ describe('sceneryLayersShown', () => {
   it('draws the sky and the sea from the air, the void only once it can show', () => {
     expect(sceneryLayersShown(view({}))).toEqual({
       sky: true,
-      abyss: false,
+      void: false,
       sea: true,
       water: false,
     });
-    expect(sceneryLayersShown(view({ voidOpen: true })).abyss).toBe(true);
+    expect(sceneryLayersShown(view({ voidOpen: true })).void).toBe(true);
   });
 
   it('draws the view in the water alone, and the sky up through a cutaway', () => {
     expect(sceneryLayersShown(view({ height: -30 }))).toEqual({
       sky: false,
-      abyss: false,
+      void: false,
       sea: false,
       water: true,
     });
@@ -156,7 +156,7 @@ describe('sceneryLayersShown', () => {
   it('draws the void alone below the seabed, and in rock under a stage’s ground', () => {
     const only = {
       sky: false,
-      abyss: true,
+      void: true,
       sea: false,
       water: false,
     };
@@ -170,7 +170,7 @@ describe('sceneryLayersShown', () => {
     const trench = view({ height: -500, ocean: { ...sea, trench: true } });
     expect(sceneryLayersShown(trench)).toEqual({
       sky: false,
-      abyss: false,
+      void: false,
       sea: false,
       water: true,
     });
@@ -178,11 +178,11 @@ describe('sceneryLayersShown', () => {
 
   it('fades the void in over the sky without a sea', () => {
     const fading = sceneryLayersShown(view({ ocean: null, height: -200 }));
-    expect(fading.sky && fading.abyss).toBe(true);
+    expect(fading.sky && fading.void).toBe(true);
     const under = sceneryLayersShown(view({ ocean: null, height: -400 }));
     expect(under.sky).toBe(false);
-    expect(under.abyss).toBe(true);
-    expect(sceneryLayersShown(view({ ocean: null, height: 50 })).abyss).toBe(
+    expect(under.void).toBe(true);
+    expect(sceneryLayersShown(view({ ocean: null, height: 50 })).void).toBe(
       false,
     );
   });

@@ -23,7 +23,9 @@ import {
   Vector4,
 } from 'three';
 import { attachOitVariants } from '../../rendering/oit-material';
-import { StackCapNormalMap, StackTiling, Vec2 } from '../../sdk';
+import { Vec2 } from '../../sdk';
+import { StackCapNormalMap } from '../../sdk/geometries/cap-normal-map';
+import { StackTiling } from '../../sdk/geometries/surface-stack';
 import {
   applyFenceField,
   FenceFieldUniforms,

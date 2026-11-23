@@ -6,10 +6,10 @@ import { useGenerator } from '../../hooks/useGenerator';
 import {
   createElevationTexture,
   createPackedNormalTexture,
-  SurfaceDetail,
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
+import { SurfaceDetail } from '../../sdk/materials/surface-detail';
 import type { ReliefContours } from '../Scenery/scenery-relief-look';
 import { surfaceTextures, SurfaceTexturesResponse } from './surface-defs';
 import {

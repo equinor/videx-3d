@@ -9,7 +9,7 @@ import { GeoFrame, geoFrameAt, geoFrameLonLat, geoFrameXZ } from './geo-frame';
 import { EARTH_RADIUS } from './globe';
 
 /**
- * A field a {@link TargetAnchorPicker} anchors to while the camera's target is over it: its
+ * A field a `TargetAnchorPicker` anchors to while the camera's target is over it: its
  * map (`frame`) and its stage's area (`boundary`, in its own X/Z), as its `UtmArea` has them.
  *
  * @group Utils
@@ -34,7 +34,7 @@ export type TargetAnchor = {
 };
 
 /**
- * Options for {@link TargetAnchorPicker}.
+ * Options for `TargetAnchorPicker`.
  *
  * @group Utils
  */

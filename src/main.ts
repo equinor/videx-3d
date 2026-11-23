@@ -17,7 +17,6 @@ export * from './components/Pipeline';
 export * from './components/Progress';
 export * from './components/SDFTest/SDFTest';
 export * from './components/Scenery';
-export * from './components/SubseaTemplate';
 export * from './components/Surfaces';
 export * from './components/Symbol';
 export * from './components/UtmArea';
@@ -53,7 +52,6 @@ export * from './events/depth-events';
 export * from './events/interaction-events';
 export * from './events/wellbore-events';
 
-export * from './hooks/useControllable';
 export * from './hooks/useCameraSite';
 export * from './hooks/useData';
 export * from './hooks/useGenerator';
@@ -63,7 +61,19 @@ export * from './layers/layers';
 
 export * from './rendering';
 
-export * from './common/anchor';
-export * from './common/color-ramps';
-export * from './common/corner-style';
+export { ANCHORS, type Anchor, type AnchorPlacement } from './common/anchor';
+export {
+  builtInColorRamps,
+  COLOR_RAMP_CAPACITY,
+  colorRampInterpolators,
+  colorRamps,
+  colorRampTexture,
+  createColorRamps,
+  registerColorRamp,
+  type ColorRamp,
+  type ColorRampRef,
+  type ColorRampStop,
+  type RampFunction,
+} from './common/color-ramps';
+export type { Corner } from './common/corner-style';
 export * from './common/types';

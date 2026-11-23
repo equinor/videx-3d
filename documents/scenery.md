@@ -10,7 +10,7 @@ anywhere under it:
 |--|--|
 | `<SceneryClouds>` | 3D clouds, from sea level to space, from a `Weather` (see [clouds.md](./clouds.md)) |
 | `<SceneryOcean>` | an endless sea with a seabed, and the void below it |
-| `<SceneryAbyss>` | the void's look below a level (with a sea, its seabed) |
+| `<SceneryVoid>` | the void's look below a level (with a sea, its seabed) |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
 | `<SceneryStage>` | the sea, the seabed and the relief on real geometry about the field |
 
@@ -516,7 +516,7 @@ zone is baked. Changing to or from it recompiles the sky's own layer.
 
 ```tsx
 <Scenery background="void">
-  <SceneryAbyss />
+  <SceneryVoid />
   <SceneryOcean water={false} seabed={false} />
 </Scenery>
 ```
@@ -525,7 +525,7 @@ zone is baked. Changing to or from it recompiles the sky's own layer.
 
 `<SceneryOcean>` adds a sea: a wavy surface at `level` over a flat seabed `depth` below it,
 seen from above, from inside the water and, below the seabed, as the void. With a sea the
-void below its seabed is always there; `<SceneryAbyss>` sets its look.
+void below its seabed is always there; `<SceneryVoid>` sets its look.
 
 ```tsx
 <Scenery>
@@ -749,15 +749,15 @@ turned or not; a circle; or a polygon's rings, its offset applied), `boundaryDis
 holds a field's outline or its data's footprint, for a stage as tight as a polygon at the
 cost of a box.
 
-## The void (`SceneryAbyss`)
+## The void (`SceneryVoid`)
 
-`<SceneryAbyss>` puts an endless lid overhead below a `level` and a bottomless gradient below the
+`<SceneryVoid>` puts an endless lid overhead below a `level` and a bottomless gradient below the
 horizon, so a camera under the ground does not see the sky. It is part of the
 background, so it never hides anything in the scene, including objects above the level.
 The lid recedes into the horizon colour (`fadeDistance`; 0 for never) and has a noise relief
 (`detail`, `detailScale`); the depths have faint distant rock (`depthDetail`) and a
 `falloff`. A `<SceneryOcean>` turns the void on below its seabed by itself (then the
-void's `level` is the seabed's, and `<SceneryAbyss>` only sets its look), and with
+void's `level` is the seabed's, and `<SceneryVoid>` only sets its look), and with
 or without a seabed its lid is a roof from below. Its gradient, its rock and its lid are laid
 out by the camera's own up (the look frame), so the void is the same under any field.
 
@@ -776,7 +776,7 @@ an axis-aligned rectangle. Removed, and parked on the branch `parked/abyss-walls
 
 ### The hollow
 
-By default the void is a hollow in the crust about the field (`SceneryAbyss`'s `hollow`): a
+By default the void is a hollow in the crust about the field (`SceneryVoid`'s `hollow`): a
 crater 500 km across the rim, its walls of rock down to a floor 35 km under the seabed, the
 seabed its lid. Peeling the seabed (`<SceneryOcean seabed={false} />`) opens it: the relief
 and the seabed are cut away inside its rim and kept whole around it, and the data under the
@@ -852,7 +852,7 @@ default):
 | Layer | Drawn from | What |
 |--|--|--|
 | `sky` | `<Scenery>` | the air, sun, moon and stars, or the void's gradient (`background: 'void'`) |
-| `abyss` | `<SceneryAbyss>`, or a sea | below its level, the lid and the depths over everything; above it, the depths only where the sea's layers leave them showing (no seabed, a see-through one, the cutaway, a stage's opening) |
+| `abyss` | `<SceneryVoid>`, or a sea | below its level, the lid and the depths over everything; above it, the depths only where the sea's layers leave them showing (no seabed, a see-through one, the cutaway, a stage's opening) |
 | `sea` | `<SceneryOcean>` | the seabed seen through the water from the air |
 | `water` | `<SceneryOcean>` | the view from in the water |
 | `surface` | `<SceneryOcean>` | the sea's surface, at the next `renderOrder` |
@@ -1127,7 +1127,7 @@ the shared preset out.
 | File | Role |
 |--|--|
 | `Scenery.tsx` | the component: props and its features' → material, the layers and which are drawn each frame, the directional light, the bakes |
-| `SceneryOcean.tsx`, `SceneryAbyss.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
+| `SceneryOcean.tsx`, `SceneryVoid.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
 | `SceneryClouds.tsx`, `scenery-clouds.ts`, `shaders/cloud-*.glsl` | the 3D clouds, which draw themselves and read the scenery's material and `SceneryView` from its registry ([clouds.md](./clouds.md)) |
 | `SceneryCutaway.tsx` | the cutaway: its props, its grip, and its per-frame placement, which the `Scenery` runs |
 | `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |

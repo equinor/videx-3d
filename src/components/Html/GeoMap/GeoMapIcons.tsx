@@ -2,14 +2,15 @@
 // what they are about: the camera, an arrow; and its target, a crosshair. Drawn about (0, 0),
 // pointing up, for an SVG.
 
-type IconProps = {
+/** An icon's size and colour. */
+export type GeoMapIconProps = {
   /** its length in pixels */
   size: number;
   color: string;
 };
 
 /** The camera: an arrow, pointing up. */
-export const GeoMapCameraIcon = ({ size, color }: IconProps) => (
+export const GeoMapCameraIcon = ({ size, color }: GeoMapIconProps) => (
   <path
     d={`M0 ${-size * 0.6} L${size * 0.45} ${size * 0.4} L0 ${size * 0.15} L${-size * 0.45} ${size * 0.4} Z`}
     fill={color}
@@ -21,7 +22,7 @@ export const GeoMapCameraIcon = ({ size, color }: IconProps) => (
 );
 
 /** What the camera looks at: a ring with a cross through it. */
-export const GeoMapTargetIcon = ({ size, color }: IconProps) => {
+export const GeoMapTargetIcon = ({ size, color }: GeoMapIconProps) => {
   const r = size * 0.32;
   const reach = size * 0.55;
   const lines = `M${-reach} 0 L${-r * 0.4} 0 M${r * 0.4} 0 L${reach} 0 M0 ${-reach} L0 ${-r * 0.4} M0 ${r * 0.4} L0 ${reach}`;

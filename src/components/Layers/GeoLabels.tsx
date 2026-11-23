@@ -100,10 +100,10 @@ export const GEO_LABEL_MAX_PIXELS = 18;
 const FIT_BUDGET = 4;
 
 /**
- * A place inside a polygon for its label (see {@link geoPolygonLabelPlaces}): its text
+ * A place inside a polygon for its label (see `geoPolygonLabelPlaces`): its text
  * there, broken into lines; its middle, in longitude and latitude; the way it reads, in
  * radians from east toward north; its room, in metres along and across that way (padded,
- * {@link GEO_LABEL_PADDING}); and the largest its font may be to fit it, in metres.
+ * `GEO_LABEL_PADDING`); and the largest its font may be to fit it, in metres.
  *
  * @group Layers
  */

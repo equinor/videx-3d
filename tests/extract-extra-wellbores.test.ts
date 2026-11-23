@@ -33,7 +33,7 @@ function committedDataLoaded(): boolean {
 
 async function fixtures() {
   const fx = await import('./fence-fixtures');
-  const { buildWellboreFence } = await import('../src/sdk');
+  const { buildWellboreFence } = await import('../src/sdk/geometries/wellbore-fence');
   /** the build error, null when it built, undefined when there is no curve to build from */
   const verdict = (id: string, margin: number): string | null | undefined => {
     const curve = fx.trajectoryCurve(id);

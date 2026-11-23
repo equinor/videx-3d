@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { PlanarPolygonGeometry } from '../src/sdk';
+import { buildStackReference } from '../src/sdk/geometries/surface-stack';
 import {
-  buildStackReference,
   evaluateSurfaceField,
   generateSurfaceValues,
-  PlanarPolygonGeometry,
   SurfaceFieldSpec,
-} from '../src/sdk';
+} from '../src/sdk/geometries/surface-field';
 import {
   getSyntheticSurface,
   syntheticSurfaceIdsOf,

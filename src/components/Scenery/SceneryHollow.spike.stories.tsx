@@ -46,7 +46,7 @@ import { Scenery } from './Scenery';
 import { SceneryStage } from './SceneryStage';
 import type { SceneryStageBounds } from './scenery-stage';
 
-// The void as a hollow in the crust under the field (SceneryAbyss's `hollow`), with the field's
+// The void as a hollow in the crust under the field (SceneryVoid's `hollow`), with the field's
 // wellbores and a horizon to look at: peel the clouds, the sea and the seabed off and look into
 // it from the field, from high up and from space; or put the seabed back and go under it.
 // Click a wellbore to fly to it.

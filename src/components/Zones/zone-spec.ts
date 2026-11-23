@@ -1,18 +1,18 @@
 import {
   PlanarPolygonCoordinates,
   PlanarPolygonGeometry,
-  ReliefSource,
-  StackCarrier,
   SurfaceMeta,
   Vec3,
 } from '../../sdk';
+import { ReliefSource } from '../../sdk/geometries/relief-tiles';
+import { StackCarrier } from '../../sdk/geometries/surface-stack';
 import {
   ZoneCarrier,
   ZoneLayer,
   zoneLayerFill,
   ZoneResolveOptions,
   DEFAULT_WATER_RESOLUTION,
-  StackWater,
+  ZoneStackWater,
   StackWaterSpec,
   SurfaceZoneCut,
   SurfaceZoneLayerSpec,
@@ -214,7 +214,7 @@ export function stackColumnSpec(
  * use: its bed is the column's declared sea bed, on the same channels.
  */
 export function buildStackWaterSpec(
-  water: StackWater,
+  water: ZoneStackWater,
   utmToArea: UtmToArea,
   boundaryPolygon: PlanarPolygonGeometry,
   options: {

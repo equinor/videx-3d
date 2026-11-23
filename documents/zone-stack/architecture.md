@@ -208,7 +208,7 @@ The same idiom appears on `ZoneStack` for `carrier`, `water`, `resolve` and
 
 - **`water` has two keys.** `waterKey` (the whole object) drives the *materials*;
   `waterBuildKey` (`depth` / `resolution` / `displacement` only) drives the
-  *geometry spec*. Everything else on `StackWater` is sea state, and keying the
+  *geometry spec*. Everything else on `ZoneStackWater` is sea state, and keying the
   spec on the whole object made every wind/foam/opacity tick rebuild the lid in the
   worker.
 - **`contacts` keys the surface by `id` only.** A grid cannot change under a stable

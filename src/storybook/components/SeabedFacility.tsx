@@ -7,12 +7,11 @@ import {
 } from '../../components/Zones/surface-sampler';
 import { SubseaTemplate } from '../../components/SubseaTemplate';
 import { UtmAreaContext } from '../../components/UtmArea';
+import { PlanarPolygonGeometry, Vec2 } from '../../sdk';
 import {
   LevelledBaseLevel,
   LevelledBaseMetrics,
-  PlanarPolygonGeometry,
-  Vec2,
-} from '../../sdk';
+} from '../../sdk/geometries/levelled-base';
 import { SubseaSite } from '../data/subsea-facilities';
 
 /** What a site turned out to need, once the sea bed under it was sampled. */

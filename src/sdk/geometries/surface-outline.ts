@@ -33,8 +33,8 @@ export type SurfaceOutlineOptions = {
 /**
  * Extract the outline of a surface's valid-data region as a scene-XZ
  * {@link PlanarPolygonGeometry}, suitable as a zone boundary. The rim is
- * traced from the grid ({@link traceValidBoundary}), optionally smoothed
- * ({@link smoothRings}), mapped into the scene frame ({@link surfaceGridToWorld}),
+ * traced from the grid (`traceValidBoundary`), optionally smoothed
+ * (`smoothRings`), mapped into the scene frame ({@link surfaceGridToWorld}),
  * and grouped into outer/hole components ({@link ringsToPolygonCoordinates}), so
  * the outer data extent, internal no-data holes, and disconnected regions all
  * come through correctly.

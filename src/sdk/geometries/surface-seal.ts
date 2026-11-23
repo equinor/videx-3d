@@ -38,7 +38,7 @@ import { chamferDistance, chamferFill } from './chamfer';
  * - `void` splits it in two — one copy closing the interval above, one the interval
  *   below — and draws nothing in between. It says "the units are not defined here",
  *   and is the only one that cannot be mistaken for data
- *   ({@link splitVoidChannels}).
+ *   (`splitVoidChannels`).
  *
  * ⚠️ They differ in what KIND of claim they make, not how large it is: one guesses
  * a boundary, the other declines to and shows the hole in our knowledge instead.

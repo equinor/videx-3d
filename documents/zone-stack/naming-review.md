@@ -26,8 +26,8 @@
 ### 1.1 Two prefix families, no rule
 
 Stack-level declarations are prefixed `Zone*` (`ZoneSection`, `ZoneFence`,
-`ZoneContact`, `ZoneCarrier`, `ZoneWaterTint`) **and** `Stack*` (`StackWater`,
-`StackImmersion`). `ZoneCarrier` extends `StackCarrier`. The SDK adds `SurfaceStack*`
+`ZoneContact`, `ZoneCarrier`, `ZoneWaterTint`) **and** `Stack*` (`ZoneStackWater`,
+`ZoneStackImmersion`). `ZoneCarrier` extends `StackCarrier`. The SDK adds `SurfaceStack*`
 and `SurfaceZone*` for the same family.
 
 ### 1.2 Domain clashes
@@ -76,7 +76,7 @@ and `SurfaceZone*` for the same family.
 | **D (chosen)** | `ZoneStack` | `Zone` | a zone lies between two horizons, as in the modelling tools | — |
 
 **Proposed prefix rule** (open): stack-level types take the provider's prefix
-(`StackSection`, `StackFence`, `StackFloor`, `StackWater`), zone-level types take the
+(`StackSection`, `StackFence`, `StackFloor`, `ZoneStackWater`), zone-level types take the
 child's (`ZoneLayer`, `ZonePeel`, `ZoneBoundary`), and an established domain name wins
 over either (`FluidContact`).
 
@@ -150,10 +150,10 @@ Not `basement`, which is already a `ZoneDetail` preset.
 
 | Current | Issue | Suggestion |
 |---------|-------|------------|
-| `StackWater.depth` | domain clash ([1.2](#12-domain-clashes)) | `level` or `seaLevel` |
+| `ZoneStackWater.depth` | domain clash ([1.2](#12-domain-clashes)) | `level` or `seaLevel` |
 | `ZoneWaterTint` (`bedTint`, `bedTintDepth`, `wetBand`, `wetStrength`) | `Zone` prefix on a stack type; `Ocean` calls the idea `seaBedWaterTint` | `SeaBedTint`, aligned with `Ocean` |
-| `StackWater.opacity` vs `waterOpacity` | a documented ⚠️ trap is a naming smell | keep (matches `Ocean`), or `masterOpacity` |
-| `StackWater.resolution` | triangle edge length; `LevelledBase.resolution` too | fine |
+| `ZoneStackWater.opacity` vs `waterOpacity` | a documented ⚠️ trap is a naming smell | keep (matches `Ocean`), or `masterOpacity` |
+| `ZoneStackWater.resolution` | triangle edge length; `LevelledBase.resolution` too | fine |
 
 ### 3.7 Immersion ⚑ (flagged)
 
@@ -165,8 +165,8 @@ reaches host geometry.
 
 | Name | Kind |
 |------|------|
-| `ZoneStackProps.immersion: StackImmersion` | prop / type |
-| `StackImmersion` fields: `water`, `sediment`, `color`, `visibility`, `background`, `transition`, `settle` | fields |
+| `ZoneStackProps.immersion: ZoneStackImmersion` | prop / type |
+| `ZoneStackImmersion` fields: `water`, `sediment`, `color`, `visibility`, `background`, `transition`, `settle` | fields |
 | `StackImmersionFog` / `StackImmersionFogProps` | component (rendered by the stack, yet exported) |
 | `useImmersionFog` / `ImmersionFogOptions` | generic hook |
 | `ImmersionMedium` (`color`, `density`, `amount`) | hook input |

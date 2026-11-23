@@ -10,7 +10,7 @@ dark, dull rock that gives scale and depth.
 ```tsx
 <Scenery>
   <SceneryOcean seabed={false} />
-  <SceneryAbyss hollow={{ radius: 400000, pulse: 0.1 }} />
+  <SceneryVoid hollow={{ radius: 400000, pulse: 0.1 }} />
 </Scenery>
 ```
 

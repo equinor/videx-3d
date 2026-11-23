@@ -345,7 +345,7 @@ export type SurfaceZoneDiagnostics = {
   wallMs: number;
 };
 
-/** Per-phase build timings (ms) and counts for a {@link SurfaceZone}. */
+/** Per-phase build timings (ms) and counts for a `SurfaceZone`. */
 export type SurfaceZoneMetrics = {
   densifyMs: number;
   /** total surface-clip time across all layers */
@@ -369,14 +369,14 @@ export type SurfaceZoneMetrics = {
   rimPoints: number;
   /**
    * What the depth-order resolve found, when the build ran one (the shared
-   * tessellation path). See {@link SurfaceZoneDiagnostics}.
+   * tessellation path). See `SurfaceZoneDiagnostics`.
    */
   diagnostics?: SurfaceZoneDiagnostics;
   /** how the tessellation was tiled, when it was */
   tiling?: StackTiling;
   /**
    * Per level of detail, the full one first, the height error it was simplified
-   * to — when the build made coarser levels (see {@link SurfaceZoneMesh.levels}).
+   * to — when the build made coarser levels (see `SurfaceZoneMesh.levels`).
    */
   lodErrors?: number[];
 };

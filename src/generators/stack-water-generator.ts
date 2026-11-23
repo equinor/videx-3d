@@ -4,15 +4,17 @@ import {
   StackWaterSpec,
 } from '../components/Zones/zone-defs';
 import {
-  buildSurfaceStack,
-  densifyZoneRim,
   packBufferGeometry,
   PlanarPolygonGeometry,
   ReadonlyStore,
+} from '../sdk';
+import { buildSurfaceStack } from '../sdk/geometries/surface-stack-geometry';
+import { densifyZoneRim } from '../sdk/geometries/surface-zone';
+import {
   STACK_MASK_DATA,
   STACK_MASK_NONE,
-  StackReference,
-} from '../sdk';
+} from '../sdk/geometries/surface-stack-resample';
+import { StackReference } from '../sdk/geometries/surface-stack';
 import { getStackCandidates, getStackContext } from './surface-stack-context';
 
 /**

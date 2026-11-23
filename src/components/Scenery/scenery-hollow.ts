@@ -140,7 +140,7 @@ export function sceneryHollowLook(
 ): SceneryHollowLook | null {
   if (hollow === false) return null;
   const given: SceneryHollow = hollow === true || !hollow ? {} : hollow;
-  const defaults = sceneryDefaults.abyss.hollow;
+  const defaults = sceneryDefaults.void.hollow;
   const style = given.style ?? defaults.style;
   const styled = defaults.styles[style] ?? defaults.styles.calm;
   const radius = Math.max(given.radius ?? defaults.radius, 1);
@@ -782,7 +782,7 @@ export class SceneryHollowParts {
       // Placed in the shader about the globe's disc centre: no bounds, no matrices.
       object.frustumCulled = false;
       object.matrixAutoUpdate = false;
-      object.userData.sceneryLayer = 'abyss';
+      object.userData.sceneryLayer = 'void';
       object.onBeforeRender = sky.onBeforeDraw;
       return object;
     };
@@ -799,7 +799,7 @@ export class SceneryHollowParts {
     this.walls.name = 'scenery-hollow-walls';
     this.walls.matrixAutoUpdate = false;
     this.walls.visible = false;
-    this.walls.userData.sceneryLayer = 'abyss';
+    this.walls.userData.sceneryLayer = 'void';
   }
 
   /**

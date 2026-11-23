@@ -230,10 +230,10 @@ type SceneryStageReliefTilesProps = {
   /** told of the tiles as they load (see `SceneryReliefLoading`) whenever that changes, and null once gone */
   onLoading?: (loading: SceneryReliefLoading | null) => void;
   /**
-   * Written each frame: the relief's height under the camera (world Y, on the finest tile
-   * in there), or null where no tile is in.
+   * Whether this relief tells the camera site its ground under the camera (`CameraSite.ground`,
+   * `underground`), on the finest tile in there: while the relief is shown.
    */
-  cameraGround?: { current: number | null };
+  cameraGround?: boolean;
   /** the anchored stage's area (its `boundary`), world X/Z: a see-through region with `seeThrough`; none when null */
   stage: Boundary | null;
   /** the loaded fields (`WorldField`): each a see-through region too, in its own frame (`setReliefRegions`) */
@@ -841,7 +841,6 @@ export const SceneryStageReliefTiles = ({
       ground = height === null ? null : level + height;
       under = ground !== null && y < ground;
     }
-    if (cameraGround) cameraGround.current = ground;
     // Under it — in the void, or in rock above the sea's own seabed — the relief is the
     // void's lid: its undersides are drawn instead of its tops. Without a sky, nothing is:
     // what lies under the ground is seen unhindered. The camera site's answer while it is

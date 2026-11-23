@@ -92,7 +92,7 @@ type Pose = keyof typeof POSES;
 const PRESETS = Object.keys(SKY_PRESETS) as SkyPreset[];
 
 // The background's own layers, hidden without SKY: the clouds' layer kept, which theirs follows.
-const SKY_HIDDEN: SceneryLayer[] = ['sky', 'abyss', 'sea', 'water', 'surface'];
+const SKY_HIDDEN: SceneryLayer[] = ['sky', 'void', 'sea', 'water', 'surface'];
 
 type CloudBenchArgs = {
   viewport: Viewport;

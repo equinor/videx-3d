@@ -1,11 +1,7 @@
 import { useContext, useEffect, useMemo, useRef } from 'react';
 import { Material, MeshStandardMaterial } from 'three';
-import {
-  createTubeGeometry,
-  drapePolyline,
-  getSplineCurve,
-  Vec2,
-} from '../../sdk';
+import { createTubeGeometry, getSplineCurve, Vec2 } from '../../sdk';
+import { drapePolyline } from '../../sdk/geometries/surface-drape';
 import { useSurfaceSampler } from '../Zones/surface-sampler';
 import { UtmAreaContext } from '../UtmArea';
 

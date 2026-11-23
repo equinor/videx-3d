@@ -17,7 +17,10 @@ import {
   Vector3,
 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
-import type { SurfaceZone, SurfaceZoneMesh } from '../../sdk';
+import type {
+  SurfaceZone,
+  SurfaceZoneMesh,
+} from '../../sdk/geometries/surface-zone';
 import { createCapView, releaseCapView } from './cap-visibility';
 import {
   capTileHeights,

@@ -10,7 +10,7 @@ import { Group, Object3D } from 'three';
 import { CommonComponentProps } from '../../../common/types';
 import { useGenerator } from '../../../hooks/useGenerator';
 import { useWellboreContext } from '../../../hooks/useWellboreContext';
-import { PointerEvents } from '../../../main';
+import { PointerEvents } from '../../../events/interaction-events';
 import { CasingEffects, CasingMaterialParameters } from './CasingMaterial';
 import {
   casings,

@@ -31,9 +31,9 @@ the seabed and the land, and inside a `Scenery` be seen through its sea as the s
     maxHeight={1500000}
   />
   <GeoLabels data={discoveries} text={f => f.properties.name} maxHeight={250000} />
-  <TrackLayer tracks={ships} annotations={{ layer: 'ships', text: s => s.name }}>
+  <GeoTracks tracks={ships} annotations={{ layer: 'ships', text: s => s.name }}>
     {(ship, ref) => <Tanker ref={ref} length={ship.length} />}
-  </TrackLayer>
+  </GeoTracks>
   <Overlay>
     {/* The same data on a map: the twins take the scene's layers' props. */}
     <Minimap layers={layers}>
@@ -65,7 +65,7 @@ and facilities on the seabed, `On the seabed` and `To the coast`),
 | `GeoSymbols` | points as 3D symbols of any geometry, standing on the ground, their size as built (exaggerated), never narrower than a few pixels | one instanced mesh (`Symbols`) |
 | `GeoLabels` | a label per feature: a polygon's fitted inside it, broken into lines and turned along it where that fits better; by a point | a `LabelLayer`, placed on the globe |
 | `GeoMapPolygons`, `GeoMapLines`, `GeoMapSymbols`, `GeoMapLabels`, `GeoMapGraticule`, `GeoMapTracks` | the same data on a `GeoMap` or a `Minimap`, from the same props as the scene's layers | the map's canvas, carried to its map once (see [On a map](#on-a-map-the-twins)) |
-| `TrackLayer` | things that move: anything you render, a `Tanker` say | dead reckoning between fixes, an object moved per frame, stood upright on the globe where it is |
+| `GeoTracks` | things that move: anything you render, a `Tanker` say | dead reckoning between fixes, an object moved per frame, stood upright on the globe where it is |
 
 The data is GeoJSON (`GeoJsonFeatureCollection`) or features read from it
 (`geoFeaturesFromGeoJson`, `GeoFeature`): their geometry a `PlanarGeometry` in longitude and
@@ -95,7 +95,7 @@ its own (`minExtent`, `maxExtent`).
 ## When a layer is drawn
 
 One test, made by every scene layer — `GeoTileLayer` (so `GeoPolygons` and `GeoGraticule`), `GeoTubes`,
-`GeoSymbols`, `GeoLabels`, `TrackLayer` — before it draws or does any work for the frame:
+`GeoSymbols`, `GeoLabels`, `GeoTracks` — before it draws or does any work for the frame:
 `layerShownAt(site, globe, visibility, lies)`, with where the camera is worked out once a frame
 for all of them (`useCameraSite().get(camera)`, see [camera.md](./camera.md#where-the-camera-is)). Not shown, its mesh is
 hidden: no draw call, no vertex work, and none of its CPU work (laying nodes, choosing
@@ -513,9 +513,9 @@ layer is hidden: the void's lid leaves pixels to the background, which would not
 
 Where polygons crowd, their names are kept apart on screen, the less wanted fading out
 (see labels.md, *Overlap and priority*). For a label that keeps its size on screen and
-follows something that moves, use an `Annotations` layer (as `TrackLayer` does).
+follows something that moves, use an `Annotations` layer (as `GeoTracks` does).
 
-## Tracks: `TrackLayer`
+## Tracks: `GeoTracks`
 
 `Track`: an id, `longitude`, `latitude`, `speed` (m/s; `knots()` converts), `course`
 (degrees from true north) and the `time` of the fix. The layer, each frame and without a
@@ -789,7 +789,7 @@ const discoveries = { data, style: f => ({ fill: colour(f) }), maxHeight: 150000
 
 `GeoMapPolygons` (↔ `GeoPolygons`), `GeoMapLines` (↔ `GeoTubes`), `GeoMapSymbols` (↔
 `GeoSymbols`), `GeoMapLabels` (↔ `GeoLabels`), `GeoMapGraticule` (↔ `GeoGraticule`) and
-`GeoMapTracks` (↔ `TrackLayer`), and `GeoMapFields` for the `World`'s fields. They draw on the
+`GeoMapTracks` (↔ `GeoTracks`), and `GeoMapFields` for the `World`'s fields. They draw on the
 map's canvas: carried to scene X/Z once (densified every 0.05° so long edges keep their
 shape) for the scene's map, and straight into a projection's plane in one, so data far from
 the scene lands where it is; those off the map passed over, vertices closer than a pixel

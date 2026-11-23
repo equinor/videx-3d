@@ -1,4 +1,4 @@
-import { SurfaceZoneMetrics } from '../../sdk';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 
 /**
  * The build phases a zone reports, rounded, for a story's `ZONEREPORT` line.

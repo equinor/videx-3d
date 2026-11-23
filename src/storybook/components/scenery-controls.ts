@@ -33,7 +33,7 @@ import type {
 import type { SceneryStageLayer } from '../../components/Scenery/SceneryStage';
 import {
   sceneryDefaults,
-  type SceneryAbyssProps,
+  type SceneryVoidProps,
   type SceneryCloudsProps,
   type SceneryCloudsQuality,
   type SceneryHollowStyle,
@@ -201,7 +201,7 @@ export type SceneryArgs = {
   abyssDepthDetail: number;
   abyssDepthDetailScale: number;
   abyssFalloff: number;
-  /** the void as a hollow under the field (`SceneryAbyss`'s `hollow`) */
+  /** the void as a hollow under the field (`SceneryVoid`'s `hollow`) */
   hollow: boolean;
   hollowStyle: SceneryHollowStyle;
   hollowRadius: number;
@@ -326,23 +326,23 @@ export const sceneryArgs: SceneryArgs = {
   subsurfaceBelow: false,
   subsurfaceBelowColor: '#9fb4d0',
   subsurfaceBelowIntensity: 1,
-  abyssCeiling: sceneryDefaults.abyss.colors.ceiling,
-  abyssHorizon: sceneryDefaults.abyss.colors.horizon,
-  abyssDepth: sceneryDefaults.abyss.colors.depth,
-  abyssFadeDistance: sceneryDefaults.abyss.fadeDistance,
-  abyssTransition: sceneryDefaults.abyss.transition,
-  abyssDarkening: sceneryDefaults.abyss.darkening,
-  abyssDetail: sceneryDefaults.abyss.detail,
-  abyssDetailScale: sceneryDefaults.abyss.detailScale,
-  abyssDepthDetail: sceneryDefaults.abyss.depthDetail,
-  abyssDepthDetailScale: sceneryDefaults.abyss.depthDetailScale,
-  abyssFalloff: sceneryDefaults.abyss.falloff,
+  abyssCeiling: sceneryDefaults.void.colors.ceiling,
+  abyssHorizon: sceneryDefaults.void.colors.horizon,
+  abyssDepth: sceneryDefaults.void.colors.depth,
+  abyssFadeDistance: sceneryDefaults.void.fadeDistance,
+  abyssTransition: sceneryDefaults.void.transition,
+  abyssDarkening: sceneryDefaults.void.darkening,
+  abyssDetail: sceneryDefaults.void.detail,
+  abyssDetailScale: sceneryDefaults.void.detailScale,
+  abyssDepthDetail: sceneryDefaults.void.depthDetail,
+  abyssDepthDetailScale: sceneryDefaults.void.depthDetailScale,
+  abyssFalloff: sceneryDefaults.void.falloff,
   hollow: true,
-  hollowStyle: sceneryDefaults.abyss.hollow.style,
-  hollowRadius: sceneryDefaults.abyss.hollow.radius,
-  hollowFloorDepth: sceneryDefaults.abyss.hollow.floorDepth,
-  hollowLightFalloff: sceneryDefaults.abyss.hollow.lightFalloff,
-  hollowMurk: sceneryDefaults.abyss.hollow.murk,
+  hollowStyle: sceneryDefaults.void.hollow.style,
+  hollowRadius: sceneryDefaults.void.hollow.radius,
+  hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
+  hollowLightFalloff: sceneryDefaults.void.hollow.lightFalloff,
+  hollowMurk: sceneryDefaults.void.hollow.murk,
   hollowHandle: false,
   globe: sceneryDefaults.globe,
   environment: true,
@@ -631,8 +631,8 @@ export const sceneryOceanFromArgs = (
   detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
 });
 
-/** A `SceneryAbyss`' props from {@link SceneryArgs}, but for its level, which is the story's. */
-export const sceneryAbyssFromArgs = (args: SceneryArgs): SceneryAbyssProps => ({
+/** A `SceneryVoid`' props from {@link SceneryArgs}, but for its level, which is the story's. */
+export const sceneryVoidFromArgs = (args: SceneryArgs): SceneryVoidProps => ({
   colors: {
     ceiling: args.abyssCeiling,
     horizon: args.abyssHorizon,
@@ -1386,7 +1386,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   },
   hollow: toggle(
     SUBSURFACE,
-    'The void as a hollow in the crust under the field (`SceneryAbyss`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',
+    'The void as a hollow in the crust under the field (`SceneryVoid`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',
   ),
   hollowStyle: {
     control: { type: 'inline-radio' },
@@ -1902,7 +1902,7 @@ const SCENERY_HIDE_LAYERS: Record<string, SceneryLayer> = {
   'sky background': 'background',
   'sky sky': 'sky',
   'sky clouds': 'clouds',
-  'sky abyss': 'abyss',
+  'sky void': 'void',
   'sky sea': 'sea',
   'sky water': 'water',
   'sky surface': 'surface',

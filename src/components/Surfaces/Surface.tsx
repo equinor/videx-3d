@@ -12,12 +12,8 @@ import { PointerEvents } from '../../events/interaction-events';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
 import { useRenderingState } from '../../rendering/rendering-state';
-import {
-  SurfaceDetail,
-  SurfaceMeta,
-  unpackBufferGeometry,
-  Vec2,
-} from '../../sdk';
+import { SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk';
+import { SurfaceDetail } from '../../sdk/materials/surface-detail';
 import {
   EventEmitterCallback,
   useEventEmitter,

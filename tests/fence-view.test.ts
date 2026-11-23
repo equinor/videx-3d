@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { Vec2 } from '../src/sdk';
 import {
   fenceAutoSide,
   fenceSideAt,
-  fenceViewPose,
-  FenceViewPose,
-  Vec2,
-  WellboreFence,
-} from '../src/sdk';
+} from '../src/sdk/geometries/fence-segments';
+import { fenceViewPose, FenceViewPose } from '../src/sdk/geometries/fence-view';
+import { WellboreFence } from '../src/sdk/geometries/wellbore-fence';
 import {
   fenceFor,
   SWEEP_ALL,

@@ -29,20 +29,22 @@ import { precompile } from '../../rendering/precompile';
 import { useGenerator } from '../../hooks/useGenerator';
 import { useSharedTextures } from '../../hooks/useSharedTextures';
 import {
-  CutUniforms,
-  createHeightFieldClipBinding,
-  fenceSideAt,
-  HeightFieldClip,
   PlanarPolygonGeometry,
   readCameraTarget,
-  ReliefSource,
-  StackSectionSource,
-  SurfaceZoneMetrics,
   SurfaceMeta,
   unpackBufferGeometry,
   Vec3,
-  WellboreFence,
 } from '../../sdk';
+import { CutUniforms } from '../../sdk/materials/fence-field';
+import {
+  createHeightFieldClipBinding,
+  HeightFieldClip,
+} from '../../sdk/materials/height-field-clip';
+import { fenceSideAt } from '../../sdk/geometries/fence-segments';
+import { ReliefSource } from '../../sdk/geometries/relief-tiles';
+import { StackSectionSource } from '../../sdk/geometries/surface-section';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
+import { WellboreFence } from '../../sdk/geometries/wellbore-fence';
 import { OceanContactContext } from '../Ocean/ocean-contact';
 import { OceanSamplerContext } from '../Ocean/ocean-sampler';
 import { UtmAreaContext } from '../UtmArea';
@@ -72,9 +74,9 @@ import {
   DEFAULT_SECTION_OFFSET,
   FenceSideInfo,
   StackBedGrid,
-  StackImmersion,
+  ZoneStackImmersion,
   stackWater,
-  StackWater,
+  ZoneStackWater,
   StackWaterResponse,
   wellboreOutline,
   WellboreOutlineResponse,
@@ -169,7 +171,7 @@ export type ZoneStackProps = {
   carrier?: ZoneCarrier;
   /**
    * Open water over the whole column: the sea state, its appearance, and how it
-   * tints the bed beneath it. See {@link StackWater}.
+   * tints the bed beneath it. See {@link ZoneStackWater}.
    *
    * ⭐ Declared HERE rather than on a zone, for the same reason as `carrier`, and
    * for one more: a sea covers its whole footprint by design, so two zones each
@@ -182,7 +184,7 @@ export type ZoneStackProps = {
    * `cutSource` alone gives nothing to draw the sea over — and a `seabed` the column
    * holds: without one there is no sea (and a warning).
    */
-  water?: StackWater;
+  water?: ZoneStackWater;
   /**
    * The id of the surface in `surfaces` that is the sea bed. Declared, never
    * inferred: the column holds a sea bed only while a zone draws this surface, and
@@ -229,14 +231,14 @@ export type ZoneStackProps = {
   drawWater?: boolean;
   /**
    * Fog the view while the camera is INSIDE the sea or the block. See
-   * {@link StackImmersion}.
+   * {@link ZoneStackImmersion}.
    *
    * ⚠️ Absent by default, and the absence is what makes it free: installing
    * `scene.fog` at all changes every material's program cache key, so there is no
    * zero-cost "disabled" state. Declared, it also fogs HOST geometry — vessels,
    * facilities, pipelines — which no material of this library could reach.
    */
-  immersion?: StackImmersion;
+  immersion?: ZoneStackImmersion;
   /**
    * Fluid contacts to draw as LINES through the whole column — an oil/water
    * contact, a gas cap, or any other border-like level given as a depth grid.

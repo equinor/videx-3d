@@ -139,7 +139,7 @@ Mutating `section.plane` directly therefore animates the section at no render co
 Turn `water: true` on when the water column itself is the subject. ⚠️ It rebuilds
 the two ocean materials (the cut is a define).
 
-`StackWater.keepBed` keeps the sea bed's **cap** whole under a cut that takes the
+`ZoneStackWater.keepBed` keeps the sea bed's **cap** whole under a cut that takes the
 sea, while the rock below it is cut as usual — the sea floor stays as a sheet over
 the opened block, which is what a subsea layout is placed on. Pair it with
 `capOpacity` on the bed layer to see the section through it.
@@ -539,7 +539,7 @@ stretched over the requested depths.
 > footprint by design, so two zones each drawing part of it would leave two
 > coplanar lids wherever their footprints overlap. The stack draws it once.
 
-`StackWater` is `OceanWaterProps & OceanBodyProps & ZoneWaterTint` plus `depth`,
+`ZoneStackWater` is `OceanWaterProps & OceanBodyProps & ZoneWaterTint` plus `depth`,
 `opacity` and `resolution`.
 
 ### How it is built
@@ -564,7 +564,7 @@ the shoreline), and the channels a cut face needs.
 
 ### Resolution
 
-`StackWater.resolution` is the lid's target triangle edge length. **Omit it** for
+`ZoneStackWater.resolution` is the lid's target triangle edge length. **Omit it** for
 the fewest triangles that fill the boundary — all a flat surface needs, since its
 waves are shaded per pixel.
 
@@ -578,7 +578,7 @@ count grows with the **square** of the field size. `DEFAULT_WATER_RESOLUTION` is
 > ⚠️⚠️ `water.waterOpacity` (default **0.7**) is the water's **own** opacity and
 > only a base — the shader computes `alpha = mix(uOpacity, 1, fresnel) *
 > uMasterOpacity`, so the surface is see-through from above and mirror-like at a
-> grazing angle whatever it says. `StackWater.opacity` is the master multiplier.
+> grazing angle whatever it says. `ZoneStackWater.opacity` is the master multiplier.
 > Water that looks "too transparent at opacity 1" is usually carrying
 > `waterOpacity`'s default.
 
@@ -629,7 +629,7 @@ testing it against the fence **index** (the exact boundary lookup, not the field
 the field alone would answer a fraction of a cell out, which is metres, enough for
 the fog to switch on before the cut visually reaches you).
 
-`StackImmersion` options: `water`, `sediment`, `color`, `visibility` (default 400),
+`ZoneStackImmersion` options: `water`, `sediment`, `color`, `visibility` (default 400),
 `background` (default true), `transition` (default 5 m), `settle` (default 0.12 s).
 
 > ⚠️ **It is off unless declared, and it has to be.** Installing `scene.fog` at all

@@ -3,7 +3,6 @@
  */
 export * from './data/DataLoader';
 export * from './data/GeneratorRegistry';
-export * from './data/partial-results';
 export * from './data/helpers/formations-helpers';
 export * from './data/helpers/well-helpers';
 export * from './data/Store';
@@ -12,129 +11,105 @@ export * from './data/relief/clip-relief';
 export * from './data/relief/function-relief';
 export * from './data/relief/grid-to-relief';
 export * from './data/relief/irapbin-to-relief';
-export * from './data/relief/relief-window';
+export { reliefWindow } from './data/relief/relief-window';
 export * from './data/relief/stack-layer-to-relief';
 export * from './data/relief/surface-to-relief';
 
 export * from './geometries/boundary';
 export * from './geometries/boundary-loops';
-export * from './geometries/cap-normal-map';
-export * from './geometries/chamfer';
 export * from './geometries/curve/curve-3d';
 export * from './geometries/curve/tube-geometry';
 export * from './geometries/delatin';
-export * from './geometries/delaunay-cap';
 export * from './geometries/fence';
-export * from './geometries/fence-ribbon';
-export * from './geometries/fence-path';
-export * from './geometries/fence-segments';
-export * from './geometries/fence-view';
 export * from './geometries/geometry';
 export * from './geometries/geometry-footprint';
 export * from './geometries/geometry-attributes';
 export * from './geometries/grid-sampling';
-export * from './geometries/levelled-base';
-export * from './geometries/marching-squares';
-export * from './geometries/mesh-boundary';
 export * from './geometries/ocean-geometry';
-export * from './geometries/packing';
-export * from './geometries/height-field-clip';
+export {
+  getTypedArrayFromBuffer,
+  getTypedArrayType,
+  packAttribute,
+  packBufferGeometries,
+  packBufferGeometry,
+  packBufferGeometryLike,
+  unpackBufferGeometries,
+  unpackBufferGeometry,
+  type BufferAttributeDrawRange,
+  type BufferAttributeGroups,
+  type BufferAttributeLike,
+  type BufferGeometryLike,
+  type PackedAttributes,
+  type PackedBufferAttribute,
+  type PackedBufferGeometry,
+  type PackedBufferGeometryCollection,
+} from './geometries/packing';
 export * from './geometries/planar-geometry';
-export * from './geometries/polygon-cap';
-export * from './geometries/polygon-distance-field';
-export * from './geometries/polygon-label';
 export * from './geometries/polygon-outline';
-export * from './geometries/procedural-noise';
 export * from './geometries/procedural-relief';
-export * from './geometries/relief-grid';
-export * from './geometries/relief-contour-labels';
-export * from './geometries/relief-tiles';
-export * from './geometries/surface-zone';
-export * from './geometries/surface-zone-packing';
-export * from './geometries/surface-zone-streaming';
 export * from './geometries/surface-clip';
-export * from './geometries/surface-column';
-export * from './geometries/surface-drape';
-export * from './geometries/surface-field';
-export * from './geometries/surface-label-tiles';
 export * from './geometries/surface-outline';
 export * from './geometries/surface-sampler';
-export * from './geometries/surface-seal';
-export * from './geometries/surface-section';
-export * from './geometries/stack-cap-arrays';
-export * from './geometries/stack-tiles';
-export * from './geometries/surface-stack';
-export * from './geometries/surface-stack-candidates';
-export * from './geometries/surface-stack-geometry';
-export * from './geometries/surface-stack-terminations';
-export * from './geometries/surface-walls';
 export * from './geometries/tessellation';
-export * from './geometries/tin-sampler';
-export * from './geometries/triangle-order';
 export * from './geometries/triangulate-grid';
-export * from './geometries/triangulate-grid-delaunay';
+export { triangulateGridDelaunay } from './geometries/triangulate-grid-delaunay';
 export * from './geometries/tube-segment-geometry';
-export * from './geometries/wellbore-fence';
-export * from './geometries/wellbore-outline';
+export {
+  createWellboreOutline,
+  createWellboreOutlineCoordinates,
+  DEFAULT_OUTLINE_CELL_SIZE,
+  type WellboreOutlineCoordinates,
+  type WellboreOutlineMetrics,
+  type WellboreOutlineOptions,
+  type WellborePath,
+} from './geometries/wellbore-outline';
 
 export * from './layers/geo-features';
 export * from './layers/geo-lines';
-export * from './layers/geo-tubes';
-export * from './layers/layer-visibility';
-export * from './layers/map-draw';
-export * from './layers/overlay-tiles';
 export * from './layers/tracks';
 
-export * from './managers/CameraManager';
+export {
+  CameraManager,
+  DEFAULT_FLY_DURATION,
+  DEFAULT_FLY_INTERRUPT,
+  type CameraDestination,
+  type CameraFlyPlan,
+} from './managers/CameraManager';
 export * from './managers/WellboreManager';
 
-export * from './projection/conformal-sphere';
 export * from './projection/crs';
 export * from './projection/geo-frame';
 export * from './projection/globe';
-export * from './projection/map-projections';
-export * from './projection/map-view';
-export * from './projection/ocean-charts';
+export {
+  mapViewFromPixel,
+  mapViewLonLatAt,
+  mapViewLonLatToPixel,
+  mapViewMetresPerPixel,
+  mapViewToPixel,
+  type MapOrientation,
+  type MapSurface,
+  type MapView,
+  type MapViewProjection,
+} from './projection/map-view';
 export * from './projection/place-frame';
-export * from './projection/target-anchor';
 
-export * from './tiles/quadtree';
-export * from './tiles/geo-tile-globe';
 export * from './tiles/geo-tile-keys';
-export * from './tiles/geo-tile-select';
-export * from './tiles/tile-cover';
-export * from './tiles/tile-edges';
-export * from './tiles/tile-keys';
-export * from './tiles/tile-lod';
-export * from './tiles/tile-streamer';
-export * from './tiles/tile-transitions';
 
 export * from './types/common';
 
 export * from './utils/camera';
-export * from './utils/camera-site';
-export * from './utils/clip-2d';
-export * from './utils/colors';
+export { idToHexColor, randomColor } from './utils/colors';
 export * from './utils/conversions';
 export * from './utils/depth-buffer';
 export * from './utils/depth-reader';
 export * from './utils/elevation-map';
 export * from './utils/glyphs';
-export * from './utils/half-float';
 export * from './utils/irapbin-parser';
-export * from './utils/lod';
-export * from './utils/margin-band';
 export * from './utils/num-array';
 export * from './utils/numbers';
-export * from './utils/polyline-2d';
-export * from './utils/read-target-async';
-export * from './utils/render-aside';
 export * from './utils/scene';
 export * from './utils/segments';
 export * from './utils/solar-position';
-export * from './utils/spherical-harmonics';
-export * from './utils/astronomy';
-export * from './utils/bright-stars';
 export * from './utils/strings';
 export * from './utils/trajectory';
 export * from './utils/trigonometry';
@@ -142,25 +117,92 @@ export * from './utils/typed-2d-array';
 export * from './utils/typed-array';
 export * from './utils/vector-operations';
 
-export * from './weather/weather';
-export * from './weather/weather-clock';
-export * from './weather/weather-systems';
-export * from './weather/water-optics';
-export * from './weather/wind-field';
+export {
+  CLOUD_COVER_OKTAS,
+  CLOUD_LEVELS,
+  CLOUD_TYPE_HEIGHTS,
+  CLOUD_TYPE_LEVELS,
+  cloudLayerPreset,
+  cloudLayersByLevel,
+  isSkyPreset,
+  oktasToCover,
+  SKY_PRESETS,
+  WEATHER_LOCAL_RADIUS,
+  WEATHER_SYSTEMS_DEFAULTS,
+  WEATHER_SYSTEMS_PRESETS,
+  weatherPreset,
+  weatherPresetOf,
+} from './weather/weather';
+export type {
+  CloudCover,
+  CloudLayer,
+  CloudLayersPreset,
+  CloudLevel,
+  CloudType,
+  SkyPreset,
+  SkyPresetWeather,
+  WeatherAir,
+  WeatherLocal,
+  WeatherState,
+  WeatherSwell,
+  WeatherSystems,
+  WeatherSystemsPreset,
+  WeatherWind,
+} from './weather/weather';
+export {
+  WeatherClock,
+  WeatherClockSteps,
+  type WeatherClockOptions,
+} from './weather/weather-clock';
+export {
+  DEFAULT_WATER_OPTICS,
+  WATER_OPTICS_PRESETS,
+  type WaterOptics,
+  type WaterOpticsPreset,
+} from './weather/water-optics';
 
 export * from './materials/apply-globe';
-export * from './materials/water-body';
-export * from './materials/scene-sky';
-export * from './materials/ground-map';
-export * from './materials/bake-texture';
-export * from './materials/blue-noise';
-export * from './materials/cliff-texture';
-export * from './materials/depth-map';
+export { applyWaterFog, type WaterBody } from './materials/water-body';
 export * from './materials/depth-material';
-export * from './materials/fence-field';
-export * from './materials/graticule';
-export * from './materials/height-field-clip';
-export * from './materials/rock-texture';
-export * from './materials/surface-detail';
 export * from './materials/tube-material';
 export * from './materials/uv-material';
+// Types the public API exposes in props, hooks and callbacks, from modules that are
+// otherwise internal.
+export type {
+  LevelledBaseLevel,
+  LevelledBaseMetrics,
+} from './geometries/levelled-base';
+export type { PackedBounds } from './geometries/packing';
+export type { ReliefLayer, ReliefSource } from './geometries/relief-tiles';
+export type { SealMode } from './geometries/surface-seal';
+export type { StackSyntheticLayer } from './geometries/surface-stack';
+export type { SurfaceZoneMetrics } from './geometries/surface-zone';
+export type { SurfaceZonePhase } from './geometries/surface-zone-streaming';
+export type { TinSample } from './geometries/tin-sampler';
+export type {
+  LayerExtentVisibility,
+  LayerReveal,
+  LayerVisibility,
+} from './layers/layer-visibility';
+export type { HeightFieldClip } from './materials/height-field-clip';
+export type {
+  SurfaceDetail,
+  SurfaceDetailPreset,
+} from './materials/surface-detail';
+export type { MapPlane, MapProjection } from './projection/map-projections';
+export type {
+  TargetAnchorField,
+  TargetAnchorOptions,
+} from './projection/target-anchor';
+export { CAMERA_PROBE_ORDER } from './utils/camera-site';
+export type {
+  CameraMedium,
+  CameraProbe,
+  CameraSite,
+  CameraSiteStore,
+  CameraWater,
+} from './utils/camera-site';
+export type { FenceSideName } from './utils/one-sided-offset';
+export type { SeaSwell } from './weather/sea-spectrum';
+export type { SeaQuality } from './weather/sea-state';
+export type { WeatherGusts } from './weather/wind-field';

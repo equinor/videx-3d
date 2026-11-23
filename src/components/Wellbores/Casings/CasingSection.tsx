@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Object3D } from 'three';
 import {
   EventEmitterCallback,
-  PointerEvents,
   useEventEmitter,
-} from '../../../main';
+} from '../../EventEmitter/EventEmitterContext';
+import { PointerEvents } from '../../../events/interaction-events';
 import { clamp } from '../../../sdk';
 import { createCasingSectionGeometries } from './casing-geometry';
 import { CasingEmitterMaterial } from './CasingEmitterMaterial';

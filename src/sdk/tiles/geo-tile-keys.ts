@@ -6,7 +6,7 @@ import { tileColumn, tileDepth, tileKey, tileRow } from './tile-keys';
  * Degrees a root of the geographic quadtree spans, in longitude and in latitude: two
  * roots, the western and the eastern hemisphere, each from pole to pole. A tile at depth
  * `d` spans `180 / 2^d` degrees each way. Its column `i` runs east from 180°W, its row `j`
- * south from 90°N; keys, parents and children are {@link tileKey}'s.
+ * south from 90°N; keys, parents and children are `tileKey`'s.
  *
  * @group Tiles
  */

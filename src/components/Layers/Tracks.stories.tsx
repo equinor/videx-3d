@@ -21,7 +21,7 @@ import { SceneryOcean } from '../Scenery/SceneryOcean';
 import { SceneryStage } from '../Scenery/SceneryStage';
 import { Tanker } from '../Tanker/Tanker';
 import { World } from '../World/World';
-import { TrackLayer } from './TrackLayer';
+import { GeoTracks } from './GeoTracks';
 
 // Ships about the demo field, as a tracking feed (AIS) would report them: generated, then
 // fed a new fix every few seconds — moved on, a little off where dead reckoning put them,
@@ -212,7 +212,7 @@ const ShipsStory = ({
           <Scenery>
             <SceneryOcean level={LEVEL} depth={DEPTH} />
             <SceneryStage boundary={STAGE_BOUNDS} />
-            <TrackLayer
+            <GeoTracks
               tracks={ships}
               extrapolate={moving}
               smoothing={smoothing}
@@ -229,7 +229,7 @@ const ShipsStory = ({
                   buoyancy={buoyancy}
                 />
               )}
-            </TrackLayer>
+            </GeoTracks>
           </Scenery>
         </Annotations>
         {minimap && (

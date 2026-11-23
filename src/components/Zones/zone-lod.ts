@@ -1,5 +1,5 @@
 import { Box3, Vector3 } from 'three';
-import type { StackTiling } from '../../sdk';
+import type { StackTiling } from '../../sdk/geometries/surface-stack';
 
 /**
  * Each tile's footprint in the zone's own frame: its grid rectangle's four corners

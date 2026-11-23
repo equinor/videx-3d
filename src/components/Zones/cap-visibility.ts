@@ -1,23 +1,23 @@
 import { BufferAttribute, BufferGeometry } from 'three';
+import { PlanarPolygonCoordinates, pointInPolygon, Vec2 } from '../../sdk';
+import { CAP_SIDE_OPEN } from '../../sdk/geometries/surface-stack';
 import {
-  CAP_SIDE_OPEN,
   createTinSampler,
-  distanceToSegment2D,
-  PlanarPolygonCoordinates,
-  pointInPolygon,
+  TinLocation,
+  TinSampler,
+} from '../../sdk/geometries/tin-sampler';
+import { distanceToSegment2D } from '../../sdk/utils/polyline-2d';
+import {
   SurfaceZone,
   SurfaceZoneHorizon,
   SurfaceZoneMesh,
-  TinLocation,
-  TinSampler,
-  Vec2,
-} from '../../sdk';
+} from '../../sdk/geometries/surface-zone';
 import type { ZoneLayer } from './zone-defs';
 
 /**
  * Whether a cut takes cap `i`. ⭐ A unit is bounded by TWO caps, so keeping one
  * whole keeps the cap that FLOORS it too; `seaKept` keeps cap 0, the sea bed —
- * as the floor of a sea the cut leaves whole, or on its own (`StackWater.keepBed`) —
+ * as the floor of a sea the cut leaves whole, or on its own (`ZoneStackWater.keepBed`) —
  * and `ZoneLayer.keepCap` keeps a cap alone.
  */
 export function capCut(
@@ -104,7 +104,7 @@ export function openIntervals(
 export type CapCutRule = {
   /** whether it takes the column's floor (`sectionCarrier` / `fenceCarrier`) */
   carrier: boolean;
-  /** whether it leaves the sea bed's cap whole: the sea stays, or `StackWater.keepBed` */
+  /** whether it leaves the sea bed's cap whole: the sea stays, or `ZoneStackWater.keepBed` */
   seaKept: boolean;
 };
 

@@ -844,7 +844,7 @@ draw it over.
 
 ### 6.4 The shaders
 
-`StackWater` carries the sea state (`OceanWaterProps` / `OceanBodyProps`, shared
+`ZoneStackWater` carries the sea state (`OceanWaterProps` / `OceanBodyProps`, shared
 with the `Ocean` component through `ocean-material-sync.ts`) and `useStackWater`
 supplies both materials: an `OceanMaterial` for the lid and an
 `OceanVolumeMaterial` for the body. They are created once and then have their

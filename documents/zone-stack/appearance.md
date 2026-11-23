@@ -278,7 +278,7 @@ The corresponding numbers are on
 
 ## Water tint
 
-`ZoneWaterTint` on `StackWater` tints whatever lies **under** the sea, as if seen
+`ZoneWaterTint` on `ZoneStackWater` tints whatever lies **under** the sea, as if seen
 through the water column — the zone's answer to the `Ocean` component's
 `seaBedWaterTint`.
 

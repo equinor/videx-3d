@@ -4,7 +4,10 @@ import {
   zoneLayerReveal,
   zoneLayers,
 } from '../src/components/Zones/zone-reveal';
-import { SurfaceZone, SurfaceZoneMesh } from '../src/sdk';
+import {
+  SurfaceZone,
+  SurfaceZoneMesh,
+} from '../src/sdk/geometries/surface-zone';
 
 const xz = new BufferAttribute(new Float32Array(8), 2);
 

@@ -122,7 +122,7 @@ export function reportCameraWater(site: CameraSite, water: CameraWater): void {
 }
 
 /**
- * Where the camera is in one scene ({@link sceneCameraSite}): the owners that know part of
+ * Where the camera is in one scene (`sceneCameraSite`): the owners that know part of
  * it register a probe ({@link CameraSiteStore.probe}); what needs it asks
  * ({@link CameraSiteStore.get}), and the first to ask in a frame has the probes run, in
  * their order, for all. A new frame begins with {@link CameraSiteStore.tick} (the

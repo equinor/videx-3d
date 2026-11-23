@@ -63,7 +63,7 @@ export function createSurfaceDepthSampler(
 }
 
 /**
- * Options for {@link collectTrajectoryRuns}.
+ * Options for `collectTrajectoryRuns`.
  *
  * @group Geometries
  */
@@ -329,7 +329,7 @@ export type WellboreOutlineOptions = {
   /**
    * Upper bound for the raster cell size, scene units (default
    * {@link DEFAULT_OUTLINE_CELL_SIZE}). The effective cell is also clamped to
-   * `minRadius / `{@link OUTLINE_CELLS_PER_RADIUS}, so a small radius always gets
+   * `minRadius / OUTLINE_CELLS_PER_RADIUS` (3), so a small radius always gets
    * a fine enough raster.
    */
   cellSize?: number;
@@ -375,12 +375,12 @@ export type WellborePath = {
 
 /**
  * Turn trajectory paths (ordered scene-XZ polylines, e.g. from
- * {@link collectTrajectoryRuns}) into a zone boundary.
+ * `collectTrajectoryRuns`) into a zone boundary.
  *
  * The paths are split into spatially separated GROUPS, and each group is
  * rasterized over its own bounding box as a signed distance field, the minimum
  * over its segments of `distanceToSegment - margin`, negative inside the buffer.
- * Each field is contoured at zero with {@link marchingSquares} and smoothed; the
+ * Each field is contoured at zero with `marchingSquares` and smoothed; the
  * rings from every group are then grouped into outer/hole components
  * ({@link ringsToPolygonCoordinates}).
  *

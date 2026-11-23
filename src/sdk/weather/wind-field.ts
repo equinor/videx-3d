@@ -5,14 +5,14 @@ import type { Vec2 } from '../types/common';
  * everywhere. Gusts, from cat's paws of some tens of metres to gust fronts of kilometres, run
  * downwind with it; slicks, calm streaks along the wind where surface films damp the ripples,
  * drift slowly and lie mostly in light winds. What reads the local wind
- * ({@link weatherWindAt}, `weather-wind.glsl`) sees the same field: the sea roughens with it.
+ * (`weatherWindAt`, `weather-wind.glsl`) sees the same field: the sea roughens with it.
  *
  * @group Weather
  */
 export type WeatherGusts = {
   /**
    * how strong: the local wind's spread about the mean, as a share of it (one standard
-   * deviation). Default {@link gustStrengthFor} the wind: about 0.38 in light air, 0.24 in a gale
+   * deviation). Default `gustStrengthFor` the wind: about 0.38 in light air, 0.24 in a gale
    */
   strength?: number;
   /** the largest gusts across, metres; cat's paws are a 25th of it. Default 3000 */
