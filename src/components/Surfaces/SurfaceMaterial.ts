@@ -17,6 +17,13 @@ import { colorRampTexture } from '../../common/color-ramps';
 import { watchSharedTextures } from '../../common/shared-textures';
 import { ContourColorMode } from '../../common/types';
 import { attachOitVariants } from '../../rendering/oit-material';
+import {
+  applySurfaceDetail,
+  createSurfaceDetailUniforms,
+  SURFACE_DETAIL_DEFINES,
+  SurfaceDetail,
+  SurfaceDetailUniforms,
+} from '../../sdk/materials/surface-detail';
 import fragmentShader from './shaders/surface-frag.glsl';
 import vertexShader from './shaders/surface-vert.glsl';
 
@@ -41,6 +48,8 @@ export type SurfaceMaterialParameters = ShaderMaterialParameters &
     normalTexture?: Texture;
     usePrecomputedNormals?: boolean;
     geometryFallback?: boolean;
+    /** procedural relief (see {@link SurfaceMaterial.detail}). Default none */
+    detail?: SurfaceDetail | null;
   };
 
 const shader = {
@@ -77,6 +86,8 @@ const shader = {
       scale: { value: new Vector2() },
       rotation: { value: 0 },
     },
+    // Always present, so a program compiled with SURFACE_DETAIL finds them.
+    createSurfaceDetailUniforms(),
   ]),
   vertexShader,
   fragmentShader,
@@ -97,6 +108,8 @@ export class SurfaceMaterial extends ShaderMaterial {
   flatShading: boolean;
   combine: number;
   normalMapType: number;
+  // null rather than undefined: `setValues` skips (with a warning) a property it reads as undefined.
+  private _detail: SurfaceDetail | null = null;
 
   constructor(parameters: SurfaceMaterialParameters) {
     super();
@@ -235,6 +248,31 @@ export class SurfaceMaterial extends ShaderMaterial {
   set geometryFallback(value) {
     this.defines.USE_GEOMETRY_FALLBACK = !!value;
     this.needsUpdate = true;
+  }
+
+  /**
+   * Procedural relief up close, from the sdk's {@link SurfaceDetail} presets (`'sand'`,
+   * `'shale'`, …, or one with its `strength` and `scale`), as a chunk layer's `detail`:
+   * texture-free and anchored in WORLD space, so a feature keeps its size on every surface
+   * and no normal map has to be set up per surface. `null` for none (the default), which
+   * compiles it out. A new preset recompiles; a new `strength` or `scale` does not.
+   */
+  get detail(): SurfaceDetail | null {
+    return this._detail;
+  }
+
+  set detail(value: SurfaceDetail | null | undefined) {
+    this._detail = value ?? null;
+    const defines = this.defines as Record<string, unknown>;
+    const compiled = () =>
+      SURFACE_DETAIL_DEFINES.filter(key => key in defines).join();
+    const before = compiled();
+    applySurfaceDetail(
+      this.uniforms as unknown as SurfaceDetailUniforms,
+      defines,
+      value ?? undefined,
+    );
+    if (compiled() !== before) this.needsUpdate = true;
   }
 
   // @ignore

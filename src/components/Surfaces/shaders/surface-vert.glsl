@@ -16,6 +16,12 @@ varying float vGeoDepth;
 varying vec3 vGeoNormal;
 #endif
 
+// The procedural detail is anchored in the scene, not in the grid: a feature keeps its size
+// on every surface, and two surfaces share the pattern's scale and phase.
+#ifdef SURFACE_DETAIL
+varying vec3 vWorldPosition;
+#endif
+
 #include <common>
 #include <uv_pars_vertex>
 #include <displacementmap_pars_vertex>
@@ -58,6 +64,10 @@ void main() {
   // `value = referenceDepth - depth`, so the two agree at `depth = -y`.
   vGeoDepth = -transformed.y;
   vGeoNormal = normalize(transformedNormal);
+  #endif
+
+  #ifdef SURFACE_DETAIL
+  vWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
   #endif
 
 	#include <worldpos_vertex>

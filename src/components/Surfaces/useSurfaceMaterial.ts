@@ -6,6 +6,7 @@ import { useGenerator } from '../../hooks/useGenerator';
 import {
   createElevationTexture,
   createPackedNormalTexture,
+  SurfaceDetail,
   SurfaceMeta,
   Vec2,
 } from '../../sdk';
@@ -51,6 +52,11 @@ export type SurfaceMaterialOptions = {
   wireframe?: boolean;
   normalMap?: Texture;
   normalScale?: Vec2;
+  /**
+   * procedural relief up close, a chunk layer's presets (`'sand'`, `'shale'`, …, or
+   * `{ preset, strength, scale }`; see {@link SurfaceMaterial.detail}). Default none
+   */
+  detail?: SurfaceDetail;
   /**
    * Precompute the surface normals into a compact texture instead of deriving
    * them per-fragment from the elevation map. Defaults to `false`.
@@ -118,6 +124,7 @@ export function useSurfaceMaterial(
     wireframe = false,
     normalMap,
     normalScale,
+    detail,
     precomputeNormals = false,
     geometryFallback = false,
     priority = 0,
@@ -205,6 +212,12 @@ export function useSurfaceMaterial(
     (uniforms.contoursColor.value as Color).set(lines.color);
     material.uniformsNeedUpdate = true;
   }, [material, linesKey]);
+
+  // By value, so an inline `{ preset, strength }` does not rewrite it every render.
+  const detailKey = JSON.stringify(detail ?? null);
+  useEffect(() => {
+    material.detail = JSON.parse(detailKey) as SurfaceDetail | null;
+  }, [material, detailKey]);
 
   useEffect(() => {
     material.wireframe = wireframe;

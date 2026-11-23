@@ -12,7 +12,12 @@ import { PointerEvents } from '../../events/interaction-events';
 import { useGenerator } from '../../hooks/useGenerator';
 import { createLayers, LAYERS } from '../../layers/layers';
 import { useRenderingState } from '../../rendering/rendering-state';
-import { SurfaceMeta, unpackBufferGeometry, Vec2 } from '../../sdk';
+import {
+  SurfaceDetail,
+  SurfaceMeta,
+  unpackBufferGeometry,
+  Vec2,
+} from '../../sdk';
 import {
   EventEmitterCallback,
   useEventEmitter,
@@ -84,6 +89,14 @@ export type SurfaceProps = CommonComponentProps &
     normalMap?: Texture;
     normalScale?: Vec2;
     /**
+     * Procedural relief up close, with the chunk layers' presets: `'sand'`, `'silt'`,
+     * `'shale'`, `'carbonate'`, `'salt'`, `'coal'`, `'basement'` or `'seabed'`, or
+     * `{ preset, strength, scale }`. Texture-free and anchored in the scene, so a feature
+     * keeps its size on every surface and nothing is set up per surface, as a normal map
+     * would need. Which preset a surface takes is the host's call. Default none.
+     */
+    detail?: SurfaceDetail;
+    /**
      * Precompute the surface normals into a compact texture instead of deriving
      * them per-fragment from the elevation map. This skips the normal recompute
      * the shader otherwise repeats across the order-independent transparency
@@ -130,6 +143,7 @@ export const Surface = ({
   wireframe = false,
   normalMap,
   normalScale,
+  detail,
   precomputeNormals = false,
   name,
   userData,
@@ -194,6 +208,7 @@ export const Surface = ({
     wireframe,
     normalMap,
     normalScale,
+    detail,
     precomputeNormals,
     priority,
   });

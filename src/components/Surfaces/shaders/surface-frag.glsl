@@ -84,6 +84,13 @@ varying vec3 vBitangent;
 #include ../../../sdk/materials/shaderLib/oit.glsl
 #endif
 
+// Procedural relief (SurfaceMaterial.detail): the chunk layers' presets.
+#ifdef SURFACE_DETAIL
+varying vec3 vWorldPosition;
+#include ../../../sdk/materials/shaderLib/procedural-normal.glsl
+#include ../../../sdk/materials/shaderLib/surface-detail.glsl
+#endif
+
 vec3 adjustColor(vec3 color, float saturation, float brightness) {
   vec3 hsl = rgb2hsl(color);
   hsl.y = hsl.y * saturation;
@@ -247,6 +254,21 @@ void main() {
 	#include <specularmap_fragment>
 	#include <normal_fragment_begin>
 	#include <normal_fragment_maps>
+
+  #ifdef SURFACE_DETAIL
+  {
+    // Only the OIT front layer is detailed: behind it the relief is lost in the blend.
+    #ifdef USE_OIT
+    bool detailShown = !oitInTail();
+    #else
+    bool detailShown = true;
+    #endif
+    // From AFTER <normal_fragment_begin>, which flips a back face's normal. No unit to lay
+    // bedding along (a chunk wall's), so the grain follows depth.
+    diffuseColor.rgb *= surfaceDetail(normal, vWorldPosition, -vViewPosition, 0.0, detailShown);
+  }
+  #endif
+
 	#include <emissivemap_fragment>
 
 	// accumulation

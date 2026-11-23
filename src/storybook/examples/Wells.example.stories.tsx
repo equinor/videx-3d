@@ -2,7 +2,7 @@ import { useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { scaleOrdinal } from 'd3-scale';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { RepeatWrapping, TextureLoader, Vector3 } from 'three';
+import { Vector3 } from 'three';
 import { ContourColorMode } from '../../common/types';
 import { useAnnotationsState } from '../../components/Annotations/annotations-state';
 import { CameraTargetMarker } from '../../components/CameraTargetMarker/CameraTargetMarker';
@@ -41,6 +41,10 @@ import {
   WellboreFormationColumn,
 } from '../../main';
 import { CRS } from '../../sdk/projection/crs';
+import {
+  SURFACE_DETAIL_PRESET_NAMES,
+  SurfaceDetailPreset,
+} from '../../sdk/materials/surface-detail';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import { AnnotationsDecorator } from '../decorators/annotations-decorator.tsx';
 import { Canvas3dDecorator } from '../decorators/canvas-3d-decorator';
@@ -54,10 +58,6 @@ import { useSurfaceMetaDict } from '../hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../hooks/useWellboreHeaders';
 import storyArgs from '../story-args.json';
 //import { PerformanceDecorator } from '../decorators/performance-decorator'
-
-const loader = new TextureLoader();
-const normalMap = loader.load('normal_map.jpg');
-normalMap.anisotropy = 4;
 
 const colorScale = scaleOrdinal([
   'tomato',
@@ -91,6 +91,8 @@ type ExampleProps = {
   opacity: number;
   maxError: number;
   wireframe: boolean;
+  /** the surface's procedural relief (`detail`), or none */
+  surfaceDetail: SurfaceDetailPreset | 'none';
   showContours: boolean;
   contoursInterval: number;
   contoursColorMode: ContourColorMode;
@@ -142,17 +144,6 @@ const Example = (args: ExampleProps) => {
   const surface = useMemo(() => {
     return args.surfaceId ? surfaceMeta[args.surfaceId] : null;
   }, [args.surfaceId, surfaceMeta]);
-
-  useEffect(() => {
-    if (surface) {
-      normalMap.repeat.set(
-        Math.ceil((surface.header.nx * surface.header.xinc) / 500),
-        Math.ceil((surface.header.ny * surface.header.yinc) / 500),
-      );
-      normalMap.wrapS = RepeatWrapping;
-      normalMap.wrapT = RepeatWrapping;
-    }
-  }, [surface]);
 
   useEffect(() => {
     function onKeyPress(event: KeyboardEvent) {
@@ -294,8 +285,9 @@ const Example = (args: ExampleProps) => {
                   color: args.contoursColor,
                 }
               }
-              normalMap={normalMap}
-              normalScale={[0.1, 0.1]}
+              detail={
+                args.surfaceDetail === 'none' ? undefined : args.surfaceDetail
+              }
               doubleSide
               onPointerClick={(e: EventEmitterCallbackEvent) => {
                 if (e.position && e.keys.ctrlKey) {
@@ -544,6 +536,12 @@ const meta = {
         step: 0.01,
       },
     },
+    surfaceDetail: {
+      options: ['none', ...SURFACE_DETAIL_PRESET_NAMES],
+      control: { type: 'select' },
+      description:
+        'The surface\u2019s procedural relief up close (`Surface` `detail`): anchored in the scene, so nothing is set up per surface.',
+    },
     contoursInterval: {
       options: [1, 2, 5, 10, 25, 50, 100, 250, 500],
       control: {
@@ -615,6 +613,7 @@ const commonArgs = {
   opacity: 0.98,
   maxError: 5,
   wireframe: false,
+  surfaceDetail: 'sand' as const,
   showContours: false,
   contoursColorMode: ContourColorMode.darken,
   contoursColorModeFactor: 0.5,

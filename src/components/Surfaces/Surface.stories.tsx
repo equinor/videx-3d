@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useMemo } from 'react';
 import { ContourColorMode } from '../../common/types';
-import { SurfaceMeta, Vec2 } from '../../sdk';
+import {
+  SURFACE_DETAIL_PRESET_NAMES,
+  SurfaceDetailPreset,
+  SurfaceMeta,
+  Vec2,
+} from '../../sdk';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
@@ -38,9 +43,17 @@ type ContourArgs = {
   contourLabelFlip: boolean;
 };
 
+// The story's detail controls, as `Surface`'s `detail`.
+type DetailArgs = {
+  detailPreset: SurfaceDetailPreset | 'none';
+  detailStrength: number;
+  detailScale: number;
+};
+
 type SurfaceStoryProps = Omit<
   SurfaceProps,
   | 'meta'
+  | 'detail'
   | 'contours'
   | 'showContours'
   | 'contoursInterval'
@@ -49,7 +62,8 @@ type SurfaceStoryProps = Omit<
   | 'contoursThickness'
   | 'contoursColor'
 > &
-  ContourArgs & {
+  ContourArgs &
+  DetailArgs & {
     surfaceId: string;
   };
 
@@ -66,6 +80,9 @@ const SurfaceStory = ({
   contourLabelLines,
   contourLabelBaseline,
   contourLabelFlip,
+  detailPreset,
+  detailStrength,
+  detailScale,
   ...props
 }: SurfaceStoryProps) => {
   const surfaceHeaders = useSurfaceMeta();
@@ -87,6 +104,15 @@ const SurfaceStory = ({
             meta={meta}
             rampMin={meta.displayMin + (props.rampMin || 0)}
             rampMax={meta.displayMax + (props.rampMax || 0)}
+            detail={
+              detailPreset === 'none'
+                ? undefined
+                : {
+                    preset: detailPreset,
+                    strength: detailStrength,
+                    scale: detailScale,
+                  }
+            }
             contours={
               contours && {
                 interval: contourInterval,
@@ -120,8 +146,10 @@ export default meta;
 type Story = StoryObj<StoryArgs>;
 
 const CONTOURS = 'Contours';
+const DETAIL = 'Detail';
 const lined = { if: { arg: 'contours' } };
 const labelled = { if: { arg: 'contourLabels' } };
+const detailed = { if: { arg: 'detailPreset', neq: 'none' } };
 
 export const Default: Story = {
   args: {
@@ -149,6 +177,9 @@ export const Default: Story = {
     rampMin: 0,
     rampMax: 0,
     precomputeNormals: false,
+    detailPreset: 'none',
+    detailStrength: 1,
+    detailScale: 1,
   },
   argTypes: {
     surfaceId: {
@@ -287,6 +318,27 @@ export const Default: Story = {
       control: {
         disable: true,
       },
+    },
+    detailPreset: {
+      options: ['none', ...SURFACE_DETAIL_PRESET_NAMES],
+      control: { type: 'select' },
+      description:
+        'Procedural relief up close (`detail`), the chunk layers\u2019 presets: anchored in the scene, so no normal map is set up per surface. Seen within a few hundred metres; zoom in.',
+      table: { category: DETAIL },
+    },
+    detailStrength: {
+      control: { type: 'range', min: 0, max: 3, step: 0.05 },
+      description:
+        'Scales the whole preset (`detail.strength`): 1 as designed.',
+      table: { category: DETAIL },
+      ...detailed,
+    },
+    detailScale: {
+      control: { type: 'range', min: 0.25, max: 8, step: 0.25 },
+      description:
+        'Multiplies every feature size (`detail.scale`), the slopes kept: larger reads from further away.',
+      table: { category: DETAIL },
+      ...detailed,
     },
     rampMin: {
       control: {

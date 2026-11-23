@@ -221,3 +221,20 @@ procedural detail should do the same. In the tail pass it also zeroes the noise 
 `oitInTail()` says the fragment is only seen through the front layer, so only the front
 layer is detailed.
 
+## Example: surfaces
+
+`SurfaceMaterial` (`src/components/Surfaces/SurfaceMaterial.ts`) takes the same presets:
+`<Surface detail="sand" />`, or `detail={{ preset, strength, scale }}`, also through
+`useSurfaceMaterial`'s `detail` option (so a chunk's `topMaterial` can carry it). It
+compiles `surface-detail.glsl` under `SURFACE_DETAIL`, fed the world position from the
+vertex shader and the normal after `<normal_fragment_begin>` and any `normalMap`, so a
+normal map can still be stacked on top. A surface has no unit to lay bedding along, so the
+grain follows depth. A new preset recompiles; `strength` and `scale` are uniforms. It keeps
+the same OIT guards: the depth and occlusion passes return before shading, and only the
+front layer is detailed. The surface is lit with Lambert, without the chunks' specular and
+orientation-dependent ambient; `strength` is the knob if a preset reads too faint on it.
+Measured (2026-11-23, RTX A1000, 1975 × 970, the Surface story's horizon, `sand`, the
+camera orbiting): the surface draw at 250 m 0.85 → 1.95 ms by its own timer query, the
+frame 1.26 → 1.57 ms; from 1 km +2–5 % of the draw, the fine octaves faded out; cold
+compile of its program 71 → 157 ms.
+
