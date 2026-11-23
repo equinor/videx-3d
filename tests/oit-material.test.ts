@@ -116,7 +116,7 @@ const VERT = `void main() {
 
 /**
  * A stock-shaped vertex shader whose position is REBUILT in `<begin_vertex>` from
- * attributes other than `position`, exactly as a chunk cap does (it ships `xz` + `y`
+ * attributes other than `position`, exactly as a zone cap does (it ships `xz` + `y`
  * and no `position` at all).
  */
 const VERT_PROJECT = `attribute vec2 xz;
@@ -152,7 +152,7 @@ describe('oit-material', () => {
         makeShader(FRAG_NO_VIEWPOS, VERT),
       );
 
-      // The shared chunk (which declares oitProcess) is included...
+      // The shared zone (which declares oitProcess) is included...
       expect(shader.fragmentShader).toContain('vec4 oitProcess(vec4 color)');
       // ...and the final color is routed through it before main ends.
       expect(shader.fragmentShader).toContain(
@@ -180,7 +180,7 @@ describe('oit-material', () => {
 
     test('takes vViewPosition from mvPosition when <project_vertex> is present', () => {
       // Regression: the injection used to read the raw `position` attribute, which is
-      // not the rasterised vertex once <begin_vertex> rebuilds it. A chunk cap ships
+      // not the rasterised vertex once <begin_vertex> rebuilds it. A zone cap ships
       // `xz` + `y` and no `position`, so every fragment reported the model origin's
       // depth — a constant that hijacked the min-depth buffer and the front layer.
       const material = makeOitCompatible(new MeshStandardMaterial());

@@ -111,7 +111,7 @@ export function isSyntheticLayer(
 /**
  * Fill a channel for a synthetic layer over the common grid, in scene Y.
  *
- * Shared by `buildStackReference` and the chunk generator's shared-column path so
+ * Shared by `buildStackReference` and the zone generator's shared-column path so
  * the two cannot drift — `offset` in particular depends on the layer above, so the
  * evaluation order is part of the contract.
  *
@@ -248,9 +248,9 @@ export type StackTessellation = {
    * Per CUT outline (see the `cuts` argument of {@link tessellateStack}), one flag
    * per triangle: 1 where that outline contains the triangle.
    *
-   * ⚠️ Containment, NOT a partition — two chunks whose footprints overlap both
+   * ⚠️ Containment, NOT a partition — two zones whose footprints overlap both
    * contain the triangles in the overlap, which is the truth. Which of them draws
-   * there is decided before the build (`documents/chunks.md` §10.1.9); this only
+   * there is decided before the build (`documents/zones.md` §10.1.9); this only
    * reports where the other one reaches. Exact rather than approximate because a
    * cut is CONSTRAINED, so no triangle straddles it.
    */
@@ -398,10 +398,10 @@ export type StackResolveOptions = {
    */
   coverage?: Uint8Array[];
   /**
-   * Per layer: this boundary is a FLUID — a level inside the column rather than a
+   * Per layer: this layer is a FLUID — a level inside the column rather than a
    * horizon: an oil/water contact, a gas cap, the sea.
    *
-   * It is clamped by what lies above it like any other boundary, but it is never
+   * It is clamped by what lies above it like any other layer, but it is never
    * the AUTHORITY: the cascade looks THROUGH it to the nearest solid layer above,
    * and orders everything below it against that one instead.
    *
@@ -459,9 +459,9 @@ export type StackResolveResult = {
 /** Depth statistics for one layer, measured over the shared vertices. */
 export type StackLayerDepth = {
   index: number;
-  /** mean scene Y inside the chunk's footprint */
+  /** mean scene Y inside the zone's footprint */
   meanY: number;
-  /** median scene Y inside the chunk's footprint */
+  /** median scene Y inside the zone's footprint */
   medianY: number;
   minY: number;
   maxY: number;
@@ -515,12 +515,12 @@ export type StackCollapseOptions = {
    */
   ceiling?: boolean[];
   /**
-   * Per layer, one flag per TRIANGLE: 1 where a NEIGHBOURING chunk draws this
-   * layer's cap. Two chunks that meet share a horizon, and drawing it twice means
+   * Per layer, one flag per TRIANGLE: 1 where a NEIGHBOURING zone draws this
+   * layer's cap. Two zones that meet share a horizon, and drawing it twice means
    * two independent tessellations fighting for the same pixels.
    *
    * ⭐ It removes the CAP only. The layer keeps its rim, its walls and its place
-   * in the resolve — the volume below it is this chunk's either way.
+   * in the resolve — the volume below it is this zone's either way.
    */
   capExcluded?: (Uint8Array | null)[];
   /**
@@ -541,7 +541,7 @@ export type StackCollapseOptions = {
    */
   carrier?: number;
   /**
-   * Per layer: this boundary is UNBOUNDED — it covers the whole footprint whatever
+   * Per layer: this layer is UNBOUNDED — it covers the whole footprint whatever
    * stands in its way. The sea, and nothing else.
    *
    * Its own cap is never dropped (the lid of a water body is drawn whether or not
@@ -551,7 +551,7 @@ export type StackCollapseOptions = {
    * water body ends at the shoreline on its own.
    *
    * ⚠️ Distinct from {@link StackResolveOptions.fluid}, which every level shares:
-   * a CONTACT is an ordinary boundary here — it pinches out where it has no room,
+   * a CONTACT is an ordinary layer here — it pinches out where it has no room,
    * exactly as a unit does.
    */
   unbounded?: boolean[];
@@ -598,7 +598,7 @@ export type StackCollapseResult = {
   droppedAbsent: number[];
   /** per layer: dropped because the unit has no thickness there */
   droppedCollapsed: number[];
-  /** per layer: dropped because a neighbouring chunk draws the cap there */
+  /** per layer: dropped because a neighbouring zone draws the cap there */
   droppedExcluded: number[];
 };
 
@@ -616,7 +616,7 @@ const NO_DATA = STACK_NO_DATA;
  *
  * @param layers the stack, shallowest first; `null` for a synthetic layer, which
  *   has no grid of its own to offer
- * @param polygon the mask polygon (scene XZ) the chunk is clipped to
+ * @param polygon the mask polygon (scene XZ) the zone is clipped to
  * @param options see {@link StackReferenceOptions}
  * @returns the common grid, or `null` when the mask misses every layer's grid
  *
@@ -714,7 +714,7 @@ export function planStackReference(
  * their own grids untouched.
  *
  * @param layers the stack, shallowest first
- * @param polygon the mask polygon (scene XZ) the chunk is clipped to
+ * @param polygon the mask polygon (scene XZ) the zone is clipped to
  * @param options see {@link StackReferenceOptions}
  * @returns the common domain, or `null` when the mask misses every layer's grid
  *
@@ -777,7 +777,7 @@ export function buildStackReference(
 export type StackCoverageResult = {
   /**
    * Per-layer share of the footprint that layer has data of its own for, in
-   * `masks` order. A layer at 0 has no local evidence anywhere the chunk is
+   * `masks` order. A layer at 0 has no local evidence anywhere the zone is
    * drawn — not even within `maxFill` of any — which is a different thing from
    * being thin or partly mapped, and the caller is expected to treat it as such.
    */
@@ -792,12 +792,12 @@ export type StackCoverageResult = {
 };
 
 /**
- * Rasterise a chunk's footprint onto the reference grid: 1 where a node is inside
+ * Rasterise a zone's footprint onto the reference grid: 1 where a node is inside
  * the outline.
  *
  * ⚠️ The reference grid is the grid-space BOUNDING BOX of a (usually rotated)
  * outline, so a good part of it is never drawn. Anything that measures a property
- * of the chunk — coverage, or how far a seal has to reach — has to say which nodes
+ * of the zone — coverage, or how far a seal has to reach — has to say which nodes
  * it means, or the answer is set by corners nobody sees.
  *
  * @param reference the common domain from {@link buildStackReference}
@@ -818,7 +818,7 @@ export function rasterizeStackOutline(
   const insidePolygon = makeGridInside(gridPolygons);
   const inside = new Uint8Array(nx * ny);
   // Only the polygon's own grid-space window is tested: on a shared column the
-  // grid spans the whole survey while a chunk may occupy a corner of it, and a
+  // grid spans the whole survey while a zone may occupy a corner of it, and a
   // node outside the bounding box is outside the polygon by definition.
   let minCol = Infinity;
   let maxCol = -Infinity;
@@ -847,12 +847,12 @@ export function rasterizeStackOutline(
 }
 
 /**
- * Every `stride`-th node of the reference grid over a chunk's footprint, with the
+ * Every `stride`-th node of the reference grid over a zone's footprint, with the
  * stride chosen so that about `nodes` of them fall inside the outline — the
  * refinement candidates of a coarse preview build (pass them as
  * `SurfaceStackOptions.candidates`).
  *
- * ⭐ Aligned to the GRID rather than to the outline, so neighbouring chunks'
+ * ⭐ Aligned to the GRID rather than to the outline, so neighbouring zones'
  * previews sample the same nodes.
  *
  * @param reference the common domain from {@link buildStackReference}
@@ -914,27 +914,27 @@ export function previewStackCandidates(
 }
 
 /**
- * Measure how much of a chunk's footprint each layer actually has data for.
+ * Measure how much of a zone's footprint each layer actually has data for.
  *
  * ⚠️ Measured over the REQUESTED outline, and reported per layer rather than as a
  * single number, because the only useful question here is *which* layer is
- * standing on nothing. A chunk-level average hides exactly that.
+ * standing on nothing. A zone-level average hides exactly that.
  *
  * ⭐ Coverage includes bounded fill (see {@link StackReferenceOptions.maxFill}),
  * so a layer mapped just outside the crop still counts as covered — the same
  * threshold that decides everywhere else whether a gap is interpolated across or
  * admitted as invention. A layer measuring 0 therefore has no evidence anywhere
- * the chunk is drawn, not merely none inside it.
+ * the zone is drawn, not merely none inside it.
  *
  * This replaced `trimPolygonToCoverage`, which used the same tally to cut the
  * outline back to the data. Coverage is a per-LAYER property and the outline is
  * the user's crop; conflating them made one layer's survey edge silently reshape
- * the whole chunk (`documents/chunks.md` §10.1.8).
+ * the whole zone (`documents/zones.md` §10.1.8).
  *
  * @param reference the common domain from {@link buildStackReference}
  * @param polygon the requested outline (scene XZ)
  * @param masks the layers' coverage masks, in the reference's grid space (a subset
- *   of `reference.masks` when the chunk draws part of a column)
+ *   of `reference.masks` when the zone draws part of a column)
  *
  * @group Geometries
  */
@@ -1042,9 +1042,9 @@ function coverageRings(masks: Uint8Array[], nx: number): (GridRing[] | null)[] {
  * @param maxError greedy simplification error, in world units of height
  * @param candidates optional precomputed per-layer candidate node indices (see
  *   {@link collectStackCandidates})
- * @param cuts outlines of NEIGHBOURING chunks this one partially overlaps. They do
+ * @param cuts boundaries of NEIGHBOURING zones this one partially overlaps. They do
  *   NOT extend the kept domain — they are constrained so that the part of this
- *   chunk another one also draws is bounded by real mesh edges, and reported per
+ *   zone another one also draws is bounded by real mesh edges, and reported per
  *   triangle in {@link StackTessellation.cuts}.
  * @param constrainCoverage constrain each layer's own DATA boundary as well, so no
  *   triangle straddles a survey edge, and report membership per triangle in
@@ -1145,7 +1145,7 @@ export function stackSceneToGrid(
 
 /**
  * The serial part of {@link tessellateStack}: the constraints, noded once for the
- * whole chunk, cut into tiles; and the joining afterwards.
+ * whole zone, cut into tiles; and the joining afterwards.
  *
  * ⭐ Seams run on half-cell lines, so no grid node and no traced data boundary
  * (which follows cell edges) can lie on one. Each seam is noded with the other
@@ -1185,7 +1185,7 @@ export function planStackTessellation(
   layerRings?.forEach(rings => {
     if (rings && !coverageSets.includes(rings)) coverageSets.push(rings);
   });
-  // The lines are traced over the whole column grid, which a chunk may only
+  // The lines are traced over the whole column grid, which a zone may only
   // occupy a corner of. Kept aligned with `terminations`: the index is the pair.
   const terminationSets: GridPolygon[] = [];
   // ⚠️ Only TRACED points lie exactly at the threshold. A split the noding adds
@@ -1235,7 +1235,7 @@ export function planStackTessellation(
     if (levelLines) levelSets[0] = levelLines.filter(reaches);
   }
 
-  // The chunk's grid window, a cell wider than the outline all round.
+  // The zone's grid window, a cell wider than the outline all round.
   let minCol = Infinity;
   let maxCol = -Infinity;
   let minRow = Infinity;
@@ -1350,7 +1350,7 @@ export function planStackTessellation(
     snapRings(levelSets);
   }
 
-  // ⚠️ A cut rim CROSSES this chunk's rim — that is what makes it a partial
+  // ⚠️ A cut rim CROSSES this zone's rim — that is what makes it a partial
   // overlap. Two crossing constraint edges can only both follow mesh edges if the
   // crossing is itself a vertex, so they are noded first (`nodeGridRings`);
   // without it the triangulator silently drops one of the two boundaries. A data
@@ -1447,15 +1447,15 @@ export function planStackTessellation(
     return k;
   };
 
-  // ⭐ Only the nodes this chunk draws. The candidates are collected over the
-  // whole COLUMN — one grid, shared by every chunk cut from it — so a chunk with a
+  // ⭐ Only the nodes this zone draws. The candidates are collected over the
+  // whole COLUMN — one grid, shared by every zone cut from it — so a zone with a
   // small footprint is otherwise handed the entire field's detail. Dropping the
   // rest cannot change the result: the rim is a CONSTRAINT edge and a flip never
   // crosses one, so a point outside it takes part in no triangle that survives
   // `removeExteriorTriangles`.
   // ⚠️ DILATED BY ONE CELL (the neighbour test), because a node lying exactly ON
   // the rim IS a vertex of kept triangles and the even-odd test is free to call it
-  // outside. The extra band costs a few exterior points; without it the chunk
+  // outside. The extra band costs a few exterior points; without it the zone
   // quietly loses rim detail.
   const insidePolygon = makeGridInside(gridPolygons);
   const nearPolygon = (col: number, row: number) =>
@@ -1538,7 +1538,7 @@ export function planStackTessellation(
   }
 
   // A cut is constrained but never closed: it only has to bound the part of THIS
-  // chunk that a neighbour also draws, so where it leaves the reference grid the
+  // zone that a neighbour also draws, so where it leaves the reference grid the
   // chain simply restarts. A data boundary is enforced the same way.
   // ⭐ Noded rings meet the rim only at vertices, so a segment outside it bounds
   // nothing kept and is skipped; an inside endpoint keeps it in case noding missed one.
@@ -2041,7 +2041,7 @@ export function resolveStackOrder(
   let total = 0;
 
   // The authority is the nearest layer above that is part of the depth order, so
-  // a fluid boundary in the middle of a stack does not break the chain.
+  // a fluid layer in the middle of a stack does not break the chain.
   let authority = -1;
   for (let i = 0; i < heights.length; i++) {
     const fluid = !!options.fluid?.[i];
@@ -2130,13 +2130,13 @@ export function resolveStackOrder(
  * `min` down the channels — no resampling, no coverage boundary to taper across,
  * no reference-depth bookkeeping. The channels are modified **in place**.
  *
- * Resolving here rather than per tessellation is what lets several chunks that cut
+ * Resolving here rather than per tessellation is what lets several zones that cut
  * different footprints out of one column agree with each other: they all sample
  * grids that are already ordered. Bilinear sampling is a convex combination, so an
- * ordering that holds at every node holds at every sample point, and each chunk's
- * own triangles then preserve it — so a chunk stays exactly as correct as one built
+ * ordering that holds at every node holds at every sample point, and each zone's
+ * own triangles then preserve it — so a zone stays exactly as correct as one built
  * with {@link resolveStackOrder}. What it does NOT give is agreement *between* two
- * chunks' independent triangulations, which stay within `2 * maxError` of each
+ * zones' independent triangulations, which stay within `2 * maxError` of each
  * other.
  *
  * @param channels per-layer heights over the common grid (shallowest first)
@@ -2233,7 +2233,7 @@ export type StackCarrier = {
    * geology by a fixed margin. Ignored when `depth` is given.
    *
    * ⚠️ Measured over everything the column covers, so it follows the deepest
-   * point anywhere in the envelope rather than inside any one chunk.
+   * point anywhere in the envelope rather than inside any one zone.
    */
   below?: number;
 };
@@ -2347,7 +2347,7 @@ export function makeStackInsideTest(
  * effective extent, 0 where {@link buildStackReference} filled it in from too far
  * away to count (see {@link StackReferenceOptions.maxFill}).
  *
- * A layer whose survey covers less than the chunk is not "flat" out there — it is
+ * A layer whose survey covers less than the zone is not "flat" out there — it is
  * ABSENT, and saying so explicitly is both more honest and cheaper than inferring
  * it from a fill value after the fact.
  *
@@ -2537,7 +2537,7 @@ export function stackDuplicateFractions(
 }
 
 /**
- * Measure each layer's depth over the shared vertices — i.e. **inside the chunk's
+ * Measure each layer's depth over the shared vertices — i.e. **inside the zone's
  * own footprint**, which is the only place its position in the stack matters.
  *
  * `SurfaceMeta.min` / `.max` describe a surface's whole extent, so ordering by
@@ -2620,8 +2620,8 @@ function makeAbsentTriangleTest(
   options: StackCollapseOptions,
   layer: number,
 ): (t: number, a: number, b: number, c: number) => boolean {
-  // An unbounded boundary is a level rather than a mapped surface: it is present
-  // everywhere the chunk is, so nothing about it is ever missing.
+  // An unbounded layer is a level rather than a mapped surface: it is present
+  // everywhere the zone is, so nothing about it is ever missing.
   if (options.unbounded?.[layer]) return () => false;
   const exact = options.coverageTriangles?.[layer];
   const coverage = exact ? undefined : options.coverage?.[layer];

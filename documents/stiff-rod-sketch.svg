@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="940" height="430" viewBox="0 0 940 430" font-family="monospace" font-size="12">
   <rect width="940" height="430" fill="#12151a"/>
-  <text x="20" y="26" fill="#e0e0e0" font-size="14">Stiff rod around an obstacle zone (plan view, cut on the upper side)</text>
+  <text x="20" y="26" fill="#e0e0e0" font-size="14">Stiff rod around an obstacle's margin band (plan view, cut on the upper side)</text>
 
-  <!-- the zone ring: hull grown by margin, rounded -->
+  <!-- the margin band ring: hull grown by margin, rounded -->
   <polygon points="376,258 412,184 468,168 530,188 552,254 526,316 457,332 394,312" fill="none" stroke="#ba68c8" stroke-width="1" stroke-dasharray="5 4"/>
   <!-- the hull: convex hull of the degenerate stretch -->
   <polygon points="392,258 420,196 470,182 520,200 538,255 515,305 455,318 405,300" fill="#ffd54f" fill-opacity="0.08" stroke="#ffd54f" stroke-width="1.5"/>
@@ -12,11 +12,11 @@
   <path d="M392,260 C420,228 440,300 470,250 S510,222 538,262" fill="none" stroke="#90a4ae" stroke-width="1.25" stroke-dasharray="3 3"/>
   <line x1="538" y1="260" x2="900" y2="260" stroke="#eceff1" stroke-width="1.5"/>
 
-  <!-- runs A and B: the follow at exactly margin, ending where they reach the zone -->
+  <!-- runs A and B: the follow at exactly margin, ending where they reach the margin band -->
   <line x1="40" y1="246" x2="382" y2="246" stroke="#00e5ff" stroke-width="2"/>
   <line x1="549" y1="246" x2="900" y2="246" stroke="#00e5ff" stroke-width="2"/>
 
-  <!-- the ring path: the zone ring between the two run ends, the seed's middle -->
+  <!-- the ring path: the margin band ring between the two run ends, the seed's middle -->
   <polyline points="382,246 412,184 468,168 530,188 549,246" fill="none" stroke="#ba68c8" stroke-width="3.5" stroke-opacity="0.85"/>
   <g fill="#ba68c8">
     <circle cx="412" cy="184" r="2"/><circle cx="468" cy="168" r="2"/><circle cx="530" cy="188" r="2"/>
@@ -46,7 +46,7 @@
   <text x="44" y="278" fill="#eceff1">well (reliable)</text>
   <text x="400" y="352" fill="#90a4ae">well inside the hull: degenerate, never measured</text>
   <text x="560" y="330" fill="#ffd54f">hull</text>
-  <text x="560" y="346" fill="#ba68c8">zone: within margin of the hull, by distance</text>
+  <text x="560" y="346" fill="#ba68c8">margin band: within margin of the hull, by distance</text>
   <text x="250" y="160" fill="#ba68c8">ring path: the seed</text>
   <text x="470" y="150" fill="#ff5252">settled rod: contacts only where it presses</text>
   <text x="100" y="228" fill="#ffffff">two clamped vertices: position + tangent</text>
@@ -55,6 +55,6 @@
   <g fill="#b0bec5">
     <text x="20" y="384">1. seed = ring path (right flank by construction) + max(3, c·φ/θ) atoms of each run, resampled at the atom</text>
     <text x="20" y="400">2. settle: least tension + bending, clamps fixed; every chord kept margin past a separating line from each hull and well piece</text>
-    <text x="20" y="416">3. gate: outside every zone, ≥ margin on every chord, worst turn ≤ 45° — a rod that fails throws</text>
+    <text x="20" y="416">3. gate: outside every margin band, ≥ margin on every chord, worst turn ≤ 45° — a rod that fails throws</text>
   </g>
 </svg>

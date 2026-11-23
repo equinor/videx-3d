@@ -31,7 +31,7 @@ markers dropped on it fly the camera there.
 
 Story: `Components/Html/Minimap` (`src/components/Html/Minimap/Minimap.stories.tsx`). The
 stories with a `Scenery` (`Components/Misc/Scenery`, `Components/Layers/Tracks`, the
-`Spikes/Scenery` ones and `Spikes/Chunks/FieldColumn`) have a `minimap` switch, off by default:
+`Spikes/Scenery` ones and `Spikes/Zones/FieldColumn`) have a `minimap` switch, off by default:
 `SceneryArgsMinimap` (`src/storybook/components/scenery-features.tsx`), the minimap's defaults
 and a camera marker over the ticked demo reliefs, in an `Overlay` of its own, bottom right.
 

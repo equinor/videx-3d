@@ -5,7 +5,7 @@ import {
   PlanarPolygonGeometry,
 } from './planar-geometry';
 import { createPolygonCap } from './polygon-cap';
-import { densifyPolygon } from './surface-chunk';
+import { densifyPolygon } from './surface-zone';
 import { buildIntervalWalls } from './surface-walls';
 
 /**

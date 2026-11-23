@@ -1,0 +1,720 @@
+import { BufferGeometry } from 'three';
+import { Vec2 } from '../types/common';
+import type { StackCapNormalMap } from './cap-normal-map';
+import {
+  Coordinates2D,
+  PlanarPolygonCoordinates,
+  PlanarPolygonGeometry,
+} from './planar-geometry';
+import { StackSectionSource } from './surface-section';
+import type { StackCapNeighbours, StackTiling } from './surface-stack';
+import type { StackTessellationTimings } from './surface-stack-geometry';
+import { buildIntervalWalls } from './surface-walls';
+
+/**
+ * One mesh of a zone, tagged with the layer it came from.
+ *
+ * The index matters because the lists are SPARSE: a layer whose geometry was
+ * dropped contributes no surface, and a wall exists only for a filled interval. So
+ * position in the list says nothing about which layer a mesh belongs to — which is
+ * exactly what a caller needs to know to give it the right material.
+ *
+ * @group Geometries
+ */
+export type SurfaceZoneMesh = {
+  geometry: BufferGeometry;
+  /** index into the caller's layer list (for a wall: the layer ABOVE the interval) */
+  layer: number;
+  /**
+   * The triangles this cap gave up because a layer ABOVE covered them (see
+   * `StackCollapseOptions.peelable`). Present only where it restores something.
+   *
+   * ⭐ Shares `geometry`'s attributes — it is an index and nothing more. Draw it IN
+   * ADDITION to the cap wherever the layer above has been hidden (peeled) or cut
+   * away (sectioned), or the fragments the collapse dropped on the strength of
+   * that layer's cover become holes.
+   */
+  patchIndex?: Uint32Array;
+  /**
+   * Per coarser level of detail (see `SurfaceStackOptions.lod`), the triangles
+   * this cap keeps there — an index over the same attributes, like `patchIndex`.
+   */
+  levels?: Uint32Array[];
+  /**
+   * Per level, the full one first and then each of `levels`: where each
+   * tessellation tile's triangles start in that level's index (in triangles; one
+   * past the end last) — what lets a renderer pick a level per tile.
+   */
+  tileStarts?: Uint32Array[];
+  /** Per coarser level, the patch there (see `patchIndex`); empty where it has none. */
+  patchLevels?: Uint32Array[];
+  /** Per level, the full one first: where each tile starts in the patch there. */
+  patchTileStarts?: Uint32Array[];
+  /**
+   * The cap's normals on the reference grid. A cap that has one carries no
+   * `normal` attribute: it shades from this at every level of detail.
+   */
+  normalMap?: StackCapNormalMap;
+  /**
+   * This surface is the ceiling of a void: it faces UP, so it shows the BASE of
+   * the interval above rather than the cap of `layer`, and should take that
+   * interval's colour. Only ever set on a surface.
+   */
+  ceiling?: boolean;
+  /**
+   * Index into {@link SurfaceZone.horizons} — the BUILD layer this cap is,
+   * which differs from `layer` once a void split a surface in two. Set on a cap
+   * that carries {@link SurfaceZoneMesh.above}.
+   */
+  horizon?: number;
+  /**
+   * Per triangle of the cap (in its index order): the build interval directly
+   * above it, or `CAP_SIDE_OPEN` (see `StackCapNeighbours`). With
+   * {@link SurfaceZoneMesh.below}, what lets a renderer skip the parts of a cap
+   * buried inside the block.
+   */
+  above?: Uint8Array;
+  /** the build interval directly below each triangle; see {@link SurfaceZoneMesh.above} */
+  below?: Uint8Array;
+  /**
+   * The distinct interval ids in `above` and `below` (see
+   * `StackCapNeighbours.units`) — computed in the worker, so a renderer culling
+   * caps does not scan every triangle of every cap when the zone arrives.
+   */
+  units?: number[];
+};
+
+/**
+ * One BUILD layer of a {@link SurfaceZone} — a horizon between two intervals.
+ * Interval `i` lies between horizons `i` and `i + 1`.
+ *
+ * @group Geometries
+ */
+export type SurfaceZoneHorizon = {
+  /** the caller's layer it came from (see {@link AssembleZoneLayer.source}) */
+  layer: number;
+  /** the upper copy of a surface split around a void */
+  ceiling: boolean;
+  /** whether the interval BELOW it is filled */
+  fill: boolean;
+};
+
+/**
+ * One layer's share of {@link SurfaceZoneDiagnostics}. The zone-level totals are
+ * sums, which hide WHICH layer lost its geometry — and that is usually the only
+ * question worth asking when a zone comes out with holes in it.
+ *
+ * @group Geometries
+ */
+export type SurfaceZoneLayerDiagnostics = {
+  /** position in the zone's flat layer order (0 = the zone's own top) */
+  index: number;
+  /** the surface id, so a row can be tied back to a name (null when synthetic) */
+  id: string | null;
+  /**
+   * Share of the REQUESTED footprint where this layer has data of its own (0..1).
+   *
+   * Measured before the outline is cut back to the data (see
+   * `trimPolygonToCoverage`), so that a zone which shrank can be traced to the
+   * layer that shrank it. Measuring it after the cut would report 1 for every
+   * layer of every zone, by construction.
+   */
+  coverage: number;
+  /**
+   * The part of `coverage` that is bounded FILL rather than data (0..1) — see
+   * `ZoneResolveOptions.maxFill`. Coverage bought by bridging a hole is a
+   * plausible extrapolation, and a layer whose coverage is mostly this is
+   * standing on very little.
+   */
+  filled: number;
+  /**
+   * Share of the REQUESTED footprint where this layer has no data at all, and its
+   * height was therefore INFERRED by the seal (`1 - coverage`).
+   *
+   * ⚠️ This is invented geometry. A layer with a large share here is mostly a
+   * construction and should be read as one.
+   */
+  inferred: number;
+  /**
+   * This layer has no data ANYWHERE the zone is drawn (not even within
+   * `maxFill` of any), so it was VOIDED: no cap, and neither interval it bounds
+   * is filled. Extending it from a survey that exists only outside the crop would
+   * draw a horizon with no local evidence at all.
+   */
+  voided: boolean;
+  /** triangles actually drawn for this layer */
+  triangles: number;
+  /** triangles dropped because the unit is not present (no data / truncated) */
+  droppedAbsent: number;
+  /** triangles dropped because the unit has no thickness there */
+  droppedCollapsed: number;
+  /**
+   * Triangles this layer's cap gave up to a NEIGHBOURING zone that draws the
+   * same horizon where their footprints overlap (see `resolveSeam`).
+   */
+  droppedExcluded: number;
+  /**
+   * Whether this layer's cap is drawn at all. `false` means a neighbouring zone
+   * contains this whole footprint and draws that horizon instead — which is the
+   * one thing that makes a layer vanish for a reason outside this zone, so it is
+   * reported rather than left to be guessed.
+   */
+  capped: boolean;
+  /**
+   * Share of its jointly-covered vertices coincident with the layer above,
+   * measured BEFORE the resolve (~1 = a duplicated horizon).
+   */
+  duplicate: number;
+};
+
+/**
+ * What the depth-order resolve found in a zone's stack. Reported so a caller can
+ * SEE that it handed the layers over in the wrong order — the failure mode is
+ * otherwise invisible, because the resolve dutifully makes any order consistent.
+ *
+ * A pair inverted over a large share of the footprint is almost always an ordering
+ * problem, not geology: order by stratigraphic age, not by depth
+ * (`SurfaceMeta.min`/`.max` describe a surface's whole extent, not its position
+ * inside this zone).
+ *
+ * @group Geometries
+ */
+export type SurfaceZoneDiagnostics = {
+  /**
+   * Vertices where a layer sat above the one over it, summed over adjacent pairs
+   * and measured BEFORE the order was enforced.
+   *
+   * ⚠️ On a shared column these are counted on the column's grid, over the whole
+   * column envelope rather than this zone's footprint — the resolve happens once,
+   * for everyone, before any zone exists. They still answer the question the
+   * diagnostic is for ("was the input in stratigraphic order?"), but they are not
+   * a per-zone quantity and will read the same for every zone of a column.
+   */
+  crossings: number;
+  /** the same, counted only where BOTH layers have data of their own */
+  crossingsCovered: number;
+  /** per-layer breakdown, in the zone's flat layer order */
+  layers: SurfaceZoneLayerDiagnostics[];
+  /**
+   * Rim vertices the tessellation dropped (see `StackTessellation.rimDropped`).
+   * Non-zero means the wall and the surface disagree about where the zone ends.
+   */
+  rimDropped: number;
+  /**
+   * Constraint edges the triangulator could not enforce (see
+   * `StackTessellation.constraintFailures`). ⚠️ Should be 0 — non-zero means a rim
+   * or a neighbour's cut does not follow mesh edges, so a boundary drawn from it
+   * is a claim the mesh does not support.
+   */
+  constraintFailures: number;
+  /**
+   * Vertices the constrained data boundaries added (see
+   * `ZoneResolveOptions.constrainCoverage`). 0 when it is off, or when every
+   * layer is fully mapped. This is what the exact drop rule costs, in a
+   * tessellation the whole stack shares.
+   */
+  coverageRingPoints: number;
+  /**
+   * Vertices of the constrained termination lines (see
+   * `ZoneResolveOptions.constrainTerminations`). 0 when it is off.
+   */
+  terminationRingPoints: number;
+  /** termination lines left out as flicker (see `TERMINATION_MIN_VERTICES`) */
+  terminationLinesTiny: number;
+  /**
+   * Termination lines left out because their trace crosses itself. Should be 0;
+   * where it is not, the pinch-out falls back to the per-corner rule.
+   */
+  terminationLinesDiscarded: number;
+  /**
+   * Boundary walks the wall tracer discarded as degenerate, and walks that failed
+   * to close. Both should be 0: a discarded walk leaves a (small) piece of an
+   * interval unwalled, and an unclosed one is sealed with an edge that does not
+   * exist — either way, a gap or a phantom face in a wall.
+   */
+  wallRingsDropped: number;
+  /** see {@link SurfaceZoneDiagnostics.wallRingsDropped} */
+  wallRingsOpen: number;
+  /**
+   * The tallest wall point away from the rim, in world units. A pinch-out's is at
+   * most the collapse threshold; anything taller is a data edge (unsealed), or a
+   * termination drawn on the wrong side of its line.
+   */
+  maxInteriorWall: number;
+  /** deepest interpenetration found, in world units */
+  maxOverlap: number;
+  /** largest share of a layer coincident with the one above it (~1 = duplicated horizon) */
+  maxDuplicate: number;
+  /** triangles dropped because the unit is not present (no data / truncated) */
+  trianglesAbsent: number;
+  /** triangles dropped because the unit has no thickness there */
+  trianglesCollapsed: number;
+  /**
+   * Vertices where the TOP layer was truncated away against the zone ABOVE, but
+   * kept anyway because that zone's boundary does not reach them — nothing would
+   * have stood in for the dropped surface there.
+   */
+  topKept: number;
+  /** whether the column was built once and shared by every zone cut from it */
+  sharedStack: boolean;
+  /** layers in the shared column (0 when the zone built on its own) */
+  stackLayers: number;
+  /** nodes of the common reference grid */
+  referenceNodes: number;
+  /**
+   * Bytes the shared column KEEPS resident between builds — one channel per layer
+   * over the whole reference grid, plus the masks, the truncation masks and the
+   * seal's inferred weights. 0 when the zone built on its own.
+   *
+   * ⭐ By far the largest allocation the library makes, and it is keyed to the
+   * column rather than to a component, so nothing collects it until
+   * `releaseStackResources` is invoked (`ZoneStack` does that on unmount).
+   */
+  columnBytes: number;
+  /**
+   * Vertices of the SHARED tessellation — ⭐ the number every phase after it
+   * scales with, since each layer carries a full copy of it. Driven by
+   * `maxError` and by the reference grid's own resolution.
+   */
+  vertices: number;
+  /**
+   * Triangles of the shared tessellation, before any layer's drops. A layer's own
+   * `triangles` against this is what it KEPT.
+   *
+   * ⚠️ A layer is sampled, resolved and collapsed at this full size and only then
+   * dropped, so a layer keeping little still cost the same as one keeping all of
+   * it.
+   */
+  sharedTriangles: number;
+  /**
+   * Source grid cells per reference cell. `1` is full resolution; anything higher
+   * means the common grid was decimated to stay inside the node budget, which
+   * coarsens the coverage masks along with everything else.
+   */
+  referenceStep: number;
+  /**
+   * Fetching every layer's grid (shared across the column).
+   *
+   * ⚠️ OVERLAPS {@link SurfaceZoneDiagnostics.referenceMs}: a layer is resampled
+   * as soon as its own grid lands, so this runs to the last grid's arrival and
+   * `referenceMs` covers only what is left afterwards. They do not sum.
+   */
+  fetchMs: number;
+  /** resampling the column onto the common grid (shared, overlaps the fetch) */
+  referenceMs: number;
+  /** sealing (or splitting) the column's unmapped regions (shared) */
+  sealMs: number;
+  /** making the column monotone on the grid (shared) */
+  stackResolveMs: number;
+  /** per-layer refinement, wall clock across the worker pool (shared) */
+  refineMs: number;
+  /** workers the refinement ran on (0 = serial fallback, so `refineMs` is CPU time) */
+  refinePool: number;
+  /**
+   * This zone's own preparation of the shared grid: its channel view, the
+   * per-layer coverage tally and the void expansion. Paid per zone even though
+   * the grid is shared, so it is worth watching against the shared phases.
+   */
+  prepMs: number;
+  /** this zone's own tessellation */
+  tessellateMs: number;
+  /** where `tessellateMs` went */
+  tessellation: StackTessellationTimings;
+  /** per coarser level of detail, when built (see `SurfaceStackOptions.lod`) */
+  lod?: {
+    error: number;
+    /** triangles in the level's shared tessellation */
+    sharedTriangles: number;
+    /** triangles every cap keeps there, summed */
+    triangles: number;
+    /** bytes of the caps' level indices */
+    bytes: number;
+    constraintFailures: number;
+  }[];
+  /** vertices only the coarser levels use (where their thinned lines cross) */
+  lodVertices?: number;
+  /** sampling every layer's height at the shared vertices */
+  sampleMs: number;
+  /** the per-vertex monotone resolve (0 when the column's grid resolve stands in) */
+  vertexResolveMs: number;
+  /** classifying the triangles each layer keeps */
+  collapseMs: number;
+  /** building the per-layer surface geometries */
+  geometryMs: number;
+  /** tracing and building the interval walls */
+  wallMs: number;
+};
+
+/** Per-phase build timings (ms) and counts for a {@link SurfaceZone}. */
+export type SurfaceZoneMetrics = {
+  densifyMs: number;
+  /** total surface-clip time across all layers */
+  clipMs: number;
+  /** total rim-sampling time across all layers */
+  rimMs: number;
+  wallsMs: number;
+  totalMs: number;
+  layers: number;
+  surfaces: number;
+  walls: number;
+  /** total triangles (surfaces + walls) */
+  triangles: number;
+  /**
+   * Of which, the side walls'. Traced per interval on the shared tessellation,
+   * so a unit that terminates inside the zone adds rings here — worth watching
+   * against the surface count.
+   */
+  wallTriangles: number;
+  /** shared rim vertex count (all rings) */
+  rimPoints: number;
+  /**
+   * What the depth-order resolve found, when the build ran one (the shared
+   * tessellation path). See {@link SurfaceZoneDiagnostics}.
+   */
+  diagnostics?: SurfaceZoneDiagnostics;
+  /** how the tessellation was tiled, when it was */
+  tiling?: StackTiling;
+  /**
+   * Per level of detail, the full one first, the height error it was simplified
+   * to — when the build made coarser levels (see {@link SurfaceZoneMesh.levels}).
+   */
+  lodErrors?: number[];
+};
+
+/**
+ * The result of a zone build: the zone's layers in stratigraphic order, all in
+ * one common scene frame.
+ *
+ * Surfaces and walls are FLAT lists rather than groups. A zone is a run of
+ * horizons, and the wall between two of them exists or does not — whether a
+ * given interval is filled is a property of that interval
+ * ({@link AssembleZoneLayer.fill}), not of a grouping imposed on the layers.
+ *
+ * @group Geometries
+ */
+export type SurfaceZone = {
+  /** one per DRAWN layer, tagged with its layer index */
+  surfaces: SurfaceZoneMesh[];
+  /** one per FILLED interval, tagged with the layer above it */
+  walls: SurfaceZoneMesh[];
+  /**
+   * The channels a clip plane's cut face is built from, when the build was asked
+   * for them (see `SurfaceStackOptions.section`). Present only then — it is the
+   * one part of a zone that is data rather than geometry.
+   */
+  section?: StackSectionSource;
+  /**
+   * Every build layer, in depth order, when the caps carry neighbours (see
+   * {@link SurfaceZoneMesh.above}) — what an interval id there resolves to.
+   */
+  horizons?: SurfaceZoneHorizon[];
+  metrics: SurfaceZoneMetrics;
+};
+
+/**
+ * Densify a polygon's rings in world XZ so no edge is longer than `spacing`,
+ * returning a new polygon. Used to give a shared rim enough resolution to follow
+ * the relief. `spacing <= 0` returns the polygon unchanged.
+ *
+ * @group Geometries
+ */
+export function densifyPolygon(
+  polygon: PlanarPolygonGeometry,
+  spacing: number,
+): PlanarPolygonGeometry {
+  if (spacing <= 0) return polygon;
+  const comps = polygon.coordinates as PlanarPolygonCoordinates;
+  const out: PlanarPolygonCoordinates = comps.map(rings =>
+    rings.map(ring => densifyRing(ring, spacing)),
+  );
+  return new PlanarPolygonGeometry(out);
+}
+
+function densifyRing(ring: Coordinates2D, spacing: number): Coordinates2D {
+  const n = ring.length;
+  if (n < 2) return ring;
+  const closed = ring[0][0] === ring[n - 1][0] && ring[0][1] === ring[n - 1][1];
+  const m = closed ? n - 1 : n;
+  const out: Vec2[] = [];
+  for (let i = 0; i < m; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % m];
+    out.push([a[0], a[1]]);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy);
+    const steps = Math.floor(len / spacing);
+    for (let s = 1; s < steps; s++) {
+      const t = (s * spacing) / len;
+      out.push([a[0] + dx * t, a[1] + dy * t]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Build a "surface zone": one or more solid layered blocks (groups) of depth
+ * surfaces clipped to a shared mask polygon and stitched together with coloured
+ * side walls. Each interval's wall takes the colour of the surface above it.
+ *
+ * Layers are supplied as a 2D array: each inner array is one **group** whose top
+ * is its first (shallowest) surface and whose base is its last (deepest). Walls
+ * are built only for the intervals **within** a group, so adjacent groups are
+ * separated by an empty gap (surfaces overlapping/crossing across a group boundary
+ * is a special case left for later). The library is intentionally unopinionated
+ * about how layers are grouped — that is the caller's decision.
+ *
+ * Because the layers generally come from **different grids** (resolution,
+ * rotation, origin), the walls need a single rim shared vertex-for-vertex by every
+ * layer. The mask polygon is densified in world XZ into that canonical rim; each
+ * surface is clipped to it **without draping** so its boundary lands on exactly
+ * those rim points (at the layer's own depth), and every layer is baked into one
+ * common scene frame. The walls then connect consecutive layers' rims directly.
+ *
+ * Holes are filled (each layer spans the full polygon) so the rims stay aligned.
+ * Where surfaces cross within a group, the corresponding wall segment flips; the
+ * caller should render walls double-sided (or enable the clamp/pinch-out option,
+ * which cascades within each group).
+ *
+ * @param groups groups of layers; within each group, top (shallowest) to bottom
+ * @param options see {@link SurfaceZoneOptions}
+ *
+ * @group Geometries
+ */
+/**
+ * Densify a zone's mask polygon into the shared rim used by every layer, returning
+ * both the densified polygon (for clipping) and its flattened rings (for rim
+ * sampling / wall building).
+ *
+ * @group Geometries
+ */
+export function densifyZoneRim(
+  polygon: PlanarPolygonGeometry,
+  rimSpacing: number,
+): { densified: PlanarPolygonGeometry; rings: Coordinates2D[] } {
+  const densified = densifyPolygon(polygon, rimSpacing);
+  // All rings (across components) of the shared rim, in world XZ.
+  const rings = (densified.coordinates as PlanarPolygonCoordinates).flat();
+  return { densified, rings };
+}
+
+/** A clipped layer as consumed by {@link assembleZone}. */
+export type AssembleZoneLayer = {
+  geometry: BufferGeometry | null;
+  rimY: number[][];
+  /**
+   * Draw the interval BELOW this layer (a wall down to the next one). `false` (the
+   * default) leaves it open — which is how a gap between groups, and a surface with
+   * no volume at all, are both expressed.
+   */
+  fill?: boolean;
+  /**
+   * The interval's wall, already built (see `buildStackWalls`) — traced around the
+   * area the interval actually occupies rather than round the whole rim, so it
+   * also stops where the unit does.
+   *
+   * Present at all (including `null`, meaning "there is no wall there") = use it.
+   * ABSENT = fall back to a wall around the full rim, which is all the per-layer
+   * clip path can offer, having no shared topology to trace.
+   */
+  wall?: BufferGeometry | null;
+  /** see {@link SurfaceZoneMesh.patchIndex} */
+  patchIndex?: Uint32Array | null;
+  /** see {@link SurfaceZoneMesh.levels} */
+  levels?: Uint32Array[] | null;
+  /** see {@link SurfaceZoneMesh.tileStarts} */
+  tileStarts?: Uint32Array[] | null;
+  /** see {@link SurfaceZoneMesh.patchLevels} */
+  patchLevels?: Uint32Array[] | null;
+  /** see {@link SurfaceZoneMesh.patchTileStarts} */
+  patchTileStarts?: Uint32Array[] | null;
+  /** see {@link SurfaceZoneMesh.normalMap} */
+  normalMap?: StackCapNormalMap | null;
+  /**
+   * Index of the layer this one came FROM, when the build expanded the caller's
+   * list (a surface split around a void becomes two layers). Meshes are tagged
+   * with this, so materials keep resolving against the caller's own layers.
+   * Defaults to the position in the array.
+   */
+  source?: number;
+  /**
+   * This surface faces UP into a void: it is the BASE of the interval above it,
+   * not the cap of its own layer, so it should be coloured as the unit above.
+   * Set on the upper copy of a surface split around a void.
+   */
+  ceiling?: boolean;
+  /**
+   * The cap's neighbours (see `SurfaceStackBuild.capNeighbours`). When ANY layer
+   * has them, the zone gets {@link SurfaceZone.horizons}.
+   */
+  neighbours?: StackCapNeighbours | null;
+};
+
+/** Options for {@link assembleZone} (the non-clip build parameters). */
+export type AssembleZoneOptions = {
+  /** carried into the metrics (see {@link SurfaceZoneDiagnostics}) */
+  diagnostics?: SurfaceZoneDiagnostics;
+  /** carried through to the zone (see {@link SurfaceZone.section}) */
+  section?: StackSectionSource;
+  /** carried into the metrics */
+  tiling?: StackTiling;
+  /** carried into the metrics (see {@link SurfaceZoneMetrics.lodErrors}) */
+  lodErrors?: number[];
+};
+
+/** Timings threaded into {@link assembleZone} for the returned metrics. */
+export type ZoneBuildTimings = {
+  /** `performance.now()` at the start of the whole build (for `totalMs`) */
+  t0: number;
+  densifyMs: number;
+  /** aggregate clip time across all layers */
+  clipMs: number;
+  /** aggregate rim-sampling time across all layers */
+  rimMs: number;
+};
+
+/**
+ * The {@link SurfaceZoneMesh} of build layer `i`, or `null` when it draws no cap.
+ * What {@link assembleZone} emits per layer, for a caller handing caps on one at a
+ * time.
+ *
+ * @group Geometries
+ */
+export function zoneSurfaceMesh(
+  layer: AssembleZoneLayer,
+  i: number,
+): SurfaceZoneMesh | null {
+  if (!layer.geometry) return null;
+  const neighbours = layer.neighbours ?? undefined;
+  return {
+    geometry: layer.geometry,
+    layer: layer.source ?? i,
+    ceiling: layer.ceiling,
+    patchIndex: layer.patchIndex ?? undefined,
+    // Its own copies: layers keeping a whole level share one array, and a
+    // transferred buffer can only be listed once.
+    ...(layer.levels ? { levels: layer.levels.map(l => l.slice()) } : {}),
+    ...(layer.tileStarts
+      ? { tileStarts: layer.tileStarts.map(s => s.slice()) }
+      : {}),
+    ...(layer.patchLevels && layer.patchTileStarts
+      ? {
+          patchLevels: layer.patchLevels.map(l => l.slice()),
+          patchTileStarts: layer.patchTileStarts.map(s => s.slice()),
+        }
+      : {}),
+    ...(layer.normalMap ? { normalMap: layer.normalMap } : {}),
+    ...(neighbours
+      ? {
+          horizon: i,
+          above: neighbours.above,
+          below: neighbours.below,
+          units: neighbours.units,
+        }
+      : {}),
+  };
+}
+
+/**
+ * The side walls of a zone: one mesh per FILLED interval, tagged with the layer
+ * above it (see {@link assembleZone}).
+ *
+ * @group Geometries
+ */
+export function zoneWallMeshes(
+  layers: AssembleZoneLayer[],
+  rings: Coordinates2D[],
+): SurfaceZoneMesh[] {
+  const walls: SurfaceZoneMesh[] = [];
+  for (let i = 0; i + 1 < layers.length; i++) {
+    if (!layers[i].fill) continue;
+    const geometry =
+      'wall' in layers[i]
+        ? layers[i].wall
+        : buildIntervalWalls(rings, layers[i].rimY, layers[i + 1].rimY);
+    if (geometry) walls.push({ geometry, layer: layers[i].source ?? i });
+  }
+  return walls;
+}
+
+/**
+ * {@link SurfaceZone.horizons} for a zone built from `layers`.
+ *
+ * @group Geometries
+ */
+export function zoneHorizons(
+  layers: AssembleZoneLayer[],
+): SurfaceZoneHorizon[] | undefined {
+  return layers.some(layer => layer.neighbours)
+    ? layers.map((layer, i) => ({
+        layer: layer.source ?? i,
+        ceiling: !!layer.ceiling,
+        fill: !!layer.fill,
+      }))
+    : undefined;
+}
+
+/**
+ * Assemble a {@link SurfaceZone} from already-built layers: the coloured side
+ * walls and the metrics.
+ *
+ * @group Geometries
+ */
+export function assembleZone(
+  layers: AssembleZoneLayer[],
+  rings: Coordinates2D[],
+  options: AssembleZoneOptions,
+  timings: ZoneBuildTimings,
+): SurfaceZone {
+  const surfaces: SurfaceZoneMesh[] = [];
+  let surfaceTris = 0;
+
+  layers.forEach((layer, i) => {
+    const mesh = zoneSurfaceMesh(layer, i);
+    if (!mesh) return;
+    surfaces.push(mesh);
+    const idx = mesh.geometry.getIndex();
+    if (idx) surfaceTris += idx.count / 3;
+  });
+
+  // An interval the caller did not fill is simply left open — that is how both a
+  // gap between groups and a surface with no volume are expressed.
+  const w0 = performance.now();
+  const walls = zoneWallMeshes(layers, rings);
+  let wallTris = 0;
+  for (const wall of walls) {
+    const idx = wall.geometry.getIndex();
+    if (idx) wallTris += idx.count / 3;
+  }
+  const wallsMs = performance.now() - w0;
+
+  const metrics: SurfaceZoneMetrics = {
+    densifyMs: timings.densifyMs,
+    clipMs: timings.clipMs,
+    rimMs: timings.rimMs,
+    wallsMs,
+    totalMs: performance.now() - timings.t0,
+    layers: layers.length,
+    surfaces: surfaces.length,
+    walls: walls.length,
+    triangles: Math.round(surfaceTris + wallTris),
+    wallTriangles: Math.round(wallTris),
+    rimPoints: rings.reduce((a, r) => a + r.length, 0),
+    diagnostics: options.diagnostics,
+    tiling: options.tiling,
+    lodErrors: options.lodErrors,
+  };
+
+  return {
+    surfaces,
+    walls,
+    section: options.section
+      ? {
+          ...options.section,
+          layers: layers.map((layer, i) => layer.source ?? i),
+        }
+      : undefined,
+    horizons: zoneHorizons(layers),
+    metrics,
+  };
+}

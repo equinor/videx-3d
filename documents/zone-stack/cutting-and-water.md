@@ -1,0 +1,649 @@
+# Cutting, water and immersion
+
+Opening the block to look inside, the sea on top of it, and what happens when the
+camera goes in.
+
+- [Two ways to cut](#two-ways-to-cut)
+- [The section plane](#the-section-plane)
+- [The cut face](#the-cut-face)
+- [Keeping a unit whole](#keeping-a-unit-whole)
+- [Restoring what the collapse dropped](#restoring-what-the-collapse-dropped)
+- [The fence](#the-fence)
+- [The sea](#the-sea)
+- [Immersion fog](#immersion-fog)
+
+---
+
+## Two ways to cut
+
+```tsx
+<ZoneStack section={{ cameraDistance: 2000, lockToTarget: true }}>
+<ZoneStack fence={{ wellbore: selectedId, side: 'auto', margin: 30 }}>
+```
+
+| | `section` | `fence` |
+|---|-----------|---------|
+| Shape | one plane | a vertical surface swept along a wellbore path |
+| Driven by | a `Plane`, or the camera | a wellbore id |
+| Shader input | `vec4(normal, constant)` | a signed field texture + segment index |
+| Changing it | free (a uniform write) | free (a texture swap) |
+| Cut face | swept per prism cell | a ribbon along the curve |
+
+They are **mutually exclusive** — both cut, and two cuts at once say less than one.
+If both are enabled the fence wins, and `ZoneStack` warns.
+
+Two things they share:
+
+> ⚠️⚠️ **The cut lives in `ZoneMaterial`'s shader, not in the renderer.** It cuts
+> the zones and, optionally, the sea — and *nothing else*. Wellbores, vessels,
+> facilities, pipelines, annotations and host meshes all keep drawing whole. That
+> is deliberate (a renderer-wide clip would slice the well you are trying to look
+> at), but it means an object resting on the sea bed stays put while the ground
+> under it is cut away.
+
+> ⚠️ **The cut payload is a build input; `enabled` is not.** The cut face is built
+> from channels the *build* has to emit (`SurfaceZoneSpec.section`). By default
+> the stack asks for them up front (`ZoneStackProps.prepareCuts`), so adding or
+> removing a section or fence rebuilds nothing. With `prepareCuts: false` they are
+> asked for by a cut's presence, and adding or removing one rebuilds every zone.
+> Toggling `enabled` is always free.
+
+---
+
+## The section plane
+
+```ts
+type ZoneSection = {
+  plane?: Plane;              // object space; points where distanceToPoint > 0 are removed
+  cameraDistance?: number;    // lock the plane in front of the camera
+  lockToTarget?: boolean;     // …or on the orbit pivot
+  vertical?: boolean;         // keep it upright (default true)
+  enabled?: boolean;          // default true
+  offset?: number;            // default DEFAULT_SECTION_OFFSET = -0.05
+  water?: boolean;            // cut the sea too. Default FALSE
+  carrier?: boolean;          // cut the floor too. Default FALSE
+  debug?: boolean;            // draw where the plane is
+};
+```
+
+### Object space, not world
+
+The plane is tested against the **raw vertex position** in the stack's own frame.
+A stack may carry a vertical exaggeration (`scale={[1, k, 1]}`), and a world-space
+test would disagree with the object-space geometry the cut face is built from.
+A camera-locked plane is therefore built in world space and then transformed into
+the stack's frame through `stackFrame.matrixWorld.invert()`.
+
+### Camera locking
+
+> ⭐ Moving the camera *is* the interaction. It needs no gizmo, no pointer
+> handling and no widget to hit.
+
+- `cameraDistance` puts the plane that many metres in front of the eye, facing it,
+  so everything nearer is cut away and **dollying drives the cut through the
+  block**.
+- `lockToTarget` anchors it on the camera **target** instead, so orbiting swings
+  the cut about the pivot and dollying does *not* move it — you can zoom right into
+  the cut face to read it without the cut running away. Flying to a point puts the
+  cut on that point.
+  ⚠️ The target comes from `state.controls`, so this needs controls with
+  `makeDefault` that expose one (`CameraControls`, `OrbitControls`). Without them it
+  falls back to `cameraDistance`, silently.
+- `vertical` (default **true**) takes the camera's heading but never its dip. A
+  section is conventionally drawn on a vertical plane, and a cut that tilts with the
+  camera makes the block appear to shear as you orbit — the geology stops being
+  readable, which is the whole point of the view.
+  ⚠️ Looking straight down leaves no heading in the view direction, so the code
+  falls back to what is "up" on screen; otherwise the plane snaps as the view passes
+  through vertical.
+
+### How it reaches the shader
+
+`ZoneStack` writes one shared `IUniform<Vector4>` once per frame in `useFrame`,
+registered on the stack so it runs **after** any child's own `useFrame` (child
+effects subscribe first) — a caller animating the plane from inside the stack is
+therefore read in the same frame it wrote.
+
+> ⭐ Every `ZoneMaterial` of every zone is handed the **same uniform object**, and
+> a `ShaderMaterial`'s OIT variants share their `uniforms` by reference. One write
+> per frame reaches every material in all four passes, with no React render and no
+> material rebuild. `Plane` with a zero normal and `w = -1` is the disabled state.
+
+Mutating `section.plane` directly therefore animates the section at no render cost.
+
+### The offset sign
+
+`DEFAULT_SECTION_OFFSET` is **−0.05**: the face sits slightly **proud** of the cut.
+
+> ⚠️⚠️ The obvious sign is wrong, and the symptom is subtle. The block survives
+> right up to the plane (`if (dist > 0.0) discard`), so a face nudged into the
+> **kept** half leaves a five-centimetre slab of block standing *in front* of the
+> face that is meant to close it — slivers of near-horizontal caps seen edge-on,
+> the brightest thing in the view, appearing as bright specks along the top of every
+> band and getting worse as you tilt down or zoom in.
+>
+> Proud of it, the faces tile the whole cross-section nearer than anything they
+> close, and nothing can show through. Adjacent intervals' faces meet exactly, so
+> their union is complete.
+>
+> `polygonOffset` is **not** the tool here (and log depth forbids it anyway): this
+> is a knife edge — two surfaces meeting along a line — not two coplanar ones.
+
+### Why the sea and the floor are not cut by default
+
+> ⭐ The sea and the base plate **frame** the block. An intact water surface over an
+> opened column reads immediately as *a field seen in section*; a sea cut in half
+> alongside it mostly reads as *missing*. Same for the floor: an intact base plate
+> is what stops the cut reading as a hole.
+
+Turn `water: true` on when the water column itself is the subject. ⚠️ It rebuilds
+the two ocean materials (the cut is a define).
+
+`StackWater.keepBed` keeps the sea bed's **cap** whole under a cut that takes the
+sea, while the rock below it is cut as usual — the sea floor stays as a sheet over
+the opened block, which is what a subsea layout is placed on. Pair it with
+`capOpacity` on the bed layer to see the section through it.
+
+---
+
+## The cut face
+
+Without a filled face, a cut block is a hollow shell. `useZoneSection` builds
+**one face per filled interval**, every frame, from the channels the build emitted.
+
+```ts
+type StackSectionSource = {
+  positionsXZ: Float32Array;
+  indices: Uint32Array;
+  heights: Float32Array[];
+  intervals: Uint8Array[];     // per interval: bit-packed triangle membership
+  inferred?: Float32Array[];
+  layers?: number[];           // build interval → caller's layer
+};
+```
+
+> ⭐ **Section the CHANNELS, not the drawn meshes.** An interval is a stack of
+> triangular **prisms** — a triangle of the tessellation, its top heights and its
+> bottom heights. Cutting a prism with a plane is a small, exact operation, and the
+> faces of adjacent intervals meet exactly because they share the same triangles
+> and the same heights.
+
+> ⚠️ That only holds if no interval in between is skipped. A unit thinner than the
+> collapse threshold is dropped from the caps and walls, but its membership still
+> marks it wherever it is not zero, so the cut draws its sliver instead of a slit.
+
+```
+       plane
+         │
+   ▁▁▁▁▁▁│▁▁▁▁▁     top layer heights
+  ╱      │     ╲
+ │   ██████     │   ← the polygon this prism contributes to the face
+  ╲______│_____╱
+         │           bottom layer heights
+```
+
+Per prism: intersect the triangular top, the triangular bottom and the three
+vertical sides, then sort the intersections by angle in the plane.
+
+`sectionStackInterval(source, interval, plane, target, options)` writes into a
+**preallocated target** and returns how many vertices were needed; the geometry's
+draw range is what moves. Allocating a `BufferGeometry` per frame would make a
+rotating plane a garbage generator. Capacity grows by doubling.
+
+### Making it affordable
+
+The naive version rebuilt every frame and walked **every triangle** of the TIN per
+interval — measured at 33 × 1.08 M = 35.6 M prism tests per frame, on the main
+thread. Two fixes:
+
+1. **A dirty check.** The last normal, constant, enabled flag, offset **and the
+   `faces` array identity** are cached; an unchanged plane recomputes nothing.
+   ⚠️ The identity check matters: without it a rebuilt zone never draws.
+2. **`buildStackSectionIndex`** — a uniform XZ grid with CSR buckets by triangle
+   **centroid** (one cell per triangle, box grown), plus a per-interval per-cell Y
+   range.
+   ⭐ Cell rejection is the AABB/plane test `|d| ≤ r`, which is
+   orientation-independent, so a tilted plane needs no second structure; and the
+   per-cell **Y range** is what makes a near-horizontal cut cheap.
+   ⭐ **One index serves every interval** — they share topology and XZ, and only the
+   heights differ.
+
+Measured: an animated section went from 250.3 ms/frame to 31.1 ms, and a still
+section costs the same as no section at all.
+
+3. **Only the cut part is uploaded** (`addUpdateRange` over `count`). The buffers
+   keep the size of the largest cut so far, and re-sending all of it every frame
+   meant that one horizontal cut made every later cut upload hundreds of MB.
+
+⚠️ A plane that is near-HORIZONTAL inside a field-scale column is still expensive
+while it moves (a camera-locked cut seen from above): it crosses nearly every
+triangle column, so the face is about as large as the tessellation. field-5c1be1, 33
+layers, sweeping through the block: about 350 ms per frame of cutting and 6 GB
+uploaded over 120 frames (27–39 GB before fix 3); a vertical cut in the same
+sweep costs about 55 ms per frame. Still, either costs nothing.
+💡 Possible future fixes (complementary — one makes cuts rarer, the other smaller):
+- **Rate-limit the plane:** move a moving plane (clip and faces together, so no
+  gaps) at most once per k × the last cut's duration, and always land it exactly
+  when the camera stops — a cheap vertical cut still follows every frame.
+- **Cut only what is in view, for a camera-locked plane.** Such a plane faces the
+  camera, so its visible part is the frustum's cross-section at the cut distance
+  (6.9 × 9.6 km at 6 km with a 60° camera). Measured over the same sweep: only
+  **6–13 %** of the emitted face triangles are on screen. The section index cells
+  already carry an XZ box and a per-interval Y range, so the frustum test sits next
+  to `|d| ≤ r`. ⚠️ Only for a camera-locked plane — a FIXED plane is free while the
+  camera moves today, and this would make every camera move recut it. ⚠️ Any other
+  camera (a second viewport, a user's own pass) would see hollow units outside the
+  cut region.
+
+The face is drawn with the **interval's own fill material**, so per-layer opacity
+and detail carry onto the section — with the cut switched off in that material (see
+[appearance.md](./appearance.md#which-mesh-gets-which-material)).
+
+---
+
+## Keeping a unit whole
+
+`ZoneLayer.section: false` leaves a unit **uncut** while everything around it is
+cut away — a slab standing proud of the section. That is how you single out a
+reservoir, a seal or the sea bed.
+
+> ⭐ It keeps the whole **unit**, not one surface: the layer's cap, the volume
+> below it, **and the cap that floors that volume**. The floor is *inferred* — a cap
+> is left uncut whenever the unit above **or** below it is kept:
+>
+> ```ts
+> const keptUnit = (i) => layers[i]?.section === false;
+> const cutWall  = (i) => !keptUnit(i);
+> const cutCap   = (i) => !keptUnit(i) && !keptUnit(i - 1);
+> ```
+>
+> A unit whose top survives the cut but whose base does not is not a slab — it is a
+> lid over open space, which is the hollow shell the section exists to avoid.
+
+Consequences: keeping two adjacent units shares the cap between them, once; keeping
+the **last** unit keeps the column's floor with it; and no cut face is drawn for a
+kept unit, because there is nothing to close and a face there would sit inside
+solid material.
+
+⭐ **The sea follows the same rule, as the unit above the sea bed.** When the live
+cut leaves the sea whole (`ZoneSection.water` / `ZoneFence.water` false), the
+bed cap (the declared `seabed`, the same one the sea ends against) is kept whole as
+the sea's floor, and no water face is drawn along the cut — while the stack draws
+its sea (`drawWater`); a sea it hides keeps nothing, and the bed is cut like any
+cap. When the cut takes the sea, the water face closes it and the bed cap is cut by
+the usual rule. The decision is made separately for the section and for the fence
+(`capCut(layers, i, seaKept)` in `ZoneMeshes`), so switching between the two cuts
+needs nothing live.
+
+> ⚠️ This replaced an always-drawn water face. That face filled the gap under an
+> uncut sea whose bed was cut away, but it also stood along the cut when the bed
+> was kept, which looked wrong.
+
+---
+
+## Restoring what the collapse dropped
+
+The collapse drops a cap's triangles where the layer **above** covered them (welded
+duplicates, truncation). That justification only holds while the covering layer is
+**actually drawn** — and both a **peel** and a **section** can take it away.
+
+So a `peelable` build also emits, per cap, the fragments it gave up
+(`SurfaceZoneMesh.patchIndex`). `ZoneMeshes` turns each into a small geometry
+that **shares the cap's attribute buffers** and carries only those indices, so a
+patch costs one small object and adds no overdraw where the cap already draws.
+
+Two ways the cover can go, so two materials:
+
+| Mode | When | Material |
+|------|------|----------|
+| `'open'` | this is the first surviving layer of a peel — the cover is gone everywhere | drawn unconditionally |
+| `'cut'` | this cap survives the cut (section or fence) but the one above it does not | drawn with `sectionUniformInverse` AND `fenceUniformsInverse` |
+
+> ⭐ The inverse uniform is the exact **complement** of the section plane, so the
+> patch and the covering layer are mutually exclusive **by construction**, with no
+> tolerance to tune. And negating the disabled value `(0,0,0,-1)` gives `(0,0,0,1)`,
+> which draws nothing — exactly right when nothing has been cut away.
+
+> ⚠️ The patch material carries BOTH inverse tests and needs both to pass. So while
+> the **fence** is live `ZoneStack` sets the section inverse to `(0,0,0,-1)` (pass
+> everything), leaving the fence's inverse alone to confine the patch to the half
+> it removed. Without that, the disabled section's "draw nothing" hid every patch
+> under a fence, which left holes in kept caps wherever a layer above had
+> truncated them. The write sits in its own `useFrame` after `useStackFence`, so it
+> reads the fence's state for the same frame.
+
+---
+
+## The fence
+
+A **fence** is a vertical surface swept along a wellbore's path in plan, run out
+past both ends so it reaches clear of the block.
+
+```ts
+type ZoneFence = {
+  wellbore?: string;
+  side?: 'left' | 'right' | 'auto';
+  autoDeadband?: number;      // default max(margin, 50)
+  autoSettle?: number;        // default 0.2 s
+  margin?: number;            // clearance between trajectory and cut. Default 0.1, must be > 0
+  enabled?: boolean;
+  offset?: number;            // default 0
+  tolerance?: number;         // metres the face may leave the cut. Default 0.01
+  maxSpacing?: number;        // face sample spacing cap
+  water?: boolean;            // default false
+  carrier?: boolean;          // default false
+  scope?: 'stack' | 'touched'; // what the cut reaches. Default 'stack'
+  debug?: boolean;            // draw the ribbon as a magenta wireframe
+};
+```
+
+⚠️ `side` is named for where the cut lies walking the well HEAD→TD **in a plan view
+from above**, and it names the half being REMOVED. `margin` must be greater than
+zero — the cut is an offset of the trace, so there is no cut at zero.
+
+> ⭐⭐ **Why it is cheap enough to drive from a selection.** A fence is *vertical*,
+> so what it removes depends on **XZ alone**. That is one number per vertex, which
+> the shader reads as a varying and the CPU contours to build the face. No rebuild,
+> no worker, and nothing per frame once it has settled.
+
+### What `useStackFence` builds
+
+From the position log (placed into the scene frame exactly as the boundary pipeline
+does) → a spline → `buildWellboreFence(curve, { rings, margin, extension })`, which
+produces **both sides** up front:
+
+- a **sign field** as a `DataTexture` (Red, Float) — negative in the removed half,
+  positive in the kept half;
+- a **segment index** (cells + segments textures) for the *exact* boundary lookup;
+- the resampled **curve** the cut face follows.
+
+> ⚠️ `NearestFilter` + `FloatType` everywhere. The field is a **sign**, and the
+> index and segment textures are **data** — interpolating any of them is exactly
+> the mistake the segment lookup exists to correct.
+
+> ⭐ Building both sides up front means a side flip is a **texture swap and a curve
+> swap**: no rebuild, no refetch, and no window in which the shader cuts last side's
+> field with this side's test.
+>
+> ⚠️ The cut FACE is the exception: its ribbons follow the curve, so each side has
+> its own. `useZoneFenceFace` keeps the faces each side last built, and the triangle
+> locator they are draped with is built once per tessellation. On a field column a
+> flip used to rebuild both every time — a 140–190 ms frame per flip, ~115 ms of it
+> the locator; now only the first flip to a side builds (~50 ms).
+
+> ⭐ The curve is published **on the stack**, not derived per zone — otherwise
+> every zone repeats the most expensive step of the feature with identical inputs.
+
+In dev builds, `assertFenceInvariants(report)` warns about a malformed fence.
+(⚠️ `import.meta.env.DEV`, not `process.env.NODE_ENV` — this is browser code and
+Vite is what strips the block.)
+
+### `side: 'auto'`
+
+> ⭐⭐ The camera must be in the half that was **removed** — from the other one the
+> block is in the way and there is no cut face to read. Orbit past the fence and the
+> block changes sides so the section stays readable.
+
+`fenceAutoSide` tests the camera (brought into the stack's frame) against the
+removed half's boundary, with two guards:
+
+- **`autoDeadband`** — an orbit crosses the fence exactly where the two halves are
+  equally good, and a plan view looks straight down it, so a little slack stops a
+  jitter there toggling the whole block.
+- **`autoSettle`** — *time*, not distance, is what keeps a fly-through from flipping
+  the block twice on its way past; the deadband alone is crossed at speed.
+
+### `margin`
+
+Metres of clearance kept between the trajectory and the cut. Default 0, which puts
+the face through the well itself. Raise it to leave room for what is drawn **in**
+the hole — casings, completion, logs — which a cut through the trajectory would
+slice in half.
+
+⚠️ It is baked into the curve, so changing it rebuilds the fence (not the zones).
+It also sets how smooth the curve has to be: an offset folds wherever the curve
+turns tighter than the offset itself.
+
+### `scope`: the islands a well touches
+
+A boundary made of separate polygons (a field outline buffered round scattered wells)
+is cut as ONE plane split by default (`'stack'`): the arms run past the whole boundary
+and slice every island in their way. `'touched'` cuts only the islands the well's
+trace passes through — by the same block test the fence trims the well with — and
+leaves the rest whole:
+
+- the fence is **planned over those islands alone**, so its arms reach past them and
+  its field and index cover only their bounds (a smaller footprint builds faster);
+- every field node more than a cell outside them is set to `±FENCE_MASKED`, which
+  `fenceSide` (GLSL) and `fenceSideAt` read as KEPT without the exact segment test —
+  near an arm that test would otherwise cut an untouched island. Every material that
+  cuts by the fence follows: zone surfaces and walls, the peel, the inferred hatch,
+  the sea, and the immersion fog's "is this opened" test;
+- the masked node keeps its SIGN, i.e. which half of the cut it lies in, and
+  `fenceHalfAt` reads it. `side: 'auto'` and `fenceViewPose` choose the view with it,
+  so they work from anywhere — the face can be looked at from over ground the mask
+  leaves whole;
+- the face stops exactly at the islands' edge (`buildFenceRibbons`' `inside`).
+
+⚠️ The mask is as fine as the field cell (10–50 m) and grown by one cell, so an
+untouched island within about two cells of a touched one may be cut along its edge.
+One boundary polygon is one island: `'touched'` changes nothing for a single-polygon
+boundary (the grid, or `nested`).
+
+### The fence face
+
+`useZoneFenceFace` builds a **ribbon** along the curve at `resolution` metres,
+independent of the tessellation — so that one number alone sets its smoothness. A
+corridor gives an interval **two** faces, which is why `ZoneSectionFace` carries a
+`wall` index: keying only on the interval would collide and React would drop one.
+
+`ZoneFence.offset` should normally stay at **0** — a fence's face is drawn with a
+material that is not cut, so it needs no nudge to escape its own test. A small
+negative value pushes it proud if a seam ever shows.
+
+`ZoneStack.onFence` reports each finished `WellboreFence` (and `null` when there
+is none), which is what a host needs to **frame** the cut: the curve, its extent and
+which half each side removes are all there, so a camera move can be built from the
+fence that was actually generated rather than from a re-derived guess (see
+`fenceViewPose` and [../fence-curves.md](../fence-curves.md)).
+
+### Overlays on the fence face
+
+The fence can carry data on its cut face — seismic, or any other property sampled
+along the cut — mixed into the formation colours. The fence itself knows nothing
+about the data: a host learns where the face runs, builds a texture for it, and hands
+it back.
+
+```tsx
+const [side, setSide] = useState<FenceSideInfo | null>(null);
+const seismic = useFenceSeismicOverlay(side, { step: 5, colorRampIndex: 6 });
+
+<ZoneStack
+  fence={{ wellbore, overlay: { ...seismic, mix: 1, shading: 'lit' } }}
+  onFenceSide={setSide}
+>
+```
+
+- `onFenceSide` reports the SHOWN side whenever the fence is rebuilt or the side
+  changes: its cut curve (face `uv.x` is arc length along it), the boundary rings, the
+  fence's vertical range and a scene→UTM `toUtm`. A new `fence` in it means anything
+  built for the last one is stale.
+- `ZoneFence.overlay` takes a `FenceOverlayTexture` per side — `values` (`.r`), and
+  where its u = 0/1 edges sit along the cut and its v = 0/1 edges in scene Y — plus a
+  1-row `palette`, the `range` of values across it (`[max, min]` reverses it), `mix`
+  and `shading`. A side with no texture, or none yet, shows the formations alone.
+- ⭐ The VALUES are drawn, not their colours: the shader filters the values and colours
+  them after, so a magnified view interpolates the data rather than blending colours,
+  and the palette and range are uniform writes. The texture's filtering is the host's
+  call — nearest for categorical data, mipmaps against shimmer far away.
+- ⭐ Minified, filtering the values is not enough: a palette is non-linear (a seismic
+  ramp is white at 0 and saturated at both extremes), so the colour of a smooth value
+  can still shimmer. `rampSampleFiltered` (`shaderLib/ramp-filter.glsl`) takes up to 8
+  samples spread over the pixel's footprint and averages their COLOURS; magnified it is
+  one sample. `WellboreSeismicSection` uses it too.
+- The textures are the host's: the stack never disposes them. Adding or removing the
+  overlay rebuilds the zones' materials (`ZONE_FENCE_OVERLAY`); its contents do not.
+- `shading`: `'lit'` mixes into the albedo so the scene lights it like the rock,
+  `'flat'` mixes the plain palette colour in after lighting, and `'facing'` does the
+  same but darkens it as the face turns from the view, as `WellboreSeismicSection` does.
+- `gaps` / `voids` (both default false, free to switch): also draw the overlay across
+  intervals left unfilled by `fill`, and inside the cavities `sealMode: 'void'` opens.
+  A void directly under a gap counts as part of the gap (its ceiling closes nothing
+  and is not drawn), so it follows `gaps`.
+  The build ships those intervals' triangle masks with the section channels
+  (`StackSectionSource.gaps`, plus a per-interval `voids` flag), `buildFenceRibbons`
+  builds a ribbon over them on request (`gap: true`), and they are drawn with one
+  overlay-only material per zone (`ZONE_FENCE_OVERLAY_ONLY`): full strength, and
+  DISCARDED wherever the overlay has no data — before the OIT early return, so the depth
+  pass agrees. Their picking twin makes the same test, so a gap face is picked exactly
+  where it is drawn (`userData.gap` is `true` on it).
+  ⚠️ A gap must belong to a zone: one that lies BETWEEN two zones belongs to neither.
+  Let the zone above keep the horizon it shares with the next and leave its last
+  interval unfilled — the stack still draws that horizon once.
+
+#### `useFenceSeismicOverlay`
+
+The built-in provider for seismic. For the shown side it queries the store:
+
+```ts
+store.get<FieldColumnSeismicSection>('field-column-seismic-section', wellboreId, {
+  path: [e0, n0, e1, n1, ...], // UTM, evenly spaced along the side's cut curve
+  depthRange: [tvdTop, tvdBottom], // the fence's own TVD window (`verticalRange`)
+});
+```
+
+- The path is `sampleFencePath`: the curve clipped to the boundary (the run-outs reach
+  kilometres past it) and sampled every `step` metres, widened past `maxColumns`.
+- The response holds one column per path position and rows from the top down. It is
+  placed half a sample past the outermost samples, so texel centres land on them, and
+  uploaded as mipmapped half floats divided by the largest amplitude.
+- The query waits `delay` ms for the fence and side to settle. A newer request clears a
+  waiting one and drops a superseded response; the store call itself cannot be aborted,
+  since `Store` has no signal and may run in a worker.
+- Each side is kept once loaded, so flipping back is free; the cache goes with the
+  fence or a new `step`. `colorRampIndex` and `rangeOffset` only change the palette and
+  range.
+
+The demo store answers every well with the same slice, repeated along the path and
+stretched over the requested depths.
+
+---
+
+## The sea
+
+```tsx
+<ZoneStack boundary={fieldPolygon} surfaces={column} seabed={seabedId} water={{ depth: 0, windSpeed: 8, opacity: 0.9 }}>
+```
+
+> ⭐ **The sea belongs to the COLUMN, not to a zone.** A lid covers its whole
+> footprint by design, so two zones each drawing part of it would leave two
+> coplanar lids wherever their footprints overlap. The stack draws it once.
+
+`StackWater` is `OceanWaterProps & OceanBodyProps & ZoneWaterTint` plus `depth`,
+`opacity` and `resolution`.
+
+### How it is built
+
+The `stackWater` generator builds the sea as a stack of exactly **two horizons**
+— `[level, bed]` — over the stack boundary:
+
+- the **bed** is the surface `ZoneStack.seabed` names, pulled from `getStackContext`
+  (a cache **hit**, using the same key the zones derive), so the water body meets
+  the bed the zones draw rather than a second opinion about where it is. It is
+  declared, never inferred: with no `seabed`, or one no zone draws (a column cut
+  from deeper down), there is no sea, and a warning says so;
+- `caps: [true, false]` — the bed is drawn by whichever zone it is the lid of;
+- the level layer contributes **no refinement candidates** (a plane is exact
+  everywhere) and the bed reuses the column's candidates.
+
+It returns `{ lid, body, section? }` — the lid, the water body's walls (the rim and
+the shoreline), and the channels a cut face needs.
+
+> ⚠️ The lid and the zones are still **two different tessellations**, so they agree
+> only within `maxError`.
+
+### Resolution
+
+`StackWater.resolution` is the lid's target triangle edge length. **Omit it** for
+the fewest triangles that fill the boundary — all a flat surface needs, since its
+waves are shaded per pixel.
+
+Only worth setting when vertex `displacement` is on, and then no finer than the
+swells being displaced need: it applies over the whole footprint, so the triangle
+count grows with the **square** of the field size. `DEFAULT_WATER_RESOLUTION` is
+100 m, used automatically when displacement is on and no resolution is given.
+
+### Two opacities
+
+> ⚠️⚠️ `water.waterOpacity` (default **0.7**) is the water's **own** opacity and
+> only a base — the shader computes `alpha = mix(uOpacity, 1, fresnel) *
+> uMasterOpacity`, so the surface is see-through from above and mirror-like at a
+> grazing angle whatever it says. `StackWater.opacity` is the master multiplier.
+> Water that looks "too transparent at opacity 1" is usually carrying
+> `waterOpacity`'s default.
+
+### Floating objects come free
+
+`useStackWater` also creates the wave **sampler** (`createOceanSampler(surface,
+-depth)`) and a contact registry (`createOceanContactRegistry`, shared with `<Ocean>`
+and `<Scenery>`), and `ZoneStack` provides them as
+`OceanSamplerContext` / `OceanContactContext`. A floating child — a vessel, a buoy —
+heaves with the swell and spreads foam exactly as it would inside an `<Ocean>`,
+with nothing extra wired. Heights come back **absolute** in the stack's frame, so
+no sea-level parent group is needed.
+
+> ⚠️ A uniform holding "cos/sin of an angle" names no convention either end can
+> check. Contact foam was mirrored about the forward axis for a long time because
+> `setContacts` uploaded `(cos, sin)` while the shader treated it as a direction
+> (a +Y rotation gives `(cos, −sin)` in XZ). **Hold the direction vector.**
+
+See [../ocean.md](../ocean.md).
+
+### Hiding it without a rebuild
+
+`drawWater={false}` hides the sea — lid, body and cut faces — and the immersion
+fog, and zeroes the water tint (`waterTintShown`), while keeping everything built:
+the sea itself, the cut that leaves room for it, the bed's tint materials. Turning
+it back on shows it at once. It is for a sky that owns the water over the column
+(`SceneryStage`'s `onStage` `water`; see [../scenery.md](../scenery.md)), so the two seas
+hand over without a stutter.
+
+---
+
+## Immersion fog
+
+```tsx
+<ZoneStack immersion={{ water: true, sediment: true, visibility: 400 }}>
+```
+
+> ⭐ Both the sea and the block are made of **surfaces**, not of a medium. From
+> outside, every sightline crosses one and picks up its attenuation; from inside,
+> there is nothing in the path at all and the view is impossibly clear. Scene fog
+> supplies what is missing: attenuation by distance **from the camera** — which also
+> reaches host geometry (vessels, facilities, pipelines) that no material of this
+> library could.
+
+`StackImmersionFog` decides the medium each frame by sampling the surface at the
+camera's XZ, testing the camera against the section plane in object space, and
+testing it against the fence **index** (the exact boundary lookup, not the field —
+the field alone would answer a fraction of a cell out, which is metres, enough for
+the fog to switch on before the cut visually reaches you).
+
+`StackImmersion` options: `water`, `sediment`, `color`, `visibility` (default 400),
+`background` (default true), `transition` (default 5 m), `settle` (default 0.12 s).
+
+> ⚠️ **It is off unless declared, and it has to be.** Installing `scene.fog` at all
+> changes every material's program cache key, so there is no free "disabled" state.
+> Absent, nothing subscribes to the frame loop and no shader differs.
+
+> ⚠️ Three's `FogExp2` is `exp(−(d / visibility)²)`, so it saturates
+> **quadratically**: ~63% fogged at `visibility` and ~98% at twice it. There is no
+> way to bound it short of patching the fog zone in every shader.
+
+> ⚠️ `settle` is needed at all because a medium's own boundaries ramp smoothly but
+> leaving one **sideways** — past the edge of the drawn footprint, or through a
+> section plane — has no distance to ramp over. Keep it short: this is a positional
+> *cue*, and a slow one reads as a bug.
+
+The block's base is **derived**, not sampled: a carrier floor is deliberately not
+sampleable (see [sampling-and-perf.md](./sampling-and-perf.md)).

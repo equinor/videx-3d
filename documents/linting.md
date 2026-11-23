@@ -27,7 +27,7 @@ Generators are declared with an explicit `this` parameter and invoked with the s
 bound by the generator registry (see [Generators](./generators.md)):
 
 ```ts
-export function generateSurfaceChunk(this: ReadonlyStore, spec: SurfaceChunkSpec) {
+export function generateSurfaceZone(this: ReadonlyStore, spec: SurfaceZoneSpec) {
   const values = await this.get('surface-values', id);
   ...
 }
@@ -58,10 +58,10 @@ for this reason; the object variant is the same idiom and was only half-addresse
 Turning it off finishes a decision that had already been taken.
 
 ⚠️ **This does not make the underlying concern disappear.** Referential churn in
-props still matters in this codebase — it is precisely what made changing a chunk's
-opacity rebuild its geometry (see `chunks.md`). The mitigation is memoisation on the
+props still matters in this codebase — it is precisely what made changing a zone's
+opacity rebuild its geometry (see `zones.md`). The mitigation is memoisation on the
 values that feed an expensive rebuild (the `stableLayers` / content-key pattern in
-`Chunk.tsx`), which the linter could not have enforced anyway. This rule was firing on
+`Zone.tsx`), which the linter could not have enforced anyway. This rule was firing on
 *presentational* props where the cost is nil, and drowning the signal.
 
 ## 3. `vitest/valid-expect` and `no-await-in-loop` — off for `tests/*`
@@ -123,7 +123,7 @@ export; oxlint's resolver cannot follow it. Types come from `vite/client`.
 
 **`react/no-array-index-key`** — the array index is the *correct* key here:
 
-- `src/components/Chunks/ChunkMeshes.tsx` (×2): the data-dependent alternative the rule
+- `src/components/Zones/ZoneMeshes.tsx` (×2): the data-dependent alternative the rule
   wants is the mesh's `layer` index, and that is **not unique**: a `void` seal splits one
   surface into two meshes that share a layer. Keying on it would collide.
 - `src/components/Wellbores/Casings/Casings.tsx`: a section is positional — its material
@@ -142,7 +142,7 @@ count it as non-interactive. Its buttons are buttons of their own.
 - `src/sdk/geometries/wellbore-fence.ts` (`loopSpans`): the spans may be the caller's own
   (`options.problems`), and the neck wrapped from them still holds them.
 
-**`eslint/no-await-in-loop`** in `src/components/Chunks/useChunkContacts.ts` — the
+**`eslint/no-await-in-loop`** in `src/components/Zones/useZoneContacts.ts` — the
 surfaces are fetched one at a time on purpose: each is a full grid, and a cancelled build
 stops before the next one is fetched.
 
@@ -205,16 +205,16 @@ So `react-hooks/exhaustive-deps` is live and, being in the `correctness` categor
 **error**. `react-hooks/rules-of-hooks` is available too and the codebase has no
 violations of it.
 
-⚠️ The `// eslint-disable-next-line react-hooks/exhaustive-deps` comments in `Chunk.tsx`
-(×3) and `ChunkStack.tsx` are therefore **load-bearing, not decoration** — oxlint honours
+⚠️ The `// eslint-disable-next-line react-hooks/exhaustive-deps` comments in `Zone.tsx`
+(×3) and `ZoneStack.tsx` are therefore **load-bearing, not decoration** — oxlint honours
 the `eslint-disable-*` syntax, and `npx oxlint --report-unused-disable-directives`
 confirms none of them is redundant. Deleting one fails the lint. They mark the content-key
 trick (`stableLayers` / `layersKey`) that stops a fresh `layers={[...]}` array identity
-from rebuilding chunk geometry on every render.
+from rebuilding zone geometry on every render.
 
 ⚠️ **`react-hooks/set-state-in-effect` is the one real loss** — it is absent from
-oxlint's rule set entirely, so nothing enforces it now. It is why asynchronous chunk
+oxlint's rule set entirely, so nothing enforces it now. It is why asynchronous zone
 builds set state inside an async IIFE guarded by a `cancelled` flag rather than directly
 in an effect body. The pattern is correct on its own merits and should be preserved by
-convention; see `Chunk.tsx`.
+convention; see `Zone.tsx`.
 

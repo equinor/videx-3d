@@ -19,7 +19,7 @@ export * from './shoes-generator';
 export * from './scenery-relief-tile-generator';
 export * from './stack-release-generator';
 export * from './stack-water-generator';
-export * from './surface-chunk-generator';
+export * from './surface-zone-generator';
 export * from './surface-generator';
 export * from './trajectory-generator';
 export * from './tube-trajectory-generator';

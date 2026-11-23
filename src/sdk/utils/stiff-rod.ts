@@ -24,7 +24,7 @@ import {
  * and no other quantity recorded (offset, distance ahead, path length, margin) separates the
  * buckets once φ is known; below 20° it is still 1.5–2 atoms. The floor is 3: at 2, 19 A at margin
  * 0.5 ran away (both clamps on it), and it built at every joint length from 3. The margin
- * enters through the zone — the run end, the path and the atom move with it. A searched
+ * enters through the margin band — the run end, the path and the atom move with it. A searched
  * setback flipped between neighbouring margins.
  *
  * ⭐ TWO multiples, by the clamp's CONVEXITY. A rod on the OUTSIDE of the well's turn wraps the

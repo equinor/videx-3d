@@ -404,7 +404,7 @@ export type SceneryOceanWater = Omit<
 
 /**
  * The look of a {@link SceneryOceanProps}'s seabed. It is lit by the scene's lights with the
- * model and options of a `ChunkMaterial`, so a chunk layer given the same values
+ * model and options of a `ZoneMaterial`, so a zone layer given the same values
  * continues it without a seam.
  */
 export type ScenerySeabed = {
@@ -414,11 +414,11 @@ export type ScenerySeabed = {
    * instead: its seabed's ramp, or this colour where the look gives it none
    */
   color?: ColorRepresentation;
-  /** specular highlight colour. Default `#1a1a1a`, as on `ChunkMaterial` */
+  /** specular highlight colour. Default `#1a1a1a`, as on `ZoneMaterial` */
   specular?: ColorRepresentation;
-  /** specular exponent. Default 24, as on `ChunkMaterial` */
+  /** specular exponent. Default 24, as on `ZoneMaterial` */
   shininess?: number;
-  /** ambient multipliers facing up / facing down, or `false` for none. Default `[1.35, 0.5]`, as on `ChunkMaterial` */
+  /** ambient multipliers facing up / facing down, or `false` for none. Default `[1.35, 0.5]`, as on `ZoneMaterial` */
   ambient?: Vec2 | false;
   /** procedural relief, or `false` for none; not drawn under a `GeoRelief`, whose tiles are the seabed. Default `'seabed'` */
   detail?: SurfaceDetail | false;

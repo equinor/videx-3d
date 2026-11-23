@@ -62,8 +62,8 @@ import vertexShader from './shaders/vertex.glsl';
  * A sea bed's depth grid, packed by `buildSurfaceDepthMap`: R the scene Y, G the
  * validity, sampled from OBJECT XZ through `toUv`.
  *
- * ⚠️ Structural on purpose — `ChunkDepthMap` satisfies it, without this material
- * having to depend on the chunk components.
+ * ⚠️ Structural on purpose — `ZoneDepthMap` satisfies it, without this material
+ * having to depend on the zone components.
  */
 export type OceanBathymetry = {
   texture: Texture;
@@ -132,18 +132,18 @@ export type OceanMaterialParameters = ShaderMaterialParameters & {
   contactCount?: number;
   /**
    * Cut this material with a plane in OBJECT space (`dot(xyz, position) + w > 0`
-   * is discarded) — a `ChunkStack`'s section, so the sea is cut with the block
+   * is discarded) — a `ZoneStack`'s section, so the sea is cut with the block
    * under it. Omit for none, which compiles the branch out.
    *
    * ⭐ A SHARED uniform object: pass the stack's own and one write per frame
-   * reaches this material, the volume material and every chunk material, in all
+   * reaches this material, the volume material and every zone material, in all
    * four OIT passes. ⚠️ Read at CONSTRUCTION (it sets a define), so turning the
    * cut on or off means a new material; moving the plane does not.
    */
   sectionPlane?: IUniform<Vector4>;
   /**
    * Cut this material with a **fence** instead — the same shared uniforms the
-   * chunk materials read, so the sea is cut on exactly the curve the block is.
+   * zone materials read, so the sea is cut on exactly the curve the block is.
    * Omit for none, which compiles the branch out.
    *
    * ⭐ Read PER FRAGMENT, so a lid of a handful of triangles is cut at the
@@ -472,13 +472,13 @@ export class OceanMaterial extends ShaderMaterial {
   readonly water = new WaterBody();
   /**
    * Whether its water is also the scene's (`sceneWaterBody`), for what reads that: an
-   * `Ocean`'s is. A `ChunkStack`'s is its own, handed to its chunks, so a `Scenery`'s sea about
+   * `Ocean`'s is. A `ZoneStack`'s is its own, handed to its zones, so a `Scenery`'s sea about
    * it keeps the scene's. Default true
    */
   sharesSceneWater = true;
   /**
    * Whether a cut has taken the water where the camera is (world position): it is in air
-   * there, over the footprint or not. A `ChunkStack` sets it for a section or a fence that
+   * there, over the footprint or not. A `ZoneStack` sets it for a section or a fence that
    * takes its sea. Default none
    */
   cameraCut: ((position: Vector3) => boolean) | null = null;
@@ -747,7 +747,7 @@ export class OceanMaterial extends ShaderMaterial {
 
     // Looking up at the surface from inside the water body, there IS water in the
     // way. ⚠️ A ShaderMaterial's `fog` defaults to false, so the shader's fog
-    // chunks would compile to nothing without this.
+    // zones would compile to nothing without this.
     this.fog = true;
 
     attachOitVariants(this);
@@ -1436,7 +1436,7 @@ export class OceanMaterial extends ShaderMaterial {
    * Reflect the sky of `scene` ({@link sceneSky}): a `Scenery`'s, else the scene's environment
    * and brightest directional light, else its own gradient ({@link skyColor},
    * {@link horizonColor}) and sun. Once a frame, before it is drawn: it may prefilter the
-   * scene's environment. The `Ocean` and `ChunkStack` do.
+   * scene's environment. The `Ocean` and `ZoneStack` do.
    */
   updateSky(renderer: WebGLRenderer, scene: Scene): void {
     this.setSky(sceneSky(scene).resolve(renderer, scene));

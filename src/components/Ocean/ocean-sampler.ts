@@ -30,7 +30,7 @@ export interface OceanSampler {
    * The water's height over the still sea at world `point`, along the sea's up there (the
    * still sea's point is {@link stillSeaAt}'s): a `Scenery`'s, anywhere on its globe, in the
    * charts its sea is drawn in (`OceanCharts`). Absent where the waves lie in one plane (an
-   * `Ocean`'s, a `ChunkStack`'s): there, {@link getHeightAt}.
+   * `Ocean`'s, a `ZoneStack`'s): there, {@link getHeightAt}.
    */
   heightAtWorld?(point: Vector3): number;
   /** The still sea's point under (or over) world `point`, along the sea's up there, into `target`. With {@link heightAtWorld}. */
@@ -111,7 +111,7 @@ export function toOceanPlane(
  * waves do (`SeaState.heightAtDepth`): they shoal and die out toward a shore.
  *
  * @param level scene Y of the still water surface. The `Ocean` component leaves
- *   this at 0 because its own group IS sea level; a `ChunkStack` passes the sea's
+ *   this at 0 because its own group IS sea level; a `ZoneStack` passes the sea's
  *   level so the heights come back ABSOLUTE in the stack's frame and a floating
  *   object needs no sea-level parent group of its own.
  * @param plane the plane the waves are laid out in, when it is not the frame's own X/Z

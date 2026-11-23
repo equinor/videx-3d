@@ -194,7 +194,7 @@ function bestAzimuth(
  * against the fence itself until it is one the cut can actually be seen from —
  * with `guard` degrees of clearance from where it stops being one.
  *
- * @param fence a finished fence, as `ChunkStackProps.onFence` reports it
+ * @param fence a finished fence, as `ZoneStackProps.onFence` reports it
  *
  * @group Geometries
  */

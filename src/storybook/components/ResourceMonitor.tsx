@@ -1,10 +1,10 @@
 import { useStore, useThree } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
-import { generatorStatsKey } from '../../components/Chunks/chunk-defs';
+import { generatorStatsKey } from '../../components/Zones/zone-defs';
 import {
-  chunkResourceStats,
-  setChunkTracking,
-} from '../../components/Chunks/chunk-resources';
+  zoneResourceStats,
+  setZoneTracking,
+} from '../../components/Zones/zone-resources';
 import { useOutputPanelState } from '../../components/Html/OutputPanel/output-panel-state';
 import type { GeneratorStats } from '../../generators/generator-stats';
 import { useGenerator } from '../../hooks/useGenerator';
@@ -34,7 +34,7 @@ export type ResourceMonitorProps = {
  *
  * ⭐ The numbers worth watching are the DELTAS. `geometries` and the main heap
  * should return to roughly the same level after each rebuild; a staircase across
- * builds is a retained chunk. `column` is what the generator keeps between builds
+ * builds is a retained zone. `column` is what the generator keeps between builds
  * and is the single largest allocation the library makes.
  *
  * ⚠️ Must be rendered INSIDE the canvas (it reads `renderer.info`) and inside the
@@ -53,11 +53,11 @@ export const ResourceMonitor = ({ interval = 1000 }: ResourceMonitorProps) => {
   const baseline = useRef<{ heap: number; geometries: number } | null>(null);
   const peakHeap = useRef(0);
 
-  // Chunk accounting is off by default (measuring walks every attribute); turn it
+  // Zone accounting is off by default (measuring walks every attribute); turn it
   // on only while this monitor is mounted.
   useEffect(() => {
-    setChunkTracking(true);
-    return () => setChunkTracking(false);
+    setZoneTracking(true);
+    return () => setZoneTracking(false);
   }, []);
 
   useEffect(() => {
@@ -78,9 +78,9 @@ export const ResourceMonitor = ({ interval = 1000 }: ResourceMonitorProps) => {
       // rather than sampling on a frame.
       const worker = await stats().catch(() => null);
       if (stopped) return;
-      const held = chunkResourceStats();
+      const held = zoneResourceStats();
       // ⭐ A `useFrame` subscription that outlives its component pins the callback,
-      // its fiber and everything that fiber's props reach — a whole chunk. A count
+      // its fiber and everything that fiber's props reach — a whole zone. A count
       // that climbs per rebuild is that leak; `frameSubscribers` names the worst
       // offender in the console.
       const subscribers = store.getState().internal.subscribers;
@@ -108,13 +108,13 @@ export const ResourceMonitor = ({ interval = 1000 }: ResourceMonitorProps) => {
               },
             },
           },
-          chunks: {
-            label: 'Chunks',
+          zones: {
+            label: 'Zones',
             value: mb(held.bytes),
             color: '#af7aa1',
             order: 11,
             details: {
-              live: { label: 'live', value: held.chunks },
+              live: { label: 'live', value: held.zones },
               stranded: {
                 label: 'stranded',
                 value: `${held.stranded} / ${held.builds}`,
@@ -192,7 +192,7 @@ export const ResourceMonitor = ({ interval = 1000 }: ResourceMonitorProps) => {
       useOutputPanelState.getState().set(state => {
         const groups = { ...state.groups };
         delete groups.memory;
-        delete groups.chunks;
+        delete groups.zones;
         delete groups.gpu;
         delete groups.generator;
         return { groups };

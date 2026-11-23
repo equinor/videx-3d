@@ -9,10 +9,10 @@ import storyArgs from '../src/storybook/story-args.json';
 
 /**
  * The stand-in sea bed stands in for a horizon the demo data does not map, so the
- * chunk stories cut every chunk against it. ⚠️ A field's surveys need not straddle
+ * zone stories cut every zone against it. ⚠️ A field's surveys need not straddle
  * its origin — the demo field's sit several km off to one side — so a grid placed
  * on the ORIGIN rather than on the DATA leaves most of the field with no sea bed,
- * and every chunk comes out truncated to wherever the two happened to overlap.
+ * and every zone comes out truncated to wherever the two happened to overlap.
  */
 describe('generated sea bed', () => {
   const crs = new CRS(

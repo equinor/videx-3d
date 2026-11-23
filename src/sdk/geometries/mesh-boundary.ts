@@ -3,7 +3,7 @@
  *
  * Given a mesh and a SUBSET of its triangles, this finds the closed rings that
  * bound that subset. It is the mechanism behind per-layer terminations on a shared
- * tessellation: every layer of a chunk draws a different subset of ONE
+ * tessellation: every layer of a zone draws a different subset of ONE
  * triangulation, and the edge of a subset is where that unit stops.
  *
  * Tracing the subset rather than the underlying mask matters — the ring vertices

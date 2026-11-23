@@ -1,6 +1,6 @@
 # Progress
 
-How the library tells a host how far it has come — a chunk stack building its model, the
+How the library tells a host how far it has come — a zone stack building its model, the
 sky compiling its shaders and loading its relief — and how the host shows it, in its own
 DOM, outside the R3F canvas.
 
@@ -17,7 +17,7 @@ What reports lives inside the canvas; what shows it belongs in the host's DOM. A
 const progress = useMemo(createProgressStore, []);
 // inside the canvas
 <Scenery onProgress={progress.source('sky', { name: 'Scenery' })} />
-<ChunkStack onProgress={onModelProgress}>…</ChunkStack>
+<ZoneStack onProgress={onModelProgress}>…</ZoneStack>
 // anywhere in the host's DOM
 <ProgressPopup store={progress} position="top" split="source" />
 ```
@@ -51,7 +51,7 @@ Three ways, from most to least custom:
 
 | | What | Visibility |
 |---|---|---|
-| 1 | `useProgress(store)` + `describeProgress(snapshot, { source?, group?, labels? })` → title, percent, stage text, `durationMs` and summed `stats` once done, and rows: the items of a lone source (each chunk), or one per source when there are several | yours |
+| 1 | `useProgress(store)` + `describeProgress(snapshot, { source?, group?, labels? })` → title, percent, stage text, `durationMs` and summed `stats` once done, and rows: the items of a lone source (each zone), or one per source when there are several | yours |
 | 2 | `<Progress store source? group? details expandable onDismiss? footer? />` — plain HTML where it is placed | while one of its sources is there; shows the finished state afterwards |
 | 3 | `<ProgressPopup store split position offset delay exitDuration dismissible stayOpen />` — tier 2 in a click-through layer over the positioned element holding the canvas | while a run lasts: a card mounts when it starts (after `delay`), turns `data-state="closing"` for `exitDuration` when it ends or is dismissed, then unmounts. With `stayOpen` it stays as `data-state="done"` until dismissed or the next run |
 
@@ -85,9 +85,9 @@ each `videx-progress-popup__card` in its `__stack`. The bar is decorative
 
 ## What reports
 
-- **`ChunkStack.onProgress`** reports its own detailed `ChunkStackProgress`;
-  `chunkProgressReport(progress, labels?)` turns it into a report, a chunk an item (see
-  [chunk-stack/coordination.md](./chunk-stack/coordination.md#showing-progress-in-the-host)).
+- **`ZoneStack.onProgress`** reports its own detailed `ZoneStackProgress`;
+  `zoneProgressReport(progress, labels?)` turns it into a report, a zone an item (see
+  [zone-stack/coordination.md](./zone-stack/coordination.md#showing-progress-in-the-host)).
 - **`Scenery.onProgress`** reports two items: `shaders`, its programs compiled of those it
   waits for (the stand-in, its own, its stages', its bakes' and the cliffs'), and with a
   tiled relief `relief`, its stages' tiles loaded of those wanted. The relief runs from
@@ -105,7 +105,7 @@ each `videx-progress-popup__card` in its `__stack`. The bar is decorative
 
 Every story drawing a sky, and the `FieldColumn` story, report into one store held
 outside the canvas (`storyProgress` in `src/storybook/decorators/progress-decorator.tsx`):
-the sky as `sky`, the chunk stack as `model`. `sceneryDecorators` include its decorator, and
+the sky as `sky`, the zone stack as `model`. `sceneryDecorators` include its decorator, and
 the `Progress` controls choose the display (`progressDisplay`), its `progressSplit`,
 `progressDelay` and the rest. The look is the stories' own stylesheet,
 `src/storybook/styles/progress.css`.

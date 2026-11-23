@@ -124,7 +124,7 @@ export type GeoReliefProps = {
   onStats?: (stats: SceneryReliefTileStats) => void;
   /**
    * told the relief's sampler (see `ReliefSampler`), for what is placed on
-   * the relief: hand it on through `SurfaceSamplerContext`, and to a `ChunkStack` built
+   * the relief: hand it on through `SurfaceSamplerContext`, and to a `ZoneStack` built
    * on the relief (`reliefSampler`). A new one whenever the ground under a pin comes in;
    * null once gone
    */

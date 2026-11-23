@@ -142,7 +142,7 @@ export type LevelLines = ThicknessLines & {
  * rings.
  *
  * ⭐ Simplified on the layer alone (it is at the level all along the line, so
- * only the plan tolerance decides): every chunk cut from the same grid gets the
+ * only the plan tolerance decides): every zone cut from the same grid gets the
  * same rings, whatever else it stacks.
  *
  * @param channel the layer's heights over the common grid

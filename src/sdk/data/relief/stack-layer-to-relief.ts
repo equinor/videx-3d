@@ -20,9 +20,9 @@ export type StackLayerToReliefOptions = {
 };
 
 /**
- * A synthetic chunk layer — a plane at `depth`, perturbed by its `relief` — as a relief,
+ * A synthetic zone layer — a plane at `depth`, perturbed by its `relief` — as a relief,
  * computed when asked for (see {@link functionRelief}): the same procedural fields the
- * chunks evaluate, in the scene the layer is built in, placed on the map by `frame`. So
+ * zones evaluate, in the scene the layer is built in, placed on the map by `frame`. So
  * the relief and the column's layer are the same ground.
  *
  * @param frame where the layer's scene lies on the map (as a `UtmArea` places it); the

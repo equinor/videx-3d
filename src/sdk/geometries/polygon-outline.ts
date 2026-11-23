@@ -115,7 +115,7 @@ function distanceToRingSq(x: number, y: number, ring: Vec2[]): number {
   return best;
 }
 
-// Inside, or on the boundary. Two chunks can legitimately share an outline (both
+// Inside, or on the boundary. Two zones can legitimately share a boundary (both
 // inheriting the stack's), and a point exactly on a ring is neither reliably in
 // nor reliably out of an even-odd test.
 function pointInOrOnPolygon(

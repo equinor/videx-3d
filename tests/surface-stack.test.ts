@@ -37,10 +37,10 @@ import {
   traceThicknessLines,
 } from '../src/sdk/geometries/surface-stack-terminations';
 import {
-  packSurfaceChunk,
-  unpackSurfaceChunk,
-} from '../src/sdk/geometries/surface-chunk-packing';
-import { assembleChunk } from '../src/sdk/geometries/surface-chunk';
+  packSurfaceZone,
+  unpackSurfaceZone,
+} from '../src/sdk/geometries/surface-zone-packing';
+import { assembleZone } from '../src/sdk/geometries/surface-zone';
 import { buildFenceRibbons } from '../src/sdk/geometries/fence-ribbon';
 import {
   createStackSectionTarget,
@@ -50,7 +50,7 @@ import {
 } from '../src/sdk/geometries/surface-section';
 import { sortTrianglesSpatially } from '../src/sdk/geometries/triangle-order';
 import type { Vec2, Vec3 } from '../src/sdk/types/common';
-import type { SurfaceChunk } from '../src/sdk/geometries/surface-chunk';
+import type { SurfaceZone } from '../src/sdk/geometries/surface-zone';
 import {
   packBufferGeometry,
   unpackBufferGeometry,
@@ -262,7 +262,7 @@ describe('measureStackCoverage', () => {
 
     const measured = measureStackCoverage(reference, polygon, reference.masks);
 
-    // ⭐ A chunk-level average would hide WHICH layer is standing on nothing,
+    // ⭐ A zone-level average would hide WHICH layer is standing on nothing,
     // which is the only useful question here.
     expect(measured.layerCoverage[0]).toBe(1);
     expect(measured.layerCoverage[1]).toBeGreaterThan(0.3);
@@ -485,8 +485,8 @@ describe('tessellateStack', () => {
     expect(b.indices.length).toBe(a.indices.length);
   });
 
-  // The column collects candidates over the WHOLE envelope, and every chunk cut
-  // from it used to insert all of them. Dropping the ones outside the chunk is
+  // The column collects candidates over the WHOLE envelope, and every zone cut
+  // from it used to insert all of them. Dropping the ones outside the zone is
   // only sound if it changes nothing — which it is, because the rim is a
   // constraint edge and no triangle inside it can use a vertex outside it.
   it('ignores candidates outside its own outline, exactly', () => {
@@ -498,8 +498,8 @@ describe('tessellateStack', () => {
     const nx = reference.header.nx;
     const all = collectStackCandidates(reference.channels[0], nx, 5);
 
-    // the chunk is a small corner of the column
-    const chunk = maskPolygon(4, 12);
+    // the zone is a small corner of the column
+    const zone = maskPolygon(4, 12);
     const inside = all.filter(node => {
       const col = node % nx;
       const row = (node - col) / nx;
@@ -507,8 +507,8 @@ describe('tessellateStack', () => {
     });
     expect(inside.length).toBeLessThan(all.length / 4);
 
-    const withAll = tessellateStack(reference, chunk, 5, [all])!;
-    const withInside = tessellateStack(reference, chunk, 5, [
+    const withAll = tessellateStack(reference, zone, 5, [all])!;
+    const withInside = tessellateStack(reference, zone, 5, [
       Uint32Array.from(inside),
     ])!;
 
@@ -1045,7 +1045,7 @@ describe('cap bounding volumes', () => {
       polygon,
       maxError: 5,
     })!;
-    const chunk = assembleChunk(
+    const zone = assembleZone(
       build.layers.map(layer => ({
         geometry: layer.geometry,
         rimY: layer.rimY,
@@ -1055,8 +1055,8 @@ describe('cap bounding volumes', () => {
       { t0: 0, densifyMs: 0, clipMs: 0, rimMs: 0 },
     );
     // structuredClone keeps a buffer shared within one message, as postMessage does.
-    const [packed] = packSurfaceChunk(chunk);
-    const restored = unpackSurfaceChunk(structuredClone(packed));
+    const [packed] = packSurfaceZone(zone);
+    const restored = unpackSurfaceZone(structuredClone(packed));
     const [a, b] = restored.surfaces.map(s => s.geometry);
     // three uploads per attribute OBJECT, so sharing the buffer is not enough.
     expect(a.getAttribute('xz')).toBe(b.getAttribute('xz'));
@@ -1122,11 +1122,11 @@ describe('cap neighbours', () => {
     expect(section.gaps![1]).not.toBeNull();
     expect(section.voids).toEqual([false, true]);
 
-    const [, transfer] = packSurfaceChunk({
+    const [, transfer] = packSurfaceZone({
       surfaces: [],
       walls: [],
       section,
-      metrics: {} as SurfaceChunk['metrics'],
+      metrics: {} as SurfaceZone['metrics'],
     });
     expect(transfer).toContain(section.gaps![1]!.buffer);
     // The spatial index is built with the source, so it ships rather than being
@@ -1646,13 +1646,13 @@ describe('cut outlines', () => {
     expect(tris(clipped, 0)).toBeLessThan(tris(plain, 0));
     expect(tris(clipped, 1)).toBe(tris(plain, 1));
 
-    // ⭐ The interval below is still this chunk's, so its wall is untouched.
+    // ⭐ The interval below is still this zone's, so its wall is untouched.
     expect(clipped.walls[0]!.getAttribute('position').count).toBe(
       plain.walls[0]!.getAttribute('position').count,
     );
   });
 
-  // The lid owner can be the NARROWER chunk (see `resolveSeam`), so a cut can fall
+  // The lid owner can be the NARROWER zone (see `resolveSeam`), so a cut can fall
   // wholly inside the outline instead of crossing it — a hole in the cap.
   it('constrains a cut that falls wholly inside the outline', () => {
     const inner = maskPolygon(10, 20);
@@ -1687,12 +1687,12 @@ describe('cut outlines', () => {
 });
 
 /**
- * A fluid is a level rather than a horizon: it is ordered like any other boundary
+ * A fluid is a level rather than a horizon: it is ordered like any other layer
  * but is never the AUTHORITY, so what lies below it is measured against the
  * nearest solid layer above. The sea adds `unbounded` on top of that, which is
  * what lets ground rise through it instead of being flattened onto it.
  */
-describe('a fluid boundary', () => {
+describe('a fluid layer', () => {
   const tri = new Uint32Array([0, 1, 2]);
   // Sea level, then a sea bed that stands ABOVE it at the first vertex.
   const water = () => Float32Array.from([0, 0, 0]);

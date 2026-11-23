@@ -3,7 +3,7 @@
  *
  * A surface's grid stops where the survey stopped, not where the geology did. Left
  * alone, every interval bounded by that surface disappears there while the surfaces
- * above and below it — which may be mapped — are still drawn, so a chunk ends up as
+ * above and below it — which may be mapped — are still drawn, so a zone ends up as
  * a cap floating over a floor with open space between them.
  *
  * ⭐ Sealing that space is an ASSERTION, and there is no neutral one: we know the
@@ -121,7 +121,7 @@ export type StackVoidResult = {
  * bound it — asserting only that we cannot say which unit it belongs to.
  *
  * Implemented as two ordinary layers with an unfilled interval between them, which
- * is the "gap between zones" the stack already supports, so nothing downstream
+ * is the "gap between groups" the stack already supports, so nothing downstream
  * needs to know a split happened. Where the surface HAS data the two copies are
  * identical, so the thickness collapse drops both the void and the duplicate cap.
  *
@@ -291,13 +291,13 @@ export type StackSealOptions = {
    */
   minThickness?: number;
   /**
-   * The chunk's footprint rasterised on the reference grid, 1 where a node is
+   * The zone's footprint rasterised on the reference grid, 1 where a node is
    * drawn ({@link rasterizeStackOutline}).
    *
    * ⭐ A taper is measured over the gap you can SEE. The reference grid is the
    * grid-space bounding box of a rotated outline, and everything beyond a survey
    * edge is one region running to that box, so without this the run is set by
-   * corners the chunk never draws — and resizing the outline silently changes the
+   * corners the zone never draws — and resizing the outline silently changes the
    * shape of every seal in it.
    */
   inside?: Uint8Array | null;
@@ -313,7 +313,7 @@ export type StackSealOptions = {
 export type StackSealResult = {
   /**
    * The channels, with unmapped regions tapered. Layers that needed nothing are
-   * shared BY REFERENCE — on a shared column they belong to every chunk cut from
+   * shared BY REFERENCE — on a shared column they belong to every zone cut from
    * it, so they must not be mutated.
    */
   channels: Float32Array[];
@@ -378,11 +378,11 @@ const MIN_ROOM = 1e-3;
  * the difference between two units of different thickness meeting one edge, and
  * two parallel ramps.
  *
- * ⭐⭐ Measured over the nodes the chunk actually DRAWS when a footprint is given.
+ * ⭐⭐ Measured over the nodes the zone actually DRAWS when a footprint is given.
  * A region reaching outside the outline is deeper than anything visible, and its
  * depth would then be set by geometry nobody sees.
  *
- * @param inside 1 where a node is inside the chunk's footprint; a region with no
+ * @param inside 1 where a node is inside the zone's footprint; a region with no
  *   node inside falls back to its own extent, having nothing visible to measure
  */
 function regionReach(
@@ -433,7 +433,7 @@ function regionReach(
 
 /**
  * Taper every layer's unmapped region onto its nearest mapped neighbour, so the
- * stack encloses a solid volume everywhere inside the chunk.
+ * stack encloses a solid volume everywhere inside the zone.
  *
  * ⭐ All layers are evaluated against the ORIGINAL channels, so the result does not
  * depend on the order they are processed in.

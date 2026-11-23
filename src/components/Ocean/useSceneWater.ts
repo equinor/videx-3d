@@ -9,7 +9,7 @@ import {
 
 /**
  * The water of the scene this is drawn in (`sceneWaterBody`): what the sea there writes, an
- * `Ocean`'s, a `ChunkStack`'s or a `Scenery`'s, wherever it lies in the tree. The library's
+ * `Ocean`'s, a `ZoneStack`'s or a `Scenery`'s, wherever it lies in the tree. The library's
  * materials bind it, so what lies in the water fades by it; a host's own can, through
  * `applyWaterFog` or {@link useWaterFog}.
  */

@@ -96,7 +96,7 @@ export class GeneratorRegistry {
     this.setStore(proxy as unknown as ReadonlyStore);
     // ⚠️ NOT immediately: a build in flight is awaiting `store.get` on the old
     // proxy, and releasing it makes every further call throw 'Proxy has been
-    // released' — which kills the build and leaves the chunk empty with no error
+    // released' — which kills the build and leaves the zone empty with no error
     // the caller can see. Release it once the calls that were using it have
     // drained, which is right now if none are in flight.
     if (previous && previous !== proxy) {

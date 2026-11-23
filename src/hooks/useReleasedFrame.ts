@@ -15,7 +15,7 @@ function relay(holder: Holder): RenderCallback {
  * the live one until the first unsubscribe replaces it — and is never touched
  * again. A callback registered before then stays referenced for the life of the
  * canvas, and with it every variable of the scope it was created in (a whole
- * chunk, for `ChunkMeshes`). Here R3F only ever holds the relay.
+ * zone, for `ZoneMeshes`). Here R3F only ever holds the relay.
  */
 export function useReleasedFrame(callback: RenderCallback, priority = 0) {
   const holder = useRef<RenderCallback | null>(null);

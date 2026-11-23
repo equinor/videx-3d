@@ -1,7 +1,7 @@
 import {
   WellboreOutlineResponse,
   WellboreOutlineSpec,
-} from '../components/Chunks/chunk-defs';
+} from '../components/Zones/zone-defs';
 import {
   collectTrajectoryRuns,
   createSurfaceDepthSampler,
@@ -14,7 +14,7 @@ import {
 import { buildOutlineCoordinates } from './workers/stack-worker-pool';
 
 /**
- * Build a chunk's wellbore-derived outline: every well's trajectory is cut to the
+ * Build a zone's wellbore-derived boundary: every well's trajectory is cut to the
  * spec's depth intervals, each run buffered with its interval's margin, and the
  * result contoured into an outline.
  *

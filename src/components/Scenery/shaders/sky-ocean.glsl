@@ -7,7 +7,7 @@
 // The background finds both planes per pixel; a stage (SceneryStage) draws the same
 // functions on real geometry, which is how the scene gets water in front of it.
 // Below the seabed the abyss takes over. The seabed is lit by the scene's lights with a
-// ChunkMaterial's model and options, so an occupant's own seabed can continue it.
+// ZoneMaterial's model and options, so an occupant's own seabed can continue it.
 //
 // ⚠️ The shared shading takes screen-space derivatives: call these functions under
 // uniform control flow, and pick a result only afterwards. Skipping them is safe only

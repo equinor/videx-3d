@@ -84,7 +84,7 @@ varying vec3 vBitangent;
 #include ../../../sdk/materials/shaderLib/oit.glsl
 #endif
 
-// Procedural relief (SurfaceMaterial.detail): the chunk layers' presets.
+// Procedural relief (SurfaceMaterial.detail): the zone layers' presets.
 #ifdef SURFACE_DETAIL
 varying vec3 vWorldPosition;
 #include ../../../sdk/materials/shaderLib/procedural-normal.glsl
@@ -264,7 +264,7 @@ void main() {
     bool detailShown = true;
     #endif
     // From AFTER <normal_fragment_begin>, which flips a back face's normal. No unit to lay
-    // bedding along (a chunk wall's), so the grain follows depth.
+    // bedding along (a zone wall's), so the grain follows depth.
     diffuseColor.rgb *= surfaceDetail(normal, vWorldPosition, -vViewPosition, 0.0, detailShown);
   }
   #endif

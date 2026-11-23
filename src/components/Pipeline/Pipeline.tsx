@@ -6,7 +6,7 @@ import {
   getSplineCurve,
   Vec2,
 } from '../../sdk';
-import { useSurfaceSampler } from '../Chunks/surface-sampler';
+import { useSurfaceSampler } from '../Zones/surface-sampler';
 import { UtmAreaContext } from '../UtmArea';
 
 /** What a route turned out to be, once laid on the surface. */
@@ -80,11 +80,11 @@ function trimPolyline(points: Vec2[], trim: number): Vec2[] {
 }
 
 /**
- * A pipeline (or cable, or any line) laid on the surface a `ChunkStack` is
+ * A pipeline (or cable, or any line) laid on the surface a `ZoneStack` is
  * drawing: the route is a list of UTM positions, and where it sits vertically
  * comes from sampling that surface.
  *
- * Place inside a `UtmArea` and a `ChunkStack`. Renders nothing until there is a
+ * Place inside a `UtmArea` and a `ZoneStack`. Renders nothing until there is a
  * surface to sample.
  *
  * @example

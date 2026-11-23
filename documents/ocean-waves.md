@@ -7,7 +7,7 @@ a new wind rescaled and turned the whole pattern in one frame. Floating objects 
 unwarped sum, so they were out of step with the waves drawn.
 
 The wave core replaces that with a **sea state** on the CPU and a few **baked layers** on the
-GPU. The `Ocean`, the `Scenery`'s sea and a `ChunkStack`'s water draw it
+GPU. The `Ocean`, the `Scenery`'s sea and a `ZoneStack`'s water draw it
 (`OceanMaterial.renderWaves` each frame, `shaders/sea-layers.glsl` and `ocean-surface.glsl`).
 
 ## The sea state (`sdk/weather/sea-state.ts`)
@@ -251,7 +251,7 @@ objects ride (`SeaState.heightAtDepth`, through `createOceanSampler`).
   body's wall top use the same factors, so the rim stays sealed.
 - The surf (`oceanShoreFoam`) breaks at the same depth over the same height, so it stands where
   the waves are being cut, and its swash is carried by the waves' height as in deep water.
-- **Where the depth comes from**: the `Ocean`'s and a `ChunkStack`'s bathymetry grid
+- **Where the depth comes from**: the `Ocean`'s and a `ZoneStack`'s bathymetry grid
   (`depthMapHeightAt` reads it on the CPU as `depth-map.glsl` does), else the scene's ground map
   under an endless sea, else the water's flat floor. The `Scenery`'s sea reads the ground map
   per pixel (already read for the water's colour); its floaters read the relief's tiles

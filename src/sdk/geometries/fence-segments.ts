@@ -213,7 +213,7 @@ function markCells(
  *
  * ⚠️ Segments are DUPLICATED into every cell that lists them, rather than stored
  * once behind an index list. It costs a few hundred kilobytes on a field-sized
- * curve and saves a texture unit and an indirection per fragment — chunk materials
+ * curve and saves a texture unit and an indirection per fragment — zone materials
  * already bind contact map arrays and a bathymetry map, so samplers are the scarcer
  * resource.
  *

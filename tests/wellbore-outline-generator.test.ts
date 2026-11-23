@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildWellboreOutlineSpec } from '../src/components/Chunks/chunk-spec';
-import { resolveWellboreOutline } from '../src/components/Chunks/resolveWellboreOutline';
+import { buildWellboreOutlineSpec } from '../src/components/Zones/zone-spec';
+import { resolveWellboreOutline } from '../src/components/Zones/resolveWellboreOutline';
 import { generateWellboreOutline } from '../src/generators/wellbore-outline-generator';
 import type { SurfaceMeta } from '../src/sdk/data/types/SurfaceMeta';
 import {

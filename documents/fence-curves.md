@@ -1,6 +1,6 @@
 # Wellbore fence
 
-A **fence** slices a chunk stack in two along a wellbore, so the well can be viewed
+A **fence** slices a zone stack in two along a wellbore, so the well can be viewed
 from either half. It is a vertical surface, so what it removes depends on map
 position alone — one scalar per XZ point, which the shader reads per fragment while
 the CPU sweeps the same curve into the cut face.
@@ -9,7 +9,7 @@ Two features in this repo sweep a vertical surface along a plan trace:
 
 | | seismic section | column fence |
 | --- | --- | --- |
-| component | `WellboreSeismicSection` | `ChunkFence` on `ChunkStack` |
+| component | `WellboreSeismicSection` | `ZoneFence` on `ZoneStack` |
 | purpose | draw a SHEET | make a CUT |
 | curve from | `getProjectedTrajectory` (`sdk/utils/trajectory.ts`) | `buildWellboreFence` (`sdk/geometries/wellbore-fence.ts`) |
 | sides | none | two, built together |
@@ -27,10 +27,10 @@ and must be followed closely, at a fixed clearance, without ever crossing it.
 ⭐⭐ **THE ONE RULE, which everything else follows from: the trajectory inside a fold is
 DEGENERATE, and no measurement may be taken from it.** Where the trace loops, hooks or
 doubles back, `fenceObstacles` frames the fold in a convex hull. The points within the
-margin of that hull are its **zone**, tested by distance to the hull, and the zone — not the
-trace — dictates the route past the obstacle. Each side rounds its own side of the zone with
+margin of that hull are its **margin band**, tested by distance to the hull, and the margin band — not the
+trace — dictates the route past the obstacle. Each side rounds its own side of the margin band with
 a stiff rod, and that rod *is* the cut there. Nearly every bug this feature has had came
-from measuring the trace where the zone should have stood in for it.
+from measuring the trace where the margin band should have stood in for it.
 
 ## Pipeline
 
@@ -41,12 +41,12 @@ Curve3D (spline through the position log)
   │                         refine where the plan turns sharply
   ├─ prepareFenceTrace      the plan path, deduped and simplified — AS DRILLED.
   │                         It is NOT straightened; folds are routed around, not removed
-  ├─ fenceObstacles         convex hulls framing each fold; the zone is the points within
-  │                         `margin` of a hull. Hulls whose zones touch, or whose rods
+  ├─ fenceObstacles         convex hulls framing each fold; the margin band is the points within
+  │                         `margin` of a hull. Hulls whose margin bands touch, or whose rods
   │                         would crowd, are merged into one
   │
   ├─ oneSidedOffset  ×2     each side's CORE: the one-sided offset of the trace, its runs
-  │                         joined across each zone by a stiff rod
+  │                         joined across each margin band by a stiff rod
   │                         (`sdk/utils/one-sided-offset.ts`)
   ├─ buildFenceCut          the SHARED run-out arms, decided from both cores together
   │                         (`sdk/utils/fence-run-out.ts`); takes the `near-vertical`
@@ -103,11 +103,11 @@ stretch alone (`report.block`). The window itself is echoed as `report.verticalR
     9.99 m, under the 10 m degenerate span, fell back to +X against a well heading −X, and the TD
     arm turned 88–90° (19 SR in a 0.8 km crop: 162°). Only blocks shorter than the 50 m tangent
     arc can change: over both crops, 424 of 430 builds identical, 4 fixed, 2 within 0.1°.
-  - A run-on that ends inside the zone over the block's TD — the well hooks back below the cut
+  - A run-on that ends inside the margin band over the block's TD — the well hooks back below the cut
     and never leaves the hull — is planned like a real TD in a hull (`planTdArm`): the cores
     round it onto a guide along the well's bearing before the hull, with nothing cut back. It
-    used to stop at the zone short of the TD, and the TD arm crossed the well (F-11 A at 1900 m).
-  - ⭐ That bearing is read where the well enters the HULL, not its zone. Read at the zone, it slid
+    used to stop at the margin band short of the TD, and the TD arm crossed the well (F-11 A at 1900 m).
+  - ⭐ That bearing is read where the well enters the HULL, not its margin band. Read at the margin band, it slid
     back along a curving well as the margin grew and turned the head arm with it — Z01's 22° between
     margins 10 and 11.75 — until at 11.8 the head wrap swallowed the TD hull, the plan was dropped,
     the head was planned off the tangent INSIDE the hull, and the rod failed (49°) at every margin
@@ -125,7 +125,7 @@ stretch alone (`report.block`). The window itself is echoed as `report.verticalR
     the block, as before.
 - A well kept whole runs on the original curve, so its fence is bit-identical.
 
-`ChunkStack` derives `verticalRange` from its chunks: each publishes the depth range of the
+`ZoneStack` derives `verticalRange` from its zones: each publishes the depth range of the
 units it lets a cut take (every layer but `section: false`), from the first cut layer's
 surface `min` to the `max` of the surface flooring the last one (or the carrier). A fence
 that cuts the sea (`water`) keeps the top at sea level.
@@ -240,18 +240,18 @@ where `'left'` is **−1** — and the hand is never re-derived at a call site. 
 projection is degenerate and anchors formed there manufacture loops and folds. The hand
 therefore flips inside that file; `computeOffsetRuns` encodes that once.
 
-## Obstacles are zones, measured as a distance
+## Obstacles are margin bands, measured as a distance
 
-⭐⭐ An obstacle is its convex hull and the margin: its **zone** is the points closer to the
+⭐⭐ An obstacle is its convex hull and the margin: its **margin band** is the points closer to the
 hull than `margin`. Every question asked of it — is this offset point clear, where does this
 run reach it, how far apart are two obstacles — is a distance to a convex polygon, exact and
-continuous in the margin (`sdk/utils/margin-zone.ts`: `convexSignedDistance`,
+continuous in the margin (`sdk/utils/margin-band.ts`: `convexSignedDistance`,
 `segmentConvexNearest`, `convexPolygonDistance`, `hullsWithin`, `marginCrossings`).
 
-One polygon is left: `zoneRing`, the hull grown by the margin with no corner turning more than
-`maxRelativeTurn / 2` — outside the zone everywhere, and within 2% of the margin of it. It is
-the outline the story draws, the path the rod is seeded along, and the zone's extent (the rod's
-atom). Whether a point is IN the zone is never read from it.
+One polygon is left: `bandRing`, the hull grown by the margin with no corner turning more than
+`maxRelativeTurn / 2` — outside the margin band everywhere, and within 2% of the margin of it. It is
+the outline the story draws, the path the rod is seeded along, and the margin band's extent (the rod's
+atom). Whether a point is IN the margin band is never read from it.
 ⭐ **An obstacle's hull is coarsened where it is made** (`obstacleHull`): a dense trace leaves every
 vertex of a bend on its hull (Z06's head: 1479), and every distance to it costs per vertex — half of a
 big-hull build. Runs of edges are replaced by extending their neighbours while the new corner stays
@@ -263,22 +263,22 @@ one worst turn moved (Z34 at 0.1: right 6° → 11°).
 - **Runs.** `computeOffsetRuns` drops an offset candidate within `margin + tolerance` of a hull.
   ⛔ It also drops every candidate whose SOURCE well vertex is on or inside a hull, wherever its
   miter puts it: a corner candidate stands up to `miterLimit · margin` off its vertex, past the
-  rounded zone, and one kept strung a run round X12's TD hook at margin 4 (a 60° reversal).
-- **Run ends** are the exact point where the run enters the zone (`marginCrossings`), so they
+  rounded margin band, and one kept strung a run round X12's TD hook at margin 4 (a 60° reversal).
+- **Run ends** are the exact point where the run enters the margin band (`marginCrossings`), so they
   move continuously with the margin.
-- **The reliable well** — the stretches the rod is held off — runs right up to the zone
+- **The reliable well** — the stretches the rod is held off — runs right up to the margin band
   crossing. Stopped at the last vertex outside, it left a gap that X07's rod slipped through at
   margin 1.
-- **Merges.** Two obstacles are one when their hulls are within `2 · margin` (their zones touch),
-  or when the well between the two zones is too short for both rods (`rodsCrowd`: 4 atoms of run
-  each, measured by `freeRunBetween`). A rod whose anchor still runs onto the next zone throws
+- **Merges.** Two obstacles are one when their hulls are within `2 · margin` (their margin bands touch),
+  or when the well between the two margin bands is too short for both rods (`rodsCrowd`: 4 atoms of run
+  each, measured by `freeRunBetween`). A rod whose anchor still runs onto the next margin band throws
   `RodOverlapError`, and the pair is fused and the cores re-planned. The head wrap and the TD plan
-  use the same distance and `zoneRing`.
+  use the same distance and `bandRing`.
 
 ## The transition: a stiff rod
 
 Each gap between two runs is joined by one construction, whatever its size: a **stiff rod**.
-`seedStiffRod` (`sdk/utils/stiff-rod.ts`) lays the seed — the `zoneRing` path between the two
+`seedStiffRod` (`sdk/utils/stiff-rod.ts`) lays the seed — the `bandRing` path between the two
 run ends in the walk direction, plus an anchored stretch of each run, resampled at the rod's
 atom `max(0.25, margin / 2, D / 8)`. The anchor rule and its measurements are in that file's
 header. `settleRodConstrained` (`sdk/utils/stiff-rod-constrained.ts`) settles it.
@@ -312,11 +312,11 @@ header. `settleRodConstrained` (`sdk/utils/stiff-rod-constrained.ts`) settles it
 
 MEASURED against the pin-and-release settle it replaced, full census (43 wells × 15 margins):
 7 → 0 builds throwing; on 104 rods, 223 → 128 contacts and worst rod turn 180° → 25°. With the
-zones moved to distance as well: 0 builds throwing, worst turn better on 296 builds and worse on 38.
+margin bands moved to distance as well: 0 builds throwing, worst turn better on 296 builds and worse on 38.
 
 ## Why the clearance is baked into the curve
 
-`ChunkFence.margin` is metres of clearance between the trajectory and the cut — room
+`ZoneFence.margin` is metres of clearance between the trajectory and the cut — room
 for whatever is drawn *in* the hole (casings, completion, logs), which a cut through the
 trajectory would slice in half. It must be greater than zero.
 
@@ -330,7 +330,7 @@ implicit surface that have to be reconciled numerically. That is what a previous
 implementation did, and it needed marching squares, a Newton solve to pull face vertices
 onto the sampled isocontour, and a CPU↔GLSL parity test. All of that is gone.
 
-The price is that changing `margin` rebuilds the fence. It does **not** rebuild the chunks.
+The price is that changing `margin` rebuilds the fence. It does **not** rebuild the zones.
 
 ### Clearance is a SEGMENT measure, never a vertex one
 
@@ -359,7 +359,7 @@ mechanisms exist for it, and both are load-bearing:
   gate's own line and anything after the hold could tip it over. Over 1273 builds of the F-1,
   F-11, F-15, 19 families and F-4 at margins 0.1–19.9: no outcome changed, one worst turn moved
   (19 A at 7: 7.6° → 12.6°).
-- ⛔ **A chord hold never lifts into a zone** (`holdPolylineChords2D` option `blocked`): where the
+- ⛔ **A chord hold never lifts into a margin band** (`holdPolylineChords2D` option `blocked`): where the
   cut passes between the well and a ring, lifting a midpoint off the well pushed its two new chords
   into the ring — X08 with a free head at 1.9–2.1, 2 cm inside, once the hold aimed at the full
   margin. Such a chord is left pinched for the gates to judge.
@@ -518,21 +518,21 @@ authority, not the number.
 Anything that has to agree with the cut reads the same lookup:
 
 - the **fragment discard**, through `fenceSide` in `sdk/materials/shaderLib/fence-field.glsl`;
-- the **sea**, whose two materials read that same chunk through `OCEAN_FENCE`, so the water ends
+- the **sea**, whose two materials read that same zone through `OCEAN_FENCE`, so the water ends
   on the curve rather than a fraction of a cell either side of it;
 - the **immersion fog**, which asks whether the camera is standing in the half that was taken
   away — exactly, so the fog switches at the cut rather than metres before it;
 - the **cut face**, which is the curve itself.
 
-What the fence removes is opt-out per medium, the same way `ChunkSection`'s is, and both default
+What the fence removes is opt-out per medium, the same way `ZoneSection`'s is, and both default
 **off** — the sea and the base plate FRAME the block. An intact water surface over an opened
 column reads immediately as a field seen in section, while a sea cut in half alongside it mostly
 reads as missing.
 
-- `ChunkFence.water` hands the fence's shared uniforms to `OceanMaterial` and
+- `ZoneFence.water` hands the fence's shared uniforms to `OceanMaterial` and
   `OceanVolumeMaterial`, and the water body is then CLOSED by a face of its own. Left off, the
   sea bed cap is kept whole as the sea's floor instead, as for any kept unit.
-- `ChunkFence.carrier` cuts the column's floor with the rest.
+- `ZoneFence.carrier` cuts the column's floor with the rest.
 
 ⚠️ Both are DEFINES, so toggling either rebuilds the materials concerned. The curve itself moves
 through the uniforms, and rebuilds nothing.
@@ -563,7 +563,7 @@ value from the source object rather than through the uniform that was never writ
 
 The sea is built by `buildSurfaceStack` as a stack of exactly two boundaries — the level and the
 bed — so it can emit a `StackSectionSource` like any other stack. With `StackWaterSpec.section` in
-hand, the water's cut face uses the same builders the chunks use: `buildFenceRibbons` for a fence,
+hand, the water's cut face uses the same builders the zones use: `buildFenceRibbons` for a fence,
 `sectionStackInterval` for a plane.
 
 ⭐ Why it lines up: the face is swept over the sea's own channels, whose bed IS the column's
@@ -572,7 +572,7 @@ about where the sea bed is to leave a gap along the seam.
 
 ⭐ It is drawn with a third `OceanVolumeMaterial` carrying no cut of its own. The face lies exactly
 on the curve, so testing it against the thing it exists to close punches holes along its length —
-the same reason `ChunkMeshes` builds the block's faces with both cut gates off.
+the same reason `ZoneMeshes` builds the block's faces with both cut gates off.
 
 ## Which half to remove, and where to stand
 
@@ -580,7 +580,7 @@ A cut face can only be read from the half that was **removed** — from the othe
 itself is in the way. So the side is not a preference to be set: it is a function of where the
 camera is, and the two have to be decided together.
 
-`ChunkFence.side: 'auto'` makes the stack decide every frame, from one `fenceSideAt` query against
+`ZoneFence.side: 'auto'` makes the stack decide every frame, from one `fenceSideAt` query against
 the left side's field — that field partitions the whole plan, so there is no third answer to ask
 the other side for. Two thresholds keep that from flickering, and both are needed:
 
@@ -620,11 +620,11 @@ See [camera.md](./camera.md) for the flight that uses it.
   measured on the **hull**, never on the inflated ring: inflation is isotropic, so it rounds a hull
   out and the fence's direction would become a function of the clearance setting.
 - **Multi-lobe footprints.** A stack whose outline is several disjoint regions — which happens when
-  a column's chunks derive their outlines from the wellbores — cannot generally be split evenly by
+  a column's zones derive their boundaries from the wellbores — cannot generally be split evenly by
   one well. The report flags it (`removes only N% of the block`) rather than failing silently.
 - A plan trace that genuinely crosses itself cannot be swept into a manifold vertical surface.
-- ~~**Picking does not follow the cut.**~~ **Closed 2026-10-09:** a cut chunk material registers a
-  `ChunkPickingMaterial` (`setPickingMaterial`) carrying the same fence and section discards, so
+- ~~**Picking does not follow the cut.**~~ **Closed 2026-10-09:** a cut zone material registers a
+  `ZonePickingMaterial` (`setPickingMaterial`) carrying the same fence and section discards, so
   cut-away block is not picked and the fence face is.
 - **Practical margin ceiling is about 20 m.** Beyond it the field's own geometry runs out: a fold
   narrower than twice the margin cannot be threaded, and a well whose whole footprint is under
@@ -632,12 +632,12 @@ See [camera.md](./camera.md) for the flight that uses it.
   radius (a 40 m cap on the fold repair's turn) was removed after it changed no build at margins
   14–40 (2086 core sides bit-identical).
 - ⚠️ **The head and TD planners were tuned on the old mitred ring.** Their approach shift, crowding
-  and guide extents were measured against a ring up to 11 m wider at margin 20 than `zoneRing`
+  and guide extents were measured against a ring up to 11 m wider at margin 20 than `bandRing`
   (F-5's head shift 38.6 → 27.5 m). They have not been re-measured.
-- **Turn regressions from moving the zones to distance**, against the constrained settle on the
-  old zones: F-15 B at margin 8 10.4° → 21.6°, F-15 A at 10 5.7° → 16.7°, 19 A at 8 6.4° → 15.3°,
+- **Turn regressions from moving the margin bands to distance**, against the constrained settle on the
+  old margin bands: F-15 B at margin 8 10.4° → 21.6°, F-15 A at 10 5.7° → 16.7°, 19 A at 8 6.4° → 15.3°,
   19 SR at 8 and 10 about 5° → 11°, X11 at 20 3.3° → 10.1°. The run ends and anchors moved with
-  the rounded zone; all of them build.
+  the rounded margin band; all of them build.
 - A run end S more than an atom behind E still walks the whole ring. Whether that is ever right
   has not been measured.
 
@@ -659,13 +659,13 @@ evidence.
   the well inside the hull is (correctly) ignored.
 - **A margin-scaled fold detector.** It makes detection non-monotone — measured, the obstacle
   vanishes exactly when the margin gets big enough to need it.
-- **An obstacle as a polygon grown by the margin.** There were three — a miter-2 zone for the prune,
+- **An obstacle as a polygon grown by the margin.** There were three — a miter-2 margin band for the prune,
   merges and the final check, the walk ring, and a ring lifted by a sagitta to hold the rod off its
   own hull — and they disagreed by up to a margin at every sharp hull corner. A miter-2 corner stands
-  up to a whole margin outside the true zone and switches from one vertex to two as the corner
+  up to a whole margin outside the true margin band and switches from one vertex to two as the corner
   crosses 120°: X13's head tip did that between margins 1.1 and 1.2, and the cut snapped to a 118°
   turn. Lowering only the rod ring's miter measured much worse (24 failed sides per well). The
-  distance to the hull is exact and continuous; see "Obstacles are zones".
+  distance to the hull is exact and continuous; see "Obstacles are margin bands".
 - **The pin-and-release rod settle.** It inserted or snapped a vertex at each violation, walked
   contacts from corner to corner and released them by an edge-normal test. It needs ring corners to
   pin, and its inserted vertices made short chords that needed hand pins, dip splits and a

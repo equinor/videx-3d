@@ -29,7 +29,7 @@ export const useSurfaceMeta = () => {
  * Drop surfaces whose name has already been seen, keeping the first occurrence.
  *
  * The demo dataset contains surfaces that share a name (e.g. two different
- * `CROMER KNOLL GP. Top` grids), which makes a stacked chunk ambiguous — the same
+ * `CROMER KNOLL GP. Top` grids), which makes a stacked zone ambiguous — the same
  * horizon would appear twice at different depths. The data store keeps them all;
  * this is only for the stories, which build a stack out of whatever is available.
  *

@@ -18,7 +18,7 @@ const NODE_PARALLEL = 1e-10;
  * the crossing becomes a shared point of both.
  *
  * ⚠️ Two constraint edges that cross cannot both survive a triangulation — only a
- * vertex AT the crossing lets both follow mesh edges. A chunk constrains its own
+ * vertex AT the crossing lets both follow mesh edges. A zone constrains its own
  * rim plus the rim of any neighbour it partially overlaps, which produces exactly
  * that, so they have to be noded first. Without it the triangulator silently
  * drops one of the two boundaries.
@@ -135,7 +135,7 @@ export function nodeGridRings(rings: GridRing[], open?: boolean[]): GridRing[] {
   }
 
   // ⭐ ...but FOUND through a uniform grid over the segment boxes. A sweep compares
-  // every pair whose x spans overlap, and a vertical line through a chunk crosses
+  // every pair whose x spans overlap, and a vertical line through a zone crosses
   // every termination line and ring in it — thousands of pairs per segment, nearly
   // all far apart in y. Cells at least as large as the average segment keep a
   // segment to a few cells; at least `area / n` keeps the grid to ~n cells.

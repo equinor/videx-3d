@@ -39,7 +39,7 @@ projection and an origin; step 3, built 2026-10-26), and what needs it takes it 
 
 | Who | What it takes from the `World` | What it uses it for |
 |--|--|--|
-| `UtmArea` | the scene's frame, to place itself in: not moved in the world's own map, placed (turned, scaled, on the globe) in another | placing the data: chunks, wells, surfaces, annotations |
+| `UtmArea` | the scene's frame, to place itself in: not moved in the world's own map, placed (turned, scaled, on the globe) in another | placing the data: zones, wells, surfaces, annotations |
 | `Scenery` `observer` | the origin's latitude and longitude, when it gives only a date | the sun, moon, planets and stars |
 | `GeoRelief` | the frame and the globe | placing the reliefs by latitude and longitude |
 
@@ -114,7 +114,7 @@ placed on the globe. The sun and the stars need a latitude and longitude, which 
 ### Fields
 
 A field keeps a flat frame of its own (a projection and an origin, as `UtmArea` has now),
-and all its data stays in it: chunks, wells, surfaces, annotations, picking. The frame is
+and all its data stays in it: zones, wells, surfaces, annotations, picking. The frame is
 placed on the Earth by a rigid transform: its origin on the globe, its up along the
 globe's normal there, its north along the projection's grid north. Inside the field the
 plane and the sphere part by `d² / 2R` (5 m at 8 km, 20 m at 16 km), as with a `SceneryAnchor`
@@ -150,14 +150,14 @@ the scene's ([Step 3 in detail](#10-step-3-in-detail-fields-placed-on-the-earth)
 | Part | Before step 3 | Now (step 3), and later |
 |--|--|--|
 | `UtmArea` | the scene's frame, at the world origin; `UtmPosition` and `Wgs84Position` flat ([For a host](#for-a-host)) | ✅ one field's frame: takes a `GeoFrame` (`frame`), and in a `World` with another frame places itself (`placeGeoFrame`, `geoFrameMatrix`); nested `UtmPosition`, picking and annotations unchanged; `worldToUtm` through its whole transform |
-| Chunks, wells, surfaces | in `UtmArea` | unchanged, inside their field's `UtmArea` |
+| Zones, wells, surfaces | in `UtmArea` | unchanged, inside their field's `UtmArea` |
 | `SceneryAnchor` | places flat content on the globe, where it is, rigidly (step 2) | ✅ places as the globe places the ground there (`Globe.tangent`), as a placed `UtmArea` is; for content without a frame of its own; takes the `World`'s globe outside the `Scenery` |
 | Sky curve | a fixed globe, its cap over the chosen field cut flat (step 2) | the same; its disc from the chosen field's stage |
 | Sky observer | given by the host | ✅ its place from the `World`'s origin when it gives only a date; the date the host's |
 | Relief | read in the stage's `frame`, the scene's | ✅ the `World`'s frame by default, the chosen field's, where its column meets it exactly; its own frame waits for step 6; Earth data of its own, drawn with or without a sky, in step 7 |
 | Relief tiles | keyed in the frame's X/Z, roots of 2097 km about its origin | keyed by latitude and longitude for the whole globe (step 6); until then as now, within one region |
 | `SceneryStage` | one stage, one occupant, at the scene's frame | as before, at the chosen field; the anchored stage switched by the host changing the `World`'s frame and disc (a controlled switch), every loaded field drawn, is [step 7's](#13-step-7-in-detail-more-than-one-field) |
-| Bridge (relief → chunk) | relief and column in the same frame | the same for the chosen field; a column in a placed field samples the relief through a transform, with step 6 |
+| Bridge (relief → zone) | relief and column in the same frame | the same for the chosen field; a column in a placed field samples the relief through a transform, with step 6 |
 
 ---
 
@@ -1295,7 +1295,7 @@ A neighbour laid flat on the globe's tangent at its pivot stands off the sphere 
 Lowered by that along its own up, in its own frame, before the model matrix, it lies on the
 Earth: one shared vertex chunk with a uniform per field (its pivot and `R`; nothing for the
 anchored stage's fields, so a switch sets uniforms and compiles nothing). Every field material
-needs it — chunks and their caps, surfaces, wells, fences and cut planes — and GPU picking too.
+needs it — zones and their caps, surfaces, wells, fences and cut planes — and GPU picking too.
 Not `applyGlobe`: it works through world positions (3 cm steps at 300 km, against
 [What to keep doing now](#5-what-to-keep-doing-now)), and the group's matrix places the field
 already. The maps' second order (0.5–1.5 m) stays. Built only if 7a shows the seam; more likely
@@ -1521,9 +1521,9 @@ without a warning.
   the story keeps its rim, stale, until the new column's comes; `releaseMaterial`
   (`rendering/precompile.ts`) lets a material go only once its programs have linked and the
   compiles queued before it have started, so a replacement takes its programs over — used by
-  the sky, its layers, the baker, the stage, the relief, the chunks and the stack's sea; and
-  the chunks' and the sea's linger 5 s (`CHUNK_MATERIAL_LINGER`), as a rebuild lets the old
-  chunk go before the new one comes in. Programs made and thrown away per `maxError` rebuild:
+  the sky, its layers, the baker, the stage, the relief, the zones and the stack's sea; and
+  the zones' and the sea's linger 5 s (`ZONE_MATERIAL_LINGER`), as a rebuild lets the old
+  zone go before the new one comes in. Programs made and thrown away per `maxError` rebuild:
   27 before, 0 after (20 rebuilds, none warned, from loading on).
 
 ### 7e, built (2026-11-02)
@@ -1611,7 +1611,7 @@ avoid, cheaply:
   anchored together, one frame and one disc over both, so both lie flat on it, exact to each
   other and to the sea and relief drawn there.
 
-Bending would take a vertex step in every field material (chunks and their caps, surfaces,
+Bending would take a vertex step in every field material (zones and their caps, surfaces,
 wells, casings, fences, cut planes, symbols) and in picking, and its inverse on the CPU
 (`worldToArea`, `worldToUtm`, the samplers), for a gap only these views show.
 
@@ -1621,7 +1621,7 @@ A stage's area was an axis-aligned box, `bounds`, everywhere: a field turned aga
 needed a larger stage than itself, and the disc holding it larger still. It is now a `Boundary`
 (`sdk/geometries/boundary.ts`), on the `World`, a `UtmArea` and a `SceneryStage` alike
 (`boundary`; `bounds` is gone, never released): a box, a turned box (`{ box, rotation }`), a
-circle (`{ centre, radius }`) or a polygon (a `PlanarPolygonGeometry`, as a chunk stack's
+circle (`{ centre, radius }`) or a polygon (a `PlanarPolygonGeometry`, as a zone stack's
 outline, or a ring of `[x, z]` points). The void's walls, which tied the stage to a rectangle,
 were removed first ([The void](#the-void-the-seabeds-underside-everywhere)). See
 [scenery.md, Boundaries](./scenery.md#boundaries).

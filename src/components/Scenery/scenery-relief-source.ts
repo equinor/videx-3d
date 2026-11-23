@@ -5,7 +5,7 @@ import { sceneryDefaults, SceneryOceanProps } from './scenery-model';
 
 /**
  * The relief a `GeoRelief` draws from tiles, as something built on it samples it — a
- * `ChunkStack`'s column for its top (`ChunkStackProps.relief`). Derived from the very
+ * `ZoneStack`'s column for its top (`ZoneStackProps.relief`). Derived from the very
  * props given the relief and its sky, so the two agree. Its `key` follows its content: a
  * source built inline each render rebuilds nothing.
  *

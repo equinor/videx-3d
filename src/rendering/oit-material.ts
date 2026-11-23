@@ -715,7 +715,7 @@ export function makeOitCompatible<T extends Material>(
       // folded in any <begin_vertex> override, morph targets, skinning, instancing
       // and batching. The `position` attribute carries none of those, and is not even
       // the rasterised vertex when a material assembles its position from other
-      // attributes — a chunk cap ships `xz` + `y` and no `position` at all, so the
+      // attributes — a zone cap ships `xz` + `y` and no `position` at all, so the
       // old form gave every fragment the model origin's depth.
       const anchor = '#include <project_vertex>';
       if (shader.vertexShader.includes(anchor)) {

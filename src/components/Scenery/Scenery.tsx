@@ -1452,7 +1452,7 @@ export const Scenery = ({
     water.sunGlintSpread = glintSpread;
   }, [water, lightDirection, glintSpread]);
 
-  // The sky the scene's other seas reflect (an `Ocean`'s, a `ChunkStack`'s: sceneSky),
+  // The sky the scene's other seas reflect (an `Ocean`'s, a `ZoneStack`'s: sceneSky),
   // written each frame as its own sea's.
   const [publishedSky] = useState(() => ({
     direction: new Vector3(),

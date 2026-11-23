@@ -53,7 +53,7 @@ export type SurfaceMaterialOptions = {
   normalMap?: Texture;
   normalScale?: Vec2;
   /**
-   * procedural relief up close, a chunk layer's presets (`'sand'`, `'shale'`, …, or
+   * procedural relief up close, a zone layer's presets (`'sand'`, `'shale'`, …, or
    * `{ preset, strength, scale }`; see {@link SurfaceMaterial.detail}). Default none
    */
   detail?: SurfaceDetail;
@@ -64,7 +64,7 @@ export type SurfaceMaterialOptions = {
   precomputeNormals?: boolean;
   /**
    * Trust the GEOMETRY where the grid has no data, instead of discarding there.
-   * Defaults to `false` — set it when drawing on a **chunk** layer, whose mesh is
+   * Defaults to `false` — set it when drawing on a **zone** layer, whose mesh is
    * authoritative (see {@link SurfaceMaterial.geometryFallback}). On a `Surface`,
    * whose mesh is built from the grid, the discard is correct and this must stay
    * off.
@@ -81,15 +81,15 @@ export type SurfaceMaterialOptions = {
  *
  * The material reads the grid through the geometry's **UV attribute**, so it works
  * on anything carrying grid-space `[0, 1]` UVs for that surface — a `Surface`
- * mesh, or a chunk layer built on a shared tessellation (which writes per-layer
- * grid UVs). That is what makes it usable as `Chunk`'s `topMaterial`.
+ * mesh, or a zone layer built on a shared tessellation (which writes per-layer
+ * grid UVs). That is what makes it usable as `Zone`'s `topMaterial`.
  *
  * The material is created and disposed by this hook, so the caller must not
  * dispose it.
  *
  * @example
  * const topMaterial = useSurfaceMaterial(topMeta, { contours: true });
- * <Chunk groups={groups} topMaterial={topMaterial} />
+ * <Zone groups={groups} topMaterial={topMaterial} />
  *
  * @group Hooks
  */

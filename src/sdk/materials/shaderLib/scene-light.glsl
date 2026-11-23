@@ -1,7 +1,7 @@
 // A surface lit by the scene's lights as three's Blinn-Phong materials light it — the light
 // loops of `lights_fragment_begin` without shadows — for a shader that shades a surface it has
 // no mesh of its own for (a ray-traced plane, say). `ambient` redistributes the ambient light
-// by orientation, x facing up and y facing down, as `ChunkMaterial`'s `ambient` does; (1, 1)
+// by orientation, x facing up and y facing down, as `ZoneMaterial`'s `ambient` does; (1, 1)
 // leaves it flat. `position` and `normal` are in view space. `sceneBlinnPhongShaded` scales
 // the directional lights by a shadow of the caller's (a cloud's).
 // ⚠️ Needs <common>, <bsdfs> and <lights_pars_begin>, and a material with `lights: true`.

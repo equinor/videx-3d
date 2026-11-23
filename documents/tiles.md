@@ -1,9 +1,9 @@
-# Tiles: streamed relief, and the bridge between the relief and the chunk stack
+# Tiles: streamed relief, and the bridge between the relief and the zone stack
 
 > **Status (2026-10-26): built, steps 1–7; [world.md step 2](./world.md#9-step-2-in-detail-the-sky-on-a-fixed-globe)
 > (the sky on a fixed globe), then [overlays](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed),
 > are next.** What a user needs is in [relief.md](./relief.md), [data.md](./data.md),
-> [scenery.md](./scenery.md) and the [chunk stack's documents](./chunk-stack/index.md); this stays
+> [scenery.md](./scenery.md) and the [zone stack's documents](./zone-stack/index.md); this stays
 > the maintainers' design and its record. Early testing happens in the Storybook story
 > `Spikes/Scenery/ReliefTiles` (see [Order of work](#10-order-of-work)).
 
@@ -14,7 +14,7 @@
 - [3. The tile core](#3-the-tile-core)
 - [4. Relief tiles](#4-relief-tiles)
 - [5. Drawing the relief](#5-drawing-the-relief)
-- [6. The bridge: relief to chunk](#6-the-bridge-relief-to-chunk)
+- [6. The bridge: relief to zone](#6-the-bridge-relief-to-zone)
 - [7. Sampling the relief](#7-sampling-the-relief)
 - [8. Overlays: shapes on the relief, the sea and the seabed](#8-overlays-shapes-on-the-relief-the-sea-and-the-seabed)
 - [9. What goes](#9-what-goes)
@@ -44,7 +44,7 @@ What is wanted:
 One texture cannot hold 2000 km at 25 m (80,000² texels). A quadtree of tiles can: it
 holds detail only where it is seen. Merging the data sets once per tile, in a worker,
 means the shader reads ONE texture whatever their number. And a tile that knows its own
-error can stay coarse where the ground is flat, as the chunks' tiles already do.
+error can stay coarse where the ground is flat, as the zones' tiles already do.
 
 ---
 
@@ -54,13 +54,13 @@ error can stay coarse where the ground is flat, as the chunks' tiles already do.
 |--|--|
 | Contract | ONE relief contract in videx-3d: `relief-meta` and `relief-values`, asked for by window of the data set's own grid. |
 | Mappers | In the sdk, three.js-free: irapbin, the store's surfaces, synthetic relief, any regular grid. Downloading and parsing a particular online source is a script's job, not the library's. |
-| Tile core | Generic, in the sdk, not tied to what a tile holds. The chunks' level-of-detail helpers move into it unchanged. |
+| Tile core | Generic, in the sdk, not tied to what a tile holds. The zones' level-of-detail helpers move into it unchanged. |
 | Relief | Covers everything while enabled, the column included. Flat at a depth you set wherever no data set has data. |
-| Bridge | Relief → chunk, in two parts: a plain-data SOURCE the host derives from the relief's props and hands the chunk from the first render, which its worker builds the column's top from; and a generic `HeightFieldClip` the stage publishes once drawn, which the chunk's faces are clipped against. Chunk → relief: each occupant's outline and cut, which the relief cuts itself with inside that outline. |
+| Bridge | Relief → zone, in two parts: a plain-data SOURCE the host derives from the relief's props and hands the zone from the first render, which its worker builds the column's top from; and a generic `HeightFieldClip` the stage publishes once drawn, which the zone's faces are clipped against. Zone → relief: each occupant's outline and cut, which the relief cuts itself with inside that outline. |
 | Occupants | A list: the clip holds one region per occupant, and the relief one scoped cut per occupant. |
 | Exaggeration | The bridge needs the stack's vertical scale to be 1; otherwise the stack warns and builds on its own seabed. |
-| Relief off | The chunk draws its own seabed; the stage draws its flat seabed. The occupant no longer hands a seabed to the stage. |
-| Separation | The chunk stack knows the relief only through the bridge — a source its worker samples with `sampleReliefSource`, and a height field to clip against — and the relief never reads surfaces. A column surface reaches the relief only if the host bakes it into one (see [Bake helpers](#bake-helpers)). |
+| Relief off | The zone draws its own seabed; the stage draws its flat seabed. The occupant no longer hands a seabed to the stage. |
+| Separation | The zone stack knows the relief only through the bridge — a source its worker samples with `sampleReliefSource`, and a height field to clip against — and the relief never reads surfaces. A column surface reaches the relief only if the host bakes it into one (see [Bake helpers](#bake-helpers)). |
 | Data | Generated on demand by scripts into `public/relief/`, which git ignores. Nothing is committed. |
 
 ---
@@ -165,14 +165,14 @@ set, and then listed as a relief layer like any other:
   everything outside an outline (in the relief's `crs`; a ring, or polygons with holes)
   to `NaN`, so the layer covers the column and the layers under it take over around it,
   eased by its `feather`;
-- `stackLayerToRelief(layer, frame, { grid })` for a synthetic chunk layer with a `depth`
-  (and a `relief`), through `functionRelief` and the same procedural fields the chunks
+- `stackLayerToRelief(layer, frame, { grid })` for a synthetic zone layer with a `depth`
+  (and a `relief`), through `functionRelief` and the same procedural fields the zones
   use (`procedural-relief.ts`), evaluated in the layer's scene and placed on the map by
   `frame`. A layer given by `offset` is measured from the layer above it, which a relief
   does not have: it cannot be baked, and throws.
 
 They make relief data, nothing more: the relief still never reads a surface, and the
-chunk still never knows its seabed was baked. In the story, the demo store serves the
+zone still never knows its seabed was baked. In the story, the demo store serves the
 generated sea bed baked with `surfaceToRelief` as the relief
 `surface:synthetic:cap-seabed`, a layer to tick on.
 
@@ -243,7 +243,7 @@ the scene's plane; the selection takes either (a `layout`, below).
 Each frame, from the roots within reach:
 
 - a tile whose prism — its square over its lowest and highest height — lies wholly outside
-  the view is left out (the test `tilesInView` does for the chunks' tiles);
+  the view is left out (the test `tilesInView` does for the zones' tiles);
 - a tile is split while its height error, times the pixels a unit spans at its nearest
   point (`pixelsPerUnit`), is over `pixelError`; it merges back only once under it by
   `LOD_COARSEN_MARGIN`, so a tile on the edge does not flip every frame (as
@@ -323,7 +323,7 @@ Each frame, from the roots within reach:
   out. Below Volve's seabed that is 21 tiles instead of 45;
 - out: the tiles to draw, and the tiles wanted, each with how many pixels its error (or
   its cells) is over the limit, for the streamer's order (as `orderTileChanges` orders
-  the chunks').
+  the zones').
 
 **A layout (built 2026-10-26):** `layout` (`QuadtreeLayout`) lays the tiles out
 otherwise: its roots, each tile's square in its own coordinates (for finer regions and
@@ -331,10 +331,10 @@ pins), how far a tile is, whether it shows, and how wide it is along the ground 
 `cellPixels`). The relief's geographic tiles pass one; without one, the tiles are squares
 in X/Z as above. `selectPinnedTiles` takes the same.
 
-The chunks' helpers `tilesInView`, `selectTileLevels` and `orderTileChanges` moved from
-`components/Chunks/chunk-lod.ts` to `sdk/tiles/tile-lod.ts` (built 2026-10-25), exported
-from the sdk; `chunk-lod.ts` re-exports them, so its callers and its tests are as they
-were. Nothing about the chunks changed. What stays with the chunks: the
+The zones' helpers `tilesInView`, `selectTileLevels` and `orderTileChanges` moved from
+`components/Zones/zone-lod.ts` to `sdk/tiles/tile-lod.ts` (built 2026-10-25), exported
+from the sdk; `zone-lod.ts` re-exports them, so its callers and its tests are as they
+were. Nothing about the zones changed. What stays with the zones: the
 `TilePool` (one index buffer drawn at a level per tile) — their tiles are a fixed grid
 with every level built up front, the relief's a quadtree loaded as it is seen. The same
 rules choose both.
@@ -444,8 +444,8 @@ level, the tile reads the data itself.
 ### Sampling the same ground elsewhere
 
 `sampleReliefSource(reader, source, grid)` runs steps 2–4 onto any regular grid in the
-scene: the same layers, merged the same way. The chunk's worker builds the column's top
-boundary with it (see [the bridge](#6-the-bridge-relief-to-chunk)); a tile is just one
+scene: the same layers, merged the same way. The zone's worker builds the column's top
+boundary with it (see [the bridge](#6-the-bridge-relief-to-zone)); a tile is just one
 call of it.
 
 Built (2026-10-25): the grid is `ReliefSampleGrid`, an origin and the steps along its
@@ -628,7 +628,7 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
     - **The frustum** is built from the camera's matrices of this frame
       (`camera.updateMatrixWorld()` first): controls move the camera before the frame loop
       but leave its matrices to the render. Measured, it changed nothing in the story; kept,
-      as `useChunkLod` does it too.
+      as `useZoneLod` does it too.
     - Measured on Minimap/Subsurface (the relief alone drawn, the sea dry, so any gap is a
       pixel left at the clear colour): a zoom-out from 2 to 200 km in 40 frames had 7 frames
       with gaps (0.31 % of the view at worst), now none. During a zoom-out from 1.5 to 90 km
@@ -728,7 +728,7 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
     outline. Whether the relief should be cut at all is open, so cutting it is opt-in.
   - **One occupant cuts it, not 4.** `shaderLib/fence-field.glsl` declares one fence's
     uniforms, so a shader holds one fence. Several would mean passing its textures
-    around, in a shader the chunks, the ocean and the stage share. Only one occupant may
+    around, in a shader the zones, the ocean and the stage share. Only one occupant may
     turn `keepBed` off; past one, the stage warns and the first cuts it.
   - **Up to 4 outlines, in one texture.** Each occupant's `polygonDistanceField` (256
     texels a side, exact within 4 of the boundary, so a straight edge is found exactly) is
@@ -863,7 +863,7 @@ each frame (`placeOnSkyCurve`). The globe made both unnecessary.
 ### What it publishes: a `HeightFieldClip`
 
 The relief as drawn, for anything that must meet it exactly, through `onGround`. It is a
-generic sdk type, not a relief one, so what consumes it (the chunk) knows nothing of the
+generic sdk type, not a relief one, so what consumes it (the zone) knows nothing of the
 relief, and anything else that draws ground could hand one out:
 
 - `heightFieldClipAt(xz)` in GLSL (`shaderLib/height-field-clip.glsl`), over a list of
@@ -903,10 +903,10 @@ Built (2026-10-25), one region per occupant, each handed out through the occupan
 
 ---
 
-## 6. The bridge: relief to chunk
+## 6. The bridge: relief to zone
 
 The two components stay apart and the host connects them, as today. The bridge comes in
-two parts, because the chunk needs them at different times:
+two parts, because the zone needs them at different times:
 
 - the **source** at BUILD time: plain data the host derives from the very props it gives
   the stage (`reliefSource`), so the column is built on the relief from the first render
@@ -931,16 +931,16 @@ const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
     />
   </Scenery>
   <GeoRelief layers={layers} />
-  <ChunkStack
-    outline={outline}
+  <ZoneStack
+    boundary={outline}
     seabed={seabedId}
     relief={source}
     clip={ground ?? undefined}
     onCut={setCut}
     drawWater={!stage.water}
   >
-    <Chunk layers={...} />
-  </ChunkStack>
+    <Zone layers={...} />
+  </ZoneStack>
 </World>
 ```
 
@@ -961,12 +961,12 @@ source (`frame`, `layers`, and `base`, the flat seabed's height where no layer h
 plus the sea's level, the margin and the key. `reliefSource(relief, ocean, margin?)` in
 `components/Scenery` derives it from the stage's `relief` and the `<SceneryOcean>`'s props with the
 sky's own defaults, keyed by its content, so it may be built inline. It is `undefined`
-for a relief drawn from one texture. `margin` defaults, in `ChunkStack`, to its
+for a relief drawn from one texture. `margin` defaults, in `ZoneStack`, to its
 `maxError` (5 m by default; see Seams).
 
 ### The relief is the column's top
 
-While `ChunkStack` has a `relief`:
+While `ZoneStack` has a `relief`:
 
 - the layer it declares as its `seabed` is replaced, in the spec, by a layer backed by the
   relief: `{ relief: source }`, a third kind beside a surface and a synthetic layer. The
@@ -977,7 +977,7 @@ While `ChunkStack` has a `relief`:
   units lie above the relief, the top unit reaches up to it, and the walls, sections,
   fences and water body are built against it as against any surface;
 - that layer's cap is drawn only while the stage does not draw the ground over the column
-  (`onStage.seabed`, as today): until the relief is compiled and in, the chunk's own top
+  (`onStage.seabed`, as today): until the relief is compiled and in, the zone's own top
   stands in for it;
 - placing things on what is drawn (`surface-sampler`, `LevelledBase`) reads the top from
   the clip's `heightAt` while there is one.
@@ -988,11 +988,11 @@ Built (2026-10-25), with these differences from the above:
   relief, so the sea bed keeps its own layer spec (its id, and its header, which still
   plans the common grid) and gains `reliefSource`. `stackColumnSpec` sets it on the
   column's sea bed while the stack has a `relief` and the column holds its sea bed, and
-  adds the source's key to the column's. Every chunk and the sea are built from that one
+  adds the source's key to the column's. Every zone and the sea are built from that one
   column, so they all get it.
 - **The shared column only.** In the worker, a layer with a `reliefSource` is merged
   onto the common grid (`sampleReliefSource`) instead of fetched and resampled, with its
-  mask all data. A chunk built on its own (no `outline` or `cutSource`) keeps the
+  mask all data. A zone built on its own (no `boundary` or `cutSource`) keeps the
   surface, and the stack warns.
 - **Exaggeration found from the stack's frame.** The stack's own group is an identity, so
   its world matrix shows a scale on any group above it; checked each frame.
@@ -1007,7 +1007,7 @@ Built (2026-10-25), with these differences from the above:
 - **The bed tint (built, 2026-10-26).** A stack drawing its own water tints its bed from
   the column's bed CHANNEL, which the `stackWater` generator now hands back with the sea
   (`StackWaterResponse.bed`, packed by `buildChannelDepthMap`): on a relief column that
-  is the relief plus the margin, the bed the sea and the chunks are built on.
+  is the relief plus the margin, the bed the sea and the zones are built on.
   `useStackBathymetry`, which read the raw bed surface, is gone. Measured in `FieldColumn`
   (sky on, `drawSky` off): the cap's vertices land on texel centres (10 325 of 10 586),
   their heights within ±5 m of the map (the cap's `maxError`), mean −0.08 m; switching
@@ -1021,7 +1021,7 @@ the relief and the sea's seabed with it is left for later, if it is wanted.
 ### Seams
 
 The column's top is built `margin` ABOVE the relief, and every wall, section and fence
-face compiles `CHUNK_HEIGHT_CLIP`: a pixel above `heightFieldClipAt` is discarded. A face
+face compiles `ZONE_HEIGHT_CLIP`: a pixel above `heightFieldClipAt` is discarded. A face
 therefore ends exactly where the ground is drawn, at any depth of its tiles. For that the
 faces must reach the drawn ground, so over each occupant's region the relief caps its
 error at `margin`, whatever its size on screen. A cap that comes within `margin` of the
@@ -1040,7 +1040,7 @@ Built (2026-10-25), with two changes:
   half a pixel (`QuadtreeSelectOptions.finer`): a gap is never seen, and from afar the
   region asks for no finer tiles than it needs. `margin` covers the column's own
   tessellation, and defaults to `maxError`. The stage and the stack share no number.
-- **Every chunk material compiles the clip** while the column is on a relief: walls,
+- **Every zone material compiles the clip** while the column is on a relief: walls,
   caps, section and fence faces, the peel patches, the inference overlay, their picking
   twins and OIT variants. No build reports which caps come near the relief: below the
   lowest ground the shader reads nothing.
@@ -1053,14 +1053,14 @@ Measured in `FieldColumn` (Iris Xe):
 - **What is above it is gone:** from the water just outside the outline, a strip across
   the outline renders the same as with the column hidden (0 of 154,000 pixels differ).
   Without the clip, 22,060 pixels differ: the walls' top 5 m standing out of the seabed.
-- **No cost:** the chunks' draws, clip on, off and on again: 0.51 / 0.51 / 0.50 ms from
+- **No cost:** the zones' draws, clip on, off and on again: 0.51 / 0.51 / 0.50 ms from
   the default view; 0.81 / 0.87 / 0.95 ms inside the column under the seabed.
 
 ### `onStage`
 
 What the stage tells each occupant keeps its shape: `seabed` is now "the relief draws the
 ground over you" (a relief is set, loaded and compiled, and the sea has a seabed), and
-`seabedOpacity` and `water` mean what they mean today. A chunk layer still uses it for
+`seabedOpacity` and `water` mean what they mean today. A zone layer still uses it for
 `drawCap` and `capOpacity`.
 
 Built (2026-10-25): `SceneryStage.occupants`, each with an `outline` (scene X/Z),
@@ -1072,7 +1072,7 @@ occupant's only, until step 5 removes it.
 
 ### Relief off
 
-No bridge: the column builds on its declared seabed and the chunk draws that cap; the
+No bridge: the column builds on its declared seabed and the zone draws that cap; the
 stage draws its flat seabed; each occupant hands it nothing but its outline and cut.
 
 ---
@@ -1082,7 +1082,7 @@ stage draws its flat seabed; each occupant hands it nothing but its outline and 
 > Design (2026-10-25); built with the bridge (step 4), see below.
 
 Anything put on the ground — a pipeline, a facility, a marker under the pointer — asks
-the ground's height. Inside a column that is the chunk stack's `SurfaceSampler`
+the ground's height. Inside a column that is the zone stack's `SurfaceSampler`
 (`useSurfacePlacement`, `sampleSurfaceFootprint`, `Pipeline`, `SeabedFacility` read it);
 outside, nothing answers yet. With the bridge the relief is the column's top, so one
 sampler of the relief answers everywhere and agrees with the stack's inside the field.
@@ -1102,9 +1102,9 @@ type ReliefSampler = SurfaceSampler & {
   since 2026-10-26 the geographic tile at the point's latitude and longitude):
   synchronous, a few lookups per query. `surfaces` is `['relief']`; `solidAt` is below
   the relief. Its identity changes when a finer tile under a pinned square comes in,
-  which is the signal to settle again, as a chunk's rebuild is today.
+  which is the signal to settle again, as a zone's rebuild is today.
 - **Not what is drawn, but the finest there is.** The stack's sampler reads the drawn
-  triangles, rightly: a chunk's mesh is fixed once built. The relief's drawn surface
+  triangles, rightly: a zone's mesh is fixed once built. The relief's drawn surface
   changes with the camera by up to `pixelError` pixels; an object settled on it would
   bob as the view moves. So an object PINS the finest tiles (leaves) under its footprint
   — the streamer loads them whatever the view, as it loads the roots — and settles once
@@ -1124,7 +1124,7 @@ Built (2026-10-25), with these changes:
 - **Handed out, not provided.** The stage tells `relief.onSampler` its `ReliefSampler`
   (null once gone), a new one whenever a tile under a pin comes in. No context of its own:
   the host hands it on through `SurfaceSamplerContext`, which `useSurfacePlacement`,
-  `LevelledBase` and `Pipeline` already read, and to a `ChunkStack` on the relief
+  `LevelledBase` and `Pipeline` already read, and to a `ZoneStack` on the relief
   (`reliefSampler`). The stack's own context then answers its sea bed from the relief
   wherever the column holds it (`createReliefTopSampler`): the column's cap lies hidden
   `margin` above the ground, and what stood on it would float. Without the relief's
@@ -1235,7 +1235,7 @@ None of this has been released. Gone (2026-10-25), with step 5:
   `createSkyStageRings`, `createSkyStageFalloff`, `createSkyStageBed`,
   `createSkyStageSeabed`);
 - the `skySeabed` generator and its defs, `createSeabedMesh` and `SeabedMesh`;
-- `ChunkStack.onSeabed` and `stackCapSeabed`;
+- `ZoneStack.onSeabed` and `stackCapSeabed`;
 - the relief's single texture and its level of detail: `resampleRelief`'s place in the
   stage, `selectTerrainNodes` and `terrain-lod.ts`, `relief.id` and `relief.falloff`.
 
@@ -1277,8 +1277,8 @@ are back by step 6.
 |--|--|--|
 | 1 | This document | ✅ reviewed |
 | 2 | **The thin slice:** the contract with `reliefWindow` and `gridToRelief`; `generate-relief` on demand, every source; the demo store serving windows; `buildReliefTile` and its generator; `selectQuadtreeTiles` and a plain streamer; the tiles drawn opaque by `relief.layers`; the story | built (2026-10-25); **a stop:** a look, and timings per zone against the old relief |
-| 3 | **The rest of the relief:** ✅ the other mappers and the bake helpers; ✅ the streamer (aborts and upload budgets measured and left out) and a worker of its own; ✅ tiles split by their cells' size on screen; ✅ see-through over `bounds`; ✅ the overview and the layer past the far plane; ✅ the ground under the camera (and the skirts from below); ✅ the debug views; ✅ the chunk helpers moved to `sdk/tiles` | built (2026-10-25); timed again, [below](#timed-again-the-rest-of-the-relief-2026-10-25) |
-| 4 | **The bridge:** ✅ (a) `reliefSource`, `sampleReliefSource` and the relief-backed layer, `onStage.seabed` from the relief; ✅ (b) `HeightFieldClip`, `CHUNK_HEIGHT_CLIP`; ✅ (c) `occupants`, the scoped cuts (opt-in, `keepBed`); ✅ (d) the [relief sampler](#7-sampling-the-relief) and the curve's GLSL chunk | built (2026-10-25), seen and measured in `FieldColumn` |
+| 3 | **The rest of the relief:** ✅ the other mappers and the bake helpers; ✅ the streamer (aborts and upload budgets measured and left out) and a worker of its own; ✅ tiles split by their cells' size on screen; ✅ see-through over `bounds`; ✅ the overview and the layer past the far plane; ✅ the ground under the camera (and the skirts from below); ✅ the debug views; ✅ the zone helpers moved to `sdk/tiles` | built (2026-10-25); timed again, [below](#timed-again-the-rest-of-the-relief-2026-10-25) |
+| 4 | **The bridge:** ✅ (a) `reliefSource`, `sampleReliefSource` and the relief-backed layer, `onStage.seabed` from the relief; ✅ (b) `HeightFieldClip`, `ZONE_HEIGHT_CLIP`; ✅ (c) `occupants`, the scoped cuts (opt-in, `keepBed`); ✅ (d) the [relief sampler](#7-sampling-the-relief) and the curve's GLSL chunk | built (2026-10-25), seen and measured in `FieldColumn` |
 | 5 | ✅ [What goes](#9-what-goes) | built (2026-10-25); every story still compiles and draws |
 | 6 | ✅ Stories: layer toggles; FieldColumn and StageDebug through the bridge, baking the column's seabed by default | built (2026-10-25), [below](#the-stories-2026-10-25); with it, [the detail under a tile](#4-relief-tiles) and `sampleReliefSource` on one-node-wide grids (a route) fixed |
 | 7 | ✅ Documents, checks, timings; the bed tint from the column's channel | built (2026-10-26), [timed below](#timed-the-column-with-the-relief-and-without-2026-10-26) |
@@ -1306,7 +1306,7 @@ seabed of its own), so judge by it.
 - Over the sea the tiles cost what the one texture did, at up to 30 times its detail:
   Volve's flat seabed is drawn with 21–29 tiles.
 - ⚠️ **Over land the cost follows the triangles:** 0.51 M → 6.6 ms, 0.29 M → 4.8 ms
-  (`pixelError` 4), 0.10 M → 2.9 ms (8), about 8 ms per million against the chunks' 0.6.
+  (`pixelError` 4), 0.10 M → 2.9 ms (8), about 8 ms per million against the zones' 0.6.
   The vertex work is a `texelFetch`; it is the relief's fragment shader (the air's haze
   per pixel above all) shading 2 x 2 quads of triangles a few pixels across. To take up
   in step 3: haze per vertex where it varies slowly, and larger triangles far off. The
@@ -1448,7 +1448,7 @@ a run. Then `profile` at fixed poses for the GPU and main-thread time per frame.
 
 - **Tile size `T`:** 32 cells (2048 triangles a tile, as today's CDLOD patch) or 64 (8192,
   a quarter of the tiles and loads). Start at 32 and measure.
-- **Defaults:** `pixelError` 2 (the chunks'), a budget of 48 MB of resident tiles, 4 loads
+- **Defaults:** `pixelError` 2 (the zones'), a budget of 48 MB of resident tiles, 4 loads
   at a time, and a block cache of 128 MB in the worker.
 - **`depth` or `base`:** the flat seabed where no layer has data is named `depth` here,
   positive down, as the sea's is.

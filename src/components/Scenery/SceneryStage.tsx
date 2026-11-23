@@ -126,7 +126,7 @@ export type SceneryStageOccupant = {
    */
   outline?: PlanarPolygonGeometry;
   /**
-   * The occupant's own cut — a `ChunkStack`'s, from its `onCut` — which the stage cuts the
+   * The occupant's own cut — a `ZoneStack`'s, from its `onCut` — which the stage cuts the
    * relief over it with, as the occupant cuts itself, while its `keepBed` is off. The same
    * uniform objects, so it follows the cut every frame; they must be in the scene frame.
    * While it cuts, the void shows through the relief.
@@ -136,7 +136,7 @@ export type SceneryStageOccupant = {
    * With a relief: keep the relief over the occupant whole, as the occupant's floor,
    * whatever its `cut` takes of the occupant. Default true. Off, the relief is cut with
    * the occupant inside its `outline`, so its cut edge and the occupant's cut face (a
-   * `ChunkStack` with `clip`) are one line. Off for one occupant at most: the relief takes
+   * `ZoneStack` with `clip`) are one line. Off for one occupant at most: the relief takes
    * one occupant's cut.
    */
   keepBed?: boolean;
@@ -145,7 +145,7 @@ export type SceneryStageOccupant = {
   /**
    * With a relief: told the ground as the relief draws it over the
    * occupant (its `outline`'s bounds, or the box holding the stage's `boundary` without one), as a
-   * `HeightFieldClip` — hand it to a `ChunkStack` built on the relief (`clip`), whose
+   * `HeightFieldClip` — hand it to a `ZoneStack` built on the relief (`clip`), whose
    * faces then end where the ground is drawn — and null once there is none. Live only
    * while the stage draws the occupant's seabed (`onStage`). Over that region a tile's
    * error then shows no more than half a pixel.

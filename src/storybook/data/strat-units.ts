@@ -19,7 +19,7 @@ export type StratUnit = {
  * The units a surface bounds — **storybook only**.
  *
  * ⚠️ NOT a data dependency, and must not become one. Mapping a surface name to a
- * stratigraphic unit is the HOST APP's job (`documents/chunks.md` §9.3): the
+ * stratigraphic unit is the HOST APP's job (`documents/zones.md` §9.3): the
  * library takes the caller's array order as the stratigraphic order and never
  * assigns a colour. The stories need real colours to demo with, and this is them.
  *

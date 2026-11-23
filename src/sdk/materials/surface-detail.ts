@@ -7,7 +7,7 @@ import { Vec2 } from '../types/common';
  *
  * ⭐ The library ships the presets but never ASSIGNS one — which surface is sand
  * and which is shale is company-specific knowledge, exactly like colour (see the
- * "colour is config" rule in `documents/chunks.md`). The host maps its own
+ * "colour is config" rule in `documents/zones.md`). The host maps its own
  * classification onto these names; the generated `SedimentClass` in
  * `surface-column.ts` uses the same vocabulary so a generated scenario can be
  * mapped straight through.
@@ -77,7 +77,7 @@ export type SurfaceDetailParams = {
      * On a WALL, how far the vertical axis follows the UNIT instead of absolute
      * depth (0..1). At 1 a bed spans the same fraction of a thin unit as of a thick
      * one, so the lamination reads as a property of the unit rather than of the
-     * depth it happens to sit at. Needs the unit-relative height (a chunk wall's
+     * depth it happens to sit at. Needs the unit-relative height (a zone wall's
      * `wallV`); ignored without it.
      */
     bedding?: number;

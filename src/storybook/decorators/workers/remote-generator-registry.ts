@@ -4,9 +4,9 @@ import {
   generatorStatsKey,
   stackRelease,
   stackWater,
-  surfaceChunk,
+  surfaceZone,
   wellboreOutline,
-} from '../../../components/Chunks/chunk-defs';
+} from '../../../components/Zones/zone-defs';
 import {
   surfaceGeometry,
   surfaceTextures,
@@ -50,7 +50,7 @@ import {
   generateOverlayTile,
   generateSceneryReliefTile,
   generateStackWater,
-  generateSurfaceChunk,
+  generateSurfaceZone,
   generateSurfaceGeometry,
   generateSurfaceTexturesData,
   generateTrajectory,
@@ -86,7 +86,7 @@ registry.add(surfaceTextures, generateSurfaceTexturesData);
 registry.add(sceneryReliefTile, generateSceneryReliefTile);
 registry.add(overlayTile, generateOverlayTile);
 registry.add(geoTubeNodes, generateGeoTubeNodes);
-registry.add(surfaceChunk, generateSurfaceChunk);
+registry.add(surfaceZone, generateSurfaceZone);
 registry.add(wellboreOutline, generateWellboreOutline);
 registry.add(stackWater, generateStackWater);
 registry.add(stackRelease, releaseStackResources);

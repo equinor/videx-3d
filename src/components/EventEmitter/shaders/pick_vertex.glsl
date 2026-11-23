@@ -5,7 +5,7 @@ uniform float emitterId;
 varying vec3 vWorldPosition;
 flat varying float vEmitterId;
 
-// Split cap layout (see ChunkMaterial): caps carry a shared xz + per-layer y and no
+// Split cap layout (see ZoneMaterial): caps carry a shared xz + per-layer y and no
 // position. The absent attribute defaults to 0 (see PickingMaterial), so this
 // resolves position-based objects and split caps alike.
 attribute vec2 xz;

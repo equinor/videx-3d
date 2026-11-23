@@ -2,7 +2,7 @@
 
 _Status: proposal. Nothing here is implemented._
 
-A **carve** removes a closed solid from a chunk stack and fills the exposed wall with
+A **carve** removes a closed solid from a zone stack and fills the exposed wall with
 the boundary of that same solid. The motivating case is the wellbore itself: cut the
 actual hole — stepped by hole size — out of the block, so a section or a fence face
 shows the borehole in cross section with the casing string sitting in it.
@@ -77,10 +77,10 @@ discard. The test is exact, so this costs one extra evaluation and needs no tole
 2. **Two more samplers**, on a material that already carries the fence sign map, the
    fence cells and segments, the contact maps and the bathymetry map. Samplers are
    the scarce resource here, not bytes.
-3. **The test runs on every fragment of every chunk** while rejecting only near a
+3. **The test runs on every fragment of every zone** while rejecting only near a
    well. It needs the coarse near-mask early-out the CPU builder already uses, plus a
-   per-chunk bounds test so chunks with no well in them never compile the define.
-4. **Two implementations.** The section discard exists both in `chunk-frag.glsl` and
+   per-zone bounds test so zones with no well in them never compile the define.
+4. **Two implementations.** The section discard exists both in `zone-frag.glsl` and
    in the string-injected `inference-material.ts`. A carve would need both.
 5. **Picking still ignores it.** `PickingMaterial` is an override material with its
    own fragment shader, so the carve — like the fence and the section — is not
@@ -88,7 +88,7 @@ discard. The test is exact, so this costs one extra evaluation and needs no tole
 
 ## Open question, worth settling first
 
-With `ChunkFence.margin > 0` the cut is deliberately offset so the well stays inside
+With `ZoneFence.margin > 0` the cut is deliberately offset so the well stays inside
 the kept block. The hole is then a sealed void and nothing is visible. A carve reads
 as "the wellbore is drilled through the rock" only:
 

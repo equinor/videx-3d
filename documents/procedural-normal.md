@@ -178,11 +178,11 @@ roughly frequency-independent. It also adds a subtle albedo groove and stacks on
 any user `normalMap`. This procedural system **replaces the old `brushStrength`/
 `brushWidth` rails**.
 
-## Example: chunks
+## Example: zones
 
-`ChunkMaterial` (`src/components/Chunks/chunk-material.ts`) exposes the lib as named
+`ZoneMaterial` (`src/components/Zones/zone-material.ts`) exposes the lib as named
 **presets** rather than knobs — `sand`, `silt`, `shale`, `carbonate`, `salt`, `coal`,
-`basement`, `seabed` — set per layer (`ChunkLayer.detail`) and OFF by default. A preset
+`basement`, `seabed` — set per layer (`ZoneLayer.detail`) and OFF by default. A preset
 is a fixed combination of `pnGranular` / `pnGrain` / `pnDunes` layers, and the caller's
 only dial is one overall `strength`, so a field cannot end up with each unit tuned
 differently. ⭐ The library ships the presets but never ASSIGNS one: which surface is
@@ -192,7 +192,7 @@ Two things differ from the casing case and are worth copying:
 
 - **The UV is the WORLD POSITION, projected onto the plane the face most nearly lies
   in** (XZ for a cap, one of the vertical planes for a wall) — not the geometry's `uv`.
-  A chunk cap carries a per-layer GRID uv (which is what lets `SurfaceMaterial` be used
+  A zone cap carries a per-layer GRID uv (which is what lets `SurfaceMaterial` be used
   as a cap material) and a wall carries a metric one, so there is no single UV space to
   share; world anchoring also means a cap and the wall below it meet with the pattern
   continuous, that no repeat/scale has to be chosen per surface (the thing this replaces),
@@ -214,7 +214,7 @@ from a coarse octave (5–20 m) that carries the look at field distance down to 
 geology.
 
 ⭐ Under the OIT pipeline a fragment shader runs in FOUR passes, so procedural cost is
-paid four times unless the shader says otherwise. `chunk-frag.glsl` returns immediately
+paid four times unless the shader says otherwise. `zone-frag.glsl` returns immediately
 under `OIT_DEPTH_PASS` (which writes only linear depth) and `OIT_OCCLUSION_PASS` (which
 needs only alpha), halving what the detail costs. Any library material carrying
 procedural detail should do the same. In the tail pass it also zeroes the noise where
@@ -225,13 +225,13 @@ layer is detailed.
 
 `SurfaceMaterial` (`src/components/Surfaces/SurfaceMaterial.ts`) takes the same presets:
 `<Surface detail="sand" />`, or `detail={{ preset, strength, scale }}`, also through
-`useSurfaceMaterial`'s `detail` option (so a chunk's `topMaterial` can carry it). It
+`useSurfaceMaterial`'s `detail` option (so a zone's `topMaterial` can carry it). It
 compiles `surface-detail.glsl` under `SURFACE_DETAIL`, fed the world position from the
 vertex shader and the normal after `<normal_fragment_begin>` and any `normalMap`, so a
 normal map can still be stacked on top. A surface has no unit to lay bedding along, so the
 grain follows depth. A new preset recompiles; `strength` and `scale` are uniforms. It keeps
 the same OIT guards: the depth and occlusion passes return before shading, and only the
-front layer is detailed. The surface is lit with Lambert, without the chunks' specular and
+front layer is detailed. The surface is lit with Lambert, without the zones' specular and
 orientation-dependent ambient; `strength` is the knob if a preset reads too faint on it.
 Measured (2026-11-23, RTX A1000, 1975 × 970, the Surface story's horizon, `sand`, the
 camera orbiting): the surface draw at 250 m 0.85 → 1.95 ms by its own timer query, the

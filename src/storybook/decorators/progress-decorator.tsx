@@ -17,7 +17,7 @@ import '../styles/progress.css';
 
 /**
  * The stories' progress, held OUTSIDE the canvas as a host would: a `Scenery` reports into it
- * as `sky` (through `sceneryPropsFromArgs`), a chunk stack as `model`. Each source goes away
+ * as `sky` (through `sceneryPropsFromArgs`), a zone stack as `model`. Each source goes away
  * when what reports it unmounts, so a story never shows another's.
  */
 export const storyProgress = createProgressStore();
@@ -60,7 +60,7 @@ export const progressArgTypes: ArgTypes<ProgressArgs> = {
     control: { type: 'inline-radio' },
     options: ['popup', 'inline', 'custom', 'off'],
     description:
-      'How progress is shown, OUTSIDE the canvas, from one `ProgressStore` the sky (`sky`) and a chunk stack (`model`) report into: `popup` = `ProgressPopup` (shows while working), `inline` = `Progress` docked bottom-right (stays, showing the last outcome), `custom` = a hairline along the top built on `useProgress` + `describeProgress` alone. The look is the stories’ own CSS; the library ships none.',
+      'How progress is shown, OUTSIDE the canvas, from one `ProgressStore` the sky (`sky`) and a zone stack (`model`) report into: `popup` = `ProgressPopup` (shows while working), `inline` = `Progress` docked bottom-right (stays, showing the last outcome), `custom` = a hairline along the top built on `useProgress` + `describeProgress` alone. The look is the stories’ own CSS; the library ships none.',
     table: PROGRESS,
   },
   progressPosition: {
@@ -100,7 +100,7 @@ export const progressArgTypes: ArgTypes<ProgressArgs> = {
   },
   progressRows: {
     description:
-      'One row per item — per chunk, or the sky’s shaders and relief — or per source when the display shows several.',
+      'One row per item — per zone, or the sky’s shaders and relief — or per source when the display shows several.',
     table: PROGRESS,
   },
   progressExpandable: {
@@ -120,7 +120,7 @@ export const progressArgTypes: ArgTypes<ProgressArgs> = {
   },
   progressSummary: {
     description:
-      'Once a run is done, show its time, and a chunk stack’s tiles and triangles — a `footer` on `popup`/`inline`, the strip’s text for a few seconds on `custom`. Tiles need `tileCells`.',
+      'Once a run is done, show its time, and a zone stack’s tiles and triangles — a `footer` on `popup`/`inline`, the strip’s text for a few seconds on `custom`. Tiles need `tileCells`.',
     table: PROGRESS,
   },
   progressInlineIdle: {

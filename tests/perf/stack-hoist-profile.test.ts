@@ -21,16 +21,16 @@ import {
 } from '../../src/sdk/geometries/surface-stack-candidates';
 
 /**
- * Opt-in measurement for the question `documents/chunks.md` §11 leaves open: what
- * would it cost to hoist the tessellation from the CHUNK to the STACK?
+ * Opt-in measurement for the question `documents/zones.md` §11 leaves open: what
+ * would it cost to hoist the tessellation from the ZONE to the STACK?
  *
  *   PROFILE_HOIST=1 npx vitest run tests/perf/stack-hoist-profile.test.ts
  *   PROFILE_HOIST_REAL=1 npx vitest run tests/perf/stack-hoist-profile.test.ts
  *
- * ⭐ Hoisting does not have to be built to be costed. A chunk's triangulation is
+ * ⭐ Hoisting does not have to be built to be costed. A zone's triangulation is
  * driven by the UNION of its layers' refinement candidates (`tessellateStack`
  * unions them internally), so the whole question is: how much bigger is that union
- * when it carries the WHOLE column instead of the chunk's own slice? Tessellating
+ * when it carries the WHOLE column instead of the zone's own slice? Tessellating
  * the same reference both ways answers it exactly, with the real triangulator.
  *
  * The generated column (§14.4) is the control — deterministic, no data files, and
@@ -131,10 +131,10 @@ const MAX_ERROR = 5;
 const COLLAPSE = 0.5;
 
 /**
- * The comparison itself: today's per-chunk tessellations against one shared
+ * The comparison itself: today's per-zone tessellations against one shared
  * buffer, over the same reference.
  *
- * ⚠️ The tiers TELESCOPE — a deeper chunk is cut tighter around the wells — so
+ * ⚠️ The tiers TELESCOPE — a deeper zone is cut tighter around the wells — so
  * today's cost is measured on each tier's own (smaller) outline while the shared
  * buffer has to span the envelope containing them all. Giving every tier the
  * envelope would flatter hoisting.
@@ -194,7 +194,7 @@ const measure = (
     };
   });
 
-  // ⭐ The aggregate is the number that decides this. Today every chunk owns a
+  // ⭐ The aggregate is the number that decides this. Today every zone owns a
   // vertex buffer; hoisted there is ONE for the whole stack, so compare the SUM of
   // the local buffers against a single shared one.
   const localTotal = rows.reduce((a, r) => a + r.vertsLocal, 0);
@@ -209,12 +209,12 @@ const measure = (
       candidatesHeights: heights.reduce((a, c) => a + c.length, 0),
       candidatesCoverage: coverage.reduce((a, c) => a + c.length, 0),
       candidatesThickness: thickness.reduce((a, c) => a + c.length, 0),
-      vertsAllChunksToday: localTotal,
+      vertsAllZonesToday: localTotal,
       vertsOneSharedBuffer: sharedVerts,
       totalFactor: +(sharedVerts / localTotal).toFixed(2),
-      trisAllChunksToday: rows.reduce((a, r) => a + r.trisLocal, 0),
+      trisAllZonesToday: rows.reduce((a, r) => a + r.trisLocal, 0),
       trisSharedBuffer: shared.indices.length / 3,
-      msAllChunksToday: +rows.reduce((a, r) => a + r.msLocal, 0).toFixed(1),
+      msAllZonesToday: +rows.reduce((a, r) => a + r.msLocal, 0).toFixed(1),
       msSharedBuffer: +msShared.toFixed(1),
       rows,
     })}\n`,
@@ -223,7 +223,7 @@ const measure = (
 
 describe.skipIf(!process.env.PROFILE_HOIST)('stack hoisting cost', () => {
   it(
-    'compares a chunk-local tessellation against a column-wide one',
+    'compares a zone-local tessellation against a column-wide one',
     { timeout: 30 * 60 * 1000 },
     () => {
       for (const correlated of [true, false]) {
@@ -299,7 +299,7 @@ describe.skipIf(!process.env.PROFILE_HOIST_REAL)(
   'stack hoisting cost (real surfaces)',
   () => {
     it(
-      'compares a chunk-local tessellation against a column-wide one',
+      'compares a zone-local tessellation against a column-wide one',
       { timeout: 30 * 60 * 1000 },
       () => {
         const wanted = Number(process.env.PROFILE_HOIST_SURFACES ?? 9);

@@ -2,10 +2,10 @@ import { transfer } from 'comlink';
 import {
   StackWaterResponse,
   StackWaterSpec,
-} from '../components/Chunks/chunk-defs';
+} from '../components/Zones/zone-defs';
 import {
   buildSurfaceStack,
-  densifyChunkRim,
+  densifyZoneRim,
   packBufferGeometry,
   PlanarPolygonGeometry,
   ReadonlyStore,
@@ -16,10 +16,10 @@ import {
 import { getStackCandidates, getStackContext } from './surface-stack-context';
 
 /**
- * Build a `ChunkStack`'s sea: the lid over the whole outline, and the water body
+ * Build a `ZoneStack`'s sea: the lid over the whole outline, and the water body
  * beneath it down to the sea bed.
  *
- * ⭐ It is built as a stack in its own right, of exactly two boundaries — the
+ * ⭐ It is built as a stack in its own right, of exactly two horizons — the
  * level and the bed — which is what makes it cheap AND correct. The level is a
  * FLUID, so it is never the authority for what lies under it; being the first
  * layer, there is then nothing left in the stack to order at all, and the bed
@@ -28,14 +28,14 @@ import { getStackCandidates, getStackContext } from './surface-stack-context';
  * which is the shoreline, drawn by the ordinary interval machinery.
  *
  * ⭐⭐ The bed is not resampled here: it is the column's declared sea bed
- * (`spec.bed`), taken from the very channels every chunk is built on
+ * (`spec.bed`), taken from the very channels every zone is built on
  * (`getStackContext`, cache hit), sealed and ordered exactly as they draw it. A
  * second opinion about where the sea bed is would show up as a gap along the
  * whole shoreline.
  *
  * ⚠️ The two still meet on DIFFERENT tessellations — this one is refined for the
- * water, the chunk's for its own stack — so they agree only within `maxError`, the
- * same residual already accepted where two chunks meet.
+ * water, the zone's for its own stack — so they agree only within `maxError`, the
+ * same residual already accepted where two zones meet.
  *
  * @group Generators
  */
@@ -54,7 +54,7 @@ export async function generateStackWater(
     spec.polygon.coordinates,
     spec.polygon.offset,
   );
-  const { densified } = densifyChunkRim(outline, spec.rimSpacing ?? 250);
+  const { densified } = densifyZoneRim(outline, spec.rimSpacing ?? 250);
   const maxError = spec.maxError ?? 5;
 
   const header = context.reference.header;
@@ -88,7 +88,7 @@ export async function generateStackWater(
       // `refineTerminations` adds to both.
       candidates: [new Uint32Array(0), columnCandidates[bed]],
       fills: [true, false],
-      // The bed is drawn by whichever chunk that horizon is the lid of.
+      // The bed is drawn by whichever zone that horizon is the lid of.
       caps: [true, false],
       fluid: [true, false],
       unbounded: [{ resolution: spec.resolution }, null],

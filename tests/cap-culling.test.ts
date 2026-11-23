@@ -11,16 +11,16 @@ import {
   openIntervals,
   releaseCapView,
   visibleCapIndex,
-} from '../src/components/Chunks/cap-visibility';
+} from '../src/components/Zones/cap-visibility';
 import {
-  assembleChunk,
-  SurfaceChunk,
-  SurfaceChunkBoundary,
-} from '../src/sdk/geometries/surface-chunk';
+  assembleZone,
+  SurfaceZone,
+  SurfaceZoneHorizon,
+} from '../src/sdk/geometries/surface-zone';
 import {
-  packSurfaceChunk,
-  unpackSurfaceChunk,
-} from '../src/sdk/geometries/surface-chunk-packing';
+  packSurfaceZone,
+  unpackSurfaceZone,
+} from '../src/sdk/geometries/surface-zone-packing';
 import type { PlanarPolygonCoordinates } from '../src/sdk/geometries/planar-geometry';
 import {
   CAP_SIDE_OPEN,
@@ -198,7 +198,7 @@ describe('stackCapNeighbours', () => {
 });
 
 describe('cap visibility rules', () => {
-  const boundaries: SurfaceChunkBoundary[] = [
+  const horizons: SurfaceZoneHorizon[] = [
     { layer: 0, ceiling: false, fill: true },
     { layer: 1, ceiling: false, fill: true },
     { layer: 2, ceiling: false, fill: false },
@@ -218,63 +218,56 @@ describe('cap visibility rules', () => {
   });
 
   it('opens unfilled, peeled, see-through and occupied units', () => {
-    const plain = openIntervals(boundaries, state())!;
+    const plain = openIntervals(horizons, state())!;
     expect([plain[0], plain[1], plain[2], plain[OPEN]]).toEqual([0, 0, 1, 1]);
-    expect(openIntervals(boundaries, state({ top: 1 }))![0]).toBe(1);
-    expect(openIntervals(boundaries, state({ base: 1 }))![1]).toBe(1);
-    expect(openIntervals(boundaries, state({ cameraUnits: [1] }))![1]).toBe(1);
-    const glass = openIntervals(boundaries, state({ wallOpacity: 0.5 }))!;
+    expect(openIntervals(horizons, state({ top: 1 }))![0]).toBe(1);
+    expect(openIntervals(horizons, state({ base: 1 }))![1]).toBe(1);
+    expect(openIntervals(horizons, state({ cameraUnits: [1] }))![1]).toBe(1);
+    const glass = openIntervals(horizons, state({ wallOpacity: 0.5 }))!;
     expect([glass[0], glass[1]]).toEqual([1, 1]);
   });
 
   it('culls nothing under a transparent cap, wireframe or hidden walls', () => {
+    expect(openIntervals(horizons, state({ surfaceOpacity: 0.9 }))).toBeNull();
     expect(
-      openIntervals(boundaries, state({ surfaceOpacity: 0.9 })),
+      openIntervals(horizons, state({ layers: [{}, { opacity: 0.5 }, {}] })),
     ).toBeNull();
     expect(
-      openIntervals(boundaries, state({ layers: [{}, { opacity: 0.5 }, {}] })),
+      openIntervals(horizons, state({ layers: [{ capOpacity: 0.5 }, {}, {}] })),
     ).toBeNull();
-    expect(
-      openIntervals(
-        boundaries,
-        state({ layers: [{ capOpacity: 0.5 }, {}, {}] }),
-      ),
-    ).toBeNull();
-    expect(openIntervals(boundaries, state({ wireframe: true }))).toBeNull();
-    expect(openIntervals(boundaries, state({ showWalls: false }))).toBeNull();
+    expect(openIntervals(horizons, state({ wireframe: true }))).toBeNull();
+    expect(openIntervals(horizons, state({ showWalls: false }))).toBeNull();
   });
 
   it('culls around a see-through unit whose cap stays opaque', () => {
     const layers = [{}, { opacity: 0.5, capOpacity: 1 }, {}];
-    const open = openIntervals(boundaries, state({ layers }))!;
+    const open = openIntervals(horizons, state({ layers }))!;
     expect([open[0], open[1]]).toEqual([0, 1]);
   });
 
   it('opens what a cut takes, around a cap that survives it', () => {
     const layers = [{}, { section: false }, {}];
-    const open = openIntervals(boundaries, state({ layers }))!;
+    const open = openIntervals(horizons, state({ layers }))!;
     const cut = { carrier: false, seaKept: false };
     // Cap 2 floors the kept unit 1, so it survives; unit 1 stays solid.
-    const table = capOpenTable(open, boundaries, { layer: 2 }, layers, [cut]);
+    const table = capOpenTable(open, horizons, { layer: 2 }, layers, [cut]);
     expect([table[0], table[1], table[2]]).toEqual([1, 0, 1]);
     // Cap 0 is cut with everything around it: nothing changes.
-    expect(capOpenTable(open, boundaries, { layer: 0 }, layers, [cut])).toBe(
+    expect(capOpenTable(open, horizons, { layer: 0 }, layers, [cut])).toBe(
       open,
     );
     // ...unless the cut keeps the sea bed, which then lies over the cut-open unit 0.
-    const bed = capOpenTable(open, boundaries, { layer: 0 }, layers, [
+    const bed = capOpenTable(open, horizons, { layer: 0 }, layers, [
       { carrier: false, seaKept: true },
     ]);
     expect([bed[0], bed[1]]).toEqual([1, 0]);
     // The floor survives a cut that leaves it whole, and goes with one that does not.
     const floor = { layer: 3, ceiling: true };
-    expect(capOpenTable(open, boundaries, floor, [{}, {}, {}], [cut])[0]).toBe(
-      1,
-    );
+    expect(capOpenTable(open, horizons, floor, [{}, {}, {}], [cut])[0]).toBe(1);
     expect(
       capOpenTable(
         open,
-        boundaries,
+        horizons,
         floor,
         [{}, {}, {}],
         [{ carrier: true, seaKept: false }],
@@ -353,7 +346,7 @@ describe('cap views', () => {
 
 describe('createIntervalProbe', () => {
   // Three caps over a 100 m quad at 0, -10 and -20.
-  const capAt = (y: number, boundary: number) => {
+  const capAt = (y: number, horizon: number) => {
     const geometry = new BufferGeometry();
     geometry.setAttribute(
       'xz',
@@ -370,21 +363,21 @@ describe('createIntervalProbe', () => {
     );
     return {
       geometry,
-      layer: boundary,
-      boundary,
+      layer: horizon,
+      horizon,
       above: new Uint8Array(2),
       below: new Uint8Array(2),
     };
   };
-  const chunk = (caps: number[]): SurfaceChunk => ({
+  const zone = (caps: number[]): SurfaceZone => ({
     surfaces: caps.map(b => capAt(-10 * b, b)),
     walls: [],
-    boundaries: [0, 1, 2].map(layer => ({ layer, ceiling: false, fill: true })),
-    metrics: {} as SurfaceChunk['metrics'],
+    horizons: [0, 1, 2].map(layer => ({ layer, ceiling: false, fill: true })),
+    metrics: {} as SurfaceZone['metrics'],
   });
 
   it('finds the interval around a point, widened by the band', () => {
-    const probe = createIntervalProbe(chunk([0, 1, 2]));
+    const probe = createIntervalProbe(zone([0, 1, 2]));
     expect(probe(50, -5, 50, 0)).toEqual([0]);
     expect(probe(50, -15, 50, 0)).toEqual([1]);
     expect(probe(50, -9, 50, 2)).toEqual([0, 1]);
@@ -393,15 +386,15 @@ describe('createIntervalProbe', () => {
     expect(probe(500, -5, 50, 2)).toEqual([]);
   });
 
-  it('spans a boundary that has no cap here', () => {
-    const probe = createIntervalProbe(chunk([0, 2]));
+  it('spans a horizon that has no cap here', () => {
+    const probe = createIntervalProbe(zone([0, 2]));
     expect(probe(50, -5, 50, 0)).toEqual([0, 1]);
   });
 
   it('builds one lookup grid, even off every cap and across probes', () => {
     // Every cap keeps only the lower-right triangle, so the box's upper-left
     // corner is inside the bounds and off every cap.
-    const c = chunk([0, 1, 2]);
+    const c = zone([0, 1, 2]);
     c.surfaces.forEach(s =>
       s.geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2]), 1)),
     );
@@ -415,7 +408,7 @@ describe('createIntervalProbe', () => {
 
   describe('off every cap, inside the bounds', () => {
     // Every cap keeps the triangle under the diagonal x = z, and so does the outline.
-    const c = chunk([0, 1, 2]);
+    const c = zone([0, 1, 2]);
     c.surfaces.forEach(s =>
       s.geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2]), 1)),
     );
@@ -454,7 +447,7 @@ describe('createIntervalProbe', () => {
   });
 });
 
-describe('carrying neighbours on a chunk', () => {
+describe('carrying neighbours on a zone', () => {
   it('survives packing, with the arrays in the transfer list', () => {
     const geometry = new BufferGeometry();
     geometry.setAttribute('y', new BufferAttribute(level(0), 1));
@@ -464,7 +457,7 @@ describe('carrying neighbours on a chunk', () => {
       below: new Uint8Array([0, 0]),
       units: [0],
     };
-    const chunk = assembleChunk(
+    const zone = assembleZone(
       [
         { geometry, rimY: [], fill: true, wall: null, neighbours },
         { geometry: null, rimY: [], fill: false, wall: null },
@@ -473,17 +466,17 @@ describe('carrying neighbours on a chunk', () => {
       {},
       { t0: 0, densifyMs: 0, clipMs: 0, rimMs: 0 },
     );
-    expect(chunk.boundaries).toEqual([
+    expect(zone.horizons).toEqual([
       { layer: 0, ceiling: false, fill: true },
       { layer: 1, ceiling: false, fill: false },
     ]);
-    expect(chunk.surfaces[0].boundary).toBe(0);
+    expect(zone.surfaces[0].horizon).toBe(0);
 
-    const [packed, transfer] = packSurfaceChunk(chunk);
+    const [packed, transfer] = packSurfaceZone(zone);
     expect(transfer).toContain(neighbours.above.buffer);
     expect(transfer).toContain(neighbours.below.buffer);
-    const restored = unpackSurfaceChunk(packed);
-    expect(restored.boundaries).toEqual(chunk.boundaries);
+    const restored = unpackSurfaceZone(packed);
+    expect(restored.horizons).toEqual(zone.horizons);
     expect(Array.from(restored.surfaces[0].below!)).toEqual([0, 0]);
     expect(restored.surfaces[0].units).toEqual([0]);
   });

@@ -99,7 +99,7 @@ coordinates yourself.
 - Storybook URL args: `?id=<story>&viewMode=story&args=key:value;key2:value2`,
   booleans as `!true` / `!false`, `#` in colours as `%23`. Prefer `setArgs` over
   URL args once the page is up.
-- Story ids used here: `spikes-chunks-fieldcolumn--default`,
+- Story ids used here: `spikes-zones-fieldcolumn--default`,
   `spikes-scenery-stagedebug--default`, `spikes-scenery-relieftiles--default`,
   `debug-scenery-cloud-bench--default` (the 3D clouds alone, fixed 1280 × 720 at 1; time them
   with `window.videx3d.cloudBench`: `pass`, `frames`, `count`, `ab` — documents/clouds.md,

@@ -123,7 +123,7 @@ and `'scattered cumulus'` the cumulus alone.
 
 `<Weather weather={…}>` hands it down; `useWeather()` reads it (`null` without one).
 
-- **The waves:** `<Ocean>`, `<SceneryOcean>` and a `ChunkStack`'s water take the weather's wind
+- **The waves:** `<Ocean>`, `<SceneryOcean>` and a `ZoneStack`'s water take the weather's wind
   and swells for whichever of `windSpeed`, `windDirection`, `gusts` and `swells` they leave out
   (`weatherOceanWind`, `useWeatherOceanWind`; `weatherSeaSwells`). The direction is the way the
   wind blows toward, and a swell runs, in the default compass frame (`windToward`): world X/Z,
@@ -1074,7 +1074,7 @@ the GPU.
    what the shadows do not reach: the host's own objects, and past the shadows' square). A
    local weather's bake, read by direction, puts its clouds in the sea's reflection even past
    its radius. The
-   shadows are not on what the host draws (wellbores, a chunk's columns), nor on the stage's
+   shadows are not on what the host draws (wellbores, a zone's columns), nor on the stage's
    own seabed under the water. An object inside a layer that is
    not the relief's ground (a platform in stratus) takes the clouds' front depth, so cloud
    behind it is drawn over it where it stands in cloud.

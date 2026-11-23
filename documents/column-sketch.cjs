@@ -1,10 +1,10 @@
-/* Cross-sections of the stratigraphic column model (chunks.md §14.4).
+/* Cross-sections of the stratigraphic column model (zones.md §14.4).
    Regenerate with: node documents/column-sketch.cjs  → documents/column-sketch.svg */
 const fs = require('fs');
 const path = require('path');
 
 // ---------------------------------------------------------------- the model
-// Depths are POSITIVE DOWN, metres, as everywhere else in the chunk code.
+// Depths are POSITIVE DOWN, metres, as everywhere else in the zone code.
 //
 //   thickness(x) = drape + fill * max(0, dPrev(x) - datum)
 //   dNext(x)     = dPrev(x) - thickness(x)

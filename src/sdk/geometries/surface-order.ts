@@ -55,7 +55,7 @@ export type DepthOrderOptions = {
    * Without it the clamp stops dead where the ceiling ends, leaving a vertical
    * step in the grid — hundreds of metres tall when a ceiling covers a smaller
    * area than the layer below it. That is both a visible wall of geometry inside
-   * the chunk and a dense cluster of sliver triangles for the triangulator.
+   * the zone and a dense cluster of sliver triangles for the triangulator.
    *
    * ⚠️ The taper needs room OUTSIDE the clipped area, so when a `region` is given
    * it should be grown by `feather` cells (see {@link depthOrderMargin}).
@@ -213,7 +213,7 @@ export type DepthOrderResult = {
  * a shallower one), which shows up as interpenetrating blocks and — where two
  * surfaces are near-coincident — as z-fighting. Applying this pairwise down a
  * stack, each layer against the already-clamped one above it, makes the whole
- * stack monotonic. Unlike the rim-only pinch-out clamp in `assembleChunk`, this
+ * stack monotonic. Unlike the rim-only pinch-out clamp in `assembleZone`, this
  * fixes the surface **interiors** as well, because it operates on the grid before
  * triangulation.
  *

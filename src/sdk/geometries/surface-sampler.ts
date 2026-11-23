@@ -1,7 +1,7 @@
 import type { TinSample } from './tin-sampler';
 
 /**
- * Read-only height queries against ground as it is DRAWN: the surfaces a `ChunkStack`
+ * Read-only height queries against ground as it is DRAWN: the surfaces a `ZoneStack`
  * draws (`createSurfaceSampler`), or a relief a `SceneryStage` draws from tiles
  * (`ReliefSampler`). What is placed on the ground — a pipeline, a structure, a marker —
  * asks one, through `useSurfaceSampler`.
@@ -40,14 +40,14 @@ export type SurfaceSampler = {
    * How far inside the drawn block a point is, in metres to the nearest face, or
    * `null` when it is in open air.
    *
-   * ⭐ Asked per CHUNK. "Below the highest surface and above the block's base" is
-   * only the same question while the stack is one solid extrusion; give two chunks
+   * ⭐ Asked per ZONE. "Below the highest surface and above the block's base" is
+   * only the same question while the stack is one solid extrusion; give two zones
    * different footprints and there is open air between them wherever the narrower
    * one is absent, which that test reads as rock.
    *
-   * ⚠️ A chunk whose caps meet — a horizon its neighbour draws under the seam rule,
+   * ⚠️ A zone whose caps meet — a horizon its neighbour draws under the seam rule,
    * or a unit pinched out to nothing — spans zero here, so a sliver at such a seam
-   * reads as air. The union over chunks covers most of it.
+   * reads as air. The union over zones covers most of it.
    *
    * @param floor the block's base below the deepest horizon, for a carrier fill
    *   that is deliberately not sampleable

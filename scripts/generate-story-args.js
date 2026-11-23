@@ -65,7 +65,7 @@ export function createStoryArgs() {
   const column = stratColumns[config.stratColumn];
   const horizonAges = new Map();
   // Horizon name -> the unit it is the TOP of. That unit is the interval BELOW the
-  // horizon, which is what a chunk layer's cap and fill both show, so this is the
+  // horizon, which is what a zone layer's cap and fill both show, so this is the
   // map a colour comes from. ⭐ Deepest level wins: a formation says more about
   // what you are looking at than the group containing it.
   const unitByTop = new Map();

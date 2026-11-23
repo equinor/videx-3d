@@ -4,7 +4,7 @@ import {
   hullsWithin,
   marginCrossings,
   segmentConvexNearest,
-} from './margin-zone';
+} from './margin-band';
 import {
   ARC_TURN_STEP,
   coarsenConvexHull,
@@ -147,7 +147,7 @@ export type OneSidedOffsetMetrics = {
 
 /** The grown obstacle and its connector for one transition — diagnostics only. */
 export type TransitionDebug = {
-  /** the walk ring of the obstacle the rod rounds — the rounded zone boundary, and the path's source; empty for a join with no obstacle between the runs */
+  /** the walk ring of the obstacle the rod rounds — the rounded margin band boundary, and the path's source; empty for a join with no obstacle between the runs */
   ring: Vec2[];
   /** the ring PATH between the two clipped run ends — the rod's seed through the ring */
   traced: Vec2[];
@@ -567,14 +567,14 @@ export const ringAtom = (D: number, margin: number): number =>
   Math.max(Math.max(0.25, margin * 0.5), D / RING_ROD_ATOMS);
 
 /**
- * An obstacle's ZONE as a polygon: its hull grown by `margin` with no corner turning more than
- * `maxRelativeTurn / 2` — the rounded zone boundary to within 2% of the margin, outside it
- * everywhere. The one polygon the zone is drawn and walked as, and read for its extent; whether a
- * point is IN the zone is its distance to the hull ({@link hullsWithin}).
+ * An obstacle's MARGIN BAND as a polygon: its hull grown by `margin` with no corner turning more than
+ * `maxRelativeTurn / 2` — the rounded margin band boundary to within 2% of the margin, outside it
+ * everywhere. The one polygon the margin band is drawn and walked as, and read for its extent; whether a
+ * point is IN the margin band is its distance to the hull ({@link hullsWithin}).
  *
  * @group Utils
  */
-export const zoneRing = (
+export const bandRing = (
   hull: Vec2[],
   margin: number,
   maxRelativeTurn: number = Math.PI / 4,
@@ -1357,7 +1357,7 @@ export const planSpanOf = (well: Vec2[]): number => {
  * A convex polygon inflated by `d` — the boundary a cut wraps to get past an obstacle.
  *
  * ⭐ Inflating a CONVEX ring can never self-cross, so the result is still convex and still a
- * valid exclusion zone. Corners are mitered ({@link cornerChain}), so a near-degenerate sliver
+ * valid margin band. Corners are mitered ({@link cornerChain}), so a near-degenerate sliver
  * hull no longer throws a spike many times `d` out from its sharp apex.
  *
  * @group Utils
@@ -1437,14 +1437,14 @@ export function computeOffsetRuns(
   // Obstacles (self-crossing loops) are treated as SOLID: the follow may not come within `margin`
   // of a hull, so BOTH sides break at the same boundary the transition wraps. The convex side then
   // wraps the outer bulge and the concave side the inner tangle — neither traces the self-crossing.
-  // ⭐ Read as a DISTANCE to the hull, not containment in a grown polygon: a mitered zone stood up
+  // ⭐ Read as a DISTANCE to the hull, not containment in a grown polygon: a mitered margin band stood up
   // to a whole margin outside the true one at a sharp corner, and switched shape as the corner's
   // angle crossed the miter limit (X13 between margins 1.1 and 1.2).
   // ⚠⚠ `oneSidedOffset` reads the SAME list with the same test; the gap indices reported below are
   // indices into it, so the two filters must stay in step.
   const hulls = (options.obstacles ?? []).filter(h => h.length >= 3);
-  const zoneOf = hullsWithin(hulls, margin + tolerance);
-  const inZone = hullsWithin(hulls, margin);
+  const bandOf = hullsWithin(hulls, margin + tolerance);
+  const inBand = hullsWithin(hulls, margin);
   const chordEnters = hullsWithin(hulls, margin - tolerance);
 
   // ⭐⭐ DENSIFY, never resample, TD→head. The trajectory is deliberately dense where it curves
@@ -1508,7 +1508,7 @@ export function computeOffsetRuns(
   const trajArc = polylineArcLengths(traj);
   // ⛔ THE ONE RULE at the source: a candidate offset FROM the degenerate well is never followed,
   // wherever its miter puts it. A corner candidate stands up to `miterLimit · margin` off its vertex,
-  // past the rounded zone; kept, it strung a run round X12's TD hook at margin 4 (a 60° reversal).
+  // past the rounded margin band; kept, it strung a run round X12's TD hook at margin 4 (a 60° reversal).
   const onHull = hullsWithin(hulls, tolerance);
   const sourceHull = traj.map(p => (hulls.length > 0 ? onHull(p) : -1));
 
@@ -1552,7 +1552,7 @@ export function computeOffsetRuns(
   const minSpacing = Math.max(0.02 * margin, 1e-4);
   for (const c of cands) {
     if (hulls.length > 0) {
-      const bi = sourceHull[c.v] >= 0 ? sourceHull[c.v] : zoneOf(c.p);
+      const bi = sourceHull[c.v] >= 0 ? sourceHull[c.v] : bandOf(c.p);
       if (bi >= 0) {
         swallowed.push({ arc: c.arc, blocker: bi });
         continue;
@@ -1597,8 +1597,8 @@ export function computeOffsetRuns(
   // ⭐⭐ An arc threshold alone cannot see every fold. `step` is capped at 4 m, so `splitAt`
   // saturates at 10 m and stops tracking the margin: at margin 8 a blocker swallowed a stretch
   // SHORTER than that, no split happened, and the chord across it cut 0.68 m inside the frame —
-  // a silently bad cut, which is worse than a throw. A chord that ENTERS A ZONE is a fold by
-  // definition, whatever its arc length, so the zone gets the casting vote.
+  // a silently bad cut, which is worse than a throw. A chord that ENTERS A MARGIN BAND is a fold by
+  // definition, whatever its arc length, so the margin band gets the casting vote.
   const blockerFor = (lo: number, hi: number): number | null => {
     const tally = new Map<number, number>();
     for (const s of swallowed) {
@@ -1648,10 +1648,10 @@ export function computeOffsetRuns(
   // margin there and the transition wraps it. Left in, this never converged on F-14.
   const holdChords = (r: Vec2[]): Vec2[] =>
     holdPolylineChords2D(r, index, margin, {
-      exempt: hulls.length > 0 ? p => zoneOf(p) >= 0 : undefined,
+      exempt: hulls.length > 0 ? p => bandOf(p) >= 0 : undefined,
       blocked:
         hulls.length > 0
-          ? (a, p, b) => inZone(a, p) >= 0 || inZone(p, b) >= 0
+          ? (a, p, b) => inBand(a, p) >= 0 || inBand(p, b) >= 0
           : undefined,
       label: `computeOffsetRuns: the ${side} run`,
     });
@@ -1821,34 +1821,34 @@ export function oneSidedOffset(
   });
   const hit = { point: [0, 0] as Vec2, distance: 0, along: 0 };
 
-  // ⭐⭐ The exclusion ZONES: the points within `margin` of each obstacle hull. Whatever the well
-  // does INSIDE a zone is DEGENERATE — folded, looped, self-crossing — and no distance to it is a
-  // fact about where the cut may go. The zone boundary stands in for it: it already holds the
+  // ⭐⭐ The MARGIN BANDS: the points within `margin` of each obstacle hull. Whatever the well
+  // does INSIDE a margin band is DEGENERATE — folded, looped, self-crossing — and no distance to it is a
+  // fact about where the cut may go. The margin band boundary stands in for it: it already holds the
   // margin, so keeping off the hull IS the constraint there. Every measurement and every gate below
-  // therefore reads the well OUTSIDE the zones, kept as the contiguous pieces between them.
-  // ⭐ A zone is a DISTANCE, never a polygon: the one definition the prune, the run ends, the rod
+  // therefore reads the well OUTSIDE the margin bands, kept as the contiguous pieces between them.
+  // ⭐ A margin band is a DISTANCE, never a polygon: the one definition the prune, the run ends, the rod
   // and the gates all read. ⚠⚠ Same filter and test as `computeOffsetRuns`, so `gaps` indexes it.
   const solidHulls = obstacles.filter(h => h.length >= 3);
-  const zoneOf = hullsWithin(solidHulls, margin + tolerance);
-  /** strictly inside a zone — where no construction may put a point */
-  const inZone = hullsWithin(solidHulls, margin);
-  /** the signed distance from `p` to the hull's margin — negative inside its zone */
+  const bandOf = hullsWithin(solidHulls, margin + tolerance);
+  /** strictly inside a margin band — where no construction may put a point */
+  const inBand = hullsWithin(solidHulls, margin);
+  /** the signed distance from `p` to the hull's margin — negative inside its margin band */
   const beyond = (p: Vec2, hull: Vec2[]) =>
     convexSignedDistance(p, hull).distance - margin;
   // ⭐⭐ The PATH a rod is seeded along: each hull grown by `margin` with no corner turning more than
-  // θ = maxRelativeTurn / 2 — the rounded zone boundary to within 2% of the margin. It is also what
-  // the story draws as the zone, and its diameter sets the rod's atom.
+  // θ = maxRelativeTurn / 2 — the rounded margin band boundary to within 2% of the margin. It is also what
+  // the story draws as the margin band, and its diameter sets the rod's atom.
   const theta = maxRelativeTurn / 2;
   const rodAnchor: StiffRodAnchor = {
     scale: Math.max(0, options.rodAnchor?.scale ?? 1),
     byEnd: options.rodAnchor?.byEnd,
     balanced: options.rodAnchor?.balanced,
   };
-  const walkZones = solidHulls.map(h => zoneRing(h, margin, maxRelativeTurn));
+  const walkBands = solidHulls.map(h => bandRing(h, margin, maxRelativeTurn));
   // Each reliable piece keeps the arc it started at, so an arc along the whole well is still
   // addressable without ever asking the degenerate stretch where it is.
-  // ⭐ A piece runs right up to the zone, ending where the well enters it: cut at its last vertex
-  // outside, the segment on into the zone was nobody's, and a rod slipped between a stub of well
+  // ⭐ A piece runs right up to the margin band, ending where the well enters it: cut at its last vertex
+  // outside, the segment on into the margin band was nobody's, and a rod slipped between a stub of well
   // outside a hull corner and the hull itself (X07 left at margin 1: 6 contacts, 32°).
   const outside: Array<{ index: PolylineIndex; arc0: number }> = [];
   if (solidHulls.length > 0) {
@@ -1858,9 +1858,9 @@ export function oneSidedOffset(
       );
     let piece: Vec2[] = [];
     let start = 0;
-    let prevZone = -1;
+    let prevBand = -1;
     for (let j = 0; j < well.length; j++) {
-      const k = zoneOf(well[j]);
+      const k = bandOf(well[j]);
       if (k >= 0) {
         if (piece.length > 0) {
           const c = cross(well[j - 1], well[j], k, true);
@@ -1873,22 +1873,22 @@ export function oneSidedOffset(
       } else {
         if (piece.length === 0) {
           const c =
-            j > 0 && prevZone >= 0
-              ? cross(well[j - 1], well[j], prevZone, false)
+            j > 0 && prevBand >= 0
+              ? cross(well[j - 1], well[j], prevBand, false)
               : undefined;
           if (c) piece.push(c.point);
           start = c ? index.arc[j - 1] + c.arc : index.arc[j];
         }
         piece.push(well[j]);
       }
-      prevZone = k;
+      prevBand = k;
     }
     if (piece.length >= 2) {
       outside.push({ index: createPolylineIndex(piece), arc0: start });
     }
     if (outside.length === 0) {
       throw new Error(
-        `oneSidedOffset: every well vertex on the ${side} side lies inside an obstacle zone at margin ${margin} — nothing reliable is left to measure against`,
+        `oneSidedOffset: every well vertex on the ${side} side lies inside an obstacle's margin band at margin ${margin} — nothing reliable is left to measure against`,
       );
     }
   }
@@ -1897,21 +1897,21 @@ export function oneSidedOffset(
     outside.length > 0 ? outside.map(o => o.index) : [index];
 
   /**
-   * Whether a path ENTERS a zone: any point of it nearer a hull than `margin - slack`. ⛔ THE ONE
-   * RULE, applied to verification: the zone stands in for the degenerate well inside it, so a path
-   * through the zone is a path through the well — measuring only against the reliable pieces let
+   * Whether a path ENTERS a margin band: any point of it nearer a hull than `margin - slack`. ⛔ THE ONE
+   * RULE, applied to verification: the margin band stands in for the degenerate well inside it, so a path
+   * through the margin band is a path through the well — measuring only against the reliable pieces let
    * `cutCusps` splice a repair straight across a head hull.
    *
    * ⛔ Chords, not only vertices: two feasible vertices on opposite flanks of a hull have a chord
    * straight through it, and a rod round an 85 m wedge at 90° shipped exactly that.
    */
-  const entersZone = (path: Vec2[], slack: number = tolerance): boolean =>
-    zoneEntries(path, slack, true).length > 0;
+  const entersBand = (path: Vec2[], slack: number = tolerance): boolean =>
+    bandEntries(path, slack, true).length > 0;
   /**
    * The nearest point of every chord of `path` that comes nearer a hull than `margin - slack`, or
    * just the first when `firstOnly`.
    */
-  const zoneEntries = (
+  const bandEntries = (
     path: Vec2[],
     slack: number = tolerance,
     firstOnly = false,
@@ -2005,7 +2005,7 @@ export function oneSidedOffset(
   /** The same test as the gates below, but reporting WHY so a failure can name itself. */
   const verifyOutside = (
     path: Vec2[],
-    zoneSlack: number = tolerance,
+    bandSlack: number = tolerance,
   ): { ok: boolean; clearance: number; crossings: number } => {
     let clearance = Infinity;
     let crossings = 0;
@@ -2013,8 +2013,8 @@ export function oneSidedOffset(
       clearance = Math.min(clearance, indexedClearance(oi, path, margin * 3));
       crossings += indexedCrossings(oi, path);
     }
-    // A zone entry reads as a crossing: the ring stands in for the well it frames.
-    if (entersZone(path, zoneSlack)) crossings++;
+    // A margin band entry reads as a crossing: the ring stands in for the well it frames.
+    if (entersBand(path, bandSlack)) crossings++;
     return {
       ok: clearance >= margin - tolerance && crossings === 0,
       clearance,
@@ -2160,7 +2160,7 @@ export function oneSidedOffset(
     for (const oi of reliable) {
       rod = holdPolylineChords2D(rod, oi, margin, {
         // ⛔ Between the well and a ring the lift can cut into the ring: X08 at margin 1.9–2.1, 2 cm.
-        blocked: (a, p, b) => inZone(a, p) >= 0 || inZone(p, b) >= 0,
+        blocked: (a, p, b) => inBand(a, p) >= 0 || inBand(p, b) >= 0,
         label: 'oneSidedOffset: stiff rod',
       });
     }
@@ -2181,7 +2181,7 @@ export function oneSidedOffset(
         failures.push({ point: mid, reason: 'crosses the well' });
       }
     }
-    for (const p of zoneEntries(rod)) {
+    for (const p of bandEntries(rod)) {
       failures.push({ point: p, reason: 'inside the ring' });
     }
     for (let i = 1; i + 1 < rod.length; i++) {
@@ -2238,9 +2238,9 @@ export function oneSidedOffset(
     // (`blocker === null`) frames its own local hull; an unobstructed fold that already clears
     // is joined by the same rod with no ring.
     let hull: Vec2[] | null = blocker !== null ? solidHulls[blocker] : null;
-    let ring: Vec2[] | null = blocker !== null ? walkZones[blocker] : null;
+    let ring: Vec2[] | null = blocker !== null ? walkBands[blocker] : null;
     if (!hull) {
-      // No obstacle behind this gap, so the well here is trustworthy — but a neighbouring zone's
+      // No obstacle behind this gap, so the well here is trustworthy — but a neighbouring margin band's
       // interior still is not, so the frame is hulled from RELIABLE vertices only.
       const arcE = outsideNearest(E).arc;
       const arcS = outsideNearest(S).arc;
@@ -2252,14 +2252,14 @@ export function oneSidedOffset(
           if (
             index.arc[j] >= lo &&
             index.arc[j] <= hiArc &&
-            zoneOf(well[j]) < 0
+            bandOf(well[j]) < 0
           ) {
             stretch.push(well[j]);
           }
         }
         if (stretch.length >= 3) {
           hull = convexHull2D(stretch);
-          ring = zoneRing(hull, margin, maxRelativeTurn);
+          ring = bandRing(hull, margin, maxRelativeTurn);
         }
       }
     }
@@ -2294,12 +2294,12 @@ export function oneSidedOffset(
       const D = hullDiameter(ring);
       const atom = ringAtom(D, margin);
       const own = hull;
-      // ⭐ Each run is clipped to where it enters the zone — the point `margin` from the hull, exact
-      // and continuous in the margin. The well INSIDE the hull is ignored entirely; the zone holds
-      // the margin there, so the rod is judged only against the well OUTSIDE the zones.
+      // ⭐ Each run is clipped to where it enters the margin band — the point `margin` from the hull, exact
+      // and continuous in the margin. The well INSIDE the hull is ignored entirely; the margin band holds
+      // the margin there, so the rod is judged only against the well OUTSIDE the margin bands.
       const edge = margin + tolerance;
       const within = (p: Vec2) => beyond(p, own) < tolerance;
-      /** where the chord from `kept` (outside) to `dropped` (inside) enters the zone */
+      /** where the chord from `kept` (outside) to `dropped` (inside) enters the margin band */
       const crossing = (kept: Vec2, dropped: Vec2): Vec2 | null => {
         const c = marginCrossings([kept, dropped], own, edge).crossings.find(
           x => x.entering,
@@ -2316,7 +2316,7 @@ export function oneSidedOffset(
         droppedB = B[0];
         B = B.slice(1);
       }
-      // ⭐ The run ends ON the zone, not at its last vertex outside it: snapped to a vertex, the end
+      // ⭐ The run ends ON the margin band, not at its last vertex outside it: snapped to a vertex, the end
       // moved by a whole guide step when the trace's sampling changed (19 S at margin 0.1: 0.5 m)
       // and the anchors read off it tipped the rod past 45°.
       if (droppedA && !within(A[A.length - 1])) {
@@ -2329,10 +2329,10 @@ export function oneSidedOffset(
       }
       E = A[A.length - 1];
       S = B[0];
-      // ⭐ A run that stops SHORT of the zone — its last offset candidate fell just outside it — is
+      // ⭐ A run that stops SHORT of the margin band — its last offset candidate fell just outside it — is
       // landed on it along its own heading. Only across a sampling gap: one candidate step.
       const reach = offsetStep(margin);
-      const landOnZone = (end: Vec2, from: Vec2): Vec2 | null => {
+      const landOnBand = (end: Vec2, from: Vec2): Vec2 | null => {
         if (within(end)) return null;
         const dx = end[0] - from[0];
         const dz = end[1] - from[1];
@@ -2347,18 +2347,18 @@ export function oneSidedOffset(
         );
         return c && c.arc > tolerance ? c.point : null;
       };
-      const landE = landOnZone(E, A[A.length - 2]);
+      const landE = landOnBand(E, A[A.length - 2]);
       if (landE) {
         A = [...A, landE];
         E = landE;
       }
-      const landS = landOnZone(S, B[1]);
+      const landS = landOnBand(S, B[1]);
       if (landS) {
         B = [landS, ...B];
         S = landS;
       }
       // Where each run end FOOTS on the walk ring: the edge nearest it — the ring stands within 2%
-      // of the margin off the zone, so its edges are all short near a corner and none is a spike.
+      // of the margin off the margin band, so its edges are all short near a corner and none is a spike.
       const footEdge = (p: Vec2): number => {
         let bEdge = 0;
         let bd = Infinity;
@@ -2405,7 +2405,7 @@ export function oneSidedOffset(
       // direction — the seed the rod settles from, on the right flank by construction. A vertex
       // within `margin` of the reliable well (an entry gap, where the well leaves the hull alongside
       // the ring) is pushed out onto the margin's tangent polygon; one that would land back inside
-      // the zone marks a corridor narrower than the margin and is left out.
+      // the margin band marks a corridor narrower than the margin and is left out.
       const path: Vec2[] = [];
       {
         const first = walkDir > 0 ? (eEdge + 1) % nr : eEdge;
@@ -2416,7 +2416,7 @@ export function oneSidedOffset(
           ((((arcS - arcE) * walkDir) % perimeter) + perimeter) % perimeter;
         if (perimeter - ahead < atom) {
           // ⭐ S under one atom BEHIND E is the same point to the rod, and the step back is clear of
-          // the zone; read as a lap round the ring it ran F-5 right away at margin 19.2 (0 → 36
+          // the margin band; read as a lap round the ring it ran F-5 right away at margin 19.2 (0 → 36
           // path vertices, 179°) while both ends moved 0.1 m.
           count = 0;
         } else if (eEdge === sEdge) {
@@ -2549,7 +2549,7 @@ export function oneSidedOffset(
 
   // Gates. Clearance and simplicity are HARD — a breach throws. The smoothness metrics are
   // reported for the caller to judge; the following curvature legitimately tracks the well.
-  // Clearance is measured against the RELIABLE well only — inside a zone the cut hugs the grown
+  // Clearance is measured against the RELIABLE well only — inside a margin band the cut hugs the grown
   // hull boundary and the trajectory cannot be reasoned about.
   let clearance = Infinity;
   for (const oi of reliable) {
@@ -2566,10 +2566,10 @@ export function oneSidedOffset(
       `oneSidedOffset: finished ${side} curve self-intersects (${loops} loop(s))`,
     );
   }
-  // ⛔ The ring stands in for the well inside it — a finished curve inside a zone has cut the well.
-  if (entersZone(points)) {
+  // ⛔ The ring stands in for the well inside it — a finished curve inside a margin band has cut the well.
+  if (entersBand(points)) {
     throw new Error(
-      `oneSidedOffset: finished ${side} curve enters an obstacle zone at margin ${margin}`,
+      `oneSidedOffset: finished ${side} curve enters an obstacle's margin band at margin ${margin}`,
     );
   }
   // ⛔ `cutCusps` is supposed to have removed every one of these. Re-measuring here is what makes

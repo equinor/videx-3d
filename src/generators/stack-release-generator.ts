@@ -22,7 +22,7 @@ export type StackReleaseOptions = {
    */
   pool?: boolean;
   /**
-   * Stable id of the calling `ChunkStack`, so releases are reference-counted: with
+   * Stable id of the calling `ZoneStack`, so releases are reference-counted: with
    * two stacks in one scene, unmounting one must NOT tear down the other's cached
    * column. Omit it and the release is unconditional (the historical behaviour).
    */
@@ -35,19 +35,19 @@ export type StackReleaseOptions = {
 };
 
 /**
- * Release what the chunk generators hold between builds — the resolved column
+ * Release what the zone generators hold between builds — the resolved column
  * (one channel per layer over the whole reference grid, plus masks and the seal's
  * inferred weights) and its refinement candidates.
  *
- * Those caches exist so that every chunk cut from a column shares one fetch,
+ * Those caches exist so that every zone cut from a column shares one fetch,
  * resample and resolve, which means they are keyed to the column rather than to
  * any component and nothing collects them on their own. At the default node
  * budget they are the largest thing the worker holds by an order of magnitude, so
- * a host that unmounts its chunks should invoke this — `ChunkStack` does it for
+ * a host that unmounts its zones should invoke this — `ZoneStack` does it for
  * you.
  *
  * ⭐ Reference-counted by `stackId`: the caches are only cleared once the LAST
- * live stack releases, so a scene with two `ChunkStack`s does not have one tear
+ * live stack releases, so a scene with two `ZoneStack`s does not have one tear
  * down the other's column.
  *
  * @group Generators

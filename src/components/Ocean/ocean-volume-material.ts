@@ -23,7 +23,7 @@ export type OceanVolumeMaterialParameters = ShaderMaterialParameters & {
   waveCount?: number;
   /**
    * Read the wall's unit-relative height from a `wallV` attribute rather than
-   * from `uv.y` — for a chunk's interval wall, whose uv is metric.
+   * from `uv.y` — for a zone's interval wall, whose uv is metric.
    */
   wallAttribute?: boolean;
   /** see {@link OceanMaterialParameters.sectionPlane} */

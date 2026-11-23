@@ -98,7 +98,7 @@ Two things the host has to get right:
   the swing crosses the cut — so the side the flight chose is held until it lands, and
   handed back to `auto` afterwards, which then agrees with it.
 
-The demo is `Spikes/Chunks/FieldColumn` with `fence` on: its **Fly to** controls cover
+The demo is `Spikes/Zones/FieldColumn` with `fence` on: its **Fly to** controls cover
 the pull-back factor, the arrival padding (how much of the fence to take in), the
 arrival polar angle and the easing.
 
@@ -122,8 +122,8 @@ works it out once a frame for everything that asks:
 | `ground` | the relief's tiles (`ground`): the relief's ground under the camera, on its triangles | the `Scenery`, a `SceneryStage` |
 | `height`, `seaLevel`, `altitude` | a `Scenery` (`sky`) | the geographic layers (`layerShownAt`), a `SceneryStage` |
 | `lid`, `buried`, `trench`, `hollow` | a `Scenery`: the void's lid over the camera in the ground, in rock above the seabed, in a trench, how far inside the hollow's rim | the `Scenery`'s own frame, the layers, a `SceneryStage` |
-| `water` | each sea (`water`): an `Ocean`, a `ChunkStack`'s water, a `Scenery`'s sea (`reportCameraWater`: the one the camera is in, one with an edge over an endless one) | the seas' own water bodies (`WaterBody.cameraOver`) |
-| `medium` | a `ChunkStack`'s `immersion` (`medium`): water or rock, to fade by | `useImmersionFog` |
+| `water` | each sea (`water`): an `Ocean`, a `ZoneStack`'s water, a `Scenery`'s sea (`reportCameraWater`: the one the camera is in, one with an edge over an endless one) | the seas' own water bodies (`WaterBody.cameraOver`) |
+| `medium` | a `ZoneStack`'s `immersion` (`medium`): water or rock, to fade by | `useImmersionFog` |
 
 Without a probe for a field it stays `null` and its readers fall back to working it out
 (a layer with no `Scenery` takes its altitude from its own globe). A site is the store's

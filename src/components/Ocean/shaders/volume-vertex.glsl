@@ -11,7 +11,7 @@
 // Evaluated in WORLD space so it is seamless with the surface.
 //
 // That coordinate is `uv.y` on the ocean builders' geometry, whose uv spans the
-// wall. A chunk's interval wall carries a METRIC uv instead (arc length and world
+// wall. A zone's interval wall carries a METRIC uv instead (arc length and world
 // height, which is what anchors patterns in world space), so it supplies the same
 // quantity as its own `wallV` attribute: OCEAN_WALL_ATTRIBUTE switches to that
 // rather than renormalising a uv that has another job.

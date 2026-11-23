@@ -1,0 +1,201 @@
+import { describe, expect, it } from 'vitest';
+import { Vector3 } from 'three';
+import {
+  ZoneMaterial,
+  createTileUniforms,
+} from '../src/components/Zones/zone-material';
+import { buildSurfaceDepthMap } from '../src/components/Zones/zone-depth-map';
+import { StackTiling, SurfaceMeta } from '../src/sdk';
+
+const defines = (material: ZoneMaterial) =>
+  material.defines as Record<string, unknown>;
+
+const bedSurface: SurfaceMeta = {
+  id: 'bed',
+  name: 'Sea bed',
+  projection: '31N',
+  min: 0,
+  max: 100,
+  displayMin: 0,
+  displayMax: 100,
+  color: 'black',
+  visualization: 'depth',
+  header: {
+    nx: 8,
+    ny: 5,
+    xinc: 25,
+    yinc: 25,
+    rot: 0,
+    xori: 0,
+    yori: 0,
+    xmax: 200,
+    ymax: 125,
+  },
+};
+
+describe('ZoneMaterial', () => {
+  it('draws at full saturation unless given one, and shares one it is given', () => {
+    const plain = new ZoneMaterial({ color: '#4e79a7' });
+    const saturation = { value: 0.5 };
+    const a = new ZoneMaterial({ color: '#4e79a7', saturation });
+    const b = new ZoneMaterial({ color: '#f28e2b', saturation });
+    expect(plain.uniforms.zoneSaturation.value).toBe(1);
+    expect(a.uniforms.zoneSaturation).toBe(saturation);
+    expect(b.uniforms.zoneSaturation).toBe(saturation);
+    expect(defines(a)).toEqual(defines(plain));
+  });
+
+  it('compiles no detail branch at all when none is asked for', () => {
+    const material = new ZoneMaterial({ color: '#4e79a7' });
+    expect('SURFACE_DETAIL' in defines(material)).toBe(false);
+    expect('SURFACE_DETAIL_GRANULAR' in defines(material)).toBe(false);
+  });
+
+  it('treats a zero strength as no detail', () => {
+    const material = new ZoneMaterial({
+      detail: { preset: 'sand', strength: 0 },
+    });
+    expect('SURFACE_DETAIL' in defines(material)).toBe(false);
+  });
+
+  it('enables only the layers a preset actually uses', () => {
+    const sand = new ZoneMaterial({ detail: 'sand' });
+    expect('SURFACE_DETAIL' in defines(sand)).toBe(true);
+    expect('SURFACE_DETAIL_GRANULAR' in defines(sand)).toBe(true);
+    expect('SURFACE_DETAIL_GRAIN' in defines(sand)).toBe(false);
+    expect('SURFACE_DETAIL_DUNES' in defines(sand)).toBe(false);
+
+    const seabed = new ZoneMaterial({ detail: 'seabed' });
+    expect('SURFACE_DETAIL_DUNES' in defines(seabed)).toBe(true);
+    expect(seabed.uniforms.detailDunes.value.y).toBeGreaterThan(0);
+  });
+
+  it('anchors bedding to the unit on a wall and not on a cap', () => {
+    // `bedding` is the mix toward `wallV`, which only a wall carries; a cap
+    // reading a missing attribute would get 0 and lose the pattern's y axis.
+    const wall = new ZoneMaterial({ detail: 'shale', wall: true });
+    const cap = new ZoneMaterial({ detail: 'shale' });
+    expect('ZONE_WALL' in defines(wall)).toBe(true);
+    expect('ZONE_WALL' in defines(cap)).toBe(false);
+    expect('SURFACE_DETAIL_BEDDING' in defines(wall)).toBe(true);
+    expect('SURFACE_DETAIL_BEDDING' in defines(cap)).toBe(false);
+    expect(wall.uniforms.detailGrainB.value.z).toBeGreaterThan(0);
+    expect(cap.uniforms.detailGrainB.value.z).toBe(0);
+  });
+
+  it('scales a preset by the callers one knob', () => {
+    const material = new ZoneMaterial({
+      detail: { preset: 'basement', strength: 2 },
+    });
+    expect(material.uniforms.detailStrength.value).toBe(2);
+  });
+
+  it('keeps the opacity property and its uniform in step', () => {
+    // The OIT pass routes on `material.opacity`, so a disagreement between the
+    // property and the uniform would draw a solid surface into a blend pass.
+    const material = new ZoneMaterial({ opacity: 0.4, transparent: true });
+    expect(material.opacity).toBe(0.4);
+    expect(material.uniforms.opacity.value).toBe(0.4);
+    material.opacity = 0.8;
+    expect(material.uniforms.opacity.value).toBe(0.8);
+  });
+
+  describe('tile diagnostic', () => {
+    const tiling: StackTiling = {
+      cells: 64,
+      first: [1, 2],
+      count: [3, 4],
+      // col = 2x + 10, row = -z + 5
+      toGrid: [2, 0, 10, 0, -1, 5],
+    };
+
+    it('compiles the branch in only when given tiles', () => {
+      expect('ZONE_TILE_DEBUG' in defines(new ZoneMaterial())).toBe(false);
+      const tiles = createTileUniforms(tiling);
+      const material = new ZoneMaterial({ tiles });
+      expect('ZONE_TILE_DEBUG' in defines(material)).toBe(true);
+      // Shared, so a LOD level written into `values` reaches every material.
+      expect(material.uniforms.tileValues).toBe(tiles.values);
+      expect(material.uniforms.tileToGrid).toBe(tiles.toGrid);
+      // ...and so does switching the tint from the checker to the levels.
+      expect(material.uniforms.tileByValue).toBe(tiles.byValue);
+      expect(tiles.byValue.value).toBe(0);
+      tiles.values.value.dispose();
+    });
+
+    it('maps scene XZ to grid coordinates and holds one value per tile', () => {
+      const tiles = createTileUniforms(tiling);
+      const grid = new Vector3(3, -7, 1).applyMatrix3(tiles.toGrid.value);
+      expect(grid.x).toBe(16);
+      expect(grid.y).toBe(12);
+      expect(tiles.layout.value.toArray()).toEqual([64, 1, 2]);
+      const image = tiles.values.value.image;
+      expect([image.width, image.height]).toEqual([3, 4]);
+      expect(image.data).toHaveLength(12);
+      tiles.values.value.dispose();
+    });
+
+    it('lets a cap read the tile levels without the tint', () => {
+      const tiles = createTileUniforms(tiling);
+      const cap = new ZoneMaterial({ tileLevels: tiles });
+      const wall = new ZoneMaterial({ tileLevels: tiles, wall: true });
+      expect('ZONE_TILE_LEVELS' in defines(cap)).toBe(true);
+      expect('ZONE_TILE_DEBUG' in defines(cap)).toBe(false);
+      expect(cap.uniforms.tileValues).toBe(tiles.values);
+      // A wall has no normal map to choose.
+      expect('ZONE_TILE_LEVELS' in defines(wall)).toBe(false);
+      expect('ZONE_NORMAL_MAP' in defines(wall)).toBe(false);
+      tiles.values.value.dispose();
+    });
+  });
+
+  describe('water tint', () => {
+    it('compiles the branch out when none is asked for, or it is off', () => {
+      expect('ZONE_WATER_TINT' in defines(new ZoneMaterial())).toBe(false);
+      const off = new ZoneMaterial({
+        waterTint: { color: '#0a2540', level: 0, strength: 0, depth: 80 },
+      });
+      expect('ZONE_WATER_TINT' in defines(off)).toBe(false);
+    });
+
+    it('packs the level, strength and depth scale for the shader', () => {
+      const material = new ZoneMaterial({
+        waterTint: { color: '#0a2540', level: -25, strength: 0.6, depth: 50 },
+      });
+      expect('ZONE_WATER_TINT' in defines(material)).toBe(true);
+      const params = material.uniforms.waterTintParams.value;
+      expect(params.x).toBe(-25);
+      expect(params.y).toBe(0.6);
+      // The shader multiplies by this, so it is the RECIPROCAL of the depth.
+      expect(params.z).toBeCloseTo(1 / 50);
+    });
+
+    it('takes its depth from the bed grid only when one is given', () => {
+      const plain = new ZoneMaterial({
+        waterTint: { color: '#0a2540', level: 0, strength: 0.6, depth: 50 },
+      });
+      expect('ZONE_BATHYMETRY' in defines(plain)).toBe(false);
+
+      const map = buildSurfaceDepthMap(
+        bedSurface,
+        new Float32Array(8 * 5),
+        (e, n) => [e, 0, n],
+      );
+      const mapped = new ZoneMaterial({
+        waterTint: {
+          color: '#0a2540',
+          level: 0,
+          strength: 0.6,
+          depth: 50,
+          map,
+        },
+      });
+      expect('ZONE_BATHYMETRY' in defines(mapped)).toBe(true);
+      expect(mapped.uniforms.bathyMap.value).toBe(map.texture);
+      // The shader indexes texels itself (the texture is NEAREST-filtered), so it
+      // needs the grid size alongside the affine.
+      expect(mapped.uniforms.bathySize.value.x).toBe(8);
+      expect(mapped.uniforms.bathySize.value.y).toBe(5);
+    });
+  });
+});

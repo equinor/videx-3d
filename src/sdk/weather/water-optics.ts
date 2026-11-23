@@ -3,7 +3,7 @@ import type { Vec3 } from '../types/common';
 
 /**
  * How a body of water looks, one model for every sea the library draws (the `Ocean`, the
- * `Scenery`'s sea, a `ChunkStack`'s water): the colour of water too deep to see through, and how
+ * `Scenery`'s sea, a `ZoneStack`'s water): the colour of water too deep to see through, and how
  * far one sees through it. What lies in the water, the seabed and anything else, fades along
  * its path through it toward that colour, lit by the daylight left at its depth; red goes
  * first and blue last, as the colour has it, so shallows over sand come out lighter and

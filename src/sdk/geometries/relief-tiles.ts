@@ -84,7 +84,7 @@ export type ReliefTileSource = ReliefLayersSource & {
 };
 
 /**
- * A relief as something built on it samples it — a chunk column's top, say: its tiles'
+ * A relief as something built on it samples it — a zone column's top, say: its tiles'
  * source, and where it lies in that frame. Plain data, so it crosses to a worker. The
  * frame it is built in must be the stage's: the same scene X/Z, and Y along `up`.
  *

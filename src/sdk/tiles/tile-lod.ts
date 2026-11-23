@@ -2,7 +2,7 @@ import { Box3, Frustum, Matrix4, Vector3 } from 'three';
 import { selectLodLevel } from '../utils/lod';
 
 // The level-of-detail rules a grid of tiles is chosen by, whatever the tiles hold: the
-// chunks' fixed grids of tiles use them as they are, and `selectQuadtreeTiles` follows the
+// zones' fixed grids of tiles use them as they are, and `selectQuadtreeTiles` follows the
 // same rules for a quadtree loaded as it is seen (see documents/tiles.md).
 
 /**

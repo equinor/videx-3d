@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stackColumnSpec } from '../src/components/Chunks/chunk-spec';
+import { stackColumnSpec } from '../src/components/Zones/zone-spec';
 import { reliefSource } from '../src/components/Scenery/scenery-relief-source';
 import {
   clearStackContext,

@@ -128,7 +128,7 @@ export type StackOwnLayer = {
  *
  * Kept at the grid height: the layer's own nodes (on its TIN anyway), its own lines
  * — the termination lines of the two pairs it belongs to and its data edge — and
- * the rim and cuts, which other chunks' walls and caps meet, and the level lines,
+ * the rim and cuts, which other zones' walls and caps meet, and the level lines,
  * where a plane drawn elsewhere (a sea's lid) meets it.
  *
  * ⭐ WHICH units exist is still the grid's call. Two TINs are off their grids
@@ -411,7 +411,7 @@ function sampleGrid(
 
 /**
  * Per layer, the shared vertices kept at its grid height: the rim, cuts and level
- * lines, which other chunks or a plane meet, and its own lines — the termination
+ * lines, which other zones or a plane meet, and its own lines — the termination
  * lines of both pairs it belongs to, its data edge, and any node added along them.
  */
 function exactVertices(

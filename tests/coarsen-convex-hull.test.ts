@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Vec2 } from '../src/sdk';
-import { convexSignedDistance } from '../src/sdk/utils/margin-zone';
+import { convexSignedDistance } from '../src/sdk/utils/margin-band';
 import { coarsenConvexHull, convexHull2D } from '../src/sdk/utils/polyline-2d';
 
 const circle = (r: number, n: number, rx = r): Vec2[] =>

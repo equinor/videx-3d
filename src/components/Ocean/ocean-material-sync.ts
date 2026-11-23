@@ -19,7 +19,7 @@ import { OceanVolumeMaterial } from './ocean-volume-material';
  * Sea state and water appearance — everything that describes the water itself,
  * as opposed to the geometry it is drawn on.
  *
- * Shared by the `Ocean` component and by a water layer inside a `Chunk`, which is
+ * Shared by the `Ocean` component and by a water layer inside a `Zone`, which is
  * the point: the two drive the same materials, and a second copy of this list
  * would drift.
  *
@@ -103,7 +103,7 @@ export type OceanWaterProps = {
    * metres. Shallower water is clearer and paler, so a shoal or a beach reads as
    * one.
    *
-   * ⚠️ Needs a bathymetry grid to have any effect — a `ChunkStack` supplies the
+   * ⚠️ Needs a bathymetry grid to have any effect — a `ZoneStack` supplies the
    * column's shallowest surface. Without one the shader has no depth input and
    * falls back to the view angle, which cannot tell shallow from deep.
    * @deprecated shallow water shows its bed by `optics` (the water over it); no effect
@@ -237,7 +237,7 @@ export type OceanWaterProps = {
 
 /**
  * Appearance of the water BODY — the volume seen through the sides of a water
- * box, or through the walls of a chunk's water layer.
+ * box, or through the walls of a zone's water layer.
  *
  * @expand
  * @group Components
@@ -245,7 +245,7 @@ export type OceanWaterProps = {
 export type OceanBodyProps = {
   /**
    * Per-meter tint build-up of the water body's walls, with the camera's distance to them.
-   * Also the water's clarity where `optics` is left out, and a `ChunkStack`'s immersion fog in
+   * Also the water's clarity where `optics` is left out, and a `ZoneStack`'s immersion fog in
    * its water.
    */
   bodyFogDensity?: number;
@@ -256,7 +256,7 @@ export type OceanBodyProps = {
 };
 
 /**
- * Appearance of a sea bed drawn by the `Ocean` component itself. A chunk draws
+ * Appearance of a sea bed drawn by the `Ocean` component itself. A zone draws
  * its sea bed as an ordinary layer instead, so these do not apply there.
  *
  * @expand

@@ -2,7 +2,7 @@ import { type Camera, type ColorRepresentation, Vector3 } from 'three';
 
 /**
  * The water the camera is at, as the sea that knows it reports it (an `Ocean`, a `Scenery`'s
- * sea, a `ChunkStack`'s water).
+ * sea, a `ZoneStack`'s water).
  *
  * @group Utils
  */
@@ -106,7 +106,7 @@ function emptySite(site: CameraSite, camera: Camera | null) {
 
 /**
  * Report the water the camera is at to `site`, as a sea's probe does: the one it is in wins
- * over one it is only at; of those it is in, one with an edge (an `Ocean`'s, a `ChunkStack`'s)
+ * over one it is only at; of those it is in, one with an edge (an `Ocean`'s, a `ZoneStack`'s)
  * over an endless sea, and else the first.
  *
  * @group Utils

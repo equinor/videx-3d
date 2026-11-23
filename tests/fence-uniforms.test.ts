@@ -2,10 +2,10 @@ import { readFileSync } from 'fs';
 import { describe, expect, it } from 'vitest';
 import { Matrix3, Texture, Vector2, Vector4 } from 'three';
 import {
-  ChunkFenceSideValues,
+  ZoneFenceSideValues,
   applyFenceSide,
   createFenceUniforms,
-} from '../src/components/Chunks/chunk-material';
+} from '../src/components/Zones/zone-material';
 import { applyFenceField } from '../src/sdk/materials/fence-field';
 
 /**
@@ -22,7 +22,7 @@ import { applyFenceField } from '../src/sdk/materials/fence-field';
  */
 
 /** A side whose every field is a distinct, recognisable value. */
-function sentinelSide(): ChunkFenceSideValues {
+function sentinelSide(): ZoneFenceSideValues {
   return {
     texture: new Texture(),
     toUv: new Matrix3().set(2, 3, 4, 5, 6, 7, 8, 9, 10),
@@ -37,7 +37,7 @@ function sentinelSide(): ChunkFenceSideValues {
 }
 
 /** How each uniform key is fed from a side — `map` is the odd one out. */
-const SOURCE: Record<string, keyof ChunkFenceSideValues> = {
+const SOURCE: Record<string, keyof ZoneFenceSideValues> = {
   map: 'texture',
   toUv: 'toUv',
   size: 'size',
@@ -98,12 +98,9 @@ describe('fence uniforms', () => {
 
   // ⚠️ A material binding the fence by hand drifts the way the side swap did.
   it.each([
-    ['chunk material', 'src/components/Chunks/chunk-material.ts'],
-    ['inference material', 'src/components/Chunks/inference-material.ts'],
-    [
-      'chunk picking material',
-      'src/components/Chunks/chunk-picking-material.ts',
-    ],
+    ['zone material', 'src/components/Zones/zone-material.ts'],
+    ['inference material', 'src/components/Zones/inference-material.ts'],
+    ['zone picking material', 'src/components/Zones/zone-picking-material.ts'],
     ['ocean material', 'src/components/Ocean/ocean-material.ts'],
     ['ocean volume material', 'src/components/Ocean/ocean-volume-material.ts'],
     [
@@ -128,9 +125,9 @@ describe('fence uniforms', () => {
       'utf-8',
     );
     const consumers = [
-      'src/components/Chunks/shaders/chunk-frag.glsl',
-      'src/components/Chunks/shaders/chunk-pick-frag.glsl',
-      'src/components/Chunks/inference-material.ts',
+      'src/components/Zones/shaders/zone-frag.glsl',
+      'src/components/Zones/shaders/zone-pick-frag.glsl',
+      'src/components/Zones/inference-material.ts',
       'src/components/Ocean/shaders/fragment.glsl',
       'src/components/Ocean/shaders/volume-fragment.glsl',
       'src/components/Scenery/shaders/relief-tiles.glsl',

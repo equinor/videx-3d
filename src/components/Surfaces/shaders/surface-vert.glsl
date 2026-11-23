@@ -5,7 +5,7 @@ uniform mat3 gridUvMat;
 varying vec3 vViewPosition;
 varying vec2 vGridUv;
 
-// Where the geometry is not fully described by the grid (a chunk cap, whose
+// Where the geometry is not fully described by the grid (a zone cap, whose
 // heights have been resampled, hole-filled and sealed), the mesh itself carries
 // what the elevation texture cannot. ⚠️ `nodata` rather than `covered`: an
 // attribute the geometry does not have reads as 0, which must mean "grid is fine".

@@ -129,7 +129,7 @@ export type StackGeometryLayer = {
  * ⭐ Split cap layout: every layer SHARES one `xz` attribute and the topology, and
  * carries only a per-layer `y` (its heights). A cap holds no `position` or `uv` —
  * the materials assemble the position from `xz` + `y` in the shader (see
- * `ChunkMaterial`). Normals are per layer, computed over the shared index buffer.
+ * `ZoneMaterial`). Normals are per layer, computed over the shared index buffer.
  *
  * ⚠️ The index `BufferAttribute` is **shared** by every layer that keeps the full
  * triangle set — with a deep stack, duplicating it would cost more memory than all
@@ -194,13 +194,13 @@ export function createStackGeometryBuilder(
   // layer, and that `y` IS the height array (shared by reference with the section
   // source, so the two never duplicate it). A cap therefore stores no full
   // (x, y, z) position — the materials assemble it in the shader (see
-  // `ChunkMaterial`).
+  // `ZoneMaterial`).
   const sharedXZ = new BufferAttribute(positionsXZ, 2);
 
   return (i: number): StackGeometryLayer => {
     const y = heights[i];
     const rimY = stackRimHeights(y, tessellation.rimVertices);
-    // A layer can take part WITHOUT being drawn — when the chunk above or below
+    // A layer can take part WITHOUT being drawn — when the zone above or below
     // already draws that surface. Its rim still matters (the walls hang from it),
     // but building a mesh nobody renders would be pure waste, and an unowned
     // geometry is a leak waiting to happen.
@@ -360,9 +360,9 @@ export type StackWallOptions = {
    * soon as either surface that closes it was.
    */
   inferred?: Float32Array[];
-  /** per layer: this boundary is a fluid (see {@link StackResolveOptions.fluid}) */
+  /** per layer: this layer is a fluid (see {@link StackResolveOptions.fluid}) */
   fluid?: boolean[];
-  /** per layer: this boundary is the sea (see {@link StackCollapseOptions.unbounded}) */
+  /** per layer: this layer is the sea (see {@link StackCollapseOptions.unbounded}) */
   unbounded?: boolean[];
   /** per-pair thin flags (see {@link StackCollapseOptions.thin}) */
   thin?: (Uint8Array | null)[];
@@ -403,9 +403,9 @@ export type StackWalls = {
  * Build each filled interval's side wall from the SHARED TESSELLATION, around the
  * area that interval actually occupies.
  *
- * The alternative — a wall around the whole chunk rim — draws a face along the
+ * The alternative — a wall around the whole zone rim — draws a face along the
  * outline whether or not the unit still exists there, and says nothing at all
- * where a unit ends inside the chunk. Tracing the interval's own triangles gives
+ * where a unit ends inside the zone. Tracing the interval's own triangles gives
  * both, so the rim is not a special case: it is simply the part of that boundary
  * which happens to lie on the outline.
  *
@@ -648,7 +648,7 @@ export type SurfaceStackOptions = {
   lod?: { levels: number; factor: number };
   /**
    * Footprint of whatever will be drawn ABOVE this stack (scene XZ) — typically
-   * the outline of the neighbouring chunk.
+   * the boundary of the neighbouring zone.
    *
    * The stack's own top layer can be marked absent by a `preResolved` mask, having
    * been truncated against a surface that belongs to the stack above and is
@@ -665,22 +665,22 @@ export type SurfaceStackOptions = {
   /**
    * Per layer: draw its cap. `false` leaves the layer in the stack (its rim still
    * carries the walls, and it still takes part in the resolve) but produces no
-   * surface — for a boundary a NEIGHBOURING chunk already draws, so the two do not
+   * surface — for a horizon a NEIGHBOURING zone already draws, so the two do not
    * z-fight over the same horizon.
    */
   caps?: boolean[];
   /**
-   * Outlines of NEIGHBOURING chunks whose footprint this one only PARTLY overlaps
+   * Boundaries of NEIGHBOURING zones whose footprint this one only PARTLY overlaps
    * (scene XZ, already densified). Constrained into the tessellation so the area
    * they also cover is bounded by real mesh edges rather than cut at triangle
-   * resolution — with both chunks sampling the same reference grid, the seam is
+   * resolution — with both zones sampling the same reference grid, the seam is
    * then watertight rather than merely close.
    */
   cuts?: PlanarPolygonGeometry[];
   /**
    * Per layer, the indices into {@link SurfaceStackOptions.cuts} of the neighbours
    * that draw that layer's cap where they reach. `caps` is the containment case of
-   * the same decision — the neighbour covers this chunk entirely, so nothing is
+   * the same decision — the neighbour covers this zone entirely, so nothing is
    * left to draw.
    */
   capCuts?: (number[] | null)[];
@@ -738,7 +738,7 @@ export type SurfaceStackOptions = {
    * kept at its grid height along the rings and the layer at its own on the nodes,
    * and on the grid's side of the level everywhere (`StackOwnSampleOptions.levels`).
    * A sea bed's coastline, so the cap meets a flat sea lid exactly where the grid
-   * puts the shore rather than within `maxError` of it (`documents/chunks.md` §6).
+   * puts the shore rather than within `maxError` of it (`documents/zones.md` §6).
    */
   levelLines?: {
     layer: number;
@@ -754,7 +754,7 @@ export type SurfaceStackOptions = {
   coverageCrossings?: (Uint32Array | undefined)[];
   /**
    * Hooks to hand the build on WHILE it runs: what the layers share once, then
-   * each cap as soon as it is built (see `documents/chunk-stack/streaming.md`).
+   * each cap as soon as it is built (see `documents/zone-stack/streaming.md`).
    */
   stream?: SurfaceStackStream;
   /**
@@ -800,14 +800,14 @@ export type SurfaceStackOptions = {
    */
   inferred?: Float32Array[];
   /**
-   * Per layer: this boundary is a FLUID — a level rather than a horizon (see
-   * {@link StackResolveOptions.fluid}). It is ordered like any other boundary but
+   * Per layer: this layer is a FLUID — a level rather than a horizon (see
+   * {@link StackResolveOptions.fluid}). It is ordered like any other layer but
    * is never the authority for what lies below it, and the wall of an interval it
    * bounds is clamped so it cannot invert where the two cross.
    */
   fluid?: boolean[];
   /**
-   * Per layer: this boundary is the SEA — unbounded, covering the whole footprint
+   * Per layer: this layer is the SEA — unbounded, covering the whole footprint
    * whatever stands in its way (see {@link StackCollapseOptions.unbounded}), and
    * its lid built on its OWN triangulation of the outline rather than on the
    * shared tessellation.
@@ -1472,7 +1472,7 @@ function beginOnTessellation(
       }
       return merged;
     });
-    // A chunk that shares nothing still gets an entry per layer, and an array of
+    // A zone that shares nothing still gets an entry per layer, and an array of
     // nulls must not make the collapse run where it otherwise would not.
     return masks?.some(mask => mask) ? masks : undefined;
   };

@@ -1,0 +1,210 @@
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useMemo } from 'react';
+import { IUniform, Vector3, Vector4 } from 'three';
+import { releaseMaterial } from '../../rendering/precompile';
+import {
+  createOceanContactRegistry,
+  OceanContactRegistry,
+} from '../Ocean/ocean-contact';
+import {
+  applyOceanBodyProps,
+  applyOceanWaterProps,
+} from '../Ocean/ocean-material-sync';
+import { OceanMaterial } from '../Ocean/ocean-material';
+import { createOceanSampler, OceanSampler } from '../Ocean/ocean-sampler';
+import { OceanVolumeMaterial } from '../Ocean/ocean-volume-material';
+import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeatherOceanSea } from '../Weather/useWeatherOceanSea';
+import { useWeatherStep } from '../Weather/useWeatherStep';
+import { ZoneDepthMap } from './zone-depth-map';
+import { StackWater } from './zone-defs';
+import { ZoneFenceUniforms } from './zone-material';
+import { ZONE_MATERIAL_LINGER } from './zone-resources';
+
+// The way the camera looks, for the whitecaps' life.
+const lookScratch = new Vector3();
+
+/** What a {@link ZoneStackProps.water} sea is drawn and sampled with. */
+export type StackWaterMaterials = {
+  /** the animated sea surface, for the lid */
+  surface: OceanMaterial;
+  /** the water body, for the walls at the rim and the shoreline */
+  volume: OceanVolumeMaterial;
+  /**
+   * The water body again, UNCUT, for the face that closes it at a section or a
+   * fence. `null` when the stack declares no cut.
+   *
+   * ⚠️ A separate material because the face lies exactly ON the cut: testing it
+   * against the very thing it exists to close punches holes along its length. The
+   * block's own faces are built the same way.
+   */
+  face: OceanVolumeMaterial | null;
+  /**
+   * The wave field, for floating objects. Heights come back ABSOLUTE in the
+   * stack's frame (sea level included), so a floater needs no sea-level parent
+   * group of its own.
+   */
+  sampler: OceanSampler;
+  /** where floating children register their contact-foam footprints */
+  contacts: OceanContactRegistry;
+};
+
+/**
+ * Create, drive and dispose the ocean materials for a `ZoneStack`'s sea, and
+ * with them the two things its floating children need: the wave sampler and the
+ * contact-foam registry.
+ *
+ * ⚠️ The materials are created ONCE and then have their UNIFORMS updated — unlike
+ * the rest of a zone's appearance, which is rebuilt on every change so the OIT
+ * pass re-classifies it. A sea state is swept continuously, and rebuilding a
+ * `ShaderMaterial` recompiles its program.
+ *
+ * @group Components
+ */
+export function useStackWater(
+  water: StackWater | undefined,
+  wireframe = false,
+  sectionPlane?: IUniform<Vector4>,
+  bathymetry?: ZoneDepthMap | null,
+  fence?: ZoneFenceUniforms,
+  cut = false,
+): StackWaterMaterials | null {
+  const enabled = !!water;
+  const level = -(water?.depth ?? 0);
+  const gl = useThree(state => state.gl);
+
+  const contacts = useMemo(createOceanContactRegistry, []);
+  // Its own wind and swells where given, the enclosing Weather's for what it leaves out.
+  const {
+    windSpeed: seaWindSpeed,
+    windDirection: seaWindDirection,
+    gusts: seaGusts,
+    swells: seaSwells,
+  } = useWeatherOceanWind(
+    water?.windSpeed,
+    water?.windDirection,
+    water?.gusts,
+    water?.swells,
+  );
+
+  // ⚠️ The section is a DEFINE, so cutting the sea or leaving it whole means new
+  // materials. That is a discrete choice, unlike the sea state, which is swept.
+  // ⚠️ The fence is one too; its uniforms carry the live curve, so only turning the
+  // cut on or off reaches here.
+  // ⚠️ So is the bathymetry, which arrives asynchronously — one rebuild, once.
+  const materials = useMemo(() => {
+    if (!enabled) return null;
+    const surface = new OceanMaterial({
+      sectionPlane,
+      fence,
+      bathymetry: bathymetry ?? undefined,
+    });
+    // Its water is the stack's own (`ZoneStackContextValue.waterBody`), not the scene's.
+    surface.sharesSceneWater = false;
+    return {
+      surface,
+      // A zone's interval wall measures its vertical coordinate in metres, so
+      // the walls read their unit-relative height from `wallV` instead.
+      volume: new OceanVolumeMaterial({
+        wallAttribute: true,
+        sectionPlane,
+        fence,
+      }),
+      face: cut ? new OceanVolumeMaterial({ wallAttribute: true }) : null,
+    };
+  }, [enabled, sectionPlane, fence, bathymetry, cut]);
+  // Leaving its waves to the weather, it draws the weather's sea.
+  useWeatherOceanSea(materials?.surface ?? null, {
+    windSpeed: water?.windSpeed,
+    windDirection: water?.windDirection,
+    swells: water?.swells,
+    amplitude: water?.amplitude,
+    waveTuning: water?.waveTuning,
+  });
+
+  useEffect(() => {
+    if (!materials) return;
+    // Let go once their programs have linked, and kept a while for the next build's to take
+    // them over (`releaseMaterial`): the bathymetry comes with each build.
+    return () => {
+      const release = { linger: ZONE_MATERIAL_LINGER };
+      releaseMaterial(gl, materials.surface, release);
+      releaseMaterial(gl, materials.volume, release);
+      if (materials.face) releaseMaterial(gl, materials.face, release);
+    };
+  }, [gl, materials]);
+
+  useEffect(() => {
+    if (!materials || !water) return;
+    const opacity = water.opacity ?? 1;
+    const props = {
+      ...water,
+      windSpeed: seaWindSpeed,
+      windDirection: seaWindDirection,
+      gusts: seaGusts,
+      swells: seaSwells,
+      opacity,
+    };
+    applyOceanWaterProps(materials.surface, props);
+    // The bed grid is in the stack's frame, so the level it is measured against
+    // has to be too.
+    materials.surface.waterLevel = level;
+    // The body shares the surface's sea layers by reference, so its top edge
+    // follows the same swells.
+    applyOceanBodyProps(materials.volume, props, materials.surface);
+    if (materials.face)
+      applyOceanBodyProps(materials.face, props, materials.surface);
+    materials.surface.wireframe = wireframe;
+    materials.volume.wireframe = wireframe;
+    if (materials.face) materials.face.wireframe = wireframe;
+  }, [
+    materials,
+    water,
+    seaWindSpeed,
+    seaWindDirection,
+    seaGusts,
+    seaSwells,
+    wireframe,
+    level,
+  ]);
+
+  // The waves at the enclosing Weather's pace.
+  const step = useWeatherStep();
+  useFrame(({ gl: renderer, scene, camera }, delta) => {
+    const waveStep = step(delta);
+    if (!materials) return;
+    // Its waves on the weather's clock while it draws the weather's sea; its walls with it.
+    materials.surface.step(waveStep);
+    // The sky it reflects and the sun it glints with: the scene's, its own where given.
+    materials.surface.updateSky(renderer, scene);
+    // The whitecaps' life about the camera, in the surface's wave plane (world X/Z), from its
+    // height over the water's level, ahead of it the way it looks.
+    const look = camera.getWorldDirection(lookScratch);
+    materials.surface.renderWaves(
+      renderer,
+      camera,
+      camera.position.y - materials.surface.water.level,
+      { x: camera.position.x, y: camera.position.z },
+      { x: look.x, y: look.z },
+    );
+    materials.volume.time = materials.surface.time;
+    if (materials.face) materials.face.time = materials.surface.time;
+
+    // Collect the registered floating-object footprints and upload them as
+    // contact foam. Skipped entirely when nothing is registered, so a sea with no
+    // floating children costs nothing per frame.
+    contacts.upload(materials.surface);
+  });
+
+  return useMemo(
+    () =>
+      materials
+        ? {
+            ...materials,
+            sampler: createOceanSampler(materials.surface, level),
+            contacts,
+          }
+        : null,
+    [materials, level, contacts],
+  );
+}

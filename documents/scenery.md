@@ -419,7 +419,7 @@ exact, but 200 km out what they place stands 3 km over the sea
 `environment` bakes the sky into `scene.environment` (lights MeshStandard and
 MeshPhysical materials) and `lightProbe` into a `LightProbe` (lights every
 `lights: true` material). Both default on. ⚠️ With both, MeshStandard materials receive
-the sky's diffuse light from each. An `Ocean` or a `ChunkStack`'s sea in the scene reflects
+the sky's diffuse light from each. An `Ocean` or a `ZoneStack`'s sea in the scene reflects
 the air's bake, the 3D clouds' bake and the scene light's sun or moon, which the scenery
 publishes for them each frame (`sceneSky`; [ocean.md, One sky](./ocean.md#basic-usage)).
 
@@ -446,7 +446,7 @@ compiled cold after the sky's (the Sea Bench's air and water bakes came at ~50 s
 ~11 s), 4.6 ms of CPU
 a bake against 0.6 now (RTX A1000), and a frozen snapshot of the waves under the bake's
 point in every mirror-like object. The sea in a bake is read by no sea (an `Ocean`'s and a
-`ChunkStack`'s reflections are turned above the horizon): it lights what lies in the scene
+`ZoneStack`'s reflections are turned above the horizon): it lights what lies in the scene
 from below.
 
 The sky is baked again when it changes, once it has been still for `capture.interval`
@@ -547,7 +547,7 @@ a bright bed through fjords hundreds of metres deep. `seabedOpacity` (default 1)
 seabed, show through it. Each of these only changes uniforms, except that crossing a
 `seabedOpacity` of 1 makes a stage's seabed materials again (see Performance). The
 seabed's look (`ScenerySeabed`) is lit with the model and options of a
-`ChunkMaterial`, so a chunk layer given the same colour and detail continues it without
+`ZoneMaterial`, so a zone layer given the same colour and detail continues it without
 a seam.
 
 The waves shoal and die out toward a coast by the depth of the scene's ground under the
@@ -559,7 +559,7 @@ accuracy against the coast the relief draws: on a gentle shelf the belt is hundr
 metres wide, on a steep coast under a pixel, where it dims. Floating children ride waves cut
 by the relief's ground under them. The sea has no displacement.
 
-The sea never tints the data: a `Chunk`, `ChunkStack` or `Surface` is drawn as it is,
+The sea never tints the data: a `Zone`, `ZoneStack` or `Surface` is drawn as it is,
 wherever it lies. A field column whose top is the sea bed hands that seabed to a stage
 instead, which draws it as the sea's own (see below).
 
@@ -610,8 +610,8 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
     />
   </Scenery>
   <GeoRelief layers={layers} onSampler={setSampler} />
-  <ChunkStack
-    outline={outline}
+  <ZoneStack
+    boundary={outline}
     seabed={meta.id}
     relief={reliefSource({ frame: geoFrameFromCrs(crs), layers }, { level: 0 })}
     clip={ground}
@@ -621,7 +621,7 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
     onCut={setCut}
     /* ... */
   >
-  <Chunk
+  <Zone
     layers={[
       {
         surface: meta,
@@ -632,7 +632,7 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
       ...below,
     ]}
   />
-</ChunkStack>
+</ZoneStack>
 ```
 
 `boundary` is the scene's area in scene X/Z, and should hold the whole scene: by default
@@ -647,7 +647,7 @@ global: its `water`, `seabed` and their opacities hold over the occupants as eve
 Without a `GeoRelief` in the `World` the stage's seabed is flat, at the sea's depth, over
 everything: the occupants draw their own seabeds, and the flat one lies under them too. With
 one, the relief is the seabed everywhere, the occupants' ground included (see
-[Relief](./relief.md)), and the bridge to a `ChunkStack` comes in three parts
+[Relief](./relief.md)), and the bridge to a `ZoneStack` comes in three parts
 ([tiles.md](./tiles.md)): the stack builds its sea bed on the relief (`relief`, from
 `reliefSource`, derived from the very props the relief is given), ends its faces where the
 relief is drawn (`clip`, from the occupant's `onGround`), and answers what is placed on
@@ -666,7 +666,7 @@ Each occupant:
   The relief knows the outlines of 4 occupants at most.
 - `cut` is the occupant's own cut: a section `plane` and a `fence`, as the very uniform
   objects the occupant's materials read (`CutUniforms`), so it follows the cut every
-  frame at no cost. A `ChunkStack` hands out its own through `onCut`. They must be in the
+  frame at no cost. A `ZoneStack` hands out its own through `onCut`. They must be in the
   scene frame. The relief over the occupant stays whole by default (`keepBed`), as the
   occupant's floor; with `keepBed: false` it is cut with the occupant inside the outline,
   for one occupant at most, and the void shows through the opening.
@@ -678,12 +678,12 @@ Each occupant:
   it, whenever that changes:
   - `seabed`: the stage draws its seabed — with a relief, once the sky has compiled,
     while the sky is drawn (`background`), and while the sea has a seabed. Until then
-    the occupant draws its own — a chunk layer's `drawCap` — so one of the two always
+    the occupant draws its own — a zone layer's `drawCap` — so one of the two always
     draws it, give or take the frame a change takes to reach the occupant.
   - `seabedOpacity`: the opacity the stage draws it at. Below 1, the occupant must not
     cull what lies under it: hand it on as the layer's `capOpacity`.
   - `water`: the stage owns the water over the occupant, with the sea's `water` on or
-    off. A `ChunkStack` then hides its own (`drawWater={false}`), which shows and hides
+    off. A `ZoneStack` then hides its own (`drawWater={false}`), which shows and hides
     it without a rebuild.
 
   All three reset (`false`, 1, `false`) once the stage is gone.
@@ -712,7 +712,7 @@ is a `Boundary` (sdk, `geometries/boundary.ts`), in X/Z, in one of four forms:
 | `[minX, minZ, maxX, maxZ]` | an axis-aligned box |
 | `{ box, rotation }` | a box turned about its middle: `rotation` in radians, counter-clockwise seen from above (+X toward −Z), as three.js turns about +Y; `box` its extent before it is turned. A field turned against its grid needs no larger stage than itself |
 | `{ centre, radius }` | a circle |
-| a `PlanarPolygonGeometry`, or a ring of `[x, z]` points | a polygon, as a chunk stack's outline: holes too, inside by the even-odd rule |
+| a `PlanarPolygonGeometry`, or a ring of `[x, z]` points | a polygon, as a zone stack's boundary: holes too, inside by the even-odd rule |
 
 ```tsx
 <World frame={volve.frame} boundary={{ centre: [0, 0], radius: 9000 }}>
@@ -932,7 +932,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   until the sky, its stages and its bakes are ready, a stand-in (the void's grey
   gradient, without its detail) is drawn, a stage draws nothing and nothing is
   baked. A recompile (below) shows the stand-in again for as long as it takes. A
-  `ChunkStack`'s meshes likewise stay hidden until theirs are ready. The stand-in and the
+  `ZoneStack`'s meshes likewise stay hidden until theirs are ready. The stand-in and the
   void's cliffs (`bakeSkyCliffs`) are compiled the same way, the stand-in first.
 - `onProgress` tells a host how far it has come: its shaders compiled of those it waits
   for, and its relief tiles loaded of those wanted, for a progress display (see
@@ -1009,7 +1009,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   differed by less than its run-to-run noise (±1 ms).
 - The shaders compile without warnings from Direct3D's compiler, which three.js prints with
   each program (2026-11-20, surveyed cold over the Timelapse, StageDebug, a global weather,
-  the hollow, the Sea Bench, the stand-alone Ocean and a chunk column). Two habits keep it so:
+  the hollow, the Sea Bench, the stand-alone Ocean and a zone column). Two habits keep it so:
   a function returns once, at its end (returned from within a branch, Direct3D took its value
   for one that may be left unset, X4000); and no vector's component is written by a loop's
   index (ANGLE emulates that, and Direct3D warned of a division by zero in its copy of one
@@ -1169,15 +1169,15 @@ the shared preset out.
   canvas, three's context-lost listener) and no unmounted `Canvas`'s renderer was let go.
 - Letting go goes through `releaseMaterial` (same file, internal) wherever a material is
   replaced or unmounted while the scene draws — the sky, its layers and stand-in, the
-  baker's own, a stage's, the relief's, a chunk's and a stack's sea. A material disposed
+  baker's own, a stage's, the relief's, a zone's and a stack's sea. A material disposed
   while its program still links (`KHR_parallel_shader_compile`) makes Chrome warn
   "glGetProgramiv: Program object expected" once per program as the link finishes, from
   its own GPU process, so no JS hook sees the call (12 of 12 disposed mid-link warned, 0 of
   12 disposed once linked, 2026-11-02). It waits for the link, and for every compile queued
   before it to start, so a replacement queued in the same render takes the program over
   instead of compiling it again (three gives a source that went and came back a new id). Its
-  `linger` keeps it longer for a replacement made later: a chunk's, whose rebuild lets the
-  old one go first (`CHUNK_MATERIAL_LINGER`).
+  `linger` keeps it longer for a replacement made later: a zone's, whose rebuild lets the
+  old one go first (`ZONE_MATERIAL_LINGER`).
 - The water lies on one mesh (`createSceneryStagePlane`): the box holding the `boundary`
   (`boundaryBox`) as a 5 × 5 grid, then rings
   each about twice as wide as the one inside, out to the far plane. The flat parts are

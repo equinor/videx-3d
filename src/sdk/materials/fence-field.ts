@@ -4,7 +4,7 @@ import { IUniform, Matrix3, Texture, Vector2, Vector4 } from 'three';
  * The shared uniforms a fence cut reads (`shaderLib/fence-field.glsl`): a vertical cut
  * swept along a curve in plan, normally a wellbore's trajectory, in the cut object's own
  * XZ. Every material cut by one fence is handed the SAME objects, so moving the fence is a
- * write into them rather than a rebuild. A `ChunkStack` makes them for its fence; the
+ * write into them rather than a rebuild. A `ZoneStack` makes them for its fence; the
  * `Ocean` and the relief (through a `SceneryStage` occupant's `cut`) take them to be cut
  * with it.
  */
@@ -67,7 +67,7 @@ export function applyFenceField(
  * How an object is cut, as the shared uniform objects its own materials read, so that
  * something drawn for it can be cut with it: a `plane` (`dot(xyz, p) + w > 0` is cut
  * away; `(0, 0, 0, -1)` cuts nothing) and a `fence`, both in the object's own frame. A
- * `ChunkStack` hands out its own (`onCut`).
+ * `ZoneStack` hands out its own (`onCut`).
  */
 export type CutUniforms = {
   plane?: IUniform<Vector4>;

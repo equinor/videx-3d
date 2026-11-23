@@ -183,7 +183,7 @@ vec3 waterBodyFogBed(vec3 color, vec3 world) {
 
 // `color` of what lies at `world` in the water column, dimmed by the daylight its depth
 // leaves it, whatever the camera sees it through: what stands for the seabed under a surface
-// and walls that carry the water in front of it (a ChunkStack's top cap). Taken at the seabed
+// and walls that carry the water in front of it (a ZoneStack's top cap). Taken at the seabed
 // under it, no deeper, as waterBodyFogBed. Where no water stands (beside it, or cut away),
 // drawn as it is.
 vec3 waterBodyDim(vec3 color, vec3 world) {

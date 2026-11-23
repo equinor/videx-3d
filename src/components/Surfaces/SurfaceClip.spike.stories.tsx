@@ -84,8 +84,8 @@ type SurfaceClipStoryProps = {
 
 /**
  * Spike: clip a stack of Volve horizons to a fixed polygon mask and render them
- * together with the field's wellbores. First step toward masked / chunked surfaces
- * — surfaces are clipped and layered here, not yet stitched into solid chunks.
+ * together with the field's wellbores. First step toward masked / zoned surfaces
+ * — surfaces are clipped and layered here, not yet stitched into solid zones.
  */
 const SurfaceClipStory = (props: SurfaceClipStoryProps) => {
   const data = useData();
@@ -218,7 +218,7 @@ const SurfaceClipStory = (props: SurfaceClipStoryProps) => {
                 <meshLambertMaterial
                   // NOTE: meta.color is the surface's cross-section colour, which
                   // is often "black" in the source data (it's intended for the
-                  // chunk side skirts later). For the lit tops we use a distinct
+                  // zone side skirts later). For the lit tops we use a distinct
                   // palette so stacked layers stay readable.
                   color={fallbackPalette[i % fallbackPalette.length]}
                   side={props.doubleSide ? DoubleSide : undefined}

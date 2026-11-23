@@ -131,7 +131,7 @@ function sampleStrict(
  * Resample ONE layer's grid onto a stack's common grid, in scene Y.
  *
  * Independent of every other layer — which is the point: `buildStackReference`
- * runs this in a loop, while the chunk generator runs it per layer as the grid
+ * runs this in a loop, while the zone generator runs it per layer as the grid
  * arrives, on a worker.
  *
  * @param plan the common grid, from `planStackReference`

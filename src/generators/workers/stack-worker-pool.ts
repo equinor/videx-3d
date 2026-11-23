@@ -57,7 +57,7 @@ type PendingTask = {
  * A small fixed-size pool of inlined stack workers with a task queue. Each worker
  * handles one per-layer job of a shared tessellation at a time — resampling a
  * layer onto the common grid, or refining it — and queued tasks dispatch to the
- * next free worker (round-robin via an idle list). Used internally by the chunk
+ * next free worker (round-robin via an idle list). Used internally by the zone
  * generator to run those independent per-layer jobs in parallel.
  */
 export class StackWorkerPool {
@@ -148,7 +148,7 @@ export function getStackPool(): StackWorkerPool | null {
 /**
  * Terminate the shared pool. The next caller gets a fresh one, so this is a
  * release rather than a shutdown — use it when the generators are expected to be
- * idle for a while (the last chunk stack unmounted, a test finished).
+ * idle for a while (the last zone stack unmounted, a test finished).
  *
  * @group Generators
  */

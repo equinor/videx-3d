@@ -81,7 +81,7 @@ const scratch: TinSample = { y: 0, normal: [0, 1, 0] };
 
 /**
  * Build a point sampler over a triangle mesh that is a height field in XZ — a
- * chunk's surface cap, a draped sheet, any TIN.
+ * zone's surface cap, a draped sheet, any TIN.
  *
  * ⭐ It samples the TRIANGLES, which is the whole point: heights taken from the
  * source grid instead differ from the drawn mesh by up to the tessellation's

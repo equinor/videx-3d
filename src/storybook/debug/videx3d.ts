@@ -16,7 +16,7 @@ import type { SeaBench } from './sea-bench';
 export type Videx3dHandle = {
   camera: CameraManager;
   scene: Scene;
-  /** resolves once the scene graph has stopped growing — data loaded, chunks built */
+  /** resolves once the scene graph has stopped growing — data loaded, zones built */
   ready: (options?: {
     stableFrames?: number;
     timeout?: number;
@@ -64,7 +64,7 @@ export function registerVidex3d(part: Partial<Videx3dHandle>): () => void {
  * Wait until the scene graph stops changing.
  *
  * ⚠️ Deliberately a HEURISTIC on object count rather than a promise threaded
- * through every loader: chunks arrive from workers over many frames and there is
+ * through every loader: zones arrive from workers over many frames and there is
  * no single "done". Stability is the observable that actually matters to a
  * screenshot, and it needs no cooperation from the components being watched.
  *

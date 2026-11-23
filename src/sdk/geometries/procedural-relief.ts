@@ -1,11 +1,11 @@
 /**
- * Procedural relief fields, shared by the synthetic layers of a chunk stack.
+ * Procedural relief fields, shared by the synthetic layers of a zone stack.
  *
  * Deliberately free of any three.js import: these run inside the (inlined) stack
  * workers alongside the rest of the grid maths.
  *
  * ⭐ Every field is evaluated in WORLD coordinates, never in coordinates relative
- * to a chunk's own footprint. Two chunks covering the same ground therefore
+ * to a zone's own footprint. Two zones covering the same ground therefore
  * generate the same rock — and changing an outline no longer changes the geology
  * under it. It is also what lets a SHAPED field (a coast, an island) be placed:
  * a centre means something only in a frame that does not move.
@@ -18,7 +18,7 @@ export type ReliefKind = 'dunes' | 'ridges' | 'ramp' | 'dome';
 
 /**
  * Default wavelength of the coarsest relief feature, in world units. Chosen for
- * field scale (20–80 km²): a few features across a typical chunk.
+ * field scale (20–80 km²): a few features across a typical zone.
  */
 export const RELIEF_FEATURE_SIZE = 8000;
 
@@ -215,7 +215,7 @@ export type DomeRelief = ReliefBase & {
 /**
  * One procedural relief component: what shape, how strong, and where.
  *
- * Shared by the synthetic layers of a chunk stack ({@link StackRelief}) and by
+ * Shared by the synthetic layers of a zone stack ({@link StackRelief}) and by
  * generated surface fields, so "the same relief" means the same thing in both.
  * Components compose: a coast, an island on it and a little noise over the whole
  * thing are three entries in one array.

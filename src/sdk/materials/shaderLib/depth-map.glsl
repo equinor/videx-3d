@@ -1,6 +1,6 @@
 // Sampling a surface's depth grid, packed as RG float (see `buildSurfaceDepthMap`):
 // R the scene Y, filled everywhere; G the validity, 1 where the grid holds real
-// data. Shared by the chunk materials (fluid contact lines, the sea-bed tint) and
+// data. Shared by the zone materials (fluid contact lines, the sea-bed tint) and
 // the ocean surface (depth-driven shoaling).
 
 // ⚠️ Bilinear by hand. The texture is NEAREST-filtered: linear filtering of a

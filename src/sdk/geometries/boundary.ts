@@ -21,7 +21,7 @@ export type BoundaryRotatedBox = { box: BoundaryBox; rotation: number };
  * - `[minX, minZ, maxX, maxZ]`, an axis-aligned box;
  * - `{ box, rotation }`, a box turned about its middle ({@link BoundaryRotatedBox});
  * - `{ centre, radius }`, a circle;
- * - a polygon: a `PlanarPolygonGeometry` (the outline a chunk stack takes), or one ring of
+ * - a polygon: a `PlanarPolygonGeometry` (the boundary a zone stack takes), or one ring of
  *   `[x, z]` points.
  *
  * See {@link boundaryShape} for the one form the helpers work on.

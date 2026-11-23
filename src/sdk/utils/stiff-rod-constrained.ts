@@ -1,5 +1,5 @@
 import { Vec2 } from '../types/common';
-import { segmentConvexNearest } from './margin-zone';
+import { segmentConvexNearest } from './margin-band';
 import { PolylineIndex } from './polyline-2d';
 import type { StiffRod } from './stiff-rod';
 

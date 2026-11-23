@@ -217,7 +217,7 @@ describe('buildRingWalls', () => {
 describe('buildStackWalls', () => {
   const heights = [flat(0), flat(-100)];
 
-  it('walls a fully present interval around the chunk rim', () => {
+  it('walls a fully present interval around the zone rim', () => {
     const { walls } = buildStackWalls(tessellation, positionsXZ, heights, {
       fills: [true, false],
       threshold: 0.5,
@@ -278,7 +278,7 @@ describe('buildStackWalls', () => {
     }
   });
 
-  it('walls around a hole in the interval, not just the chunk rim', () => {
+  it('walls around a hole in the interval, not just the zone rim', () => {
     // the unit pinches out over the middle cell: zero thickness there
     const top = flat(0);
     const bottom = flat(-100);

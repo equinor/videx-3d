@@ -49,7 +49,7 @@ describe('sealStackChannels', () => {
     const channels = [flat(0), flat(-100)];
     const result = sealStackChannels(channels, [covered(), covered()], NX, {});
 
-    // identity: on a shared column these belong to every chunk cut from it
+    // identity: on a shared column these belong to every zone cut from it
     expect(result.channels[0]).toBe(channels[0]);
     expect(result.channels[1]).toBe(channels[1]);
     expect(result.tapered).toEqual([0, 0]);
@@ -182,7 +182,7 @@ describe('sealStackChannels', () => {
     const masks = [mappedTo(3), covered()];
 
     // The unmapped region runs to the edge of the grid, but only columns up to 6
-    // are inside the chunk, so that is the gap the taper has to close.
+    // are inside the zone, so that is the gap the taper has to close.
     const cropped = sealStackChannels(channels, masks, NX, {
       inside: drawnTo(6),
     }).channels[0];

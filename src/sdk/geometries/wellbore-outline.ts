@@ -12,12 +12,12 @@ import { SurfaceClipHeader, surfaceWorldToGrid } from './surface-grid';
 import { smoothRings } from './triangulate-grid-delaunay';
 
 /**
- * A surface layer of a chunk, as consumed by {@link createSurfaceDepthSampler}
- * (the same fields the chunk builder / `Surface` component use).
+ * A surface layer of a zone, as consumed by {@link createSurfaceDepthSampler}
+ * (the same fields the zone builder / `Surface` component use).
  *
  * @group Geometries
  */
-export type ChunkSurfaceLayer = {
+export type ZoneSurfaceLayer = {
   /** row-major elevation grid of length `header.nx * header.ny` */
   values: Float32Array;
   header: SurfaceClipHeader;
@@ -40,13 +40,13 @@ export type SurfaceDepthSampler = (sx: number, sz: number) => number | null;
 /**
  * Build a sampler returning a surface's scene-space depth (Y, downward-negative:
  * `value - referenceDepth`) at a scene XZ point, or `null` where the surface has
- * no valid data. Used to test whether a trajectory sample sits within a chunk's
+ * no valid data. Used to test whether a trajectory sample sits within a zone's
  * vertical window.
  *
  * @group Geometries
  */
 export function createSurfaceDepthSampler(
-  layer: ChunkSurfaceLayer,
+  layer: ZoneSurfaceLayer,
 ): SurfaceDepthSampler {
   const { values, header, referenceDepth } = layer;
   const nullValue = layer.nullValue ?? -1;
@@ -89,7 +89,7 @@ export type TrajectoryWindowOptions = {
 };
 
 /**
- * Cut a trajectory polyline down to the parts lying within a chunk's vertical
+ * Cut a trajectory polyline down to the parts lying within a zone's vertical
  * window, as ordered scene-XZ runs ready for {@link createWellboreOutline}.
  *
  * Each sample is `[x, y, z]` in the scene frame (`y` = depth, downward-negative)
@@ -375,7 +375,7 @@ export type WellborePath = {
 
 /**
  * Turn trajectory paths (ordered scene-XZ polylines, e.g. from
- * {@link collectTrajectoryRuns}) into a chunk cut outline.
+ * {@link collectTrajectoryRuns}) into a zone boundary.
  *
  * The paths are split into spatially separated GROUPS, and each group is
  * rasterized over its own bounding box as a signed distance field, the minimum
@@ -386,7 +386,7 @@ export type WellborePath = {
  *
  * ⭐ The margin is PER PATH, not per call. That is what makes an accumulated
  * outline nest: buffering each path with the margin of the depth interval it came
- * from means a deeper chunk's field is the shallower one's `min` with more terms,
+ * from means a deeper zone's field is the shallower one's `min` with more terms,
  * so its outline CONTAINS the shallower one whether or not the margin grows with
  * depth. Buffering the whole accumulated set with one radius instead would let a
  * wide deep margin bloat the shallow neck, and a narrow one break the nesting.

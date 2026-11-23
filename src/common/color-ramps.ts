@@ -660,7 +660,7 @@ export function colorRampRow(index: number): number {
 
 /**
  * One of the colour ramps (`colorRampTexture`'s rows) as its own 1-row texture — a palette
- * for `ChunkFenceOverlay.palette`, or anything else that maps a value to a colour. Kept in
+ * for `ZoneFenceOverlay.palette`, or anything else that maps a value to a colour. Kept in
  * step when its ramp is registered anew.
  *
  * ⚠️ Shared and cached per index: do not dispose it. Like `colorRampTexture`, each renderer

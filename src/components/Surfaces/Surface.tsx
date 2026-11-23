@@ -89,7 +89,7 @@ export type SurfaceProps = CommonComponentProps &
     normalMap?: Texture;
     normalScale?: Vec2;
     /**
-     * Procedural relief up close, with the chunk layers' presets: `'sand'`, `'silt'`,
+     * Procedural relief up close, with the zone layers' presets: `'sand'`, `'silt'`,
      * `'shale'`, `'carbonate'`, `'salt'`, `'coal'`, `'basement'` or `'seabed'`, or
      * `{ preset, strength, scale }`. Texture-free and anchored in the scene, so a feature
      * keeps its size on every surface and nothing is set up per surface, as a normal map

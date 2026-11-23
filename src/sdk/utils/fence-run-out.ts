@@ -1,5 +1,5 @@
 import { Vec2 } from '../types/common';
-import { convexPolygonDistance, marginCrossings } from './margin-zone';
+import { convexPolygonDistance, marginCrossings } from './margin-band';
 import {
   DEFAULT_OFFSET_TOLERANCE,
   FREE_ROD_STIFFNESS,
@@ -12,7 +12,7 @@ import {
   pointInConvex,
   ringAtom,
   traceProblemSpans,
-  zoneRing,
+  bandRing,
 } from './one-sided-offset';
 import {
   ARC_TURN_STEP,
@@ -372,7 +372,7 @@ function coreEndDir(curve: Vec2[], atHead: boolean, arc: number): Vec2 {
 export type HeadWrap = {
   /** convex hull of the head/vertical stretch plus every defect detected within it */
   hull: Vec2[];
-  /** that hull's zone as a polygon ({@link zoneRing}) — the exclusion zone the head arm routes outside of */
+  /** that hull's margin band as a polygon ({@link bandRing}) — the margin band the head arm routes outside of */
   ring: Vec2[];
   /** the last `well` index counted as head/vertical (mapped from the 3D kickoff) */
   headEndIndex: number;
@@ -451,7 +451,7 @@ export function headWrapRegion(
 }
 
 /**
- * Atoms of run each rod round a zone is allowed between two zones before the two are framed as ONE
+ * Atoms of run each rod round a margin band is allowed between two margin bands before the two are framed as ONE
  * obstacle ({@link rodsCrowd}). The MEDIAN anchor measured — 4.1 atoms over 1064 rods on 12 wells
  * at margins 0.1–1.9 (p25 3.0, p75 6.7, p90 10) — one atom over the floor of 3, since two rods at
  * their floors would still meet. A longer anchor is caught when the rod is laid (`RodOverlapError`).
@@ -459,7 +459,7 @@ export function headWrapRegion(
 const ROD_MERGE_ATOMS = 4;
 
 /**
- * The arc length of the shortest stretch of `trace` running from the zone of hull `a` to the zone
+ * The arc length of the shortest stretch of `trace` running from the margin band of hull `a` to the margin band
  * of hull `b` (the points within `margin` of each) outside both — 0 when the trace passes straight
  * from one into the other, `Infinity` when it never runs between them.
  *
@@ -478,18 +478,18 @@ export function freeRunBetween(
   let inB = cb.startsInside;
   if (inA && inB) return 0;
   const events = [
-    ...ca.crossings.map(c => ({ arc: c.arc, entering: c.entering, zone: 0 })),
-    ...cb.crossings.map(c => ({ arc: c.arc, entering: c.entering, zone: 1 })),
+    ...ca.crossings.map(c => ({ arc: c.arc, entering: c.entering, band: 0 })),
+    ...cb.crossings.map(c => ({ arc: c.arc, entering: c.entering, band: 1 })),
   ].sort((p, q) => p.arc - q.arc);
   let best = Infinity;
-  let left: { zone: number; at: number } | null = null;
+  let left: { band: number; at: number } | null = null;
   for (const e of events) {
     const wasFree = !inA && !inB;
-    if (e.zone === 0) inA = e.entering;
+    if (e.band === 0) inA = e.entering;
     else inB = e.entering;
     if (inA && inB) return 0;
-    if (!wasFree && !inA && !inB) left = { zone: e.zone, at: e.arc };
-    else if (wasFree && left && left.zone !== e.zone) {
+    if (!wasFree && !inA && !inB) left = { band: e.band, at: e.arc };
+    else if (wasFree && left && left.band !== e.band) {
       best = Math.min(best, e.arc - left.at);
     }
   }
@@ -497,8 +497,8 @@ export function freeRunBetween(
 }
 
 /**
- * Whether the stretch of `trace` between two hulls' zones is too short to hold the rods round
- * both — each needs {@link ROD_MERGE_ATOMS} atoms of run off its zone — so the two are ONE obstacle.
+ * Whether the stretch of `trace` between two hulls' margin bands is too short to hold the rods round
+ * both — each needs {@link ROD_MERGE_ATOMS} atoms of run off its margin band — so the two are ONE obstacle.
  *
  * @group Utils
  */
@@ -513,7 +513,7 @@ export function rodsCrowd(
     ROD_MERGE_ATOMS *
     (ringAtom(hullDiameter(a) + 2 * margin, margin) +
       ringAtom(hullDiameter(b) + 2 * margin, margin));
-  // the stretch between two zones is at least as long as the gap between them
+  // the stretch between two margin bands is at least as long as the gap between them
   if (convexPolygonDistance(a, b) - 2 * margin >= reach) return false;
   return freeRunBetween(trace, a, b, margin) < reach;
 }
@@ -546,12 +546,12 @@ function wrapHead(
   pts.push(...extra);
   const merged: Vec2[][] = [];
   let hull = obstacleHull(convexHull2D(pts));
-  let ring = zoneRing(hull, margin);
+  let ring = bandRing(hull, margin);
   for (;;) {
     let grew = false;
     for (const h of obstacles) {
       if (merged.includes(h)) continue;
-      // within the head's zone, or too near along the well for the rods round both
+      // within the head's margin band, or too near along the well for the rods round both
       if (
         convexPolygonDistance(h, hull) >= margin &&
         !rodsCrowd(well, hull, h, margin)
@@ -564,7 +564,7 @@ function wrapHead(
     }
     if (!grew) break;
     hull = obstacleHull(convexHull2D(pts));
-    ring = zoneRing(hull, margin);
+    ring = bandRing(hull, margin);
   }
   return { hull, ring, headEndIndex, absorbed, merged, obstacles, extra };
 }
@@ -1533,7 +1533,7 @@ export type TdArmPlan = {
   guide: Vec2[];
   /** the obstacle over the TD — empty for a diverted TD arm */
   hull: Vec2[];
-  /** its exclusion zone — the well inside it is not trusted */
+  /** its margin band — the well inside it is not trusted */
   ring: Vec2[];
   /** a diverted TD arm's run on from the TD and its turn, up to `exit` ({@link planTdDiversion}) */
   lead?: Vec2[];
@@ -1544,13 +1544,13 @@ export type TdArmPlan = {
 /**
  * Plan the TD end when an obstacle covers it: the cores round that hull by the same rod as any
  * fold and land on a synthesized guide past it ({@link guideOffHull}), instead of stopping at its
- * zone and joining the TD arm straight across the hook inside.
+ * margin band and joining the TD arm straight across the hook inside.
  *
  * ⭐ The bearing is read off the well BEFORE the hull — its stretch inside is degenerate and cannot
  * be trusted, and a mean tangent is set by its end point, so the hook would steer it.
  *
  * @param obstacles the hulls the cores route around ({@link fenceObstacles})
- * @returns null when no obstacle's zone contains the TD, or it swallows the whole well
+ * @returns null when no obstacle's margin band contains the TD, or it swallows the whole well
  *
  * @group Utils
  */
@@ -1565,10 +1565,10 @@ export function planTdArm(
   const last = well[well.length - 1];
   for (const hull of obstacles) {
     if (hull.length < 3) continue;
-    const ring = zoneRing(hull, margin);
+    const ring = bandRing(hull, margin);
     if (!pointInConvex(last, ring)) continue;
-    // ⛔ Before the HULL, not its zone: the zone grows with the margin, and a bearing read off a curving
-    // well where it enters the zone turned with it (Z01: 22° between margins 10 and 11.75).
+    // ⛔ Before the HULL, not its margin band: the margin band grows with the margin, and a bearing read off a curving
+    // well where it enters the margin band turned with it (Z01: 22° between margins 10 and 11.75).
     let k = well.length - 1;
     while (k > 0 && pointInConvex(well[k], hull)) k--;
     if (k === 0) return null;
@@ -1597,7 +1597,7 @@ export function planTdArm(
 }
 
 /**
- * `trace` with its TD end routed onto `plan`'s guide: the tail inside the plan's zone replaced by a
+ * `trace` with its TD end routed onto `plan`'s guide: the tail inside the plan's margin band replaced by a
  * hop through the hull's centroid to the exit, then the guide — the TD half of a degenerate plan's
  * virtual well.
  *

@@ -58,7 +58,7 @@ export type StackSectionSource = {
    *
    * ⚠️ Without it a cut face cannot find its own material: the intervals here are
    * numbered in BUILD indices, and everything the caller declared — colour,
-   * opacity, detail — is numbered in theirs. Filled in by `assembleChunk`, which
+   * opacity, detail — is numbered in theirs. Filled in by `assembleZone`, which
    * is where the two index spaces meet.
    */
   layers?: number[];

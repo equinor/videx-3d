@@ -39,9 +39,9 @@ each on or off ([Without a Scenery](#without-a-scenery)), and its tiles stay in 
 ```
 
 Without one the stage draws a flat seabed at the sea's depth, and its occupants draw their
-own. With one, the relief is the ground over the occupants too: a `ChunkStack` builds its
+own. With one, the relief is the ground over the occupants too: a `ZoneStack` builds its
 column's top on it, ends its faces where it is drawn and places what stands on it by its
-sampler. See [tiles.md](./tiles.md) for the design and the bridge to the chunks. One
+sampler. See [tiles.md](./tiles.md) for the design and the bridge to the zones. One
 `GeoRelief` with layers to a `World`.
 
 ## Data

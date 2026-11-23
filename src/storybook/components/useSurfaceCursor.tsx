@@ -4,7 +4,7 @@ import {
   sampleSurfaceFootprint,
   SurfaceFootprint,
   useSurfaceSampler,
-} from '../../components/Chunks/surface-sampler';
+} from '../../components/Zones/surface-sampler';
 import { EventEmitterCallbackEvent } from '../../components/EventEmitter';
 import { CameraFocusAtPointEvent } from '../../events/camera-events';
 import { PointerEvents } from '../../events/interaction-events';
@@ -49,11 +49,11 @@ const UP = new Vector3(0, 1, 0);
  * object sits there: a pick returns a single point, and one point cannot orient a
  * disc metres across.
  *
- * Returns the handlers to hand to a `Chunk` and the gizmo to render beside it —
- * the gizmo must stay OUTSIDE the chunk, or the pointer picks the cursor instead
+ * Returns the handlers to hand to a `Zone` and the gizmo to render beside it —
+ * the gizmo must stay OUTSIDE the zone, or the pointer picks the cursor instead
  * of the ground. (An object can also opt out with `LAYERS.NOT_EMITTER`.)
  *
- * ⚠️ Call it BELOW a `ChunkStack`: it reads the surface sampler from that
+ * ⚠️ Call it BELOW a `ZoneStack`: it reads the surface sampler from that
  * provider. Called in the component that RENDERS the stack it gets `null`, and
  * the pointer then does nothing at all — with no error to say why.
  *
@@ -61,7 +61,7 @@ const UP = new Vector3(0, 1, 0);
  *
  * @example
  * const cursor = useSurfaceCursor({ radius: 120 });
- * <Chunk layers={layers} {...cursor.events} />
+ * <Zone layers={layers} {...cursor.events} />
  * {cursor.node}
  */
 export function useSurfaceCursor({
@@ -121,8 +121,8 @@ export function useSurfaceCursor({
     const track = (event: EventEmitterCallbackEvent) => {
       const cursor = group.current;
       if (!cursor || !sampler || !event.position) return;
-      // ⚠️ The hit is in WORLD space; the chunk's geometry — and so the sampler —
-      // lives in the UtmArea group's frame. `event.target` is the chunk's own
+      // ⚠️ The hit is in WORLD space; the zone's geometry — and so the sampler —
+      // lives in the UtmArea group's frame. `event.target` is the zone's own
       // group, which is in exactly that frame.
       const local = event.target.worldToLocal(
         state.current.point.set(

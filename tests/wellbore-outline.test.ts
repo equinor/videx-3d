@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ChunkSurfaceLayer,
+  ZoneSurfaceLayer,
   clusterPoints2D,
   collectTrajectoryRuns,
   createSurfaceDepthSampler,
@@ -13,7 +13,7 @@ import { PlanarPolygonCoordinates } from '../src/sdk/geometries/planar-geometry'
 import { Vec2, Vec3 } from '../src/sdk/types/common';
 
 describe('createSurfaceDepthSampler', () => {
-  const layer: ChunkSurfaceLayer = {
+  const layer: ZoneSurfaceLayer = {
     values: new Float32Array(25).fill(100),
     header: { nx: 5, ny: 5, xinc: 100, yinc: 100, rot: 0 },
     worldPosition: [0, 0],

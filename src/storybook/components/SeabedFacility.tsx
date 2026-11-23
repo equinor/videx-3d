@@ -1,10 +1,10 @@
 import { useContext, useMemo, useRef } from 'react';
 import { Group } from 'three';
-import { LevelledBase } from '../../components/Chunks/LevelledBase';
+import { LevelledBase } from '../../components/Zones/LevelledBase';
 import {
   SurfaceFootprint,
   useSurfacePlacement,
-} from '../../components/Chunks/surface-sampler';
+} from '../../components/Zones/surface-sampler';
 import { SubseaTemplate } from '../../components/SubseaTemplate';
 import { UtmAreaContext } from '../../components/UtmArea';
 import {

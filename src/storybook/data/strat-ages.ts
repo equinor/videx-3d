@@ -6,7 +6,7 @@ import storyArgs from '../story-args.json';
  * Stratigraphic ages for the demo dataset's surfaces — **storybook only**.
  *
  * ⚠️ This is NOT a data dependency and must not become one. Mapping a surface name
- * to a stratigraphic unit is the HOST APP's job (see `documents/chunks.md` §9.3):
+ * to a stratigraphic unit is the HOST APP's job (see `documents/zones.md` §9.3):
  * the library takes the caller's array order as the stratigraphic order and knows
  * nothing about strat columns. The stories need *some* correct order to demo with,
  * and this is it.
@@ -28,12 +28,12 @@ export function stratAge(name: string | undefined): number | undefined {
 
 /**
  * Put a list of surfaces into stratigraphic order (shallowest/youngest first) —
- * the order `Chunk.groups` expects.
+ * the order `Zone.groups` expects.
  *
  * Age is the only ordering key that is right by construction; depth is a
  * *consequence* of the geology, not a definition of it. `SurfaceMeta.min`/`.max`
  * describe a surface's whole extent, so sorting by either mis-sorts any surface
- * whose relief outside a chunk's footprint differs from the relief inside it — on
+ * whose relief outside a zone's footprint differs from the relief inside it — on
  * the demo field, `meta.max` inverts about half of every adjacent pair.
  *
  * Surfaces with no age are **excluded**, not guessed at: placing them by depth

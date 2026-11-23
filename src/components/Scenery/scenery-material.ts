@@ -144,7 +144,7 @@ export function createSceneryGeometry() {
  * ⚠️ Setters write into the existing uniform values, never replace them — the
  * environment bake shares these uniform objects by reference.
  *
- * The seabed is lit by the scene's lights (`lights: true`), as a `ChunkMaterial` is.
+ * The seabed is lit by the scene's lights (`lights: true`), as a `ZoneMaterial` is.
  *
  * @group Materials
  */

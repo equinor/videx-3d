@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Vec2 } from '../src/sdk';
-import { segmentConvexNearest } from '../src/sdk/utils/margin-zone';
+import { segmentConvexNearest } from '../src/sdk/utils/margin-band';
 import {
   createPolylineIndex,
   pointAtArcLength,

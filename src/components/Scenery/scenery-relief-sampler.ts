@@ -16,7 +16,7 @@ type Square = [number, number, number, number];
  * A relief's ground as something placed on it asks it (see `SurfaceSampler`): from the
  * finest of its tiles in at a point, as their triangles draw it, in the stage's frame
  * (the Earth's curve left out, as a `HeightFieldClip`'s). Hand it to what is placed on
- * the relief through `SurfaceSamplerContext`, or to a `ChunkStack` built on the relief
+ * the relief through `SurfaceSamplerContext`, or to a `ZoneStack` built on the relief
  * (`reliefSampler`), whose sea bed it answers for.
  *
  * ⭐ Not what is drawn, but the finest there is: the tiles drawn change with the view,

@@ -1,0 +1,385 @@
+import { createContext } from 'react';
+import { IUniform, Vector4 } from 'three';
+import {
+  PlanarPolygonGeometry,
+  SurfaceZoneMetrics,
+  SurfaceMeta,
+} from '../../sdk';
+import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
+import type { WaterBody } from '../../sdk/materials/water-body';
+import { ZoneContactTexture } from './zone-contacts';
+import {
+  ZoneBuildProgress,
+  ZoneBuildState,
+  ZoneCarrier,
+  ZoneCutDepths,
+  ZoneFenceState,
+  ZoneResolveOptions,
+  ZoneSectionState,
+  StackWater,
+} from './zone-defs';
+import { ZoneDepthMap } from './zone-depth-map';
+import { ZoneDetail } from './zone-detail';
+import { ZoneFenceOverlayUniforms, ZoneFenceUniforms } from './zone-material';
+import type { ColumnRelief } from './zone-spec';
+import { CutoutSource } from './cutout';
+import { SeamDecision } from './seams';
+
+/**
+ * Shared configuration a {@link ZoneStack} publishes to its child zones. Zones
+ * read this when a prop is left to inherit (e.g. `boundary="inherit"`).
+ *
+ * @group Contexts
+ */
+export type ZoneStackContextValue = {
+  /** default boundary polygon (scene XZ) shared by zones that inherit it */
+  boundary: PlanarPolygonGeometry | null;
+  /**
+   * default cut source shared by zones that inherit it. Takes precedence over
+   * `boundary` when set (an explicit `polygon` source is equivalent to `boundary`).
+   */
+  cutSource?: CutoutSource;
+  /** default rim densification spacing (world units) */
+  rimSpacing?: number;
+  /** default interior simplification error (grid height units) */
+  maxError?: number;
+  /** default for `ZoneProps.diagnostics` */
+  diagnostics?: boolean;
+  /** default for `ZoneProps.preview` */
+  preview?: boolean;
+  /** default for `ZoneProps.previewSaturation` */
+  previewSaturation?: number;
+  /** default for `ZoneProps.debugTiles` */
+  debugTiles?: boolean;
+  /** default for `ZoneProps.lodLevel` */
+  lodLevel?: number;
+  /** default for `ZoneProps.lodPixelError` */
+  lodPixelError?: number;
+  /**
+   * Default build options for the column (see `ZoneStackProps.resolve`), used by
+   * zones that declare none of their own.
+   */
+  resolve?: ZoneResolveOptions;
+  /**
+   * The whole column, shallowest first, when the caller declared it on the stack.
+   * Zones pass it to the generator so the fetch, the common grid and the
+   * depth-order resolve happen ONCE for every zone cut from it — which is also
+   * what makes those zones agree with each other about depth order.
+   */
+  surfaces?: SurfaceMeta[];
+  /**
+   * `surfaces` filtered to those a zone actually claims, in the declared order —
+   * what the shared build LOADS. A surface no zone draws would otherwise be
+   * fetched, resampled onto the common grid and cascaded through the resolve for
+   * nothing.
+   *
+   * ⚠️ Empty until the children have registered (they do so in an effect), so a
+   * zone must wait for its own claims to appear rather than build against it.
+   *
+   * ⚠️ Dropping the undrawn surfaces also drops them as CEILINGS in the monotone
+   * resolve — a drawn layer is no longer pushed down by a surface nobody can see.
+   */
+  column?: SurfaceMeta[];
+  /**
+   * The flat floor the whole column terminates against, when the caller declared
+   * one (see `ZoneStackProps.carrier`). A zone draws it when its own last layer
+   * declares a fill; every zone that does draws the SAME plane.
+   */
+  carrier?: ZoneCarrier;
+  /**
+   * The carrier's cap colour, published separately from `carrier` because it is
+   * APPEARANCE: it must reach `ZoneMeshes` without joining the build spec, where
+   * it would make recolouring the floor rebuild the geometry.
+   */
+  carrierMaterial?: string;
+  /** The carrier's procedural detail; APPEARANCE only, like `carrierMaterial`. */
+  carrierDetail?: ZoneDetail;
+  /**
+   * Fluid contacts drawn as LINES across whatever face crosses them, prepared as
+   * textures. APPEARANCE only, like `carrierMaterial`: a contact takes no part in
+   * the depth order and never joins a build spec.
+   */
+  contacts?: ZoneContactTexture[] | null;
+  /**
+   * The sea over the whole column, when the caller declared one and the column holds
+   * its sea bed (see `ZoneStackProps.water` / `seabed`). Zones read it for
+   * APPEARANCE only — the bed tint on the sea bed's cap; the sea's own geometry
+   * belongs to the stack.
+   */
+  water?: StackWater | null;
+  /** the sea bed's surface id, when declared and the column holds it (see `ZoneStackProps.seabed`) */
+  seabed?: string | null;
+  /**
+   * The relief the column's sea bed is built on, while the stack has a `relief` and the
+   * column holds its sea bed (see `ZoneStackProps.relief`). A build input: zones pass
+   * it to the shared column, whose key it joins.
+   */
+  columnRelief?: ColumnRelief | null;
+  /**
+   * While the column is built on a relief: the ground as drawn over the stack (see
+   * `ZoneStackProps.clip`), which every zone material leaves out what lies above.
+   * Stable while the column is on the relief, whether a clip is given or not.
+   */
+  heightClip?: HeightFieldClipUniforms;
+  /** whether the stack draws its sea (see `ZoneStackProps.drawWater`) */
+  drawWater?: boolean;
+  /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ZoneStackProps.drawWater`) */
+  waterTintShown?: IUniform<number>;
+  /**
+   * The stack's own water (its sea's `WaterBody`): what its sea bed is seen through. Its own,
+   * not the scene's, so a `Scenery`'s sea about it does not take its place. Null without a sea.
+   */
+  waterBody?: WaterBody | null;
+  /**
+   * The sea bed's depth grid as a texture, when the stack builds a sea: the column's
+   * bed channel (the relief, on a relief column), from the `stackWater` generator.
+   * APPEARANCE only: it drives the bed tint per fragment, so a face hanging below the
+   * bed is tinted by the water standing over it rather than by its own depth.
+   */
+  bathymetry?: ZoneDepthMap | null;
+  /**
+   * Whether zones are built ready for a cut: `ZoneStackProps.prepareCuts`, or a
+   * declared section or fence. A PRIMITIVE, so a cut coming and going cannot
+   * churn a build spec.
+   */
+  prepareCuts?: boolean;
+  /**
+   * The live clip plane through the whole stack, when the caller declared one (see
+   * `ZoneStackProps.section`). A zone reads it every frame to build its own cut
+   * faces. Stable identity — see {@link ZoneSectionState}.
+   */
+  section?: ZoneSectionState | null;
+  /**
+   * The section plane as a SHARED uniform (xyz normal, w constant), written once
+   * per frame by the stack.
+   *
+   * ⭐ Shared identity is the whole mechanism: every `ZoneMaterial` of every zone
+   * is handed this same object, and a `ShaderMaterial`'s OIT variants share their
+   * `uniforms` by reference — so moving the plane is one write that reaches every
+   * material in every pass, with no React render and no material rebuild.
+   */
+  sectionUniform?: IUniform<Vector4>;
+  /**
+   * The exact COMPLEMENT of {@link ZoneStackContextValue.sectionUniform} — for
+   * geometry that must appear only where the section took something away. A cap
+   * kept whole over a layer the section cut needs its dropped fragments back, but
+   * only in the half that layer vacated; the negated plane makes the two mutually
+   * exclusive with no tolerance to tune. ⚠️ Passes everything while the FENCE is
+   * live, so the patch is then gated by the fence's inverse alone.
+   */
+  sectionUniformInverse?: IUniform<Vector4>;
+  /**
+   * Whether the column's floor is cut with the rest of the block (see
+   * `ZoneSection.carrier`). A PRIMITIVE, deliberately: it decides how a material
+   * is built, so it has to be visible to React — and a primitive cannot churn this
+   * context's identity, which is what every zone's build spec derives from.
+   */
+  sectionCarrier?: boolean;
+  /** Whether the section cuts the sea (see `ZoneSection.water`). A primitive, like {@link sectionCarrier}. */
+  sectionWater?: boolean;
+  /**
+   * Whether the section is currently drawing (see `ZoneSection.enabled`). A
+   * PRIMITIVE for the same reason as {@link sectionCarrier}: the cut FACES are
+   * built during render, so a zone has to know on its FIRST render whether to
+   * build them. Reading `enabled` off the live state object instead would leave
+   * the faces a frame or more behind — visible as a section with nothing closing
+   * it until something else forces a rebuild.
+   */
+  sectionEnabled?: boolean;
+  /**
+   * The live fence through the whole stack, when the caller declared one (see
+   * `ZoneStackProps.fence`). Stable identity — see {@link ZoneFenceState}.
+   */
+  fence?: ZoneFenceState | null;
+  /**
+   * The fence's SHARED uniforms: the cut parameters plus the signed-distance field
+   * and its placement. Same mechanism as
+   * {@link ZoneStackContextValue.sectionUniform} — swapping the texture in here
+   * reaches every material in every OIT pass without a rebuild.
+   */
+  fenceUniforms?: ZoneFenceUniforms;
+  /**
+   * The COMPLEMENT of {@link ZoneStackContextValue.fenceUniforms}, for the same
+   * peel patch {@link ZoneStackContextValue.sectionUniformInverse} serves.
+   */
+  fenceUniformsInverse?: ZoneFenceUniforms;
+  /** The fence face's shared overlay uniforms, when `ZoneFence.overlay` is set. */
+  fenceOverlayUniforms?: ZoneFenceOverlayUniforms | null;
+  /** Whether the column's floor is cut by the fence (see `ZoneFence.carrier`). */
+  fenceCarrier?: boolean;
+  /** Whether the fence cuts the sea (see `ZoneFence.water`). */
+  fenceWater?: boolean;
+  /**
+   * Envelope footprint of the column (scene XZ) — must contain every zone's
+   * boundary. Defaults to the stack `boundary`; with a wellbore cut source the
+   * stack resolves it over the FULL depth window, which by construction contains
+   * each zone's own (narrower) boundary.
+   */
+  envelope?: PlanarPolygonGeometry | null;
+  /**
+   * A zone's boundary, once resolved, published back to the stack (see
+   * {@link ZoneStackContextValue.registerZone}). `undefined` while a registered
+   * zone is still resolving its boundary.
+   */
+  boundaries?: ZoneBoundaryRegistry;
+  /**
+   * Who draws each shared horizon, per surface id and then per zone. Two zones
+   * that meet share their horizon, and drawing it twice means two
+   * independent tessellations fighting for the same pixels; the stack settles it
+   * from the footprints (see `resolveSeam`) rather than the caller declaring it.
+   */
+  seams?: ZoneSeamRegistry;
+  /**
+   * Announce which surfaces a zone draws, and later its resolved boundary.
+   *
+   * A zone's TOP layer can be truncated against a surface the zone ABOVE draws,
+   * and a horizon two zones share must be drawn by exactly one of them — both
+   * need the neighbours' footprints, and zones are independent siblings that
+   * cannot ask each other, so the stack brokers it.
+   *
+   * The claims are registered on mount, BEFORE any boundary resolves, so a zone
+   * can tell "nobody else draws that surface" (build now) from "somebody does,
+   * their boundary is still coming" (wait) — and never has to build twice.
+   *
+   * @returns a deregistration callback for the effect cleanup
+   */
+  registerZone?: (key: string, claims: ZoneSurfaceClaim[]) => () => void;
+  /**
+   * Drop everything the stack holds for a zone that has UNMOUNTED — its boundary
+   * and its build state.
+   *
+   * ⚠️ Deliberately separate from the deregistration callback: claims change
+   * whenever a zone's layers do, so that cleanup also runs on a re-registration,
+   * and clearing the boundary there would leave it unresolved for good (publishing
+   * is a different effect and would not re-run).
+   */
+  releaseZone?: (key: string) => void;
+  /**
+   * Publish a registered zone's resolved boundary: a polygon, or `null` when it
+   * resolved to no footprint at all (e.g. a wellbore cut source no well reaches).
+   * Passing `undefined` returns it to unresolved.
+   */
+  publishBoundary?: (
+    key: string,
+    polygon: PlanarPolygonGeometry | null | undefined,
+    rimSpacing?: number,
+  ) => void;
+  /**
+   * Report a zone's build state, so the stack can aggregate it into
+   * {@link ZoneStackProgress}. Registered zones that have not reported yet count
+   * as building.
+   */
+  reportBuildState?: (
+    key: string,
+    state: ZoneBuildState,
+    metrics?: SurfaceZoneMetrics,
+  ) => void;
+  /**
+   * Report the step a building zone is on (see `ZoneStackProgress.current`).
+   * Cleared by its next state change.
+   */
+  reportBuildProgress?: (key: string, step: ZoneBuildProgress) => void;
+  /**
+   * Publish a zone's display name for {@link ZoneStackProgress.zones}. Kept
+   * apart from the claims so a rename never touches the build.
+   */
+  nameZone?: (key: string, name: string | undefined) => void;
+  /**
+   * Every zone's depth window and wellbore margin, ordered shallow→deep by the
+   * column. A zone accumulating trajectory from outside its own window (see
+   * `WellboreOutlineMode`) buffers each depth interval with the margin of the
+   * zone that owns it, so it needs its NEIGHBOURS' margins, not just its own.
+   *
+   * ⚠️ Empty until the children have registered (they do so in an effect), so a
+   * zone must wait for its own entry to appear rather than build against a
+   * partial ramp — exactly like {@link ZoneStackContextValue.column}.
+   */
+  margins?: ZoneMarginEntry[];
+  /**
+   * Publish a zone's depth window and margin (see
+   * {@link ZoneStackContextValue.margins}). Pass `null` to withdraw it.
+   */
+  publishMargin?: (key: string, entry: ZoneMarginEntry | null) => void;
+  /**
+   * Publish the depths a zone lets a cut take (see {@link ZoneCutDepths}), so the fence can
+   * leave out the trajectory above and below them. Pass `null` to withdraw it.
+   */
+  publishCutDepths?: (key: string, depths: ZoneCutDepths | null) => void;
+};
+
+/**
+ * One zone's depth window and the margin its wellbore cut source buffers with.
+ *
+ * @group Contexts
+ */
+export type ZoneMarginEntry = {
+  /** the publishing zone's registry key */
+  key: string;
+  /** its shallowest REAL surface (a synthetic layer bounds nothing) */
+  topSurfaceId?: string;
+  /** its deepest REAL surface */
+  baseSurfaceId?: string;
+  /** the buffer margin, scene units */
+  radius: number;
+};
+
+/**
+ * What the stack knows about one surface: whether the zone drawing it has
+ * finished resolving its boundary, and what that boundary is.
+ *
+ * The distinction matters — an unresolved zone is worth waiting for, whereas one
+ * that resolved to NO footprint (e.g. a wellbore cut source no well reaches) never
+ * will be, and waiting for it would hang every zone beneath it.
+ *
+ * @group Contexts
+ */
+export type ZoneBoundaryEntry = {
+  /** the claiming zone's registry key */
+  key: string;
+  /** bumped whenever that zone publishes a different footprint */
+  version: number;
+  resolved: boolean;
+  polygon: PlanarPolygonGeometry | null;
+  /** rim spacing that footprint is densified with */
+  rimSpacing?: number;
+  /** the surface is that zone's LID (see {@link ZoneSurfaceClaim.top}) */
+  top: boolean;
+};
+
+/** One surface a zone declares, and whether that zone's block hangs from it. */
+export type ZoneSurfaceClaim = {
+  id: string;
+  /**
+   * The surface is this zone's LID: its first layer, AND one holding a volume.
+   *
+   * ⚠️ Both halves matter. A cap is the lid of the block underneath it, so a
+   * zone whose first layer is a bare sheet has no block for it to be the lid of
+   * — claiming it anyway would let a translucent sheet take the horizon away from
+   * the solid block below, which is the exact failure the rule exists to prevent.
+   */
+  top: boolean;
+};
+
+/**
+ * What the stack knows about its zones' footprints: for each surface id, EVERY
+ * zone claiming it. A surface no zone draws is absent from the map, which is the
+ * difference between "not covered" and "not known yet".
+ *
+ * ⚠️ A list, not a single entry — a shared horizon is claimed twice by
+ * construction, and that is exactly the case the seam resolution exists for.
+ *
+ * @group Contexts
+ */
+export type ZoneBoundaryRegistry = Map<string, ZoneBoundaryEntry[]>;
+
+/** Per surface, then per claiming zone, what that zone draws of it. */
+export type ZoneSeamRegistry = Map<string, Map<string, SeamDecision>>;
+
+/**
+ * Context published by {@link ZoneStack}.
+ *
+ * @group Contexts
+ */
+export const ZoneStackContext = createContext<ZoneStackContextValue>({
+  boundary: null,
+});

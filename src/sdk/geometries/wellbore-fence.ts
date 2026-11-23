@@ -22,7 +22,7 @@ import {
   tdDiversionAngles,
   tdPlanTrace,
 } from '../utils/fence-run-out';
-import { convexPolygonDistance } from '../utils/margin-zone';
+import { convexPolygonDistance } from '../utils/margin-band';
 import {
   FenceSideName,
   hullDiameter,
@@ -88,7 +88,7 @@ export const fenceSideSign = sideNormalSign;
 
 /**
  * A **fence** is a vertical surface swept along a curve in plan, used to slice a
- * chunk stack in two along a wellbore so the well can be viewed from either half.
+ * zone stack in two along a wellbore so the well can be viewed from either half.
  *
  * ⭐ The defining property, and the reason this is cheap: a fence is VERTICAL, so
  * whether a point is removed depends on its XZ alone. The whole cut reduces to one
@@ -651,12 +651,12 @@ export function fenceObstacles(
 }
 
 /**
- * Fuse obstacles whose margin-grown zones would overlap into one convex hull each.
+ * Fuse obstacles whose margin bands would overlap into one convex hull each.
  *
- * ⛔⛔ THE INVARIANT THIS RESTORES: `oneSidedOffset` models a gap as ONE zone. The prune records
+ * ⛔⛔ THE INVARIANT THIS RESTORES: `oneSidedOffset` models a gap as ONE margin band. The prune records
  * a single `blocker` index per gap (a majority vote over the swallowed candidates), and `connect`
  * then clips both run ends back out of THAT ring and traces THAT ring's boundary between them.
- * Nothing checks the traced boundary against any other obstacle — so where two zones overlap, the
+ * Nothing checks the traced boundary against any other obstacle — so where two margin bands overlap, the
  * run end can still sit inside the second one and the trace can pass straight through it. Two
  * overlapping obstacles are not two problems; they are one region the cut has to get around.
  *
@@ -664,11 +664,11 @@ export function fenceObstacles(
  * convex sets is not convex, and every consumer downstream — `pointInConvex`, `dilateConvex`,
  * `ringExitIndex`, `tangentVertex`, the clip-and-trace above — is only defined for a convex ring.
  *
- * ⚠️ Overlap is of the ZONES — the points within `margin` of each hull — so two hulls are one
+ * ⚠️ Overlap is of the MARGIN BANDS — the points within `margin` of each hull — so two hulls are one
  * region when they come within `2 · margin` of each other: two features metres apart are separate
  * at margin 0.1 and one region at margin 20. That is why this needs the margin.
  *
- * ⭐ Two zones apart are still ONE region when the trace between them is too short for the rods
+ * ⭐ Two margin bands apart are still ONE region when the trace between them is too short for the rods
  * round both ({@link rodsCrowd}): each rod runs on along it by its anchor, and two that meet cross.
  *
  * Each pass fuses one pair, so it terminates after at most `hulls.length - 1` of them — the count
@@ -2282,7 +2282,7 @@ export function fenceBlockTrace(
  * ⭐ An OPEN end runs on, and so does a TD cut by the bottom once the block is past its kickoff. An
  * armed head never does — it is planned, and the cores follow its guide — nor does a TD cut still
  * in the vertical column: run on, it crossed the kickoff (F-14 cut at 2000 m, kickoff at MD 2136).
- * A run-on that ends in the zone over the block's TD is not cut back: that TD is planned instead
+ * A run-on that ends in the margin band over the block's TD is not cut back: that TD is planned instead
  * ({@link fenceCoreInputs}).
  *
  * @param samples the block trajectory's samples ({@link FenceBlockTrace.samples})
@@ -2380,7 +2380,7 @@ export type FenceCoreInputs = {
   headArm: HeadArmPlan | null;
   /**
    * the TD routed round the obstacle over it ({@link planTdArm}), or null when none covers it — or,
-   * run on past a bottom cut, when the run-on leaves the zone or the block's TD is outside it
+   * run on past a bottom cut, when the run-on leaves the margin band or the block's TD is outside it
    */
   tdPlan: TdArmPlan | null;
   /** the stretch that ships: the offset's `keep`, cut back to by {@link trimFenceCore}; no TD where a plan owns it */
@@ -2553,7 +2553,7 @@ export function fenceCoreInputs(
   });
   // ⭐ An obstacle over the TD is routed like the head, and planned FIRST: its bearing, read off the
   // well before the hull, is the one the head arm is planned opposite.
-  // ⭐ Run on, the plan stands only where the block's TD is in its zone too — the core then never
+  // ⭐ Run on, the plan stands only where the block's TD is in its margin band too — the core then never
   // reaches the block TD (F-11 A cut at 1900 m hooks back into a 149 m hull and stays there).
   const tdRunOn = !!core && core.reach[1] > 0;
   let tdPlan = span.tdArm

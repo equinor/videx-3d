@@ -74,7 +74,7 @@ onto eases into its life over 5 s, so neither its edge nor bare sea shows as the
 Inside a `<Weather>` (see [clouds.md](./clouds.md#the-weather)), `windSpeed`, `windDirection`,
 `gusts` and `swells` left out are the weather's: its wind's speed, the way it blows toward and
 its gusts, and its swells (`WeatherState.swell`). The `<Scenery>`'s endless sea and a
-`ChunkStack`'s water take them the same way. Given, the sea's own win.
+`ZoneStack`'s water take them the same way. Given, the sea's own win.
 
 **One sea under a weather** (built 2026-11-15). A sea that leaves its waves to the weather — no
 `windSpeed`, `windDirection`, `swells` or `amplitude` of its own, nor wave tuning that changes
@@ -82,7 +82,7 @@ the sea state (`spreadFloor`, `tail`) — draws the weather's sea (`WeatherSea`,
 `useWeatherSea`; `OceanMaterial.sea`, set by `useWeatherOceanSea`): one `SeaState` a quality,
 on the weather's clock, its layers baked once a frame however many seas draw it (a second sea
 bakes only the layers the first left out as too fine to show from where it looked). So an
-`Ocean`, a `ChunkStack`'s water and the `<Scenery>`'s sea under one weather are one sea, the same
+`Ocean`, a `ZoneStack`'s water and the `<Scenery>`'s sea under one weather are one sea, the same
 waves at the same place and time, and their floating objects ride the same waves. Its phases
 follow the clock's time: a jump (`time` set) moves the waves to it at once, and the weather's
 wind changing eases them toward it, as a wind of a sea's own does. Given a wind or swells of
@@ -145,7 +145,7 @@ from below through Snell's window, and in the `<Scenery>`'s estimate of what the
 2 % with that exponent; its old default, 4, reflected about half as much again as water at
 middle angles (0.26 against 0.17 at 72°), a paler sea. Measured, the same cost either way.
 
-**One sky** (built 2026-11-15). An `Ocean`'s and a `ChunkStack`'s sea reflect the sky of their
+**One sky** (built 2026-11-15). An `Ocean`'s and a `ZoneStack`'s sea reflect the sky of their
 scene (`sceneSky`, `SceneSky` in `sdk/materials/scene-sky.ts`; `OceanMaterial.updateSky`, run
 by both before each frame), in the reflection, through Snell's window from below and in the
 foam's light:
@@ -231,21 +231,21 @@ so a `Scenery`'s floating objects read the world's everywhere. A contact footpri
 frame of its own (`OceanContact.frame`) is taken through the world into the plane the sea draws
 its foam in.
 
-## Water over a chunk stack
+## Water over a zone stack
 
 A subsurface block can carry its own sea instead of an `<Ocean>` of its own:
-declare `water` on the `ChunkStack`.
+declare `water` on the `ZoneStack`.
 
 ```tsx
-<ChunkStack outline={field} surfaces={column} seabed={seabedId} water={{ depth: 0, windSpeed: 10 }}>
-  <Chunk layers={[{ surface: seabed, material: '#c2b280' }, /* ... */]} />
+<ZoneStack boundary={field} surfaces={column} seabed={seabedId} water={{ depth: 0, windSpeed: 10 }}>
+  <Zone layers={[{ surface: seabed, material: '#c2b280' }, /* ... */]} />
   <Tanker position={[x, 0, z]} heading={heading} />
-</ChunkStack>
+</ZoneStack>
 ```
 
-⭐ It belongs to the STACK, not to a layer of a chunk. The sea is a property of
-the column — every chunk cut from it stands under the same water — and a lid
-covers its whole footprint by design, so two chunks each drawing part of it would
+⭐ It belongs to the STACK, not to a layer of a zone. The sea is a property of
+the column — every zone cut from it stands under the same water — and a lid
+covers its whole footprint by design, so two zones each drawing part of it would
 leave two coplanar lids wherever their footprints overlap. The stack draws it
 once, as a two-boundary stack of its own: the level, and the column's sea bed as
 its bed — the surface `seabed` names, which the stack never guesses: without it, or
@@ -289,24 +289,24 @@ it. See [camera.md](./camera.md#over-the-water-exactly).
 The sea takes no part in the depth order, which is what stops it truncating the
 ground beneath it: a sea bed above the plane comes THROUGH it rather than being
 flattened onto it, and the water body ends at the shoreline. See
-`documents/chunks.md` §6. The bed's cap meets the flat lid where the bed's grid puts
+`documents/zones.md` §6. The bed's cap meets the flat lid where the bed's grid puts
 the shore, because its coastline is built into the cap (§6.3.1).
 
 `seaBedWaterTint` is the one thing that does NOT carry over: it belongs to the bed
-material the component draws, and a chunk's sea bed is ordinary geology. The
+material the component draws, and a zone's sea bed is ordinary geology. The
 shallowest cap is dimmed instead by the daylight its depth leaves it (the stack's
 own water, `water-body.glsl`'s `waterBodyDim`), as the component's bed is; the lid
 and the walls carry the water in front of it. (`bedTint` and `bedTintDepth` are
-deprecated; see `documents/chunks.md` §6.4.1 for what they did.)
+deprecated; see `documents/zones.md` §6.4.1 for what they did.)
 
 ⭐ **The waves answer the depth: they shoal and die out toward a shore, and break
 in surf there** (`documents/ocean-waves.md`, Shallow water), by one rule in every
-sea: the `Ocean`, a `ChunkStack`'s, and the `Scenery`'s. The depth is the
+sea: the `Ocean`, a `ZoneStack`'s, and the `Scenery`'s. The depth is the
 bathymetry grid where there is one, else the scene's ground under an endless sea,
 else the water's own floor, which a flat sea has nowhere near the waves. The surf
 (`shoreFoam`, `shoreBreakDepth`, `surfScale`, `swash`, `shoreNoise`,
 `shoreNoiseScale`, `shoreFoamStrength`, `shoreFoamFade`) is the same code on all of
-them. Floating objects ride the waves as cut. See `documents/chunks.md` §6.6.
+them. Floating objects ride the waves as cut. See `documents/zones.md` §6.6.
 
 **Floating objects work here.** The stack provides the same wave sampler and
 contact-foam registry an `<Ocean>` does, so a vessel heaves and spreads foam with
@@ -314,19 +314,19 @@ nothing extra wired. ⭐ The sampler is bound to the sea's LEVEL, so heights com
 back absolute in the stack's frame: place the object at the water plane rather
 than inside a group at sea level.
 
-⚠️ The sea needs an `outline` on the stack — a `cutSource` alone gives nothing to
+⚠️ The sea needs a `boundary` on the stack — a `cutSource` alone gives nothing to
 draw it over.
 
 ⚠️ `displacement` needs a surface fine enough to displace. The lid is
-triangulated from the stack's outline, so give it a target edge length —
+triangulated from the stack's boundary, so give it a target edge length —
 `water: { displacement: true, resolution: 100 }` — and remember it applies over
 the whole footprint. Without displacement the waves are shaded per pixel and the
 lid can stay at its minimum. Displaced, the waves die out toward the shore by the
 bed's depth, so the waterline stays near the coast the bed's cap is built along.
 
 See the **Components / Misc / Ocean** stories for an interactive demo of every
-variant plus the buoyancy boxes, and **Spikes / Chunks / SyntheticColumn** for
-water over a chunk stack.
+variant plus the buoyancy boxes, and **Spikes / Zones / SyntheticColumn** for
+water over a zone stack.
 
 ## Measuring
 

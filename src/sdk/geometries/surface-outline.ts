@@ -13,7 +13,7 @@ export type SurfaceOutlineOptions = {
   /**
    * Scene XZ of the surface's `<UtmPosition>` origin (`crs.utmToWorld(header.xori,
    * header.yori, 0)` mapped to `[x, z]`), so the outline lands in the same frame
-   * as the rendered surface / any chunk built from it. Defaults to `[0, 0]`.
+   * as the rendered surface / any zone built from it. Defaults to `[0, 0]`.
    */
   worldPosition?: Vec2;
   /** value marking a missing/hole sample (default -1). */
@@ -32,7 +32,7 @@ export type SurfaceOutlineOptions = {
 
 /**
  * Extract the outline of a surface's valid-data region as a scene-XZ
- * {@link PlanarPolygonGeometry}, suitable as a chunk cut outline. The rim is
+ * {@link PlanarPolygonGeometry}, suitable as a zone boundary. The rim is
  * traced from the grid ({@link traceValidBoundary}), optionally smoothed
  * ({@link smoothRings}), mapped into the scene frame ({@link surfaceGridToWorld}),
  * and grouped into outer/hole components ({@link ringsToPolygonCoordinates}), so

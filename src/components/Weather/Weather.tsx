@@ -35,7 +35,7 @@ export type WeatherProps = {
 
 /**
  * The weather for everything inside it: the wind and swells raise the waves of an `Ocean`, a
- * `SceneryOcean` and a `ChunkStack`'s water — one sea for all of them that take both from it
+ * `SceneryOcean` and a `ZoneStack`'s water — one sea for all of them that take both from it
  * (`WeatherSea`, `useWeatherSea`) — its air is a `Scenery`'s, its cloud (a local weather's
  * layers, a global one's weather systems) is what a `SceneryClouds`
  * draws, and its clock (`WeatherClock`, `useWeatherClock`) moves both: the clouds drift with

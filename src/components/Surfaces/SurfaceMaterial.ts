@@ -234,11 +234,11 @@ export class SurfaceMaterial extends ShaderMaterial {
    * Trust the GEOMETRY where the grid does not describe it. Default false.
    *
    * A `Surface`'s mesh is built from the grid, so a nodata sample means there is
-   * nothing there and the fragment is discarded. A chunk cap is the other way
+   * nothing there and the fragment is discarded. A zone cap is the other way
    * round: its heights have been resampled onto a common grid, hole-filled, sealed
    * and resolved, so the mesh is authoritative and discarding would cut a hole
    * through a solid block. Set this when drawing on such a mesh; it needs the
-   * per-vertex `nodata` attribute the chunk builder writes, and falls back to the
+   * per-vertex `nodata` attribute the zone builder writes, and falls back to the
    * mesh's own depth and normal wherever that attribute says the grid stops.
    */
   get geometryFallback() {
@@ -252,7 +252,7 @@ export class SurfaceMaterial extends ShaderMaterial {
 
   /**
    * Procedural relief up close, from the sdk's {@link SurfaceDetail} presets (`'sand'`,
-   * `'shale'`, …, or one with its `strength` and `scale`), as a chunk layer's `detail`:
+   * `'shale'`, …, or one with its `strength` and `scale`), as a zone layer's `detail`:
    * texture-free and anchored in WORLD space, so a feature keeps its size on every surface
    * and no normal map has to be set up per surface. `null` for none (the default), which
    * compiles it out. A new preset recompiles; a new `strength` or `scale` does not.

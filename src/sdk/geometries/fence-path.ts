@@ -18,7 +18,7 @@ export type FencePathSamples = {
  * face to draw on.
  *
  * @param curve the side's cut curve, in scene XZ — the arc lengths match the face's `uv.x`
- * @param rings the stack's outline rings; empty samples the whole curve
+ * @param rings the stack's boundary rings; empty samples the whole curve
  * @param step wanted spacing in metres, widened as needed to stay within `maxColumns`
  * @param maxColumns most positions to return, at least 2
  * @returns `null` when the curve never enters `rings`

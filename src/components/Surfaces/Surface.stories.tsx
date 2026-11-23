@@ -323,7 +323,7 @@ export const Default: Story = {
       options: ['none', ...SURFACE_DETAIL_PRESET_NAMES],
       control: { type: 'select' },
       description:
-        'Procedural relief up close (`detail`), the chunk layers\u2019 presets: anchored in the scene, so no normal map is set up per surface. Seen within a few hundred metres; zoom in.',
+        'Procedural relief up close (`detail`), the zone layers\u2019 presets: anchored in the scene, so no normal map is set up per surface. Seen within a few hundred metres; zoom in.',
       table: { category: DETAIL },
     },
     detailStrength: {

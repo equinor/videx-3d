@@ -1,10 +1,10 @@
 import pLimit from 'p-limit';
 import {
-  ChunkResolveOptions,
-  DEFAULT_CHUNK_MAX_FILL,
-  SurfaceChunkLayerSpec,
-  SurfaceChunkStackSpec,
-} from '../components/Chunks/chunk-defs';
+  ZoneResolveOptions,
+  DEFAULT_ZONE_MAX_FILL,
+  SurfaceZoneLayerSpec,
+  SurfaceZoneStackSpec,
+} from '../components/Zones/zone-defs';
 import {
   clampStackToCarrier,
   layEmptyStackLayers,
@@ -24,7 +24,7 @@ import {
   StackPairStats,
   StackReference,
   StackReferencePlan,
-  SurfaceChunkPhase,
+  SurfaceZonePhase,
   surfaceGridToWorld,
   SurfaceStackOptions,
   SurfaceStackPlan,
@@ -40,7 +40,7 @@ import {
 
 /**
  * A whole column, resampled onto one common grid and made monotone — the work
- * every chunk cut from that column shares.
+ * every zone cut from that column shares.
  */
 export type StackContext = {
   key: string;
@@ -57,8 +57,8 @@ export type StackContext = {
   /**
    * Per COLUMN layer, the index (or two) it occupies in the expanded arrays. A
    * void splits a surface into a ceiling and a floor, and both belong to every
-   * chunk that draws that horizon — splitting it here rather than per chunk is
-   * what stops two chunks opening the same void differently.
+   * zone that draws that horizon — splitting it here rather than per zone is
+   * what stops two zones opening the same void differently.
    */
   expansion: number[][];
   /** per EXPANDED layer: it is the upper copy of a void (see `StackVoidResult`) */
@@ -66,7 +66,7 @@ export type StackContext = {
   /**
    * Index of the carrier plane appended below the column, or `null` when none was
    * declared. In COLUMN space, like {@link StackContext.index} — the expanded one
-   * a chunk needs it finds through {@link StackContext.expansion}.
+   * a zone needs it finds through {@link StackContext.expansion}.
    *
    * It closes the block, so the resolve leaves it alone and the collapse never
    * drops it (see `StackCollapseOptions.carrier`).
@@ -101,9 +101,9 @@ export type StackContext = {
 };
 
 // Columns are the heaviest thing the generator holds (nodes x layers x 4 bytes),
-// so only a few are kept resident — enough for several ChunkStacks (or one stack
-// whose chunks resolve differently) to coexist without evicting each other on
-// every request, yet bounded so a control sweep cannot pile columns up. Chunks of
+// so only a few are kept resident — enough for several ZoneStacks (or one stack
+// whose zones resolve differently) to coexist without evicting each other on
+// every request, yet bounded so a control sweep cannot pile columns up. Zones of
 // the same column arrive together and share its in-flight promise.
 const MAX_CACHED_COLUMNS = 4;
 const columns = new Map<string, Promise<StackContext | null>>();
@@ -121,7 +121,7 @@ let columnsInFlight = 0;
 
 /** Hears a step of shared work: `done` of `total` units of `phase`. */
 export type StackProgress = (
-  phase: SurfaceChunkPhase,
+  phase: SurfaceZonePhase,
   done: number,
   total: number,
 ) => void;
@@ -132,7 +132,7 @@ type Watcher = {
   report: StackProgress;
 };
 
-// Shared work IN FLIGHT, keyed like the work: every chunk waiting on it hears its
+// Shared work IN FLIGHT, keyed like the work: every zone waiting on it hears its
 // progress, and one that joins late starts from the last report.
 const watchers = new Map<string, Watcher>();
 
@@ -208,24 +208,24 @@ export function stackContextStats(): StackContextStats {
 }
 
 /**
- * Build (or reuse) the resolved column a chunk belongs to.
+ * Build (or reuse) the resolved column a zone belongs to.
  *
- * The first chunk of a column pays for the fetch, the resample and the resolve;
- * every other chunk with the same `stack.key` awaits the same promise. That is
- * what makes several chunks of one column agree about depth order — they sample
- * grids that were ordered together — as well as what keeps the cost flat as chunks
+ * The first zone of a column pays for the fetch, the resample and the resolve;
+ * every other zone with the same `stack.key` awaits the same promise. That is
+ * what makes several zones of one column agree about depth order — they sample
+ * grids that were ordered together — as well as what keeps the cost flat as zones
  * are added.
  *
  * @param onProgress hears the column's `fetch` and `resolve` steps while it is
- *   being built, whichever chunk started it
+ *   being built, whichever zone started it
  */
 export function getStackContext(
   store: ReadonlyStore,
-  stack: SurfaceChunkStackSpec,
-  resolve: ChunkResolveOptions | undefined,
+  stack: SurfaceZoneStackSpec,
+  resolve: ZoneResolveOptions | undefined,
   onProgress?: StackProgress,
 ): Promise<StackContext | null> {
-  const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL}|${resolve ? 1 : 0}|${resolve?.seal === false ? 0 : 1}|${resolve?.sealMode ?? 'proportional'}|${resolve?.minThickness ?? ''}`;
+  const key = `${stack.key}|${resolve?.mode ?? 'truncate'}|${resolve?.minGap ?? 0}|${resolve?.maxNodes ?? ''}|${resolve?.maxFill ?? DEFAULT_ZONE_MAX_FILL}|${resolve ? 1 : 0}|${resolve?.seal === false ? 0 : 1}|${resolve?.sealMode ?? 'proportional'}|${resolve?.minThickness ?? ''}`;
   const existing = columns.get(key);
   if (existing) {
     // Touch: move to the most-recently-used end so a shared column is not the one
@@ -235,9 +235,9 @@ export function getStackContext(
     watch(key, onProgress);
     return existing;
   }
-  // ⭐ The column is SHARED work — every chunk cut from it awaits this one promise,
-  // so it is deliberately NOT gated on any single caller's staleness. A chunk that
-  // has moved on abandons its OWN build (see `isStale` in the chunk generator); it
+  // ⭐ The column is SHARED work — every zone cut from it awaits this one promise,
+  // so it is deliberately NOT gated on any single caller's staleness. A zone that
+  // has moved on abandons its OWN build (see `isStale` in the zone generator); it
   // does not abort the column its siblings are still waiting for.
   const watcher = openWatcher(key);
   const promise = chain.then(() => {
@@ -255,7 +255,7 @@ export function getStackContext(
   closeWatcher(key, watcher, promise);
   watch(key, onProgress);
   // ⚠️ Never leave a failed or empty build cached: a null under the key would hand
-  // every later chunk of this column an empty result with nothing to retry it.
+  // every later zone of this column an empty result with nothing to retry it.
   promise.then(
     context => {
       if (columns.get(key) !== promise) retainedByKey.delete(key);
@@ -272,17 +272,17 @@ export function getStackContext(
   return promise;
 }
 
-// Live ChunkStacks, so the shared caches are torn down only when the LAST one
+// Live ZoneStacks, so the shared caches are torn down only when the LAST one
 // unmounts — two stacks in a scene must not release each other's column.
 const activeStacks = new Set<string>();
 
-/** Register a live ChunkStack (see `releaseStackResources`). */
+/** Register a live ZoneStack (see `releaseStackResources`). */
 export function acquireStackContext(id: string): void {
   activeStacks.add(id);
 }
 
 /**
- * Drop a ChunkStack. Returns whether it was the last one still live — i.e. whether
+ * Drop a ZoneStack. Returns whether it was the last one still live — i.e. whether
  * the heavy caches should now be cleared.
  */
 export function releaseStackContext(id: string): boolean {
@@ -346,8 +346,8 @@ async function sampleColumnRelief(
 
 async function buildStackContext(
   store: ReadonlyStore,
-  stack: SurfaceChunkStackSpec,
-  resolve: ChunkResolveOptions | undefined,
+  stack: SurfaceZoneStackSpec,
+  resolve: ZoneResolveOptions | undefined,
   key: string,
   report: StackProgress,
 ): Promise<StackContext | null> {
@@ -363,7 +363,7 @@ async function buildStackContext(
   // windows, not consecutive phases.
   const plan = planStackReference(stack.layers, envelope, {
     maxNodes: resolve?.maxNodes,
-    maxFill: resolve?.maxFill ?? DEFAULT_CHUNK_MAX_FILL,
+    maxFill: resolve?.maxFill ?? DEFAULT_ZONE_MAX_FILL,
   });
   if (!plan) return null;
 
@@ -378,7 +378,7 @@ async function buildStackContext(
   const inFlight = pLimit(Math.max(2, getStackPool()?.size ?? 4));
   let fetched = 0;
   const resampled = await Promise.all(
-    stack.layers.map((spec: SurfaceChunkLayerSpec) =>
+    stack.layers.map((spec: SurfaceZoneLayerSpec) =>
       inFlight(async () => {
         if (spec.reliefSource) {
           // On the relief: covered everywhere, and already on the common grid.
@@ -475,13 +475,13 @@ async function buildStackContext(
     layers.push({ depth: -carrierLevel });
   }
 
-  // ⭐ SEALED HERE, on the column, so a horizon two chunks share has ONE height.
-  // Sealing per chunk gave a surface the neighbours of whichever chunk was asking —
-  // the deepest layer of one chunk tapered against the layer above it while another
-  // chunk tapered the same surface onto its own floor — and the two then met each
+  // ⭐ SEALED HERE, on the column, so a horizon two zones share has ONE height.
+  // Sealing per zone gave a surface the neighbours of whichever zone was asking —
+  // the deepest layer of one zone tapered against the layer above it while another
+  // zone tapered the same surface onto its own floor — and the two then met each
   // other's walls at different depths.
   // ⚠️ The reach is therefore measured inside the ENVELOPE rather than inside one
-  // chunk's footprint: a single height and a per-chunk taper shape cannot both hold.
+  // zone's footprint: a single height and a per-zone taper shape cannot both hold.
   const voiding = resolve?.seal !== false && resolve?.sealMode === 'void';
   const sealing = resolve?.seal !== false && !voiding;
   const sealOptions = {
@@ -498,8 +498,8 @@ async function buildStackContext(
       )
     : null;
   // ⭐ `void` turns one layer into TWO, so the column publishes the expansion and
-  // every chunk picks its copies out of it — rather than each chunk splitting the
-  // same horizon against its own neighbours and meeting the next chunk's walls
+  // every zone picks its copies out of it — rather than each zone splitting the
+  // same horizon against its own neighbours and meeting the next zone's walls
   // somewhere else. The split needs no fill state, which is what lets it run here.
   const split = voiding
     ? splitVoidChannels(
@@ -519,7 +519,7 @@ async function buildStackContext(
     channels: split?.channels ?? sealed?.channels ?? reference.channels,
     masks: split?.masks ?? reference.masks,
   };
-  // ⚠️ `carrier` stays a COLUMN index, because that is what a chunk's picks are.
+  // ⚠️ `carrier` stays a COLUMN index, because that is what a zone's picks are.
   // The clamp and the resolve work on the expanded arrays, so they need the other
   // one — the carrier is complete and so never split, but layers above it may be,
   // which moves it.
@@ -537,7 +537,7 @@ async function buildStackContext(
     );
   }
 
-  // The whole column is made monotone here, on the common grid, so every chunk
+  // The whole column is made monotone here, on the common grid, so every zone
   // that samples it inherits an ordering the others agree with. The masks come
   // along so the statistics can separate real crossings from the hole fill.
   const resolved = resolve
@@ -603,7 +603,7 @@ async function buildStackContext(
 
 /**
  * Refine the column's channels once and cache the candidates alongside it, so the
- * per-layer refinement is also shared by every chunk of the column.
+ * per-layer refinement is also shared by every zone of the column.
  */
 const refinedByKey = new Map<string, Promise<StackCandidates>>();
 
@@ -679,7 +679,7 @@ type ColumnDerived = {
 
 // By the context itself, so it goes when the column does.
 const derivedByColumn = new WeakMap<StackContext, ColumnDerived>();
-// Chunks of one column may draw different layer sets.
+// Zones of one column may draw different layer sets.
 const MAX_LINE_SETS = 4;
 
 /** What a stack plan may be handed instead of deriving it (see `planSurfaceStack`). */

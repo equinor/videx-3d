@@ -42,7 +42,7 @@ varying vec3 vViewPosition;
 // A cheap, GEOMETRY-FREE bump: the sea bed stays a coarse mesh, but the shading
 // normal is perturbed per pixel by the analytic slope of a small directional
 // "dune" height field (a few rotated, meandering sine ridges) - `pnDunes` from the
-// shared procedural-normal lib, which the chunk material draws its sea-bed detail
+// shared procedural-normal lib, which the zone material draws its sea-bed detail
 // from too. This adds a subtle sense of depth/scale to the otherwise flat-shaded
 // bed without extra vertices.
 //

@@ -1,0 +1,245 @@
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { BufferAttribute, BufferGeometry, DynamicDrawUsage } from 'three';
+import { useReleasedFrame } from '../../hooks/useReleasedFrame';
+import {
+  buildStackSectionIndex,
+  createStackSectionTarget,
+  growStackSectionTarget,
+  sectionStackInterval,
+  StackSectionPlane,
+  StackSectionSource,
+  StackSectionTarget,
+} from '../../sdk';
+import { ZoneLayer, ZoneSectionState } from './zone-defs';
+import { registerSectionTargets, releaseGeometry } from './zone-resources';
+
+/** One interval's cut face, ready to be drawn with that interval's own material. */
+export type ZoneSectionFace = {
+  /** the interval, i.e. the index of the BUILD layer above it */
+  interval: number;
+  /** the CALLER's layer index for that interval — which material it takes */
+  layer: number;
+  /**
+   * Which contour this face is: always `0` for a plane or a one-sided fence, `0`
+   * and `1` for the two walls of a corridor.
+   *
+   * ⚠️ Part of a face's IDENTITY, not decoration: a corridor gives one interval
+   * two faces, so keying only on the interval collides and React drops one.
+   */
+  wall: number;
+  geometry: BufferGeometry;
+  /** across an unfilled interval: drawn for the fence overlay only (see `ZoneFenceOverlay.gaps`) */
+  gap?: boolean;
+};
+
+type Face = ZoneSectionFace & { target: StackSectionTarget };
+
+// Enough for a plane crossing a few hundred cells; grown by doubling from there.
+const INITIAL_CAPACITY = 1024;
+
+// What a released target points at, so a stale face holds nothing.
+const EMPTY = new Float32Array(0);
+
+function attach(geometry: BufferGeometry, target: StackSectionTarget) {
+  const set = (name: string, array: Float32Array, itemSize: number) => {
+    const attribute = new BufferAttribute(array, itemSize);
+    attribute.setUsage(DynamicDrawUsage);
+    geometry.setAttribute(name, attribute);
+  };
+  set('position', target.positions, 3);
+  set('normal', target.normals, 3);
+  set('uv', target.uvs, 2);
+  set('wallV', target.wallV, 1);
+  if (target.inferred) set('inferred', target.inferred, 1);
+}
+
+/**
+ * Build one cut face per filled interval of a zone, rebuilt every frame from the
+ * stack's live plane.
+ *
+ * ⭐ This is the **appearance** layer: it reads the channels the build already
+ * produced ({@link StackSectionSource}) and never touches the worker, so a moving
+ * plane costs a pass over the crossed cells and nothing else. Buffers are
+ * preallocated and only the draw range moves — allocating a `BufferGeometry` per
+ * frame would make a rotating plane a garbage generator.
+ *
+ * @param source the zone's section channels, from its build
+ * @param section the stack's live section state, or `null` for none
+ * @param layers the caller's layers, read for `ZoneLayer.section`: a unit kept
+ *   whole gets no cut face — there is nothing to close, and a face there would sit
+ *   inside solid material
+ * @param enabled whether the section is drawing. ⚠️ Must come from the PROP side
+ *   (`ZoneStackContextValue.sectionEnabled`), not from `section.enabled`: that is
+ *   written by the frame loop, and faces are built during RENDER, so reading it
+ *   there leaves the block cut open with nothing closing it until something forces
+ *   another render.
+ * @returns one face per filled interval, or `null` when there is nothing to cut
+ *
+ * @group Components
+ */
+export function useZoneSection(
+  source: StackSectionSource | undefined,
+  section: ZoneSectionState | null | undefined,
+  layers?: ZoneLayer[],
+  enabled = true,
+): ZoneSectionFace[] | null {
+  const faces = useMemo<Face[] | null>(() => {
+    if (!source || !section || !enabled) return null;
+    const built: Face[] = [];
+    source.intervals.forEach((members, interval) => {
+      if (!members) return;
+      const layer = source.layers?.[interval] ?? interval;
+      if (layers?.[layer]?.section === false) return;
+      const target = createStackSectionTarget(
+        INITIAL_CAPACITY,
+        !!source.inferred,
+      );
+      const geometry = new BufferGeometry();
+      attach(geometry, target);
+      geometry.setDrawRange(0, 0);
+      built.push({ interval, layer, geometry, target, wall: 0 });
+    });
+    return built.length > 0 ? built : null;
+  }, [source, section, layers, enabled]);
+
+  useEffect(() => {
+    if (!faces) return;
+    const release = registerSectionTargets(faces);
+    return () => {
+      release();
+      queueMicrotask(() => {
+        faces.forEach(face => {
+          releaseGeometry(face.geometry);
+          // The preallocated cut buffers are the bulk of a face; the geometry only
+          // points at them.
+          face.target.positions = EMPTY;
+          face.target.normals = EMPTY;
+          face.target.uvs = EMPTY;
+          face.target.wallV = EMPTY;
+          face.target.inferred = null;
+          face.target.capacity = 0;
+          face.target.count = 0;
+        });
+      });
+    };
+  }, [faces]);
+
+  const plane = useMemo<StackSectionPlane>(
+    () => ({ normal: [0, 0, 0], constant: 0 }),
+    [],
+  );
+
+  // ⭐ The plane is the only thing that changes: the geometry is fixed for the
+  // life of the build, so the index is built once and every frame reuses it.
+  const index = useMemo(
+    () =>
+      source && section && enabled
+        ? (source.index ?? buildStackSectionIndex(source))
+        : null,
+    [source, section, enabled],
+  );
+  // What the faces were last cut with. A section that is not moving — a fixed
+  // plane, or a camera-locked one with the camera at rest — would otherwise
+  // recompute an identical face every frame, which on a field-sized stack is the
+  // difference between a still view being free and costing tens of millions of
+  // prism tests per second.
+  const last = useRef<{
+    faces: Face[] | null;
+    x: number;
+    y: number;
+    z: number;
+    c: number;
+    on: boolean;
+    off: number;
+  }>({ faces: null, x: NaN, y: NaN, z: NaN, c: NaN, on: false, off: NaN });
+
+  const rebuild = () => {
+    if (!faces || !source || !section) return;
+    const state = last.current;
+    if (!section.enabled) {
+      if (state.on) {
+        for (const face of faces) face.geometry.setDrawRange(0, 0);
+      }
+      state.on = false;
+      return;
+    }
+    const { normal, constant } = section.plane;
+    const offset = section.offset;
+    if (
+      state.on &&
+      state.faces === faces &&
+      state.x === normal.x &&
+      state.y === normal.y &&
+      state.z === normal.z &&
+      state.c === constant &&
+      state.off === offset
+    ) {
+      return;
+    }
+    state.on = true;
+    state.faces = faces;
+    state.x = normal.x;
+    state.y = normal.y;
+    state.z = normal.z;
+    state.c = constant;
+    state.off = offset;
+
+    plane.normal[0] = normal.x;
+    plane.normal[1] = normal.y;
+    plane.normal[2] = normal.z;
+    plane.constant = constant;
+
+    for (const face of faces) {
+      const options = { offset, index: index ?? undefined };
+      let needed = sectionStackInterval(
+        source,
+        face.interval,
+        plane,
+        face.target,
+        options,
+      );
+      if (needed > face.target.capacity) {
+        growStackSectionTarget(face.target, needed);
+        attach(face.geometry, face.target);
+        needed = sectionStackInterval(
+          source,
+          face.interval,
+          plane,
+          face.target,
+          options,
+        );
+      }
+      const count = face.target.count;
+      face.geometry.setDrawRange(0, count);
+      if (count === 0) continue;
+      // Only what was cut: the buffers keep the size of the largest cut so far.
+      for (const name in face.geometry.attributes) {
+        const attribute = face.geometry.attributes[name] as BufferAttribute;
+        attribute.clearUpdateRanges();
+        attribute.addUpdateRange(0, count * attribute.itemSize);
+        attribute.needsUpdate = true;
+      }
+    }
+  };
+
+  // Run by the stack as soon as it has moved the plane (see
+  // `ZoneSectionState.listeners`); a section without listeners, from our own frame.
+  const latest = useRef(rebuild);
+  useLayoutEffect(() => {
+    latest.current = rebuild;
+  });
+  useLayoutEffect(() => {
+    const listeners = section?.listeners;
+    if (!listeners) return;
+    const run = () => latest.current();
+    listeners.add(run);
+    return () => {
+      listeners.delete(run);
+    };
+  }, [section]);
+  useReleasedFrame(() => {
+    if (!section?.listeners) rebuild();
+  });
+
+  return faces;
+}

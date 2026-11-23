@@ -17,8 +17,8 @@ The generator functions can be imported from `@equinor/videx-3d/generators` (def
 | **Casings** | casings | generateCasings | - position-logs<br/>- casings |
 | **CompletionAnnotations** | completionToolAnnotations | generateCompletionToolAnnotations | - position-logs<br/>- completion-tools |
 | **CompletionTools** | completionTools | generateCompletionTools | - position-logs<br/>- completion-tools |
-| **Chunk** | surfaceChunk | generateSurfaceChunk | - surface-values<br/>- relief-meta, relief-values _(with `ChunkStack.relief`: the sea bed on the relief, see [tiles](./tiles.md))_ |
-| **Chunk** / **ChunkStack** _(wellbore cut source)_ | wellboreOutline | generateWellboreOutline | - wellbore-headers<br/>- position-logs<br/>- surface-values |
+| **Zone** | surfaceZone | generateSurfaceZone | - surface-values<br/>- relief-meta, relief-values _(with `ZoneStack.relief`: the sea bed on the relief, see [tiles](./tiles.md))_ |
+| **Zone** / **ZoneStack** _(wellbore cut source)_ | wellboreOutline | generateWellboreOutline | - wellbore-headers<br/>- position-logs<br/>- surface-values |
 | **WellboreFormationColumn** | wellboreFormationColumn | generateWellboreFormationColumnGeometries | - position-logs<br/>- formations |
 | **DepthMarkers** | depthMarkers | generateDepthMarkers | - position-logs |
 | **Perforations** | perforationSymbols | generatePerforations | - position-logs<br/>- perforations |
@@ -132,7 +132,7 @@ Each provider connects to the store on its own port:
 
 ```tsx
 <GeneratorsProvider registry={registry}>
-  <ChunkStack /* builds on the first worker */ />
+  <ZoneStack /* builds on the first worker */ />
   <GeneratorsProvider registry={sceneryRegistry /* sceneryReliefTile */}>
     <Scenery>
       <SceneryStage /* ... */ />

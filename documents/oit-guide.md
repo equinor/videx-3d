@@ -166,7 +166,7 @@ The fragment shader must provide `vViewPosition` (lit chunks like
 
 `oit.glsl` also provides `oitInTail()`: true when the fragment is resolved in the
 weighted tail, i.e. only seen through the front layer. Use it to skip costly shading
-there (`ChunkMaterial` skips its procedural detail).
+there (`ZoneMaterial` skips its procedural detail).
 
 ### 2c. `<OitMaterial>` — declarative inline materials
 
@@ -379,7 +379,7 @@ exact and the wider tail slab is not needed.
 
 ### What a transparent frame costs
 
-Measured on a 33-layer chunk column (2026-10-14, Intel Iris Xe, opacity 0.75, chunk
+Measured on a 33-layer zone column (2026-10-14, Intel Iris Xe, opacity 0.75, zone
 LOD at 2 px), GPU ms per render target:
 
 | View | Opaque | Min-depth | Tail | Composite + front | SMAA | Total |
@@ -639,7 +639,7 @@ after the pipeline), rather than relying on `toneMapped = false`.
 
   Today the only remedy is to keep `opacity` strictly below 1 as a stand-in for the
   PEAK alpha, which works but states something false about the material and is
-  enforced by nothing. Two components need it: `Chunk`'s inference overlay
+  enforced by nothing. Two components need it: `Zone`'s inference overlay
   (`createInferenceMaterial`, which clamps to `0.999`) and `PositionMarkers`, which
   is parked for the same reason (see `oit-component-status.md`).
 
@@ -658,7 +658,7 @@ after the pipeline), rather than relying on `toneMapped = false`.
   it MUST rasterise `position` as given — one that assembles its position from other
   attributes has to declare and write `vViewPosition` itself.
 
-  This bit the `Chunk` inference overlay: a chunk cap ships `xz` + `y` and *no*
+  This bit the `Zone` inference overlay: a zone cap ships `xz` + `y` and *no*
   `position` (`buildStackGeometries` deletes it after computing normals and bounds),
   so every fragment of the overlay reported the model origin's depth. A constant OIT
   depth is not a subtle error — it is stamped across the overlay's whole footprint in

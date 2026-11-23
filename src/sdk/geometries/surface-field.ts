@@ -5,7 +5,7 @@
  *
  * Two reasons this exists:
  *
- * - **Lowering the barrier.** Seeing chunks work should not require mapping a field
+ * - **Lowering the barrier.** Seeing zones work should not require mapping a field
  *   into our data types first.
  * - **Testing what one dataset cannot show.** Real coverage varies enormously —
  *   hole area in the demo set spans three orders of magnitude — so calibrating
@@ -15,7 +15,7 @@
  * ⭐ Generated surfaces enter the system as DATA, in the same encoding as real
  * surfaces (see {@link generateSurfaceValues}), so they exercise the real path —
  * the null sentinel, the coverage mask, the hole fill — rather than a parallel one.
- * They are NOT the same thing as a chunk's synthetic *layers*, which are data-free
+ * They are NOT the same thing as a zone's synthetic *layers*, which are data-free
  * boundaries evaluated during a build.
  *
  * Deliberately free of any three.js import: this runs inside the (inlined) workers
@@ -167,7 +167,7 @@ export type GeneratedSurface = {
  * the coverage mask and the hole fill — a generator that handed over plain depths
  * with `NaN` holes would test a path no real data ever takes.
  *
- * `referenceDepth` is the realized MAXIMUM depth, matching the convention the chunk
+ * `referenceDepth` is the realized MAXIMUM depth, matching the convention the zone
  * spec uses (`referenceDepth: meta.max`), so values land in `[0, max - min]`.
  *
  * Node positions come from {@link surfaceGridToWorld}, the same mapping used to read
@@ -210,7 +210,7 @@ export function generateSurfaceValues(
   }
 
   // Nothing mapped: still a valid (empty) surface rather than a throw, so a story
-  // with a bad boundary shows an empty chunk instead of failing to load.
+  // with a bad boundary shows an empty zone instead of failing to load.
   if (covered === 0) {
     return {
       values: new Float32Array(nx * ny).fill(nullValue),

@@ -4,7 +4,7 @@
  * screen as well as in the mesh.
  *
  * ⭐ A triangulator emits triangles in whatever order its refinement created
- * them, and the GPU pays for that scatter: on a transparent 34-layer chunk the
+ * them, and the GPU pays for that scatter: on a transparent 34-layer zone the
  * same triangles drawn in this order took 25% less GPU time.
  *
  * Deterministic, and idempotent: sorting a sorted list returns it unchanged.

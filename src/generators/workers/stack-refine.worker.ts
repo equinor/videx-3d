@@ -19,9 +19,9 @@ import type {
  * putting a layer's grid onto the common grid, and running the greedy TIN
  * refinement on it — entirely off the data store and free of three.js. Both are
  * fully independent between layers, which is what makes them poolable. Created by
- * `StackWorkerPool` inside the chunk generator and shipped inlined in the library
+ * `StackWorkerPool` inside the zone generator and shipped inlined in the library
  * bundle (`?worker&inline`), so host apps need no worker configuration. It also
- * rasterizes wellbore outlines (`'outline'`), which are independent per chunk, and
+ * rasterizes wellbore outlines (`'outline'`), which are independent per zone, and
  * scans each layer pair's termination loops (`'terminations'`), and builds each
  * cap's normals, index and bounds (`'cap'`), and triangulates the tiles of a
  * tiled tessellation (`'tile'`), and samples each layer from its own surface

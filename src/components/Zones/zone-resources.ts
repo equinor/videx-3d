@@ -1,0 +1,256 @@
+import { BufferGeometry } from 'three';
+import { SurfaceZone } from '../../sdk';
+
+/**
+ * What the built zones currently on the main thread cost.
+ *
+ * ⭐ A zone is by far the largest thing the library puts on the main thread: at
+ * field scale every layer carries a full copy of the shared tessellation, so a
+ * column of 30+ layers runs to hundreds of MB. This is what makes that visible —
+ * `zones` above one means a rebuild has both the old and the new alive (which is
+ * unavoidable, the new one is unpacked before React drops the old), and a `zones`
+ * that keeps climbing means one is being retained.
+ */
+export type ZoneResourceStats = {
+  /** built zones currently held */
+  zones: number;
+  /** bytes of their geometry, indices and section channels */
+  bytes: number;
+  /** the highest `bytes` seen since load */
+  peakBytes: number;
+  /** vertices across every drawn cap and wall */
+  vertices: number;
+  /** triangles across every drawn cap and wall */
+  triangles: number;
+  /**
+   * Bytes held by the SECTION cut-face buffers.
+   *
+   * ⭐ Worth its own line: they are preallocated and grown by re-cutting, so they
+   * keep climbing after a build has settled — a moving plane finds ever larger
+   * faces — which reads as a leak in a heap graph but is a high-water mark.
+   */
+  sectionBytes: number;
+  /** zones built since load */
+  builds: number;
+  /**
+   * Built, minus reclaimed by the GC, minus live — i.e. zones that are neither
+   * in use nor collectable.
+   *
+   * ⭐ The number that settles "is it a leak or is it garbage": force a collection
+   * (DevTools → Memory → collect garbage) and read it. Anything above 0 afterwards
+   * is retained by something. ⚠️ `FinalizationRegistry` callbacks are not prompt,
+   * so without an explicit collection this over-reports.
+   */
+  stranded: number;
+};
+
+/** The shape {@link registerSectionTargets} needs; see `StackSectionTarget`. */
+type SectionFaceLike = {
+  target: { capacity: number; inferred: unknown | null };
+};
+
+// Accounting is OFF by default: measuring a zone walks every attribute of every
+// mesh, so a shipped app pays nothing for it. A diagnostic view turns it on while
+// mounted (see `setZoneTracking`).
+let tracking = false;
+
+/**
+ * Enable or disable the built-zone accounting (see {@link zoneResourceStats}).
+ * Off by default; a diagnostic view (e.g. `ResourceMonitor`) turns it on while it
+ * is mounted. `untrackZone` is unaffected — it always balances a zone that WAS
+ * tracked — so toggling this never strands a count.
+ *
+ * @group Components
+ */
+export function setZoneTracking(on: boolean): void {
+  tracking = on;
+}
+
+const sectionSets = new Set<readonly SectionFaceLike[]>();
+
+/**
+ * Count a set of cut faces while it is live. Summed on demand rather than at
+ * registration, because a target's capacity grows in place.
+ */
+export function registerSectionTargets(
+  faces: readonly SectionFaceLike[],
+): () => void {
+  if (!tracking) return () => {};
+  sectionSets.add(faces);
+  return () => {
+    sectionSets.delete(faces);
+  };
+}
+
+function sectionBytes() {
+  let total = 0;
+  for (const faces of sectionSets) {
+    for (const face of faces) {
+      // position 3 + normal 3 + uv 2 + wallV 1 (+ inferred 1) floats per vertex
+      const floats = 9 + (face.target.inferred ? 1 : 0);
+      total += face.target.capacity * floats * 4;
+    }
+  }
+  return total;
+}
+
+type Measured = { bytes: number; vertices: number; triangles: number };
+
+let zones = 0;
+let bytes = 0;
+let peakBytes = 0;
+let vertices = 0;
+let triangles = 0;
+let builds = 0;
+let collected = 0;
+
+// The held value must not reference the zone, or it could never be collected.
+const finalizer =
+  typeof FinalizationRegistry === 'undefined'
+    ? null
+    : new FinalizationRegistry<number>(() => {
+        collected++;
+      });
+
+const measured = new WeakMap<object, Measured>();
+
+function geometryBytes(geometry: BufferGeometry, seen: Set<ArrayBufferLike>) {
+  let total = 0;
+  const add = (buffer: ArrayBufferLike) => {
+    // Layers that kept the full triangle set SHARE one index buffer, and a
+    // dropped layer shares its neighbour's attributes — counting either twice
+    // would report several times the real cost.
+    if (seen.has(buffer)) return;
+    seen.add(buffer);
+    total += buffer.byteLength;
+  };
+  const index = geometry.getIndex();
+  if (index) add(index.array.buffer);
+  for (const name in geometry.attributes) {
+    add(geometry.getAttribute(name).array.buffer);
+  }
+  return total;
+}
+
+/** Bytes a built zone holds, counting each shared buffer once. */
+export function zoneBytes(zone: SurfaceZone): number {
+  return measure(zone).bytes;
+}
+
+/**
+ * How long a zone's materials, and its sea's, are kept once let go, in ms
+ * (`releaseMaterial`'s `linger`). A rebuild lets the old zone go at once (see `Zone`), and
+ * the next one's materials, made as it comes in, then take over the programs they share
+ * instead of compiling them again: about 27 programs a rebuild in the FieldColumn story
+ * before. A rebuild slower than this compiles them again. A material holds no geometry.
+ */
+export const ZONE_MATERIAL_LINGER = 5000;
+
+/**
+ * Dispose a geometry AND drop its arrays.
+ *
+ * ⭐ `dispose()` only releases the GPU side. The CPU arrays go when the last
+ * reference does — and a React fiber's `alternate`, a memo's dependency array or
+ * a sampler entry can all outlive the swap. At field scale one zone is hundreds
+ * of MB, so the payload is dropped explicitly: whatever still points here then
+ * holds an empty husk rather than a copy of the field.
+ *
+ * ⚠️ The geometry is unusable afterwards. Only call it where the meshes that drew
+ * it are already unmounted.
+ *
+ * @group Components
+ */
+export function releaseGeometry(geometry: BufferGeometry): void {
+  geometry.dispose();
+  for (const name in geometry.attributes) geometry.deleteAttribute(name);
+  geometry.setIndex(null);
+  geometry.morphAttributes = {};
+  geometry.clearGroups();
+  geometry.boundingBox = null;
+  geometry.boundingSphere = null;
+}
+
+function measure(zone: SurfaceZone): Measured {
+  const seen = new Set<ArrayBufferLike>();
+  let total = 0;
+  let verts = 0;
+  let tris = 0;
+  const add = (view: ArrayBufferView | undefined | null) => {
+    if (!view || seen.has(view.buffer)) return;
+    seen.add(view.buffer);
+    total += view.buffer.byteLength;
+  };
+  const count = (geometry: BufferGeometry) => {
+    // Caps carry no `position` (split xz + y layout); fall back to `xz` for the
+    // vertex count.
+    const positionCount =
+      geometry.getAttribute('position')?.count ??
+      geometry.getAttribute('xz')?.count ??
+      0;
+    verts += positionCount;
+    const index = geometry.getIndex();
+    tris += (index ? index.count : positionCount) / 3;
+  };
+  for (const mesh of zone.surfaces) {
+    total += geometryBytes(mesh.geometry, seen);
+    count(mesh.geometry);
+    add(mesh.patchIndex);
+    mesh.levels?.forEach(add);
+    mesh.tileStarts?.forEach(add);
+    mesh.patchLevels?.forEach(add);
+    mesh.patchTileStarts?.forEach(add);
+    add(mesh.normalMap?.data);
+  }
+  for (const wall of zone.walls) {
+    total += geometryBytes(wall.geometry, seen);
+    count(wall.geometry);
+  }
+  const section = zone.section;
+  if (section) {
+    add(section.positionsXZ);
+    add(section.indices);
+    section.heights.forEach(add);
+    section.intervals.forEach(add);
+    section.gaps?.forEach(add);
+    section.inferred?.forEach(add);
+  }
+  return { bytes: total, vertices: verts, triangles: Math.round(tris) };
+}
+
+/** Start counting a built zone (call once the geometries exist). */
+export function trackZone(zone: SurfaceZone): void {
+  if (!tracking || measured.has(zone)) return;
+  const size = measure(zone);
+  measured.set(zone, size);
+  zones++;
+  bytes += size.bytes;
+  vertices += size.vertices;
+  triangles += size.triangles;
+  peakBytes = Math.max(peakBytes, bytes);
+  finalizer?.register(zone, ++builds);
+}
+
+/** Stop counting a zone (call where it is disposed). */
+export function untrackZone(zone: SurfaceZone): void {
+  const size = measured.get(zone);
+  if (size === undefined) return;
+  measured.delete(zone);
+  zones--;
+  bytes -= size.bytes;
+  vertices -= size.vertices;
+  triangles -= size.triangles;
+}
+
+/** What the built zones currently cost (diagnostics). */
+export function zoneResourceStats(): ZoneResourceStats {
+  return {
+    zones,
+    bytes,
+    peakBytes,
+    vertices,
+    triangles,
+    sectionBytes: sectionBytes(),
+    builds,
+    stranded: Math.max(0, builds - collected - zones),
+  };
+}

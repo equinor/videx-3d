@@ -124,7 +124,7 @@ describe('several sources', () => {
     const sky = store.source('sky');
     const model = store.source('model');
     // Ready before the run: not part of it.
-    model(report(done('chunk')));
+    model(report(done('zone')));
     sky(report(working('shaders', 0.5)));
     expect(store.getSnapshot().all).toMatchObject({
       building: true,
@@ -134,7 +134,7 @@ describe('several sources', () => {
       current: 'sky',
     });
 
-    model(report(working('chunk', 0)));
+    model(report(working('zone', 0)));
     const both = store.getSnapshot().all;
     // Never backwards: the model joining at 0 does not pull it down.
     expect(both).toMatchObject({ session: 1, percent: 50, current: 'model' });
@@ -146,7 +146,7 @@ describe('several sources', () => {
       building: true,
       percent: 50,
     });
-    model(report(done('chunk', 'failed')));
+    model(report(done('zone', 'failed')));
     expect(store.getSnapshot().all).toMatchObject({
       building: false,
       percent: 100,
@@ -159,7 +159,7 @@ describe('several sources', () => {
     const store = createProgressStore();
     store.source('sky', { group: 'scene' })(report(working('shaders', 0.2)));
     store.source('relief', { group: 'scene' })(report(done('tiles')));
-    store.source('model', { group: 'data' })(report(working('chunk', 0.6)));
+    store.source('model', { group: 'data' })(report(working('zone', 0.6)));
     const { groups, all } = store.getSnapshot();
     expect(Object.keys(groups)).toEqual(['scene', 'data']);
     expect(groups.scene).toMatchObject({ percent: 20, sources: ['sky'] });
@@ -170,7 +170,7 @@ describe('several sources', () => {
   it('selects one source, one group, or every source', () => {
     const store = createProgressStore();
     store.source('sky', { group: 'scene' })(report(working('shaders', 0.2)));
-    store.source('model')(report(working('chunk', 0.6)));
+    store.source('model')(report(working('zone', 0.6)));
     const snapshot = store.getSnapshot();
     expect(selectProgress(snapshot)?.sources.map(s => s.key)).toEqual([
       'sky',
@@ -229,7 +229,7 @@ describe('describeProgress', () => {
   it('heads a run with the one source that took part, and sums only its stats', () => {
     const store = createProgressStore();
     store.source('model', { name: 'Model' })(
-      report({ ...done('chunk'), stats: { tiles: 4 } }),
+      report({ ...done('zone'), stats: { tiles: 4 } }),
     );
     const sky = store.source('sky', {
       name: 'Scenery',

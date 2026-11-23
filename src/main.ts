@@ -3,7 +3,7 @@
  */
 export * from './components/Annotations';
 export * from './components/CameraTargetMarker/CameraTargetMarker';
-export * from './components/Chunks';
+export * from './components/Zones';
 export * from './components/Distance';
 export * from './components/EventEmitter';
 export * from './components/Grids';

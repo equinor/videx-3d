@@ -1,5 +1,5 @@
 /**
- * A unit of work a progress source reports: a chunk being built, the sky's shaders, the
+ * A unit of work a progress source reports: a zone being built, the sky's shaders, the
  * relief's tiles.
  *
  * @group Components
@@ -144,7 +144,7 @@ export type ProgressSnapshot = {
 };
 
 /**
- * Holds progress outside the R3F canvas, from any number of sources: a `ChunkStack`, a
+ * Holds progress outside the R3F canvas, from any number of sources: a `ZoneStack`, a
  * `Scenery`, your own loaders. Each reports through {@link ProgressStore.source}; read it
  * with `useProgress`, `Progress` or `ProgressPopup` anywhere in the host's DOM.
  *
