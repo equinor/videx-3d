@@ -2,7 +2,7 @@ import { DataTexture, FloatType, RGBAFormat, RGFormat } from 'three';
 import { brightStars } from '../../sdk/utils/bright-stars';
 
 /** Cells along each edge of a cube face in the catalogue's grid over the sky. */
-export const SKY_STAR_CELLS = 32;
+const SKY_STAR_CELLS = 32;
 /** How far from a star (radians) it is still drawn: it is listed in every cell this near it. */
 export const SKY_STAR_MARGIN = (0.5 * Math.PI) / 180;
 // The sampled circle a star's margin is listed by.

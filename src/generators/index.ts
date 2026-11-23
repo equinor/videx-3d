@@ -13,7 +13,7 @@ export * from './generator-supersede';
 export * from './geo-tube-nodes-generator';
 export * from './overlay-tile-generator';
 export * from './perforations-generator';
-export * from './perimieter-generator';
+export * from './perimeter-generator';
 export * from './position-markers-generator';
 export * from './shoes-generator';
 export * from './scenery-relief-tile-generator';

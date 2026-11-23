@@ -360,24 +360,6 @@ export const formationLoader = (store: Store) =>
     },
   });
 
-export const stratColumnLoader = (store: Store) =>
-  new DataLoader(store, {
-    preloaded: true,
-    init: async () => {
-      const data = await get('/data/strat-columns.json');
-      return Object.keys(data).map(key => [key, data[key]]);
-    },
-  });
-
-export const picksLoader = (store: Store) =>
-  new DataLoader(store, {
-    preloaded: true,
-    init: async () => {
-      const data = await get('/data/picks.json');
-      return Object.keys(data).map(key => [key, data[key]]);
-    },
-  });
-
 /*
   This function will generate dummy data based on an existing seismic slice.
   This means that all wellbores will read from the same slice, but adapt the

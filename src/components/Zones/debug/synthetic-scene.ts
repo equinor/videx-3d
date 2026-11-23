@@ -5,7 +5,7 @@ import { convexHull2D } from '../../../sdk/utils/polyline-2d';
 export type HullShape = 'disc' | 'blob' | 'sliver' | 'wedge';
 
 /** Obstacle shapes about the origin, roughly unit length along x, before stretching and turning. */
-export const HULL_SHAPES: Record<HullShape, Vec2[]> = {
+const HULL_SHAPES: Record<HullShape, Vec2[]> = {
   disc: Array.from({ length: 16 }, (_, k) => {
     const a = (k / 16) * Math.PI * 2;
     return [Math.cos(a) / 2, Math.sin(a) / 2] as Vec2;
@@ -81,7 +81,7 @@ export function syntheticObstacle(
 }
 
 /** A polyline from `a` to `b` at ~`step` spacing, both ends kept. */
-export function segment(a: Vec2, b: Vec2, step: number): Vec2[] {
+function segment(a: Vec2, b: Vec2, step: number): Vec2[] {
   const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step));
   const out: Vec2[] = [];
   for (let k = 0; k <= n; k++) {

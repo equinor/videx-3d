@@ -277,7 +277,7 @@ type SceneryStageReliefTilesProps = {
 };
 
 /** A region a relief drawn from tiles hands out its ground over (see `grounds`). */
-export type SceneryReliefTileGroundRequest = {
+type SceneryReliefTileGroundRequest = {
   bounds: SceneryStageBounds;
   onGround: (clip: HeightFieldClip | null) => void;
 };

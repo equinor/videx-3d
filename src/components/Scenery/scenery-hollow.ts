@@ -38,27 +38,27 @@ import type { SceneryMaterial } from './scenery-material';
  * which they never hide. Both write depth: the relief's overview, drawn after, meets them by
  * depth too.
  */
-export const SCENERY_HOLLOW_ORDER = { walls: -0.2, floor: -0.1 };
+const SCENERY_HOLLOW_ORDER = { walls: -0.2, floor: -0.1 };
 
 /** Seconds over which the walls' shade under the lid eases in and out (setView). */
-export const SCENERY_HOLLOW_SHUT_EASE = 0.3;
+const SCENERY_HOLLOW_SHUT_EASE = 0.3;
 
 /** Each style as `uHollowLook.z` gives it to the shaders (hollow.glsl). */
-export const SCENERY_HOLLOW_STYLE_INDEX: Record<SceneryHollowStyle, number> = {
+const SCENERY_HOLLOW_STYLE_INDEX: Record<SceneryHollowStyle, number> = {
   molten: 0,
   calm: 1,
   simple: 2,
 };
 
 /** The embers' pulse's two periods, in seconds (hollowPulseAt, hollow-look.glsl). */
-export const SCENERY_HOLLOW_PULSE_PERIODS = [7, 17] as const;
+const SCENERY_HOLLOW_PULSE_PERIODS = [7, 17] as const;
 
 /**
  * The embers' pulse `time` seconds in, as `uHollowPulse` takes it: its two waves' phases,
  * wrapped to a turn so they keep their precision, and how far it dims (`depth`, a share).
  * Where it is in its beat is the shader's (hollowPulseAt), by place.
  */
-export function sceneryHollowPulse(
+function sceneryHollowPulse(
   time: number,
   depth: number,
   target: Vector3,
@@ -77,7 +77,7 @@ export function sceneryHollowPulse(
  * (SceneryHollowParts.cull): so many triangles circle the camera that their vertices alone
  * cost about as much as their pixels.
  */
-export const SCENERY_HOLLOW_WALL_SECTORS = 16;
+const SCENERY_HOLLOW_WALL_SECTORS = 16;
 
 // Round the rim: the walls' columns, and the floor's outer ring, which meets their foot.
 const SEGMENTS = 1024;
@@ -172,7 +172,7 @@ export function sceneryHollowLook(
  * north), as a share of its radius: {@link SCENERY_HOLLOW_RIM}'s waves. hollow.glsl's
  * `hollowRimScale`.
  */
-export function sceneryHollowRimScale(turn: number) {
+function sceneryHollowRimScale(turn: number) {
   let scale = 1;
   for (const [k, a, p] of SCENERY_HOLLOW_RIM) scale += a * Math.sin(k * turn + p);
   return scale;
@@ -210,11 +210,11 @@ export function sceneryHollowInside(
 }
 
 /** The share of its radius the hollow's rim reaches in to at its furthest (SCENERY_HOLLOW_RIM). */
-export const SCENERY_HOLLOW_RIM_LEAST =
+const SCENERY_HOLLOW_RIM_LEAST =
   1 - SCENERY_HOLLOW_RIM.reduce((sum, [, share]) => sum + share, 0);
 
 /** The largest radius the rim grip drags a hollow to (SceneryHollow.handle), in world units. */
-export const SCENERY_HOLLOW_RADIUS_MAX = 1500000;
+const SCENERY_HOLLOW_RADIUS_MAX = 1500000;
 
 /**
  * The radii the rim grip drags a simple hollow `floorDepth` deep between: its walls' reach and
@@ -295,9 +295,9 @@ const tileOffset = new Vector2();
 const tilePoint = new Vector3();
 
 /** The band outside the rim, as a share of its radius, over which its air thins (HOLLOW_AIR_BAND). */
-export const SCENERY_HOLLOW_AIR_BAND = 0.4;
+const SCENERY_HOLLOW_AIR_BAND = 0.4;
 /** The camera's altitudes over which the sky's drained air fades out: above, the sky is space. */
-export const SCENERY_HOLLOW_AIR_HEIGHTS = [50000, 150000] as const;
+const SCENERY_HOLLOW_AIR_HEIGHTS = [50000, 150000] as const;
 
 /**
  * How much of the air about a camera `inside` the open hollow's rim (sceneryHollowInside),
@@ -499,7 +499,7 @@ const pow2Ceil = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(n, 1)));
  * (the floor's distance in from the walls' foot; the walls' share of the way down, 0 to 1) and
  * `hollowOpen` (how open the walls are to the hollow, 0 in a crease; 1 on the floor).
  */
-export function createSceneryHollowGeometry(
+function createSceneryHollowGeometry(
   globe: Globe,
   { radius, floorDepth, bed, simple = false }: SceneryHollowShape,
 ) {

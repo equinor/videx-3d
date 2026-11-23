@@ -64,7 +64,7 @@ void main() {
  * some way over the sea's surface (or the abyss level) for the air, and some way under it for
  * the water. The subsurface's from the origin.
  */
-export function sceneryBakePosition(
+function sceneryBakePosition(
   source: SceneryMaterial,
   zone: SceneryZone,
   target: Vector3,

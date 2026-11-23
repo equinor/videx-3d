@@ -391,7 +391,7 @@ export function skySunPosition(args: SceneryArgs) {
 }
 
 /** A Scenery's `observer` from {@link SceneryArgs}: the time and place, when the sun is set from them. */
-export function skyObserverFromArgs(args: SceneryArgs): SkyObserver | null {
+function skyObserverFromArgs(args: SceneryArgs): SkyObserver | null {
   const date = args.sunFromTime ? skySunDate(args) : null;
   return (
     date && {
@@ -403,7 +403,7 @@ export function skyObserverFromArgs(args: SceneryArgs): SkyObserver | null {
 }
 
 /** {@link SceneryArgs} for `date` at a place: its local solar date and hour. */
-export function skySunArgsAt(
+function skySunArgsAt(
   date: Date,
   latitude: number,
   longitude: number,
@@ -494,7 +494,7 @@ export const reportReliefProgress = storyProgress.source('relief', {
 });
 
 /** A Scenery's `sun` from {@link SceneryArgs}. */
-export const skySunFromArgs = (args: SceneryArgs): SkySun => ({
+const skySunFromArgs = (args: SceneryArgs): SkySun => ({
   ...skySunPosition(args),
   intensity: args.sunIntensity,
   size: args.sunSize,
@@ -542,11 +542,11 @@ export const sceneryGraticuleFromArgs = (
 };
 
 /** A Scenery's `moon` from {@link SceneryArgs}. */
-export const skyMoonFromArgs = (args: SceneryArgs): SkyMoon | false =>
+const skyMoonFromArgs = (args: SceneryArgs): SkyMoon | false =>
   args.moon && { intensity: args.moonIntensity };
 
 /** A Scenery's `stars` from {@link SceneryArgs}. */
-export const skyStarsFromArgs = (args: SceneryArgs): SkyStars | false =>
+const skyStarsFromArgs = (args: SceneryArgs): SkyStars | false =>
   args.stars && { brightness: args.starBrightness, latitude: args.sunLatitude };
 
 /** The swell of {@link SceneryArgs}, as a weather has it: none at no height. */
@@ -555,7 +555,7 @@ export const foamLifeOf = (
   choice: 'auto' | 'on' | 'off',
 ): boolean | undefined => (choice === 'auto' ? undefined : choice === 'on');
 
-export const swellFromArgs = (args: SceneryArgs): WeatherSwell[] =>
+const swellFromArgs = (args: SceneryArgs): WeatherSwell[] =>
   args.swellHeight > 0
     ? [
         {

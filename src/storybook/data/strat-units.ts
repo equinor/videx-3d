@@ -28,7 +28,7 @@ export type StratUnit = {
  * config. `below` is the unit the surface is the TOP of — the interval underneath
  * it — and `above` the unit it is the BASE of.
  */
-export const STRAT_UNITS: Readonly<
+const STRAT_UNITS: Readonly<
   Record<string, { below: StratUnit | null; above: StratUnit | null }>
 > = Object.freeze(
   storyArgs.stratUnits as Record<
@@ -38,17 +38,17 @@ export const STRAT_UNITS: Readonly<
 );
 
 /** The unit directly BELOW a horizon — the one it is the top of. */
-export function stratUnitBelow(name: string | undefined): StratUnit | null {
+function stratUnitBelow(name: string | undefined): StratUnit | null {
   return name ? (STRAT_UNITS[name]?.below ?? null) : null;
 }
 
 /** The unit directly ABOVE a horizon — the one it is the base of. */
-export function stratUnitAbove(name: string | undefined): StratUnit | null {
+function stratUnitAbove(name: string | undefined): StratUnit | null {
   return name ? (STRAT_UNITS[name]?.above ?? null) : null;
 }
 
 /** Fallback for an interval the column has no unit for. */
-export const UNKNOWN_UNIT_COLOR = '#8d8d8d';
+const UNKNOWN_UNIT_COLOR = '#8d8d8d';
 
 /** Every unit's colour, by unit name. */
 const UNIT_COLORS = storyArgs.stratUnitColors as Record<string, string>;
@@ -82,7 +82,7 @@ export function stratLayerColors(names: (string | undefined)[]): string[] {
 }
 
 /** The unit a layer shows, by the same rule as {@link stratLayerColors}. */
-export function stratLayerUnit(
+function stratLayerUnit(
   names: (string | undefined)[],
   i: number,
 ): StratUnit | null {

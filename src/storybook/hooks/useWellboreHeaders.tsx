@@ -6,7 +6,7 @@ import {
 } from '../data/extra-wellbores';
 import { get } from '../dependencies/api';
 
-export const useWellboreHeadersDict = () => {
+const useWellboreHeadersDict = () => {
   const [wellbores, setWellbores] = useState<Record<string, WellboreHeader>>(
     {},
   );

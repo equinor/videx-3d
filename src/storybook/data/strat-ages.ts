@@ -17,12 +17,12 @@ import storyArgs from '../story-args.json';
  * matching horizon — an unconformity, or a name the column does not carry — simply
  * has no entry.
  */
-export const STRAT_AGES: Readonly<Record<string, number>> = Object.freeze(
+const STRAT_AGES: Readonly<Record<string, number>> = Object.freeze(
   storyArgs.stratAges as Record<string, number>,
 );
 
 /** The unit's age, or `undefined` when the name has no match in the column. */
-export function stratAge(name: string | undefined): number | undefined {
+function stratAge(name: string | undefined): number | undefined {
   return name ? STRAT_AGES[name] : undefined;
 }
 

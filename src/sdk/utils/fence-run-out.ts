@@ -465,7 +465,7 @@ const BATTEN_MERGE_ATOMS = 4;
  *
  * @group Utils
  */
-export function freeRunBetween(
+function freeRunBetween(
   trace: Vec2[],
   a: Vec2[],
   b: Vec2[],
@@ -2081,7 +2081,7 @@ function attachHeadArm(
  *
  * @group Utils
  */
-export function buildFenceArms(
+function buildFenceArms(
   well: Vec2[],
   cores: { left: Vec2[]; right: Vec2[] },
   margin: number,

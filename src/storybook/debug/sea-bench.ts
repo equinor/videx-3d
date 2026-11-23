@@ -165,7 +165,7 @@ const named = (object: Object3D, name: string) =>
  * The draws the bench times apart, the first that matches winning. All but `sky` (the
  * background's sky and void, kept to tell the GPU's clock by) are the sea's.
  */
-export const SEA_GROUPS = {
+const SEA_GROUPS = {
   ocean: (o: Object3D) => flagged(o, 'isOceanMaterial'),
   oceanBody: (o: Object3D) => flagged(o, 'isOceanVolumeMaterial'),
   oceanBed: (o: Object3D) => flagged(o, 'isOceanBedMaterial'),
@@ -190,7 +190,7 @@ const SEA_PARTS = (Object.keys(SEA_GROUPS) as SeaGroup[]).filter(
  * The bench for the sea drawn in `get().scene`: `get` the canvas's state (`useThree`'s `get`),
  * `manager` its camera's, `poses` those the story's scene draws water across.
  */
-export function createSeaBench(
+function createSeaBench(
   get: () => RootState,
   manager: () => CameraManager | undefined,
   poses: SeaPoseName[],

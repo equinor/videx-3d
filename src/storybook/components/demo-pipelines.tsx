@@ -40,7 +40,7 @@ export type DemoFacility = {
 };
 
 /** A pipeline's colour by what it carries. */
-export const DEMO_MEDIUM_COLORS: Record<string, string> = {
+const DEMO_MEDIUM_COLORS: Record<string, string> = {
   Gas: '#e5383b',
   Oil: '#2fbf4a',
   Condensate: '#f59f00',

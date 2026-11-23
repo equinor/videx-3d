@@ -175,7 +175,7 @@ the time; they were cleared on 2026-11-04 (below).
 | --- | --- |
 | `no-shadow` (37) | Renames only. |
 | `no-object-type-as-default-prop` (15) | Default `[]` / `{}` props are module constants. One was live churn: `WellMap`'s `theme = { ...DarkTheme }` re-ran `setStyles` on every render. |
-| `jsx-no-new-function-as-prop` (7) | `useCallback`. `BoxGrid`'s inline `onChange` restarted `ObservableGroup`'s observer on every render. The callback refs in a `.map()` (`MinimapPoints`, `MinimapGeoLayer`) use `useIndexedRefs` (`src/hooks`), one stable ref callback per index. |
+| `jsx-no-new-function-as-prop` (7) | `useCallback`. `BoxGrid`'s inline `onChange` restarted `ObservableGroup`'s observer on every render. |
 | `no-accumulating-spread` (7) | `reduce` with `{ ...acc, [k]: v }` (quadratic) became `Object.fromEntries`. |
 | `no-map-spread` (6 fixed, 2 exempt) | Fresh objects are written into rather than copied; the event records in `fence-run-out` carry only the fields read. |
 | `no-unmodified-loop-condition` (3) | All three were loop-invariant guards or a flag set in a closure; hoisted or moved into the body, behaviour unchanged. |

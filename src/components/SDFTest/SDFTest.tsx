@@ -1,12 +1,9 @@
-import { extend, useFrame } from '@react-three/fiber';
-import { MeshLineGeometry, MeshLineMaterial } from 'meshline';
+import { useFrame } from '@react-three/fiber';
 import { useContext, useEffect, useMemo } from 'react';
 import { DataTexture, DoubleSide, Texture, Uniform, Vector2 } from 'three';
-import { GlyphsContext } from '../../main';
+import { GlyphsContext } from '../../contexts/GlyphsContext';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
-
-extend({ MeshLineGeometry, MeshLineMaterial });
 
 const WIDTH = 800;
 const HEIGHT = 600;

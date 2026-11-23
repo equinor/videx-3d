@@ -45,7 +45,7 @@ export type SeaSpectrumInput = {
 };
 
 /** A long swell's default spreading exponent (cos^2s): narrow. */
-export const SEA_SWELL_SPREAD = 24;
+const SEA_SWELL_SPREAD = 24;
 
 // The least wind the wind sea is reckoned from, so its peak stays finite.
 const MIN_WIND = 0.5;
@@ -145,7 +145,7 @@ function elfouhailyVariance(
  * The directional spreading of a wind sea at `w` about its peak `wp` (Mitsuyasu): the exponent
  * s of cos^2s(θ/2), narrowest at the peak, wider for shorter waves.
  */
-export function windSeaSpread(w: number, wp: number, floor = 1): number {
+function windSeaSpread(w: number, wp: number, floor = 1): number {
   const sp = 17;
   const ratio = w / wp;
   const s = ratio <= 1 ? sp * Math.pow(ratio, 5) : sp * Math.pow(ratio, -2.5);
@@ -156,7 +156,7 @@ export function windSeaSpread(w: number, wp: number, floor = 1): number {
  * cos^2s(θ/2), normalised over the circle: Γ(s+1) / (2√π Γ(s+½)), the ratio of the Gammas
  * taken as √(s + ¼) (within 1 % for s ≥ 1).
  */
-export function spreadingDensity(theta: number, s: number): number {
+function spreadingDensity(theta: number, s: number): number {
   const c = Math.cos(0.5 * theta);
   return (Math.sqrt(s + 0.25) / (2 * Math.sqrt(Math.PI))) * Math.pow(c * c, s);
 }

@@ -91,10 +91,6 @@ export function createTrajectoryGeometries(section: TrajectorySegmentsType) {
   };
 }
 
-export type TrajectoryGeometries = ReturnType<
-  typeof createTrajectoryGeometries
->;
-
 /**
  * Builds an instanced single-wall tube geometry for a trajectory at the given radial
  * resolution. The per-segment centerline data is shared as an interleaved instanced

@@ -39,7 +39,7 @@ import vertexShader from './shaders/geo-tube-vertex.glsl';
 export const GEO_TUBE_RELIEF_STRIDE = 3;
 
 /** Texels along a row of {@link GeoTubeReliefGroups}' texture: two a group. */
-export const GEO_TUBE_GROUPS_WIDTH = 256;
+const GEO_TUBE_GROUPS_WIDTH = 256;
 
 type Walked = { key: number; drawn: boolean };
 
@@ -83,7 +83,7 @@ function walkTo(miss: number, relief: SceneryReliefDrawn): Walked | null {
  * chooses, a few hundred groups rather than every node. Nodes over no tile drawn are kept by
  * the tile where looking stopped, and looked for again a tile at a time.
  */
-export class GeoTubeReliefGroups {
+class GeoTubeReliefGroups {
   /**
    * two texels a group: its tile's slot, its blend, its edge mask and its parent's slot
    * (`SceneryReliefDrawn.edges`); where it lies in the tile it blends from, that tile's slot

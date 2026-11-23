@@ -93,7 +93,7 @@ export {
 } from '../../sdk/tiles/tile-lod';
 
 /** Room a {@link TilePool} keeps past its fullest layout, for tiles that grow. */
-export const TILE_POOL_HEADROOM = 0.25;
+const TILE_POOL_HEADROOM = 0.25;
 
 /**
  * One cap's index drawn at a level per tile, laid out so that a tile changing

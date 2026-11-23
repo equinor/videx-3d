@@ -10,7 +10,7 @@
  */
 
 /** Hex cells a tile's side holds about: cells smaller than a tile hold no whole repeat. */
-export const SEA_HEX_SCALE = 3.4641016;
+const SEA_HEX_SCALE = 3.4641016;
 
 /** The three copies blended at a point: their offsets in tile units, and their weights. */
 export type SeaHexTiles = {

@@ -384,7 +384,7 @@ type VolumeInternals = {
  * The bench for the clouds drawn in `get().scene`: `get` the canvas's state (`useThree`'s
  * `get`), `manager` its camera's (for poses and the orbit).
  */
-export function createCloudBench(
+function createCloudBench(
   get: () => RootState,
   manager: () => CameraManager | undefined,
 ): CloudBench {

@@ -32,7 +32,7 @@ export const CLOUD_MAP_SIZE = 1024;
  * Texels along a side of each of the type map's faces (`CloudMap.types`): some 20 km to a
  * texel. The types change over the weather systems' breadth, not their edges'.
  */
-export const CLOUD_TYPE_MAP_SIZE = 512;
+const CLOUD_TYPE_MAP_SIZE = 512;
 // Texels along a side of each of the wind's faces (cloud-map-flow.glsl): some 80 km to a texel.
 const FLOW_SIZE = 128;
 // Rows of a face of the cloud map drawn at a time (bakeCloudMap): some 1–2 ms of a mid-range
@@ -147,7 +147,7 @@ const COVER_LIFT: readonly (readonly [number, number, number, number])[] = [
  * `cover`, a share of the full weather's cloud (`COVER_LIFT`), and the share of the
  * cells' and the trades' weight it cuts (w), so they cover about that share too.
  */
-export function cloudMapLiftOf(cover: number, target = new Vector4()): Vector4 {
+function cloudMapLiftOf(cover: number, target = new Vector4()): Vector4 {
   const c = Math.min(Math.max(cover, 0), 1);
   let i = 0;
   while (i < COVER_LIFT.length - 2 && COVER_LIFT[i + 1][0] < c) i++;

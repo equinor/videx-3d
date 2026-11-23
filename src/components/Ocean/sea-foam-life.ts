@@ -19,13 +19,13 @@ import fragmentShader from './shaders/foam-life-fragment.glsl';
 import vertexShader from './shaders/foam-life-vertex.glsl';
 
 /** Texels across the foam's square. */
-export const SEA_FOAM_TEXELS = 512;
+const SEA_FOAM_TEXELS = 512;
 /**
  * The share of the whitecaps' cover that breaks afresh where the foam's life is drawn, the rest
  * being the foam they leave (`ocean-surface.glsl`'s `OCEAN_FOAM_ACTIVE`, the same): as much
  * foam in all as the whitecaps' statistical cover (measured: 3.6 % of the pixels at 15 m/s).
  */
-export const SEA_FOAM_ACTIVE = 0.47;
+const SEA_FOAM_ACTIVE = 0.47;
 // The square's size by the camera's height over the sea: about six times it, in powers of two
 // from 512 m (a metre a texel) to 2 km; its foam faded out from 400 m up to 1 km. It grows as
 // soon as the camera climbs past it, but shrinks only once the camera is well under the next

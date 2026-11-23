@@ -156,7 +156,7 @@ export type ReliefContourLabels = {
 };
 
 /** Contour labels' default font: the system's monospace, numbers of one width. */
-export const RELIEF_CONTOUR_LABEL_FONT =
+const RELIEF_CONTOUR_LABEL_FONT =
   'ui-monospace, "SF Mono", Menlo, "Consolas Bold", "Liberation Mono", monospace';
 
 /**

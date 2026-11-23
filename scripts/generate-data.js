@@ -65,7 +65,6 @@ const fileNames = [
   'completion',
   'perforations',
   'strat-columns',
-  //'picks',
   'wellbore-stratigraphy',
   'surface-meta',
 ];
@@ -111,8 +110,6 @@ console.info('> transforming perforation data');
 transformPerforations(input, output);
 console.info('> transforming strat columns');
 transformStratColumns(input, output);
-//console.info('> transforming pick data')
-//transformPicks(input, output)
 console.info('> transforming wellbore stratigraphy');
 transformWellboreStratigraphy(input, output);
 console.info('> transforming surface meta data');

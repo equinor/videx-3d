@@ -51,7 +51,7 @@ const SEA_LAYERS_LONG: readonly SeaLayerSpec[] = [
  * The layers of `medium`: the long layers, and a 7.3 m one for the waves from 1.5 m down to a
  * quarter of a metre, the ripples close up.
  */
-export const SEA_LAYERS_MEDIUM: readonly SeaLayerSpec[] = [
+const SEA_LAYERS_MEDIUM: readonly SeaLayerSpec[] = [
   ...SEA_LAYERS_LONG,
   { size: 7.3, texels: 128, waves: 256 },
 ];
@@ -111,14 +111,14 @@ const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
  * The detail octave: the finest layer's tile read this many times smaller (about the ratio of
  * one layer's size to the next), for the ripples below its band, at no bake of its own.
  */
-export const SEA_DETAIL_SCALE = 6.4;
+const SEA_DETAIL_SCALE = 6.4;
 // The detail octave's slope variance over its finest layer's, at most.
 const DETAIL_RATIO_LIMIT = 4;
 // The shortest waves reckoned with (rad/m): about a millimetre.
 const SHORT_WAVE_K_MAX = 6000;
 
 /** The layers `specs` make: each one's band from the last's top to its own 4-texel limit. */
-export function seaLayers(specs: readonly SeaLayerSpec[]): SeaLayer[] {
+function seaLayers(specs: readonly SeaLayerSpec[]): SeaLayer[] {
   let kMin = 0;
   return specs.map((spec, i) => {
     const kMax = (2 * Math.PI * (spec.texels / 4)) / spec.size;
@@ -141,8 +141,7 @@ export function seaLayers(specs: readonly SeaLayerSpec[]): SeaLayer[] {
  * default); some 900: as at sea, hours for its longest waves. A swell's waves, long, follow
  * slowest.
  */
-export const SEA_RESPONSE_ACCELERATED = 3;
-export const SEA_RESPONSE_REALISTIC = 900;
+const SEA_RESPONSE_ACCELERATED = 3;
 
 export type SeaStateOptions = {
   layers?: readonly SeaLayerSpec[];

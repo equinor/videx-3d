@@ -12,7 +12,7 @@ export const ZONE_REVEAL_BYTES_PER_FRAME = 16 * 2 ** 20;
  * The bytes drawing `geometry` would upload, counting a buffer already in `seen`
  * as free: a stack's caps share their `xz` attribute and often their index.
  */
-export function geometryUploadBytes(
+function geometryUploadBytes(
   geometry: BufferGeometry,
   seen: Set<ArrayBufferLike>,
 ): number {

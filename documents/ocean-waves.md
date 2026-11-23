@@ -40,7 +40,7 @@ GPU. The `Ocean`, the `Scenery`'s sea and a `ZoneStack`'s water draw it
   keeps the spectrum's height variance.
 - **Over time**: a wave's length and direction never change, so neither does its speed. The
   wind only eases amplitudes toward the spectrum's, each over `response` of its own periods (3
-  by default, a new wind sea in a minute or two; `SEA_RESPONSE_REALISTIC`, 900, hours). Phases
+  by default, a new wind sea in a minute or two; some 900 as at sea, hours). Phases
   follow the clock alone, φ = φ₀ − ω·t, so two seas on one clock and seed are the same sea.
 - **Outputs**: per layer, a table of (kx, kz, a·cos φ, a·sin φ) for the GPU; `heightAt` for
   floating objects, summed exactly as the GPU sums them; statistics, with the slope variance no

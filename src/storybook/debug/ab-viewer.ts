@@ -20,7 +20,7 @@ const BLOCK = 64;
 const GAIN = 8;
 
 /** How `a` and `b` differ, and a heat map of it. */
-export function abDifference(
+function abDifference(
   a: AbImage,
   b: AbImage,
 ): { stats: AbStats; heat: Uint8ClampedArray } {

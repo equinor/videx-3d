@@ -194,7 +194,7 @@ const SEABED = {
  * - `offshore` — no land at all, and the bed shoals only to `SEABED.offshoreMin`
  *   metres of water, as one away from any coast does.
  */
-export type SeabedStyle = 'shoreline' | 'offshore';
+type SeabedStyle = 'shoreline' | 'offshore';
 
 /** Where the bed's shallow end sits relative to sea level: + above, − below. */
 const shallowEnd = (style: SeabedStyle) =>

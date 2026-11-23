@@ -19,16 +19,16 @@ import type { Label } from './types';
  * How much contour labels are wanted where labels meet on screen (`LabelLayer`'s
  * `priority`): below data labels (`GeoLabels`, 0), above the graticule's names (−1).
  */
-export const RELIEF_CONTOUR_LABEL_PRIORITY = -0.5;
+const RELIEF_CONTOUR_LABEL_PRIORITY = -0.5;
 
 /** The least a contour label reads whole at, CSS pixels as seen (`LabelStyle.minPixels`): a 9 px one on a moderate slope. */
-export const RELIEF_CONTOUR_LABEL_MIN_PIXELS = 6;
+const RELIEF_CONTOUR_LABEL_MIN_PIXELS = 6;
 
 /** How squarely a contour label must face the camera to be whole (`LabelStyle.minFacing`): none toward the horizon. */
-export const RELIEF_CONTOUR_LABEL_MIN_FACING = 0.3;
+const RELIEF_CONTOUR_LABEL_MIN_FACING = 0.3;
 
 /** A contour label's lift toward the camera for each metre of its distance (`LabelStyle.liftPerDistance`). */
-export const RELIEF_CONTOUR_LABEL_LIFT = 0.02;
+const RELIEF_CONTOUR_LABEL_LIFT = 0.02;
 
 /** The contour lines a look labels (`ReliefContours.labels`). */
 export type ContourLabelLook = {

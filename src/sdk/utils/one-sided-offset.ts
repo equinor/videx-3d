@@ -552,7 +552,7 @@ const COVERAGE_RATIO_MARGIN = 2;
  * seat at half a diameter of setback; 4 lifts the batten 200–300 m off a big hull (its standoff grows
  * with the atom) and 16 chords the ring on small hulls.
  */
-export const RING_BATTEN_ATOMS = 8;
+const RING_BATTEN_ATOMS = 8;
 
 /** Bending-length multiple of a batten with no ring to round, on top of `battenStiffness`. */
 export const FREE_BATTEN_STIFFNESS = 2;
@@ -1348,7 +1348,7 @@ export const obstacleHull = (hull: Vec2[]): Vec2[] =>
  *
  * @group Utils
  */
-export const planSpanOf = (well: Vec2[]): number => {
+const planSpanOf = (well: Vec2[]): number => {
   const hull = convexHull2D(well);
   return hull.length >= 2 ? hullDiameter(hull) : 0;
 };
@@ -1362,7 +1362,7 @@ export const planSpanOf = (well: Vec2[]): number => {
  *
  * @group Utils
  */
-export const dilateConvex = (
+const dilateConvex = (
   hull: Vec2[],
   d: number,
   miterLimit: number,
@@ -1413,7 +1413,7 @@ export const dilateConvex = (
  *
  * @group Utils
  */
-export function computeOffsetRuns(
+function computeOffsetRuns(
   well: Vec2[],
   side: FenceSideName,
   margin: number,

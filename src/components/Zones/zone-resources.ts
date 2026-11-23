@@ -132,11 +132,6 @@ function geometryBytes(geometry: BufferGeometry, seen: Set<ArrayBufferLike>) {
   return total;
 }
 
-/** Bytes a built zone holds, counting each shared buffer once. */
-export function zoneBytes(zone: SurfaceZone): number {
-  return measure(zone).bytes;
-}
-
 /**
  * How long a zone's materials, and its sea's, are kept once let go, in ms
  * (`releaseMaterial`'s `linger`). A rebuild lets the old zone go at once (see `Zone`), and

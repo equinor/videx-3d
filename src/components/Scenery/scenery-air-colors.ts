@@ -20,7 +20,7 @@ import { renderAside } from '../../sdk/utils/render-aside';
 import fragmentShader from './shaders/sky-air-colors-fragment.glsl';
 
 /** Bearings round the camera the air's colours are drawn for: 0.7° apart. */
-export const SKY_AIR_BEARINGS = 512;
+const SKY_AIR_BEARINGS = 512;
 // Its rows: the horizon's colour, the sky some 25° up, the sky overhead.
 const ROWS = 3;
 

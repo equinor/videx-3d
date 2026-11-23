@@ -17,7 +17,7 @@ import { createSceneryGeometry } from './scenery-material';
 import fragmentShader from './shaders/cloud-noise-volume.glsl';
 
 // Texels along a side of the shape volume.
-export const CLOUD_SHAPE_SIZE = 128;
+const CLOUD_SHAPE_SIZE = 128;
 
 const vertexShader = /* glsl */ `
 void main() {
