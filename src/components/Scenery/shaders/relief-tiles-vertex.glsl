@@ -10,6 +10,7 @@
 #include ../../../sdk/materials/shaderLib/globe.glsl
 #include ../../../sdk/materials/shaderLib/geo-tile.glsl
 #include ../../../sdk/materials/shaderLib/tile-edges.glsl
+#include ../../../sdk/materials/shaderLib/depth.glsl
 
 uniform highp sampler2DArray uReliefTileHeights;
 uniform float uReliefTileCells;
@@ -126,6 +127,6 @@ void main() {
   gl_Position = projectionMatrix * view;
   // ⚠️ Far off, clip z rounds past w in fp32 (a near plane of centimetres, a far one of
   // thousands of km) and clips vertices at random; a logarithmic depth is the fragment's own.
-  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-7));
+  gl_Position = depthInsideFarClip(gl_Position, 1e-7);
   #include <logdepthbuf_vertex>
 }

@@ -1,5 +1,6 @@
 #include <common>
 #include <packing>
+#include ../../shaderLib/depth.glsl
 
 varying vec2 vUv;
 uniform sampler2D depthTexture;
@@ -18,14 +19,14 @@ float linearizeLogDepth(in float depth) {
   return linearizeDepth(z);
 }
 
-// assumes perspective camera
+// assumes perspective camera; writes the linear (standard) depth, whatever the buffer
 void main() {
   float depth = texture(depthTexture, vUv).r;
   float viewZ;
   #if defined( USE_LOGARITHMIC_DEPTH_BUFFER ) || defined( USE_LOGDEPTHBUF ) // USE_LOGDEPTHBUF used to support THREE version <= 0.179 
   viewZ = linearizeLogDepth(depth);
   #else
-  viewZ = depth;
+  viewZ = depthToStandard(depth);
   #endif
 
   gl_FragColor = packDepthToRGBA(viewZ);

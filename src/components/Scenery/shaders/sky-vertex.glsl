@@ -5,6 +5,7 @@
 // projection and each face of a CubeCamera alike.
 
 #include <fog_pars_vertex>
+#include ../../../sdk/materials/shaderLib/depth.glsl
 
 varying vec3 vSkyDirection;
 
@@ -22,8 +23,9 @@ void main() {
   #endif
 
   #ifdef SKY_AT_FAR
-  // On the far plane, so a depth test leaves it only where nothing nearer is drawn.
-  gl_Position = vec4(position.xy, 1.0, 1.0);
+  // On the far plane, so a depth test leaves it only where nothing nearer is drawn: z = w, or
+  // z = 0 with a reversed depth buffer.
+  gl_Position = vec4(position.xy, DEPTH_FAR_NDC, 1.0);
   #else
   gl_Position = vec4(position.xy, 0.0, 1.0);
   #endif

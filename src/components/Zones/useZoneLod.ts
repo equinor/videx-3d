@@ -10,13 +10,11 @@ import {
   Box3,
   BufferAttribute,
   BufferGeometry,
-  Camera,
   DataTexture,
   Frustum,
   Group,
   Matrix4,
   Vector3,
-  WebGLCoordinateSystem,
 } from 'three';
 import { useReleasedFrame } from '../../hooks/useReleasedFrame';
 import type { SurfaceZone, SurfaceZoneMesh } from '../../sdk';
@@ -37,6 +35,7 @@ import {
   TilePool,
   viewTilePool,
 } from './zone-lod';
+import { setFrustumFromMatrix } from '../../sdk/utils/depth-buffer';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 
 /**
@@ -247,7 +246,16 @@ export function useZoneLod(
       boxes: tiling ? zoneTileBoxes(tiling, min.y, max.y) : [bounds],
       corners: tiling
         ? zoneTileCorners(tiling)
-        : Float32Array.of(min.x, min.z, max.x, min.z, min.x, max.z, max.x, max.z),
+        : Float32Array.of(
+            min.x,
+            min.z,
+            max.x,
+            min.z,
+            min.x,
+            max.z,
+            max.x,
+            max.z,
+          ),
       yRange: [min.y, max.y] as [number, number],
     };
   }, [active, zone.surfaces, tiling]);
@@ -319,8 +327,7 @@ export function useZoneLod(
       caps.clear();
     };
   }, []);
-  const views =
-    active && built?.surfaces === zone.surfaces ? built.lod : null;
+  const views = active && built?.surfaces === zone.surfaces ? built.lod : null;
 
   const eye = useMemo(() => new Vector3(), []);
   const clip = useMemo(() => new Matrix4(), []);
@@ -368,7 +375,8 @@ export function useZoneLod(
     }
     const caps = [...cache.current.values()];
     const pools: TilePool[] = [];
-    for (const cap of caps) for (const { pool } of poolViews(cap)) pools.push(pool);
+    for (const cap of caps)
+      for (const { pool } of poolViews(cap)) pools.push(pool);
     let budget = LOD_FRAME_BUDGET;
     // Out of view a tile draws nothing; what comes into view is written now.
     if (cullOffscreen) {
@@ -379,11 +387,7 @@ export function useZoneLod(
         .multiply(group.matrixWorld);
       if (!viewed.current?.equals(clip)) {
         viewed.current = (viewed.current ?? new Matrix4()).copy(clip);
-        frustum.setFromProjectionMatrix(
-          clip,
-          WebGLCoordinateSystem,
-          (camera as Camera & { reversedDepth?: boolean }).reversedDepth,
-        );
+        setFrustumFromMatrix(frustum, clip, camera);
         for (const cap of caps) {
           tilesInView(frustum, layout.corners, cap.heights, inView);
           for (const { pool } of poolViews(cap)) {

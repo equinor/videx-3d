@@ -5,6 +5,8 @@ uniform mat4 pMatrix;
 uniform mat4 vMatrix;
 uniform vec2 resolution;
 
+#include ../../../sdk/materials/shaderLib/depth.glsl
+
 varying vec2 vUv;
 
 // A vec4 into the single-channel target: a float output makes Direct3D warn (X3206, its
@@ -24,9 +26,12 @@ void main() {
   vec3 position = instance.xyz;
   vec4 clipSpace = pMatrix * vMatrix * vec4(position, 1.0);
   vec3 ndc = clipSpace.xyz / clipSpace.w;
+  // Depths below are linear (standard) ones, whatever the buffer: a reversed one's is
+  // turned (depthToStandard), and so is this z.
+  float ndcZ = depthToStandard(depthOfClip(clipSpace)) * 2.0 - 1.0;
 
-  bool inViewSpace = (ndc.z >= 0. &&
-    ndc.z <= 1. &&
+  bool inViewSpace = (ndcZ >= 0. &&
+    ndcZ <= 1. &&
     ndc.x >= viewSpace.x &&
     ndc.x <= viewSpace.y &&
     ndc.y >= viewSpace.z &&
@@ -39,7 +44,7 @@ void main() {
 
   vec4 offsetClip = pMatrix * vMatrix * vec4(offsetPosition, 1.0);
   vec3 offsetNdc = offsetClip.xyz / offsetClip.w;
-  float pointDepth = offsetNdc.z * 0.5 + 0.5;
+  float pointDepth = depthToStandard(depthOfClip(offsetClip));
 
   // USE_LOGDEPTHBUF used to support THREE version <= 0.179 
   #if defined( USE_LOGARITHMIC_DEPTH_BUFFER ) || defined( USE_LOGDEPTHBUF ) 
@@ -58,7 +63,7 @@ void main() {
   float sceneDepth = 0.0;
   for(int y = -1; y <= 1; y++) {
     for(int x = -1; x <= 1; x++) {
-      float d = texture2D(depthTexture, uvDepth + vec2(float(x), float(y)) * texel).r;
+      float d = depthToStandard(texture2D(depthTexture, uvDepth + vec2(float(x), float(y)) * texel).r);
       sceneDepth = max(sceneDepth, d);
     }
   }

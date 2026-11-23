@@ -6,6 +6,7 @@
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
+#include ../../../sdk/materials/shaderLib/depth.glsl
 
 // Floor: where it lies across the axis, along true east and north (world units). Walls:
 // along the rim, and the height over the seabed (0 at the seabed, below it negative).
@@ -83,6 +84,6 @@ void main() {
   gl_Position = projectionMatrix * (viewMatrix * vec4(world, 1.0));
   // ⚠️ Far off, clip z rounds past w in fp32 and clips vertices at random: held at the far
   // plane, where the depth test still passes it (relief-tiles-vertex).
-  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-7));
+  gl_Position = depthInsideFarClip(gl_Position, 1e-7);
   #include <logdepthbuf_vertex>
 }

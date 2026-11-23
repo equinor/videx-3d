@@ -11,6 +11,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { DepthReadMaterial } from '../materials/depth-material';
+import { isReversedDepth } from './depth-buffer';
 import { unpackRGBAToDepth } from './packing';
 
 const postCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -26,7 +27,9 @@ let pixelBuffer: Uint8Array | null = null;
 postScene.add(postQuad);
 
 /**
- * Read-back the normalized device coordinates from a depth texture
+ * Read-back the normalized device coordinates from a depth texture: z as `camera`'s
+ * projection has it, for `Vector3.unproject` (-1 to 1 from the near plane to the far one, or 1
+ * to 0 with a reversed depth buffer).
  */
 export async function readDepth(
   depthTexture: Texture,
@@ -75,6 +78,10 @@ export async function readDepth(
       pixelBuffer,
     );
 
+    // The material writes the linear (standard) depth, whatever the buffer.
+    const reversed = isReversedDepth(camera);
+    const toNdc = (depth: number) => (reversed ? 1 - depth : depth * 2 - 1);
+
     if (idx !== undefined && Number.isFinite(idx)) {
       //console.log(Array.from(pixelBuffer))
       const depth = unpackRGBAToDepth(
@@ -83,22 +90,19 @@ export async function readDepth(
         pixelBuffer[idx + 2],
         pixelBuffer[idx + 3],
       );
-      const ndcZ = depth * 2 - 1; // normalized device coordinates
-
-      return ndcZ;
+      return toNdc(depth);
     } else {
       const ndcZs: number[] = new Array(pixelBuffer.length / 4);
       for (let i = 0; i < ndcZs.length; i++) {
         const j = i * 4;
-        ndcZs[i] =
+        ndcZs[i] = toNdc(
           unpackRGBAToDepth(
             pixelBuffer[j],
             pixelBuffer[j + 1],
             pixelBuffer[j + 2],
             pixelBuffer[j + 3],
-          ) *
-            2 -
-          1; // normalized device coordinates
+          ),
+        );
       }
       return ndcZs;
     }

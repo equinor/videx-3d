@@ -11,6 +11,7 @@ import {
   Vector3,
 } from 'three';
 import type { Globe } from '../../sdk/projection/globe';
+import { standardNdcZ } from '../../sdk/utils/depth-buffer';
 import { SceneryCutawayHandle } from './scenery-cutaway-handle';
 import { sceneryHollowPointAt } from './scenery-hollow';
 
@@ -193,7 +194,11 @@ export class SceneryHollowGrip {
       if (handle.active) return;
       // scratchF still holds the cube's centre.
       const ndc = scratchF.project(camera);
-      if (Math.abs(ndc.z) >= 1 || Math.abs(ndc.x) > 1 || Math.abs(ndc.y) > 1) {
+      if (
+        Math.abs(standardNdcZ(ndc.z, camera)) >= 1 ||
+        Math.abs(ndc.x) > 1 ||
+        Math.abs(ndc.y) > 1
+      ) {
         handle.hide();
         return;
       }

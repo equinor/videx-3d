@@ -58,6 +58,7 @@ import {
   type TileTransitionDraw,
   TileTransitions,
 } from '../../sdk/tiles/tile-transitions';
+import { setFrustumFromMatrix } from '../../sdk/utils/depth-buffer';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import type { Globe } from '../../sdk/projection/globe';
 import { sceneryReliefTile, SceneryReliefTileResponse } from './scenery-defs';
@@ -823,7 +824,7 @@ export const SceneryStageReliefTiles = ({
       camera.projectionMatrix,
       camera.matrixWorldInverse,
     );
-    view.frustum.setFromProjectionMatrix(view.matrix);
+    setFrustumFromMatrix(view.frustum, view.matrix, camera);
 
     // The ground under the camera, from the finest tile in there, whether drawn or not:
     // the one under a camera looking level is out of view. On its triangles, so a camera

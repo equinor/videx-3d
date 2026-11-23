@@ -15,6 +15,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { isReversedDepth } from '../sdk/utils/depth-buffer';
 import { FullscreenRenderer } from './fullscreen-renderer';
 import copyFrag from './shaders/copy-frag.glsl';
 import copyVert from './shaders/copy-vert.glsl';
@@ -159,6 +160,12 @@ export class TemporalResolver {
   private savedProjection = new Matrix4();
   /** Snapshot of the clean projection inverse, restored alongside the projection. */
   private savedProjectionInverse = new Matrix4();
+  /**
+   * Whether the camera's projection was reversed at the snapshot: three reverses it on the
+   * camera's first render with a reversed depth buffer, rebuilding it without the jitter,
+   * and the snapshot is then stale.
+   */
+  private savedReversed = false;
 
   /** Scratch: current (un-jittered) view-projection, for motion detection. */
   private curViewProj = new Matrix4();
@@ -275,6 +282,7 @@ export class TemporalResolver {
 
     this.savedProjection.copy(camera.projectionMatrix);
     this.savedProjectionInverse.copy(camera.projectionMatrixInverse);
+    this.savedReversed = isReversedDepth(camera);
 
     // Halton(2,3) centred to [-0.5, 0.5] pixels, converted to clip space (NDC spans
     // 2 units across the full resolution).
@@ -302,8 +310,11 @@ export class TemporalResolver {
    */
   restoreJitter() {
     if (!this.jittered || !this.camera) return;
-    this.camera.projectionMatrix.copy(this.savedProjection);
-    this.camera.projectionMatrixInverse.copy(this.savedProjectionInverse);
+    // Reversed by three during the render: already clean.
+    if (isReversedDepth(this.camera) === this.savedReversed) {
+      this.camera.projectionMatrix.copy(this.savedProjection);
+      this.camera.projectionMatrixInverse.copy(this.savedProjectionInverse);
+    }
     this.jittered = false;
   }
 

@@ -1,6 +1,5 @@
 import {
   BufferGeometry,
-  Camera,
   CubeTexture,
   Float32BufferAttribute,
   FloatType,
@@ -17,6 +16,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { createClipSpaceCamera } from './depth-buffer';
 import { readFloatTargetAsync } from './read-target-async';
 import { renderAside } from './render-aside';
 
@@ -151,7 +151,7 @@ void main() {
 export class SphericalHarmonicsProjector {
   /** what it draws, for compiling ahead */
   readonly scene = new Scene();
-  readonly camera = new Camera();
+  readonly camera = createClipSpaceCamera();
   private readonly target = new WebGLRenderTarget(9, 6, {
     type: FloatType,
     format: RGBAFormat,

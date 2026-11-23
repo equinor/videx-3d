@@ -37,6 +37,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { createClipSpaceCamera } from '../../sdk/utils/depth-buffer';
 import { renderAside } from '../../sdk/utils/render-aside';
 import { LAYERS } from '../../layers/layers';
 import { conformalOffset } from '../../sdk/projection/conformal-sphere';
@@ -646,7 +647,7 @@ const broad = new Vector3();
 const upTurned = new Vector3();
 const clearColor = new Color();
 // What draws a global weather's cover over the scene into its texel (readSceneCover).
-const coverCamera = new Camera();
+const coverCamera = createClipSpaceCamera();
 const shadowFoot = new Vector3();
 const shadowCentre = new Vector3();
 const shadowCarried = new Vector3();

@@ -15,6 +15,7 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { isReversedDepth } from '../sdk/utils/depth-buffer';
 import { FullscreenRenderer } from './fullscreen-renderer';
 import copyFrag from './shaders/copy-frag.glsl';
 import copyVert from './shaders/copy-vert.glsl';
@@ -172,6 +173,12 @@ export class TaaResolver {
   private savedProjection = new Matrix4();
   /** Snapshot of the clean projection inverse, restored alongside the projection. */
   private savedProjectionInverse = new Matrix4();
+  /**
+   * Whether the camera's projection was reversed at the snapshot: three reverses it on the
+   * camera's first render with a reversed depth buffer, rebuilding it without the jitter,
+   * and the snapshot is then stale.
+   */
+  private savedReversed = false;
 
   /** Scratch: current (un-jittered) world-space view-projection. */
   private curViewProj = new Matrix4();
@@ -217,6 +224,7 @@ export class TaaResolver {
         cameraNear: new Uniform(0.1),
         cameraFar: new Uniform(1),
         logDepth: new Uniform(0),
+        reversedDepth: new Uniform(0),
         feedback: new Uniform(feedback),
         clampStrength: new Uniform(1),
         boxGamma: new Uniform(1.25),
@@ -285,6 +293,7 @@ export class TaaResolver {
     this.camera = camera;
     this.savedProjection.copy(camera.projectionMatrix);
     this.savedProjectionInverse.copy(camera.projectionMatrixInverse);
+    this.savedReversed = isReversedDepth(camera);
 
     // Halton(2,3) centred to [-0.5, 0.5] pixels, converted to clip space (NDC spans
     // 2 units across the full resolution).
@@ -311,8 +320,11 @@ export class TaaResolver {
    */
   restoreJitter() {
     if (!this.jittered || !this.camera) return;
-    this.camera.projectionMatrix.copy(this.savedProjection);
-    this.camera.projectionMatrixInverse.copy(this.savedProjectionInverse);
+    // Reversed by three during the render: already clean.
+    if (isReversedDepth(this.camera) === this.savedReversed) {
+      this.camera.projectionMatrix.copy(this.savedProjection);
+      this.camera.projectionMatrixInverse.copy(this.savedProjectionInverse);
+    }
     this.jittered = false;
   }
 
@@ -356,6 +368,7 @@ export class TaaResolver {
     u.cameraNear.value = near;
     u.cameraFar.value = far;
     u.logDepth.value = renderer.capabilities.logarithmicDepthBuffer ? 1 : 0;
+    u.reversedDepth.value = isReversedDepth(camera) ? 1 : 0;
     u.feedback.value = this.feedback;
     // Motion amount in [0, 1]: 0 while still, 1 in full motion. Drives the clip so it
     // is relaxed (but never fully off) at rest and ramps to a tight, full-strength clip

@@ -1,5 +1,4 @@
 import {
-  Camera,
   CubeTexture,
   HalfFloatType,
   LinearFilter,
@@ -16,6 +15,7 @@ import {
   WebGLCubeRenderTarget,
   WebGLRenderer,
 } from 'three';
+import { createClipSpaceCamera } from '../../sdk/utils/depth-buffer';
 import { renderAside } from '../../sdk/utils/render-aside';
 import {
   WEATHER_SYSTEM_COUNT,
@@ -394,7 +394,7 @@ function setSystems(
 }
 
 const scene = new Scene();
-const camera = new Camera();
+const camera = createClipSpaceCamera();
 
 /**
  * Draw up to `strips` more strips of `map` with `renderer`: the wind's faces first, a face a

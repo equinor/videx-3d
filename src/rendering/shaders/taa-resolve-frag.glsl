@@ -25,7 +25,7 @@ precision highp float;
 // OutputPass.
 uniform sampler2D current;
 uniform sampler2D history;
-uniform sampler2D opaqueDepth; // hardware depth (log or linear encoded)
+uniform sampler2D opaqueDepth; // hardware depth (log, linear or reversed)
 uniform sampler2D frontDepth; // OIT front-layer view-space linear depth / far
 uniform int hasFrontDepth; // 1 when frontDepth was written this frame
 uniform int hasHistory; // 0 on the first frame / after a reset
@@ -37,6 +37,7 @@ uniform float projP11; // projectionMatrix[1][1]
 uniform float cameraNear;
 uniform float cameraFar;
 uniform int logDepth; // 1 when the renderer uses a logarithmic depth buffer
+uniform int reversedDepth; // 1 when it uses a reversed one (near at 1, far at 0)
 uniform float feedback; // history weight when reprojection is valid (e.g. 0.9)
 uniform float clampStrength; // rest floor -> 1 in motion: neighbourhood clip strength
 uniform float boxGamma; // colour-box half-width in sigmas (wider at rest, tight in motion)
@@ -51,7 +52,8 @@ float viewDistFromDepth(float d) {
     // three's log depth: d = log2(1 + w) / log2(1 + far), with w == clip.w == -viewZ.
     return pow(cameraFar + 1.0, d) - 1.0;
   }
-  float ndcZ = 2.0 * d - 1.0;
+  // Reversed, 1 - d is the linear depth of the same point (sdk shaderLib/depth.glsl).
+  float ndcZ = 2.0 * (reversedDepth == 1 ? 1.0 - d : d) - 1.0;
   return (2.0 * cameraNear * cameraFar) /
     (cameraFar + cameraNear - ndcZ * (cameraFar - cameraNear));
 }

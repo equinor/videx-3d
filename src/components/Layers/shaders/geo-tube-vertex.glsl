@@ -11,6 +11,7 @@
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
+#include ../../../sdk/materials/shaderLib/depth.glsl
 #include ../../../sdk/materials/shaderLib/tube-segment.glsl
 #include ./geo-reveal.glsl
 #ifdef GEO_TUBE_DRAPE
@@ -125,6 +126,6 @@ void main() {
   vNormal = normalize(mat3(viewMatrix) * k);
   gl_Position = projectionMatrix * mvPosition;
   // ⚠️ Far off, clip z rounds past w in fp32 and clips vertices at random (as the relief's).
-  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-7));
+  gl_Position = depthInsideFarClip(gl_Position, 1e-7);
   #include <logdepthbuf_vertex>
 }

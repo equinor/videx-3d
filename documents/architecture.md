@@ -83,3 +83,46 @@ As with data set names, existing components depends on generators available in t
 ### SDK
 The SDK (software development kit) contains supporting functions and classes, which can be imported from `videx-3d/sdk`. This contains data type definitions, utility functions and other shared code, which may be used across boundaries. 
 
+### Depth buffers
+
+Every component works with whichever depth buffer the host's renderer has:
+
+- **linear**: three's default; depth 0 at the near plane, 1 at the far one;
+- **logarithmic** (`logarithmicDepthBuffer`): written per fragment from the distance, for the
+  range of scales a field view needs (centimetres to thousands of kilometres). The stories use it;
+- **reversed** (`reversedDepthBuffer`, needs `EXT_clip_control`): depth 1 at the
+  near plane, 0 at the far one, clip z from 0 to w. three turns every camera it draws with to
+  a reversed projection on its first render (`camera.reversedDepth`), by its
+  `updateProjectionMatrix`.
+
+Logarithmic and reversed together are not supported: three's own log-depth shader chunk has
+no reversed form, so its materials break with both on.
+
+Most code needs none of this: three's chunks and its depth test handle it. Code that does
+depth by hand must handle all three:
+
+| What | Shader side (`sdk/materials/shaderLib/depth.glsl`) | CPU side (`sdk/utils/depth-buffer.ts`) |
+|--|--|--|
+| Something drawn on the far plane (the sky's background) | `DEPTH_FAR_NDC` | |
+| Vertices held inside the far plane (fp32 rounds far-off clip z past it) | `depthInsideFarClip` | |
+| A depth written (`gl_FragDepth`) for a point other than the fragment's own | `depthOfView`, `depthInsideFar` | |
+| A depth read from the depth buffer and compared or converted | `depthToStandard` (reversed: `1 - depth` is the linear depth of the same point) | |
+| A frustum built from a projection, for culling | | `setFrustumFromMatrix` |
+| A projected NDC z tested against the view's range | | `standardNdcZ` |
+| An offscreen pass drawing in clip space with its own camera | | `createClipSpaceCamera` (a plain `Camera` has no `updateProjectionMatrix`, which three calls) |
+| A projection changed and restored around a render (jitter) | | compare `isReversedDepth` before and after: three may rebuild it in between |
+
+Notes:
+
+- three defines `USE_LOGARITHMIC_DEPTH_BUFFER` and `USE_REVERSED_DEPTH_BUFFER` for a
+  `ShaderMaterial`; a `RawShaderMaterial` gets neither and must be told by a uniform (the TAA
+  resolve's `logDepth` and `reversedDepth`).
+- three declares `projectionMatrix` for the vertex shader only. A fragment shader that writes
+  a depth from it (`depthOfView(projectionMatrix, …)`) declares `uniform mat4 projectionMatrix;`
+  itself; three sets it by name.
+- What a pass draws with `createClipSpaceCamera` must lie at clip z 0, inside both the
+  standard range (-w to w) and the reversed one (0 to w).
+- To check a change, switch the storybook's canvas (`canvas-3d-decorator.tsx`, its `gl`
+  props) to each of the three and look for shader errors in the console as well as at the
+  picture: a branch for one buffer only compiles with it.
+

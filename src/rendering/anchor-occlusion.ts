@@ -20,6 +20,7 @@ import {
 } from 'three';
 import fragmentShader from '../components/Annotations/shaders/annotations-frag.glsl';
 import vertexShader from '../components/Annotations/shaders/annotations-vert.glsl';
+import { logDepthFactor } from '../sdk/utils/depth-buffer';
 import { FullscreenRenderer } from './fullscreen-renderer';
 
 /** An anchor's bits in {@link AnchorOcclusion.test}'s result: hidden behind the scene. */
@@ -70,9 +71,7 @@ export class AnchorOcclusion {
         pMatrix: new Uniform<Matrix4>(new Matrix4()),
         depthTexture: new Uniform<Texture | null>(null),
         dataTexture: new Uniform<Texture | null>(null),
-        logDepthBufFC: new Uniform<number>(
-          2.0 / (Math.log(perspective.far + 1.0) / Math.LN2),
-        ),
+        logDepthBufFC: new Uniform<number>(logDepthFactor(perspective.far)),
         resolution: new Uniform<Vector2>(new Vector2()),
       },
       glslVersion: GLSL3,
@@ -124,6 +123,9 @@ export class AnchorOcclusion {
     uniforms.depthTexture.value = depthTexture;
     uniforms.pMatrix.value = camera.projectionMatrix;
     uniforms.vMatrix.value = camera.matrixWorldInverse;
+    // As the depth was written: the far plane may have moved since the last test.
+    const far = (camera as PerspectiveCamera).far;
+    if (far > 0) uniforms.logDepthBufFC.value = logDepthFactor(far);
     uniforms.resolution.value.set(width, height);
     this.fullscreen.renderMaterial(renderer, this.target, this.material);
     return renderer

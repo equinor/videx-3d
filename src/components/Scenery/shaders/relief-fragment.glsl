@@ -34,6 +34,7 @@ varying vec3 vViewPosition;
 #include ../../../sdk/materials/shaderLib/oit.glsl
 #endif
 #include ./relief-look.glsl
+#include ../../../sdk/materials/shaderLib/depth.glsl
 
 // How much more of each channel than of green the air takes: it scatters blue most, so
 // distant land turns blue before it fades into the horizon. Kept mild: more and the land's
@@ -74,14 +75,11 @@ vec3 reliefAlbedo(float height, float weight, int look) {
 
 // The depth of the point `t` along this pixel's view ray `dir`, as the stage writes the curved sea's.
 #ifndef RELIEF_FAR
+// three declares it for the vertex shader only, and sets it here by its name.
+uniform mat4 projectionMatrix;
+
 float reliefDepthAt(vec3 dir, float t) {
-  vec3 view = mat3(viewMatrix) * dir * t;
-  #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
-  return vIsPerspective == 0.0 ? gl_FragCoord.z : log2(1.0 - view.z) * logDepthBufFC * 0.5;
-  #else
-  vec4 clip = projectionMatrix * vec4(view, 1.0);
-  return 0.5 * clip.z / clip.w + 0.5;
-  #endif
+  return depthOfView(projectionMatrix, mat3(viewMatrix) * dir * t);
 }
 #endif
 

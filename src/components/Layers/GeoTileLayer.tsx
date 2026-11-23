@@ -36,6 +36,7 @@ import {
   tileOffsetIn,
   TileTransitions,
 } from '../../sdk/tiles/tile-transitions';
+import { setFrustumFromMatrix } from '../../sdk/utils/depth-buffer';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
 import { useSceneryOcean } from '../Scenery/scenery-context';
 import { useCameraSite } from '../../hooks/useCameraSite';
@@ -688,7 +689,7 @@ export const GeoTileLayer = ({
     view.chosen.key = chosenKey;
 
     if (choose) {
-      view.frustum.setFromProjectionMatrix(view.matrix);
+      setFrustumFromMatrix(view.frustum, view.matrix, camera);
       // Reaching for the horizon: past the far plane too (its plane, 4, always passed).
       const pastFar = reach === 'horizon' && globe.enabled;
       if (pastFar) view.frustum.planes[4].setComponents(0, 0, 0, 1);

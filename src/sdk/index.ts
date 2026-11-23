@@ -116,6 +116,7 @@ export * from './utils/camera-site';
 export * from './utils/clip-2d';
 export * from './utils/colors';
 export * from './utils/conversions';
+export * from './utils/depth-buffer';
 export * from './utils/depth-reader';
 export * from './utils/elevation-map';
 export * from './utils/glyphs';

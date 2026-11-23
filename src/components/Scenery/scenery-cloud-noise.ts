@@ -1,5 +1,4 @@
 import {
-  Camera,
   LinearFilter,
   LinearMipmapNearestFilter,
   Mesh,
@@ -12,6 +11,7 @@ import {
   WebGL3DRenderTarget,
   WebGLRenderer,
 } from 'three';
+import { createClipSpaceCamera } from '../../sdk/utils/depth-buffer';
 import { renderAside } from '../../sdk/utils/render-aside';
 import { createSceneryGeometry } from './scenery-material';
 import fragmentShader from './shaders/cloud-noise-volume.glsl';
@@ -102,7 +102,7 @@ export function releaseCloudNoiseVolumes(renderer: WebGLRenderer) {
 }
 
 const scene = new Scene();
-const camera = new Camera();
+const camera = createClipSpaceCamera();
 
 /**
  * Draw `noise` with `renderer`, slice by slice, and its mipmaps, unless done already. May be

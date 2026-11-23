@@ -16,6 +16,7 @@ import {
   Vector3,
   Vector4,
 } from 'three';
+import { standardNdcZ } from '../../sdk/utils/depth-buffer';
 import { SceneryCutawayHandle } from './scenery-cutaway-handle';
 import {
   SceneryCutawayFeature,
@@ -515,7 +516,7 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
         const lost =
           Math.abs(centre.x) > 1 ||
           Math.abs(centre.y) > 1 ||
-          Math.abs(centre.z) > 1;
+          Math.abs(standardNdcZ(centre.z, camera)) > 1;
         if (plane !== material.oceanLevel || lost || away > 0) {
           grip.hide();
           // Out of view where it could be held — over the sea, not sliding out, not held, not

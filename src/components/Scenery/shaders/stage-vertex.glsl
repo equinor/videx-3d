@@ -3,6 +3,7 @@
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
+#include ../../../sdk/materials/shaderLib/depth.glsl
 
 varying vec3 vStageWorld;
 // View-space position, which the OIT pipeline sorts by.
@@ -33,6 +34,6 @@ void main() {
   vViewPosition = -view.xyz;
   gl_Position = projectionMatrix * view;
   // ⚠️ Its planes reach thousands of km: there clip z rounds past w in fp32 and clips at random.
-  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-7));
+  gl_Position = depthInsideFarClip(gl_Position, 1e-7);
   #include <logdepthbuf_vertex>
 }

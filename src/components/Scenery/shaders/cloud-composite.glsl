@@ -3,6 +3,7 @@
 // of them hides them, crisp at the screen's own resolution.
 
 #include <common>
+#include ../../../sdk/materials/shaderLib/depth.glsl
 
 uniform sampler2D uCloudImage; // premultiplied colour and alpha, filtered
 uniform sampler2D uCloudDepth; // log2 of the distance to their front, over CLOUD_DEPTH_RANGE
@@ -12,6 +13,8 @@ uniform float uSkyIntensity;
 #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 uniform float logDepthBufFC;
 #endif
+// three declares it for the vertex shader only, and sets it here by its name.
+uniform mat4 projectionMatrix;
 
 varying vec3 vCloudDirection;
 varying vec2 vCloudUv;
@@ -52,14 +55,8 @@ void main() {
   float pulled = nearest - min(max(farthest - nearest, 0.0), CLOUD_DEPTH_MARGIN);
   float t = exp2(pulled * CLOUD_DEPTH_RANGE);
   vec3 view = mat3(viewMatrix) * normalize(vCloudDirection) * t;
-  #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
-  float depth = log2(1.0 - view.z) * logDepthBufFC * 0.5;
-  #else
-  vec4 clip = projectionMatrix * vec4(view, 1.0);
-  float depth = 0.5 * clip.z / clip.w + 0.5;
-  #endif
   // Past the far plane, still over the background.
-  gl_FragDepth = min(depth, 0.9999999);
+  gl_FragDepth = depthInsideFar(depthOfView(projectionMatrix, view), 1e-7);
 
   gl_FragColor = vec4(cloud.rgb / cloud.a * uSkyIntensity, min(cloud.a, 1.0));
 

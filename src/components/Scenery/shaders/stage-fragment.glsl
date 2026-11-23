@@ -7,9 +7,14 @@
 #include <common>
 #include <logdepthbuf_pars_fragment>
 #include ./sky.glsl
+#include ../../../sdk/materials/shaderLib/depth.glsl
 
 uniform mat4 uSkyStageInverseProjection;
 uniform vec4 uSkyStageViewport; // the pixels being drawn: x, y, width, height
+#ifdef STAGE_CURVED_DEPTH
+// three declares it for the vertex shader only, and sets it here by its name.
+uniform mat4 projectionMatrix;
+#endif
 
 varying vec3 vStageWorld;
 varying vec3 vViewPosition;
@@ -60,15 +65,8 @@ void main() {
   // the geometry lies on.
   vec3 fromScene = vStageWorld - uSkyStageFlat.xyz;
   fromScene -= uSkyUp * dot(fromScene, uSkyUp);
-  if(dot(fromScene, fromScene) > uSkyStageFlat.w * uSkyStageFlat.w) {
-    vec3 viewHit = mat3(viewMatrix) * dir * reach.x;
-    #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
-    gl_FragDepth = vIsPerspective == 0.0 ? gl_FragCoord.z : log2(1.0 - viewHit.z) * logDepthBufFC * 0.5;
-    #else
-    vec4 clipHit = projectionMatrix * vec4(viewHit, 1.0);
-    gl_FragDepth = 0.5 * clipHit.z / clipHit.w + 0.5;
-    #endif
-  }
+  if(dot(fromScene, fromScene) > uSkyStageFlat.w * uSkyStageFlat.w)
+    gl_FragDepth = depthOfView(projectionMatrix, mat3(viewMatrix) * dir * reach.x);
     #ifndef USE_LOGARITHMIC_DEPTH_BUFFER
   else
     gl_FragDepth = gl_FragCoord.z;

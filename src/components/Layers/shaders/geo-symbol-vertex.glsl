@@ -6,6 +6,7 @@
 #include <common>
 #include <logdepthbuf_pars_vertex>
 #include ../../../sdk/materials/shaderLib/globe.glsl
+#include ../../../sdk/materials/shaderLib/depth.glsl
 #include ../../../sdk/materials/shaderLib/tube-segment.glsl
 
 uniform vec2 resolution;
@@ -53,6 +54,6 @@ void main() {
   #endif
   gl_Position = projectionMatrix * view;
   // ⚠️ Far off, clip z rounds past w in fp32 and clips vertices at random (as the tubes').
-  gl_Position.z = min(gl_Position.z, gl_Position.w * (1.0 - 1e-7));
+  gl_Position = depthInsideFarClip(gl_Position, 1e-7);
   #include <logdepthbuf_vertex>
 }

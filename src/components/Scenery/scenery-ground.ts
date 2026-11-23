@@ -1,5 +1,4 @@
 import {
-  Camera,
   DataTexture,
   FloatType,
   HalfFloatType,
@@ -25,6 +24,7 @@ import {
   type WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
+import { createClipSpaceCamera } from '../../sdk/utils/depth-buffer';
 import { renderAside } from '../../sdk/utils/render-aside';
 import { GroundMap } from '../../sdk/materials/ground-map';
 import {
@@ -196,7 +196,7 @@ export class SceneryGround {
   private readonly toEarth = new Matrix3();
   private readonly toWorld = new Matrix3();
   private readonly scene = new Scene();
-  private readonly camera = new Camera();
+  private readonly camera = createClipSpaceCamera();
   private readonly cloud: GroundCloudView = {
     earth: null,
     near: null,
