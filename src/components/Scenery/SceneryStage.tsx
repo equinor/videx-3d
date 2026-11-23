@@ -295,6 +295,9 @@ export const SceneryStage = ({
         }),
         bed: createSceneryStageMaterial(sky, 'bed', {
           seeThrough,
+          // Drawn only without a relief, flat: past the disc the curved sea falls below its
+          // plane (√(2R·depth) out: 34 km for 91 m), whose depth would hide what lies there.
+          curvedDepth: true,
           // Hidden for debugging, the surface hides nothing.
           underSurface: surfaceShown,
         }),

@@ -242,8 +242,9 @@ export type SceneryStageMaterialOptions = {
   /** the bed's: at the sea's seabed opacity, as a transparent part; opaque otherwise */
   seeThrough?: boolean;
   /**
-   * the surface's: write the depth of the sea where it falls away with the Earth's curve,
-   * rather than of the flat geometry, so a relief beyond the scene meets it there
+   * write the depth of the part — the sea's surface or its seabed — where it falls away with
+   * the Earth's curve beyond the disc, rather than of the flat geometry, so what lies on the
+   * globe there (a relief, a geographic layer) meets it there
    */
   curvedDepth?: boolean;
   /**
@@ -286,7 +287,7 @@ export function createSceneryStageMaterial(
   const surface = part === 'surface';
   if (surface) defines.STAGE_SURFACE = '';
   else defines.STAGE_BED = '';
-  if (surface && curvedDepth) defines.STAGE_CURVED_DEPTH = '';
+  if (curvedDepth) defines.STAGE_CURVED_DEPTH = '';
   if (!surface && seeThrough) defines.STAGE_SEE_THROUGH = '';
   if (!surface && underSurface) defines.STAGE_BED_UNDER_SURFACE = '';
 

@@ -392,7 +392,11 @@ draws most of the sea in view: its geometry
 stays flat, a carrier for pixels each shaded where the view meets the globe, and beyond
 the disc it leaves the sky above the curved horizon to the background, which then draws
 the very same sea. With the camera beyond the disc its planes sink under it, so they lie
-below it however far the globe falls away. Past its reach the background draws the sea;
+below it however far the globe falls away. Its seabed writes the depth of where the view
+meets it on the globe beyond the disc, not of its plane (`curvedDepth`; the surface too
+while a relief is drawn): the curved sea falls below the flat plane √(2R·depth) out, 34 km
+for 91 m of water, and the plane's depth hid what lies on the globe past it — the
+graticule, until 2026-11-23. Past its reach the background draws the sea;
 from space, all of it (flat planes cannot stand for the globe there). It claims the sea
 only while the camera is over its rectangle on the field's half of the Earth
 (`SceneryMaterial`'s `claimStage`): off it, its sunk planes would miss some of what it

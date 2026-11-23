@@ -646,9 +646,14 @@ export const GeoTileLayer = ({
         hub ? 'ground' : laid,
       ) * opacity;
     if (shown <= 0) return hide();
-    const order = renderOrder ?? (sky ? 0.5 : OVER_SEA_ORDER);
-    drawOverSea(mesh.current, revealed > 0, order);
-    if (floorMesh.current) drawOverSea(floorMesh.current, revealed > 0, order);
+    // Only a 'fog' layer is revealed; a 'clear' one stays on LAYERS.OVERLAY as made, or an
+    // OITRenderPass draws it with the opaque, under a stage's sea surface.
+    if (sky) {
+      const order = renderOrder ?? 0.5;
+      drawOverSea(mesh.current, revealed > 0, order);
+      if (floorMesh.current)
+        drawOverSea(floorMesh.current, revealed > 0, order);
+    }
     for (const m of [material, floorMaterial]) {
       if (!m) continue;
       (m.uniforms.uGeoReveal.value as Vector2).set(

@@ -1,7 +1,8 @@
 // A stage's real geometry, shaded with the sky's own sea so it continues the background
 // without a seam. STAGE_SURFACE or STAGE_BED is defined; STAGE_SEE_THROUGH marks a seabed
-// drawn at the sea's seabed opacity. STAGE_CURVED_DEPTH has the surface write the depth of
-// the curved sea, for a relief.
+// drawn at the sea's seabed opacity. STAGE_CURVED_DEPTH has the part write its depth where it
+// lies on the globe beyond the disc, not the flat plane's: the surface's for a relief, the
+// seabed's always, so what lies on the globe there is not hidden by the plane.
 
 #include <common>
 #include <logdepthbuf_pars_fragment>
@@ -54,8 +55,9 @@ void main() {
   // off, the sunk plane still meets rays that do not, down to the field's level.
   bool fromBehind = gl_FrontFacing != (planeAltitude > 0.0) || (planeAltitude <= 0.0 && dot(dir, globeCameraUp()) <= 0.0);
   #ifdef STAGE_CURVED_DEPTH
-  // At the sea's own depth where it lies on the globe, which a relief beyond the scene, on
-  // the globe too, meets. Over the disc the globe is the plane the geometry lies on.
+  // At the part's own depth where it lies on the globe, which what lies beyond the scene on
+  // the globe too (a relief, a geographic layer) meets. Over the disc the globe is the plane
+  // the geometry lies on.
   vec3 fromScene = vStageWorld - uSkyStageFlat.xyz;
   fromScene -= uSkyUp * dot(fromScene, uSkyUp);
   if(dot(fromScene, fromScene) > uSkyStageFlat.w * uSkyStageFlat.w) {
