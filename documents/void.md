@@ -22,10 +22,10 @@ dark, dull rock that gives scale and depth.
 
 ## Design (decided)
 
-- **A crater, a fixed size, centred on the field** (the `World`'s anchor, the globe's disc). It
-  is 500 km across the rim (`radius`) and 35 km deep (`floorDepth`), down to the mantle's
-  cooled top. From the sea over the field its rim lies at the horizon. Its size never follows
-  the camera.
+- **A crater, a fixed size, centred on the field** (the `World`'s anchor, the globe's disc). Its
+  rim is 100 km from the field (`radius`, 200 km across) and it is 35 km deep (`floorDepth`), down
+  to the mantle's cooled top. Its rim lies at the horizon from some 800 m over the field. Its size
+  never follows the camera.
 - **The seabed is its lid.** With the seabed on, the hollow is shut and nothing changes from
   above. Opening it (`hollow.open`) peels the seabed over it: the relief is cut away inside the
   rim and kept whole around it, so the opening is a hole in the ground, not a missing ground.
@@ -49,7 +49,7 @@ Built once on the CPU in 64-bit floats about the globe's disc centre, and placed
 at `uGlobeDisc.xyz + position`, so far points keep their precision (`hollow-vertex.glsl`). It is
 built again only when the globe, the radius, the floor depth or the seabed's height changes.
 
-- **The rim** wanders in and out of the radius by some 6% (`SCENERY_HOLLOW_RIM`, 11 waves), in
+- **The rim** wanders in and out of the radius by some 3.6% (`SCENERY_HOLLOW_RIM`, 11 waves), in
   broad bays and a ragged edge. The CPU (`sceneryHollowInside`) and the GPU (`hollowInside`,
   `hollow.glsl`) share it: the walls are built along it, and the relief and the seabed are cut
   along it.

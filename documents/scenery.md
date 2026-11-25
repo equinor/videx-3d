@@ -810,7 +810,7 @@ an axis-aligned rectangle. Removed, and parked on the branch `parked/abyss-walls
 ### The hollow
 
 By default the void is a hollow in the crust about the field (`SceneryVoid`'s `hollow`): a
-crater 500 km across the rim, its walls of rock down to a floor 35 km under the seabed, the
+crater 100 km in radius at the rim, its walls of rock down to a floor 35 km under the seabed, the
 seabed its lid. Opening it (`<SceneryVoid hollow={{ open: true }} />`) peels the seabed over
 it: the relief is cut away inside its rim and kept whole around it, and the data under the
 field is seen against the crater. Without a seabed (no `GeoRelief`) it lies open under the

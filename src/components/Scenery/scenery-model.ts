@@ -321,8 +321,8 @@ export type SceneryHollowStyle = 'calm' | 'molten' | 'simple';
  * The hollow under a {@link Scenery}'s seabed ({@link SceneryVoidProps.hollow}): the void
  * as a gap in the crust, from the seabed down to a floor where the mantle would begin, closed
  * by walls of rock about the field — dark, dull rock that frames the data in it. Centred on
- * the field (the `World`'s anchor, the globe's disc), a fixed size: from the sea over the
- * field its rim lies at the horizon. Real geometry, drawn with the background: it never hides
+ * the field (the `World`'s anchor, the globe's disc), a fixed size: by default its rim lies at
+ * the horizon from some 800 m over the field. Real geometry, drawn with the background: it never hides
  * the scene. Changing any of it recompiles nothing and bakes nothing.
  */
 export type SceneryHollow = {
@@ -333,7 +333,7 @@ export type SceneryHollow = {
    * shows down to its floor. Changing it recompiles nothing and bakes nothing. Default false
    */
   open?: boolean;
-  /** its rim's radius along the sea, in world units. Default 500 000 */
+  /** its rim's radius along the sea, in world units. Default 100 000 */
   radius?: number;
   /** depth of its floor under the seabed, in world units. Default 35 000 */
   floorDepth?: number;
@@ -364,7 +364,7 @@ export type SceneryHollow = {
    * west and south), that drag its
    * radius: a ghost ring follows the pointer, and on release the hollow takes the new radius
    * (`onRadiusChange`). The dragged radius is kept until `radius` changes; a double click or
-   * tap puts the default radius (500 km) back. Default false
+   * tap puts the default radius (100 km) back. Default false
    */
   handle?: boolean;
   /** called with the radius a drag of a grip (`handle`) leaves, or a reset puts back */
@@ -373,27 +373,27 @@ export type SceneryHollow = {
 
 /**
  * How a hollow's rim (see {@link SceneryHollow}) wanders round its axis, in and out of its
- * radius: per wave its number round the rim, its share of the radius and its phase. Some 6%
- * at most, so the size holds: broad bays and headlands, and a ragged edge some tens of km
- * across that reads from across the hollow. The walls are built along it, and the relief and
- * the seabed are cut along it (`uSceneryHollowRim`).
+ * radius: per wave its number round the rim, its share of the radius and its phase. Some 3.6%
+ * at most, so the size holds: broad bays and headlands, and a ragged edge a few km across at
+ * the default radius. The walls are built along it, and the relief and the seabed are cut
+ * along it (`uSceneryHollowRim`).
  */
 export const SCENERY_HOLLOW_RIM: readonly (readonly [
   number,
   number,
   number,
 ])[] = [
-  [3, 0.016, 0.4],
-  [5, 0.011, 2.1],
-  [7, 0.008, 4.0],
-  [11, 0.006, 1.2],
-  [17, 0.004, 5.3],
-  [29, 0.003, 0.7],
-  [43, 0.0025, 3.3],
-  [71, 0.002, 2.6],
-  [97, 0.0035, 1.9],
-  [151, 0.0025, 4.4],
-  [233, 0.0015, 0.3],
+  [3, 0.0096, 0.4],
+  [5, 0.0066, 2.1],
+  [7, 0.0048, 4.0],
+  [11, 0.0036, 1.2],
+  [17, 0.0024, 5.3],
+  [29, 0.0018, 0.7],
+  [43, 0.0015, 3.3],
+  [71, 0.0012, 2.6],
+  [97, 0.0021, 1.9],
+  [151, 0.0015, 4.4],
+  [233, 0.0009, 0.3],
 ];
 
 /**
@@ -668,7 +668,7 @@ export const sceneryDefaults = {
     falloff: VOID_GRADIENT_DEFAULTS.falloff,
     hollow: {
       style: 'calm' as SceneryHollowStyle,
-      radius: 500000,
+      radius: 100000,
       floorDepth: 35000,
       cooling: null as number | null,
       lightFalloff: 11000,

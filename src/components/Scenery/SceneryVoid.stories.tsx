@@ -165,7 +165,7 @@ const meta = {
       50000,
       1500000,
       10000,
-      'Its rim\u2019s radius along the sea from the field, in metres (`hollow.radius`): at 500 km its walls stand at the horizon seen from the sea.',
+      'Its rim\u2019s radius along the sea from the field, in metres (`hollow.radius`): at 100 km (the default) it lies at the horizon from some 800 m over the field.',
     ),
     hollowFloorDepth: range(
       5000,
@@ -185,10 +185,10 @@ type Story = StoryObj<typeof meta>;
  */
 export const Default: Story = {};
 
-/** The whole hollow from 1500 km up over the field, the land about it. */
+/** The whole hollow from 400 km up over the field, the land about it. */
 export const Hollow: Story = {
   parameters: {
-    cameraPosition: [0, 1500000, 1800000],
+    cameraPosition: [0, 400000, 480000],
     cameraTarget: [0, 0, 0],
   },
 };

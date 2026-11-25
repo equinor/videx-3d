@@ -1176,7 +1176,7 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       1500000,
       10000,
       VOID,
-      'The hollow\u2019s rim, along the sea from the field, in metres: at 500 km its walls stand at the horizon seen from the sea.',
+      'The hollow\u2019s rim, along the sea from the field, in metres: at 100 km (the default) it lies at the horizon from some 800 m over the field.',
     ),
     if: { arg: 'hollow' },
   },

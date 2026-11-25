@@ -96,7 +96,7 @@ const SIMPLE_SLOPE = WALL_INSET + WALL_APRON;
 const TERRACES = 0.8;
 // Buttresses along the rim, standing proud of the face with steep sides, so one side catches
 // the light and the other not; broad spurs between bays; gullies down the face (and how far
-// apart): in world units, sized to read from across the hollow, some 500 km off.
+// apart): in world units, sized to read from across the hollow.
 const BUTTRESSES = 15000;
 const BUTTRESS_SPACING = 60000;
 // How far round the rim the buttresses and gullies drift as they go down the face, and jog
