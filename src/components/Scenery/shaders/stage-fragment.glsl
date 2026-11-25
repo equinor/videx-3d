@@ -38,6 +38,10 @@ void main() {
 
   vec3 dir = stageViewRay();
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
+  #if defined(STAGE_SURFACE)
+  // How far apart two pixels look (radians), for easing the horizon: before anything branches.
+  float pixel = length(fwidth(dir));
+  #endif
   float altitude = scenerySeaCameraAltitude();
 
   // The flat caps are shaded where the ray meets their plane, exactly; from above, beyond the
@@ -105,10 +109,15 @@ void main() {
   // Over the curved sea's horizon there is none, nor a seabed under it: the background's sky shows.
   #if defined(STAGE_SURFACE)
   float overSea = reach.z;
+  // With no sky the surface reaches on past its horizon by a fringe it eases out over
+  // (SCENERY_SEA_HORIZON_EDGE), shaded where the view grazes it: there what lies past the
+  // horizon shows through it, as the pixel's own share of it.
+  float fringe = overSea < 0.5 ? 1.0 : uScenerySky < 0.5 ? smoothstep(-SCENERY_SEA_HORIZON_EDGE * pixel, 0.0, globeBelowHorizon(cameraPosition, dir, 0.0)) : 0.0;
   #else
   float overSea = altitude > 0.0 && !dry ? surfaceReach.z : bedAltitude > 0.0 && dry ? reach.z : 0.0;
+  float fringe = overSea < 0.5 ? 1.0 : 0.0;
   #endif
-  bool overCurve = uSceneryCurvature > 0.0 && planeAltitude > 0.0 && overSea > 0.5;
+  bool overCurve = uSceneryCurvature > 0.0 && planeAltitude > 0.0 && overSea > 0.5 && fringe <= 0.0;
 
   #if defined(STAGE_SURFACE)
   // One wave for both sides: each call compiles a full copy of it.
@@ -119,6 +128,7 @@ void main() {
   if(altitude > 0.0) {
     vec4 surface = scenerySeaThroughAir(scenerySeaSurfaceOf(wave, p, texel, dir, blend, world), cameraPosition, dir, dist);
     gl_FragColor = scenerySeaCutawayMark(surface, world, rimAt);
+    gl_FragColor.a *= fringe;
   } else {
     vec3 underside = scenerySeaUndersideOf(-wave.normal, dir, blend, -altitude);
     float wall = scenerySeaCutawayWall(cameraPosition, dir);

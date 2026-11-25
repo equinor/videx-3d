@@ -813,6 +813,8 @@ vec4 scenerySeaSurfaceLayer(vec3 dir, vec3 origin, float blend) {
     return vec4(0.0);
 
   float y = dot(dir, globeCameraLook());
+  // How far apart two pixels look (radians), for easing the horizon.
+  float pixel = length(fwidth(dir));
   vec3 reach = scenerySeaReach(origin, dir, altitude);
   float t = reach.x;
   vec2 p = scenerySeaPlane(origin + dir * t);
@@ -830,10 +832,14 @@ vec4 scenerySeaSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   vec4 surface = scenerySeaSurfaceOf(wave, p, waveTexel, dir, blend, origin + dir * t);
   // The band a pixel inside the stage's edge too, which the stage leaves to this layer:
   // the same test on both sides (scenerySeaStaged), so every pixel is drawn exactly once. All
-  // zero, so a colour from those derivatives cannot reach the blend.
-  if(reach.z > 0.5 || scenerySeaOnStage(p, t, texel))
+  // zero, so a colour from those derivatives cannot reach the blend. With no sky it reaches on
+  // past the horizon by a fringe it eases out over, as a stage's surface (SCENERY_SEA_HORIZON_EDGE).
+  float fringe = reach.z < 0.5 ? 1.0 : uScenerySky < 0.5 ? smoothstep(-SCENERY_SEA_HORIZON_EDGE * pixel, 0.0, globeBelowHorizon(origin, dir, 0.0)) : 0.0;
+  if(fringe <= 0.0 || scenerySeaOnStage(p, t, texel))
     return vec4(0.0);
   vec4 seen = scenerySeaCutawayMark(scenerySeaThroughAir(surface, origin, dir, t), origin + dir * t, rimAt);
+  // Straight colour: only its alpha.
+  seen.a *= fringe;
   return seen;
 }
 

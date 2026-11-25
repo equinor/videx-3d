@@ -360,8 +360,14 @@ uniform float uScenerySeaStageReach;
 uniform float uScenerySeaReliefReach;
 // 1 while a stage's occupant's cut opens its seabed to the void (SceneryMaterial.voidOpenings).
 uniform float uScenerySeaStageOpen;
-// The pixels a dry sea's seabed eases out over toward its own horizon (scenerySeaLayer).
-#define SCENERY_SEA_DRY_EDGE 2.0
+// The pixels the sea eases out over at its curved horizon: a dry sea's seabed inside its own
+// (scenerySeaLayer), and with no sky its surface over a fringe past it (scenerySeaSurfaceLayer, a
+// stage's). Cut there a pixel at a time it is aliased, MSAA or not: with no sky a staircase
+// against what lies past it (2026-11-25). The surface's fringe lies outside, so only what lies
+// past the horizon shows through it: eased inside, the relief's seabed under the water showed
+// as a dark line. With the sky the air hazes the surface to the sky's colour there, so the cut
+// does not show, and the sky's darker ground below the horizon would show through as a line.
+#define SCENERY_SEA_HORIZON_EDGE 2.0
 // What draws itself in the sky (the 3D clouds) as seen from the scene, all round by direction:
 // premultiplied colour and alpha, without the sky's intensity; while uScenerySeaCloudsOn. The sea
 // reflects it over the sky (SceneryMaterial.seaClouds).
@@ -691,10 +697,10 @@ vec4 scenerySeaLayer(vec3 dir, vec3 origin, float blend) {
         ground = scenerySeaDepthAt(bedPoint);
       }
       bedUp = globeUpAt(bedPoint);
-      // Eased out over its last SCENERY_SEA_DRY_EDGE pixels toward its horizon: met or missed a
+      // Eased out over its last SCENERY_SEA_HORIZON_EDGE pixels toward its horizon: met or missed a
       // pixel at a time, the ground map's steps left it showing past the relief's in dashes a
       // pixel thick (2026-11-19).
-      edge = smoothstep(0.0, SCENERY_SEA_DRY_EDGE * pixel, globeBelowHorizon(origin, dir, bedDepth));
+      edge = smoothstep(0.0, SCENERY_SEA_HORIZON_EDGE * pixel, globeBelowHorizon(origin, dir, bedDepth));
     }
     vec3 bed = scenerySeabed(bedPoint, bedUp, bedDepth);
     bool reached;
