@@ -34,7 +34,8 @@ visibility; `'clear'`, 750 m, to see the bed; `WATER_OPTICS_PRESETS`) or `{ colo
 the colour of water too deep to see through (default `#102c3a`) and how far one sees through
 it in metres. One colour for every part of it: the surface's own tone, the view in the water,
 a body's walls (seen from outside, their tint builds by the same clarity), and a `ZoneStack`'s
-interior fog in its water. What lies in the water fades toward that colour along its path
+interior fog in its water (lit as its walls are from inside looking level, at the camera's
+depth, so the far walls melt into it). What lies in the water fades toward that colour along its path
 through it, the channel the colour is darkest in first (`waterExtinctionOf`), so the colour
 also sets how the water turns with depth: a greener one turns the bed greener the deeper it
 lies. The `Scenery`'s sea and a `ZoneStack`'s take the same `optics`. Left out, it comes from
@@ -313,7 +314,10 @@ The bed carries no tint of its own (the deprecated `seaBedWaterTint` has no effe
 and a zone's sea bed is ordinary geology: what lies in the water, the component's bed
 and a stack's shallowest cap alike, is dimmed by the daylight its depth leaves it (the
 water's own, `water-body.glsl`'s `waterBodyDim`); the lid and the walls carry the water
-in front of it. (`bedTint` and `bedTintDepth` are deprecated; see `documents/zones.md`
+in front of it. A stack whose water another sea draws (`drawSea={false}` under a `Scenery`'s
+sea, or a `Water`) has no lid or walls of its own over the cap: the cap is then seen through
+that sea's water as the seabed it is (`waterBodyFogBed`), faded along the sight line from in
+it. (`bedTint` and `bedTintDepth` are deprecated; see `documents/zones.md`
 §6.4.1 for what they did.)
 
 ⭐ **The waves answer the depth: they shoal and die out toward a shore, and break

@@ -279,7 +279,7 @@ export type ZoneWaterTintParameters = {
   wetBand?: number;
   /** how much that band darkens the ground, 0..1 */
   wetStrength?: number;
-  /** a SHARED 1 while the water is drawn and 0 while not, which the tint is scaled by: hiding it is a write, not a rebuild */
+  /** a SHARED uniform the tint is scaled by: 1 while the stack draws its water, 2 while another sea draws the scene's (the cap seen through it as the seabed), 0 with none. Changing it is a write, not a rebuild */
   shown?: IUniform<number>;
 };
 
@@ -411,10 +411,11 @@ export type ZoneMaterialParameters = {
    */
   heightClip?: HeightFieldClipUniforms;
   /**
-   * The water what is drawn lies in: the stack's own (its sea's `WaterBody`). Given to the
-   * sea bed's cap alone, which it dims by the daylight its depth leaves it (water-body.glsl's
-   * `waterBodyDim`): the stack's surface and walls carry the water in front of it. Bound by
-   * reference.
+   * The water what is drawn lies in (a `WaterBody`). Given to the sea bed's cap alone: while
+   * the stack draws its water ({@link ZoneWaterTintParameters.shown} 1), dimmed by the daylight
+   * its depth leaves it (water-body.glsl's `waterBodyDim`), the stack's surface and walls
+   * carrying the water in front of it; while another sea draws it (2: a `Scenery`'s, a
+   * `Water`), seen through it as the seabed (`waterBodyFogBed`). Bound by reference.
    */
   water?: WaterBody;
   /**

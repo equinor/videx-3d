@@ -22,7 +22,7 @@ varying float vWallV;
 #ifdef ZONE_WATER_TINT
 uniform vec3 waterTintParams; // x: water level (vertex stage), y: strength, z: 1 / depth scale
 uniform vec2 waterTintShore;  // x: 1 / wet band depth, y: darkening amount
-uniform float waterTintShown; // 1 while the water is drawn, 0 while not
+uniform float waterTintShown; // 0 no water; 1 the stack's own drawn; 2 another sea's (a Scenery's, a Water)
 varying float vWaterDepth;
 #ifdef ZONE_BATHYMETRY
 // The sea bed's own grid. Sampling it gives the water column standing over this
@@ -361,7 +361,7 @@ void main() {
     // the whole coast, which is the one place the eye is already looking.
     float wetT = depth * waterTintShore.x;
     float wet = smoothstep(-0.25, 0.0, wetT) * (1.0 - smoothstep(0.0, 1.0, wetT));
-    outgoingLight *= 1.0 - wet * waterTintShore.y * facing * waterTintShown;
+    outgoingLight *= 1.0 - wet * waterTintShore.y * facing * min(waterTintShown, 1.0);
   }
   #endif
 
@@ -425,13 +425,14 @@ void main() {
   #endif
 
   #if defined(ZONE_SEA) && defined(ZONE_WATER_TINT)
-  // The seabed - the shallowest cap, the only one given the water - dimmed by the daylight its
+  // The seabed - the shallowest cap, the only one given the water - on its water-facing side,
+  // where a cut that takes the water has not taken it from over this point; below the seabed
+  // nothing is. While the stack draws its water (waterTintShown 1), dimmed by the daylight its
   // depth leaves it (water-body.glsl's waterBodyDim): the stack's surface and walls carry the
-  // water in front of it. On its water-facing side, while the stack draws its water, and where
-  // a cut that takes the water has not taken it from over this point; below the seabed nothing
-  // is.
+  // water in front of it. While another sea draws it (2: a Scenery's, a Water), seen through
+  // that sea's water as the seabed it is (waterBodyFogBed), faded along the sight line from in it.
   {
-    float waterKept = waterTintShown;
+    float waterKept = min(waterTintShown, 1.0);
     #ifdef ZONE_SEA_SECTION
     if(dot(waterSectionPlane.xyz, vObjectPos) + waterSectionPlane.w > 0.0)
       waterKept = 0.0;
@@ -443,7 +444,8 @@ void main() {
     #endif
     vec3 bedNormal = normalize(normal * mat3(viewMatrix));
     float bedFacing = smoothstep(-0.15, 0.15, bedNormal.y);
-    vec3 underWater = waterBodyDim(outgoingLight, waterBodyWorldOf(vViewPosition));
+    vec3 bedWorld = waterBodyWorldOf(vViewPosition);
+    vec3 underWater = waterTintShown > 1.5 ? waterBodyFogBed(outgoingLight, bedWorld) : waterBodyDim(outgoingLight, bedWorld);
     outgoingLight = mix(outgoingLight, underWater, bedFacing * waterKept);
   }
   #endif

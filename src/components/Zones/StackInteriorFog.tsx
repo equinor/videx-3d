@@ -1,12 +1,17 @@
 import { RefObject, useCallback, useMemo } from 'react';
-import { Group, Matrix4, Plane, Vector3 } from 'three';
+import { Color, Group, Matrix4, Plane, Vector3 } from 'three';
 import { useCameraProbe } from '../../hooks/useCameraSite';
 import {
   CAMERA_PROBE_ORDER,
   type CameraProbe,
 } from '../../sdk/utils/camera-site';
 import { fenceSideAt } from '../../sdk/geometries/fence-segments';
-import { WATER_FADE, waterOpticsOf } from '../../sdk/weather/water-optics';
+import type { WaterBody } from '../../sdk/materials/water-body';
+import {
+  WATER_FADE,
+  waterDeepColor,
+  waterOpticsOf,
+} from '../../sdk/weather/water-optics';
 import {
   ZoneFenceState,
   ZoneSectionState,
@@ -20,6 +25,8 @@ import { FogMedium, useMediumFog } from '../../hooks/useMediumFog';
 export type StackInteriorFogProps = {
   interiorFog: ZoneStackInteriorFog;
   sea: ZoneStackSea | null;
+  /** the stack's drawn water, whose daylight its walls are lit by */
+  water: WaterBody | null;
   /** the drawn caps, for the sea bed and the top of the block alike */
   sampler: SurfaceSampler | null;
   /** the block's base in the stack's own frame — the carrier is not sampleable */
@@ -51,6 +58,7 @@ export type StackInteriorFogProps = {
 export const StackInteriorFog = ({
   interiorFog,
   sea,
+  water,
   sampler,
   base,
   section,
@@ -60,13 +68,14 @@ export const StackInteriorFog = ({
   frame,
 }: StackInteriorFogProps) => {
   const level = -(sea?.depth ?? 0);
-  // The water's look (its optics): the fog in it is the water's own colour, and closes in as
-  // what lies in the water fades, 5% of it left at the clarity. `FogExp2` is
-  // exp(-(d * density)^2), so that is sqrt(ln 20) over the clarity.
+  // The water's look (its optics): the fog in it closes in as what lies in the water fades,
+  // 5% of it left at the clarity. `FogExp2` is exp(-(d * density)^2), so that is sqrt(ln 20)
+  // over the clarity. Its colour is the water's as its walls draw it from inside, looking
+  // level at the camera's depth, so the far walls melt into it.
   const waterOptics = waterOpticsOf(sea?.optics, sea ?? {});
-  const waterColor = waterOptics.color;
-  const waterDensity =
-    Math.sqrt(WATER_FADE) / Math.max(waterOptics.clarity, 1e-3);
+  const opticsColor = waterOptics.color;
+  const opticsClarity = waterOptics.clarity;
+  const waterDensity = Math.sqrt(WATER_FADE) / Math.max(opticsClarity, 1e-3);
   const rockColor = interiorFog.rockColor ?? '#0b0a08';
   // ⚠️ `FogExp2` is exp(-(d * density)^2), so 1 / visibility puts ~63% fog at that
   // distance. Expressed as a distance because a useful density at field scale is a
@@ -78,6 +87,8 @@ export const StackInteriorFog = ({
 
   const medium = useMemo(() => {
     const plane = new Plane();
+    const optics = { color: opticsColor, clarity: opticsClarity };
+    const waterColor = new Color();
     return (x: number, y: number, z: number): FogMedium | null => {
       if (!sampler) return null;
 
@@ -113,6 +124,9 @@ export const StackInteriorFog = ({
       if (ground === null) return null;
 
       if (wantsWater && y < level && y > ground) {
+        waterColor.fromArray(
+          waterDeepColor(optics, level - y, water?.daylight ?? 1),
+        );
         return {
           color: waterColor,
           density: waterDensity,
@@ -147,7 +161,9 @@ export const StackInteriorFog = ({
     span,
     wantsWater,
     wantsRock,
-    waterColor,
+    water,
+    opticsColor,
+    opticsClarity,
     waterDensity,
     rockColor,
     rockDensity,

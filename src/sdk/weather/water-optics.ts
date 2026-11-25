@@ -144,3 +144,33 @@ export function waterTransmittance(extinction: Vec3, distance: number): Vec3 {
   const d = Math.max(distance, 0);
   return extinction.map(e => Math.exp(-e * d)) as Vec3;
 }
+
+// The twins of water-fog.glsl's WATER_DARKEST (the most optical depth the water's light is
+// dimmed by) and WATER_GLOW (how much brighter it is looking level than looking down).
+const WATER_DARKEST = 4;
+const WATER_GLOW = 3;
+
+/**
+ * The colour of deep water seen looking level from `depth` metres under its surface, in the
+ * working (linear) space: its colour lit by the `daylight` (0 night to 1 day) left at that
+ * depth, as the library's water draws it from inside (`water-body.glsl`'s `waterBodyDeep`).
+ * What a distant wall of the water fades to from in it: the colour for a fog in the water.
+ *
+ * @group Weather
+ */
+export function waterDeepColor(
+  optics: Required<WaterOptics>,
+  depth: number,
+  daylight = 1,
+): Vec3 {
+  const extinction = waterExtinctionOf(optics);
+  const mean = (extinction[0] + extinction[1] + extinction[2]) / 3;
+  const lit = Math.min(
+    Math.max(depth, 0),
+    WATER_DARKEST / Math.max(mean, 1e-6),
+  );
+  const light = (0.15 + 0.85 * Math.min(Math.max(daylight, 0), 1)) * WATER_GLOW;
+  return waterColorOf(optics).map(
+    (c, i) => c * Math.exp(-lit * 0.5 * extinction[i]) * light,
+  ) as Vec3;
+}

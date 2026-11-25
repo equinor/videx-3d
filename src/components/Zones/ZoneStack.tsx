@@ -36,6 +36,7 @@ import {
   Vec3,
 } from '../../sdk';
 import { CutUniforms } from '../../sdk/materials/fence-field';
+import { sceneWaterBody, WaterBody } from '../../sdk/materials/water-body';
 import {
   createHeightFieldClipBinding,
   HeightFieldClip,
@@ -223,9 +224,10 @@ export type ZoneStackProps = {
    */
   reliefSampler?: SurfaceSampler | null;
   /**
-   * Draw the `water`. Default true. `false` keeps the sea built but hides it, the bed
-   * tint and the interior fog in it with it — while a `SceneryStage` owns the water over
-   * the column, say (see its occupant's `onStage`). A hidden sea keeps no bed whole: a
+   * Draw the `water`. Default true. `false` keeps the sea built but hides it, and the
+   * interior fog in it with it — while a `SceneryStage` owns the water over the column, say
+   * (see its occupant's `onStage`). The sea bed's cap is then seen through the sea that draws
+   * the scene's water, if any (a `Scenery`'s, a `Water`). A hidden sea keeps no bed whole: a
    * cut takes the sea bed's cap like any other. Switching it rebuilds no geometry.
    */
   drawSea?: boolean;
@@ -462,11 +464,12 @@ export const ZoneStack = ({
     () => ({ value: new Vector4(0, 0, 0, -1) }),
     [],
   );
-  // Shared like the plane: hiding the sea hides its bed tint with one write.
+  // Shared like the plane: hiding the sea hides its bed tint with one write. With it, the water
+  // the sea bed's cap is seen through, bound once to every zone material: the stack's own while
+  // it draws it, else the scene's (a `Scenery`'s sea, a `Water`), copied in each frame (below),
+  // so switching between them rebuilds nothing.
   const [waterTintShown] = useState(() => ({ value: 1 }));
-  useEffect(() => {
-    waterTintShown.value = drawSea ? 1 : 0;
-  }, [waterTintShown, drawSea]);
+  const [capWater] = useState(() => new WaterBody());
   // ⭐ The exact COMPLEMENT of the above, for geometry that must appear only where
   // the section took something away — the fragments a cap's collapse dropped
   // because a layer above covered them. Negating the plane makes the patch and the
@@ -1117,7 +1120,7 @@ export const ZoneStack = ({
       heightClip: clipBinding?.uniforms,
       drawSea,
       waterTintShown,
-      waterBody: seaMaterials?.surface.water ?? null,
+      waterBody: capWater,
       bathymetry,
       prepareCuts: hasCut,
       section: sectionState,
@@ -1168,7 +1171,7 @@ export const ZoneStack = ({
     clipBinding,
     drawSea,
     waterTintShown,
-    seaMaterials,
+    capWater,
     bathymetry,
     hasCut,
     sectionState,
@@ -1381,6 +1384,16 @@ export const ZoneStack = ({
   const cameraSite = useCameraProbe(seaProbe, CAMERA_PROBE_ORDER.water);
   useFrame(({ camera: frameCamera }) => {
     if (seaSurface) cameraSite.get(frameCamera);
+    // The sea bed's cap's water, after the stack's own is synced: that, while drawn, dimmed
+    // under its surface and walls (1); else whatever sea draws the scene's (2), seen through as
+    // the seabed; none without either (0).
+    const water = drawSea ? seaSurface?.water : sceneWaterBody(scene);
+    if (water) capWater.copyFrom(water);
+    waterTintShown.value = drawSea
+      ? 1
+      : water && water.uniforms.uWaterBodyExtinction.value.lengthSq() > 0
+        ? 2
+        : 0;
   });
 
   // ⭐ The face that CLOSES the water body at a cut, off the sea's own channels —
@@ -1444,6 +1457,7 @@ export const ZoneStack = ({
                   <StackInteriorFog
                     interiorFog={interiorFog}
                     sea={drawSea ? (seaWater ?? null) : null}
+                    water={seaMaterials?.surface.water ?? null}
                     sampler={stackSampler}
                     base={blockBase}
                     section={sectionState}

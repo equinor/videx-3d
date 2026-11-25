@@ -120,11 +120,12 @@ export type ZoneStackContextValue = {
   heightClip?: HeightFieldClipUniforms;
   /** whether the stack draws its sea (see `ZoneStackProps.drawSea`) */
   drawSea?: boolean;
-  /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ZoneStackProps.drawSea`) */
+  /** 1 while the stack draws its sea, 2 while another sea draws the scene's water, 0 with none: how the bed's cap takes the water (see `ZoneStackProps.drawSea`) */
   waterTintShown?: IUniform<number>;
   /**
-   * The stack's own water (its sea's `WaterBody`): what its sea bed is seen through. Its own,
-   * not the scene's, so a `Scenery`'s sea about it does not take its place. Null without a sea.
+   * The water the stack's sea bed is seen through: its own sea's `WaterBody` while it draws it,
+   * else the scene's (a `Scenery`'s sea, a `Water`), copied into this one body each frame so
+   * the materials bound to it are never rebuilt. Null without a sea.
    */
   waterBody?: WaterBody | null;
   /**

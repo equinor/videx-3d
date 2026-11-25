@@ -523,8 +523,9 @@ export type ZoneStackSea = WaterSettings &
  */
 export type ZoneStackInteriorFog = {
   /**
-   * Fog inside the sea, in the water's own colour, closing in as far as one sees through it
-   * (its `optics`: 5% left at its clarity). Default true (when the stack declares water)
+   * Fog inside the sea, in the water's own colour as its walls show it from inside (lit by the
+   * daylight left at the camera's depth), closing in as far as one sees through it (its
+   * `optics`: 5% left at its clarity). Default true (when the stack declares water)
    */
   water?: boolean;
   /** fog inside the block's rock. Default true */

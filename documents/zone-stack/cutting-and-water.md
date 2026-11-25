@@ -602,11 +602,14 @@ See [../water.md](../water.md).
 ### Hiding it without a rebuild
 
 `drawSea={false}` hides the sea — lid, body and cut faces — and the interior
-fog, and zeroes the water tint (`waterTintShown`), while keeping everything built:
-the sea itself, the cut that leaves room for it, the bed's tint materials. Turning
-it back on shows it at once. It is for a sky that owns the water over the column
-(`SceneryStage`'s `onStage` `water`; see [../scenery.md](../scenery.md)), so the two seas
-hand over without a stutter.
+fog, while keeping everything built: the sea itself, the cut that leaves room for it, the
+bed's tint materials. Turning it back on shows it at once. It is for a sky that owns the water
+over the column (`SceneryStage`'s `onStage` `water`; see [../scenery.md](../scenery.md)), so
+the two seas hand over without a stutter. While hidden, the sea bed's cap is seen through the
+water the scene's sea draws (a `Scenery`'s, a `Water`), as that sea's own seabed is
+(`waterTintShown` 2): the stack copies that water into the one `WaterBody` its materials are
+bound to each frame, so the hand-over rebuilds nothing. With no sea drawing water, the cap is
+dry (`waterTintShown` 0).
 
 ---
 
@@ -631,6 +634,11 @@ the fog to switch on before the cut visually reaches you).
 
 `ZoneStackInteriorFog` options: `water`, `rock`, `rockColor`, `visibility` (default 400),
 `background` (default true), `transition` (default 5 m), `settle` (default 0.12 s).
+
+In the water, the fog's colour is the water's as its walls draw it from inside looking level,
+lit by the daylight left at the camera's depth (`waterDeepColor`, the twin of
+`water-body.glsl`'s `waterBodyDeep`), and its density closes in at the water's clarity: the
+far walls and the background melt into it rather than standing out as a band.
 
 > ⚠️ **It is off unless declared, and it has to be.** Installing `scene.fog` at all
 > changes every material's program cache key, so there is no free "disabled" state.

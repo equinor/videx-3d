@@ -109,9 +109,9 @@ export type ZoneMeshesProps = {
    * here: the sea's own geometry belongs to the stack.
    */
   sea?: ZoneStackSea | null;
-  /** 1 while the stack draws its sea, 0 while not: the bed tint follows it */
+  /** how the bed's cap takes the water: 1 the stack's own drawn, 2 another sea's, 0 none (`ZoneStackContextValue.waterTintShown`) */
   waterTintShown?: IUniform<number>;
-  /** the stack's own water, which its sea bed's cap is seen through (`ZoneStackContextValue.waterBody`) */
+  /** the water its sea bed's cap is seen through (`ZoneStackContextValue.waterBody`) */
   waterBody?: WaterBody | null;
   /**
    * The sea bed's depth grid, from the stack. Drives the bed tint by the water

@@ -3,6 +3,8 @@ import {
   WATER_FADE,
   WATER_OPACITY_DEPTH,
   WATER_OPTICS_PRESETS,
+  waterColorOf,
+  waterDeepColor,
   waterExtinctionOf,
   waterOpticsOf,
   waterTransmittance,
@@ -55,5 +57,23 @@ describe('water optics', () => {
       waterOpticsOf(undefined, { waterOpacity: 0.7, bodyFogDensity: 0.05 })
         .clarity,
     ).toBeCloseTo(WATER_FADE / 0.05, 9);
+  });
+
+  it('lights deep water looking level by the daylight left at the depth, no darker than its floor', () => {
+    const optics = WATER_OPTICS_PRESETS.realistic;
+    const color = waterColorOf(optics);
+    // At the surface by day, three times its colour: the light scattered toward a level sight line.
+    waterDeepColor(optics, 0, 1).forEach((c, i) =>
+      expect(c).toBeCloseTo(color[i] * 3, 9),
+    );
+    // Darker down, red first; past the depth its light is taken at, no darker.
+    const deep = waterDeepColor(optics, 10, 1);
+    const shallow = waterDeepColor(optics, 0, 1);
+    expect(deep[0] / shallow[0]).toBeLessThan(deep[2] / shallow[2]);
+    expect(waterDeepColor(optics, 1000, 1)).toEqual(
+      waterDeepColor(optics, 5000, 1),
+    );
+    // Night keeps 15 % of the day's.
+    expect(waterDeepColor(optics, 10, 0)[2]).toBeCloseTo(deep[2] * 0.15, 9);
   });
 });
