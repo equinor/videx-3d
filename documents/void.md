@@ -3,7 +3,7 @@
 Under a `Scenery`'s seabed the camera is in the rock. To show the data that lies there (wells,
 horizons, reservoirs) the solid is turned inside out: the rock becomes an open gap and the
 data shows solid in it. By default that gap is a **hollow**, a crater in the crust about the
-field, rather than the bottomless gradient of the plain void. It should be plain at once that
+field, rather than the plain void (an even lid over the void's gradient). It should be plain at once that
 you are under the seabed, and the hollow should frame the data without competing with it:
 dark, dull rock that gives scale and depth.
 
@@ -14,7 +14,7 @@ dark, dull rock that gives scale and depth.
 </Scenery>
 ```
 
-`hollow={false}` keeps the plain void: the endless lid and the bottomless gradient
+`hollow={false}` keeps the plain void: the endless lid and the void's gradient
 ([scenery.md](./scenery.md#the-void-sceneryvoid)).
 
 ## Design (decided)
@@ -29,8 +29,8 @@ dark, dull rock that gives scale and depth.
   ground, not a missing ground.
 - **Real geometry with baked textures**, no ray marching: walls and floor are meshes, shaded
   from two textures baked once on the GPU. Until both are baked and the sky's programs compiled
-  the hollow is not drawn, and the void is the plain void: its grey lid overhead and grey depths
-  below, as the stand-in draws them while the sky compiles. Until 2026-11-18 the void turned to
+  the hollow is not drawn, and the void is the plain void: its even lid overhead and the void's
+  gradient below, as the stand-in draws it while the sky compiles. Until 2026-11-18 the void turned to
   the hollow's at once: the stand-in, and inside the rim the void's view down (its lid curving
   away to the far side of the globe), were black below the horizon until the hollow came in.
 - **Nothing re-bakes or recompiles** when the seabed is peeled, the camera flies into the
@@ -150,9 +150,9 @@ click puts the default radius back. The radius is kept between the walls' reach 
 ## The lid
 
 While the hollow is on, the lid is the same everywhere: the seabed's underside, the sediments'
-underside, mottled at three sizes and rippled as the plain lid is, with faint relief lit from the
+underside, mottled at three sizes, with faint relief lit from the
 hollow's middle (`hollowLid`, used by `sceneryVoidCeilingOver` for the sky, the relief's underside
-and the stage alike). Inside the rim it curves down with the globe to meet the walls
+and the stage alike), and the void's noise relief over it where `detail` is set (off by default). Inside the rim it curves down with the globe to meet the walls
 (`sceneryVoidLidCurved`); past the rim it lies level over the camera. Crossing the rim under the
 seabed changes nothing overhead. The relief draws it near the field, the background beyond.
 
@@ -164,6 +164,10 @@ seabed changes nothing overhead. The relief draws it near the field, the backgro
 - It switches on exactly where the camera passes through the seabed, as the relief flips to
   its underside there. A fade-in was tried and removed: half faded, the layers meant for above
   the seabed showed through it.
+- The simple style's lid is an even underside in its `lid` colour, its corner with the walls
+  shaded softly, with a faint grain (`hollowPlainLid`). The plain void's lid is the same, in the
+  void's `ceiling` colour, receding into its `horizon` colour rather than its own dark, so it
+  meets the gradient below the horizon without a seam.
 
 ## Over the opening
 
@@ -182,7 +186,7 @@ seabed changes nothing overhead. The relief draws it near the field, the backgro
 
 - **Past the walls**, under the seabed, the camera is in the rock: the hollow is not drawn, the
   hollow's own lid is overhead (as inside the rim) and the void below the horizon is black
-  (`Scenery` sets the plain void's horizon and depth colours black once the hollow is drawn).
+  (`sceneryVoidDepths` is black while the hollow is drawn).
 - **Under the floor**, the hollow and its lid stay drawn, seen through the rock: each view is
   dimmed by the length of rock it crosses under the floor, by e every 30 km
   (`HOLLOW_ROCK_FADE`), never below 15% (`HOLLOW_ROCK_KEPT`). The path is zero at the floor, so

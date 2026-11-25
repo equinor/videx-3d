@@ -4,11 +4,11 @@ import { builtInColorRamps } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
 import {
   DEFAULT_WATER_OPACITY,
+  DEFAULT_WATER_WIND_SPEED,
   type WaterFoamTuning,
   type WaterWaveTuning,
 } from '../../components/Water/water-material';
 import type { WaterQuality } from '../../sdk/weather/sea-state';
-import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import {
   SKY_PRESETS,
   weatherSeaSwells,
@@ -59,6 +59,12 @@ import {
   progressDecorator,
   storyProgress,
 } from '../decorators/progress-decorator';
+import {
+  waterClarityArgType,
+  waterColorArgType,
+  waterOpticsArgsOf,
+  waterOpticsFromArgs,
+} from './water-optics-controls';
 import {
   SceneryCutawayArgs,
   sceneryCutawayArgTypes,
@@ -163,8 +169,10 @@ export type SceneryArgs = {
   scenerySeaFoamTuning?: WaterFoamTuning;
   /** the sea's `quality` (`WATER_QUALITY`); default medium */
   scenerySeaQuality?: WaterQuality;
-  /** the sea's look by name (`WATER_OPTICS_PRESETS`): realistic (the North Sea's), or clear */
-  scenerySeaOptics: WaterOpticsPreset;
+  /** the sea's look (`optics`): the colour of water too deep to see through */
+  scenerySeaColor: string;
+  /** and how far one sees through it, metres */
+  scenerySeaClarity: number;
   scenerySeabedColor: string;
   scenerySeaDetailScale: number;
   /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
@@ -276,7 +284,7 @@ export const sceneryArgs: SceneryArgs = {
   scenerySea: true,
   scenerySeaOpacity: DEFAULT_WATER_OPACITY,
   // As `WaterMaterial`'s own defaults.
-  windSpeed: 10,
+  windSpeed: DEFAULT_WATER_WIND_SPEED,
   foamAmount: 0.5,
   scenerySeaShoreFoam: 0,
   windDirection: 90,
@@ -284,7 +292,8 @@ export const sceneryArgs: SceneryArgs = {
   swellPeriod: 12,
   swellFrom: 270,
   scenerySeaSteepness: 1,
-  scenerySeaOptics: 'realistic',
+  scenerySeaColor: waterOpticsArgsOf('realistic').color,
+  scenerySeaClarity: waterOpticsArgsOf('realistic').clarity,
   scenerySeaDetailScale: 0.05,
   scenerySeaFresnelPower: 0,
   scenerySeaSparkle: 0,
@@ -611,7 +620,7 @@ export const scenerySeaWaterFromArgs = (
   foamTuning: args.scenerySeaFoamTuning,
   foamAmount: args.foamAmount,
   shoreFoam: args.scenerySeaShoreFoam,
-  optics: args.scenerySeaOptics,
+  optics: waterOpticsFromArgs(args.scenerySeaColor, args.scenerySeaClarity),
 });
 
 /**
@@ -1097,12 +1106,9 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
     ),
     if: { arg: 'scenerySea' },
   },
-  scenerySeaOptics: {
-    control: { type: 'inline-radio' },
-    options: ['realistic', 'clear'],
-    description:
-      'The water\u2019s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea\u2019s (15 m visibility); CLEAR to see the seabed and what lies under the sea (750 m).',
-    table: { category: SEA },
+  scenerySeaColor: { ...waterColorArgType(SEA), if: { arg: 'scenerySea' } },
+  scenerySeaClarity: {
+    ...waterClarityArgType(SEA),
     if: { arg: 'scenerySea' },
   },
   scenerySeaDetailScale: {

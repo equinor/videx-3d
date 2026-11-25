@@ -1,7 +1,6 @@
 import { useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
-import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import { SKY_PRESETS, type SkyPreset } from '../../sdk/weather/weather';
 import {
   reportReliefProgress,
@@ -27,6 +26,12 @@ import {
   SceneryDemoField,
 } from '../../storybook/components/scenery-features';
 import { Tanker } from '../../storybook/components/Tanker/Tanker';
+import {
+  waterClarityArgType,
+  waterColorArgType,
+  waterOpticsArgsOf,
+  waterOpticsFromArgs,
+} from '../../storybook/components/water-optics-controls';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import {
   SYNTHETIC_SEABED_ID,
@@ -39,6 +44,7 @@ import type { ProgressArgs } from '../../storybook/decorators/progress-decorator
 import storyArgs from '../../storybook/story-args.json';
 import { GeoRelief } from '../Layers/GeoRelief';
 import { World } from '../World/World';
+import { DEFAULT_WATER_WIND_SPEED } from '../Water/water-material';
 import { Scenery } from './Scenery';
 import { SceneryClouds } from './SceneryClouds';
 import { ScenerySea } from './ScenerySea';
@@ -122,7 +128,8 @@ type StageArgs = {
   water: boolean;
   seabed: boolean;
   seabedOpacity: number;
-  optics: WaterOpticsPreset;
+  opticsColor: string;
+  opticsClarity: number;
   windSpeed: number;
   generatedSeabed: boolean;
 } & ProgressArgs;
@@ -131,7 +138,8 @@ const StageStory = ({
   water,
   seabed,
   seabedOpacity,
-  optics,
+  opticsColor,
+  opticsClarity,
   windSpeed,
   generatedSeabed,
 }: StageArgs) => (
@@ -143,7 +151,7 @@ const StageStory = ({
         water={water}
         seabed={seabed}
         seabedOpacity={seabedOpacity}
-        optics={optics}
+        optics={waterOpticsFromArgs(opticsColor, opticsClarity)}
         windSpeed={windSpeed}
       />
       <SceneryStage boundary={FIELD_BOUNDS} />
@@ -337,8 +345,10 @@ export const Stage: StoryObj<StageArgs> = {
     water: true,
     seabed: true,
     seabedOpacity: 0.6,
-    optics: 'clear',
-    windSpeed: 10,
+    // Clear, to see the seabed and the wellbores under the sea.
+    opticsColor: waterOpticsArgsOf('clear').color,
+    opticsClarity: waterOpticsArgsOf('clear').clarity,
+    windSpeed: DEFAULT_WATER_WIND_SPEED,
     generatedSeabed: true,
   },
   argTypes: {
@@ -358,13 +368,8 @@ export const Stage: StoryObj<StageArgs> = {
       'Sea',
       'How much of what lies under the seabed it hides over the stage (`seabedOpacity`): below 1 the wellbores show through it. Crossing 1 recompiles the seabed\u2019s materials.',
     ),
-    optics: {
-      control: { type: 'inline-radio' },
-      options: ['realistic', 'clear'],
-      description:
-        'The water\u2019s look (`optics`): REALISTIC, the North Sea\u2019s, some 15 m visibility; CLEAR, 750 m, to see the seabed and the wellbores under the sea.',
-      table: { category: 'Sea' },
-    },
+    opticsColor: waterColorArgType('Sea'),
+    opticsClarity: waterClarityArgType('Sea'),
     windSpeed: range(
       0,
       25,

@@ -4,7 +4,6 @@ import { createWaterPlane } from '../../../sdk/geometries/water-geometry';
 import type { Vec3 } from '../../../sdk/types/common';
 import { directionFromCompass } from '../../../sdk/utils/vector-operations';
 import type { WaterQuality } from '../../../sdk/weather/sea-state';
-import type { WaterOpticsPreset } from '../../../sdk/weather/water-optics';
 import {
   SKY_PRESETS,
   WEATHER_LOCAL_RADIUS,
@@ -26,6 +25,12 @@ import {
   StoryOitPipeline,
 } from '../../../storybook/components/scenery-story-rendering';
 import { SeaStoryLighting } from '../../../storybook/components/SeaStoryLighting';
+import {
+  waterClarityArgType,
+  waterColorArgType,
+  waterOpticsArgsOf,
+  waterOpticsFromArgs,
+} from '../../../storybook/components/water-optics-controls';
 import {
   SEA_POSE_AZIMUTH,
   SEA_POSES,
@@ -87,8 +92,10 @@ type SeaBenchArgs = {
   scene: 'water' | 'scenery';
   /** the stand-alone sea's quality (`Water`'s `quality`) */
   quality: WaterQuality;
-  /** the water's look (`optics`): realistic, or clear to see the seabed and what lies under the sea */
-  optics: WaterOpticsPreset;
+  /** the water's look (`optics`): the colour of water too deep to see through */
+  opticsColor: string;
+  /** and how far one sees through it, metres */
+  opticsClarity: number;
   pose: SeaPoseName;
   sunHour: number;
   windSpeed: number;
@@ -214,7 +221,8 @@ const benchSceneryArgs = (args: SeaBenchArgs): SceneryArgs => ({
   scenerySeaWaveTuning: tuningOf(args),
   scenerySeaFoamTuning: foamTuningOf(args),
   scenerySeaQuality: args.quality,
-  scenerySeaOptics: args.optics,
+  scenerySeaColor: args.opticsColor,
+  scenerySeaClarity: args.opticsClarity,
   scenerySeaSparkle: args.sparkle,
   scenerySeaCrestLight: args.crestLight,
   scenerySeaFoamLife: args.foamLife,
@@ -261,6 +269,10 @@ const StandAlone = ({
     [args.displacement],
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
+  const optics = useMemo(
+    () => waterOpticsFromArgs(args.opticsColor, args.opticsClarity),
+    [args.opticsColor, args.opticsClarity],
+  );
   const { azimuth, elevation } = scenerySunPosition(scenery);
   const sunDirection = directionFromCompass(azimuth, elevation) as Vec3;
   return (
@@ -274,7 +286,7 @@ const StandAlone = ({
       <Water
         geometry={geometry}
         quality={args.quality}
-        optics={args.optics}
+        optics={optics}
         displacement={args.displacement}
         // Its wind and swell the bench's Weather's: it draws the weather's sea.
         foamAmount={args.foamAmount}
@@ -606,13 +618,8 @@ const meta = {
       description:
         'The sea’s `quality` (`WATER_QUALITY`, `WATER_QUALITY_DEFINES`): LOW three coarse layers, no gusts or slicks, no crest light, the sky’s gradient alone in the reflection; MEDIUM four layers, down to 0.23 m waves; HIGH ripples below that, to about 4 cm, the sun’s glitter, the whitecaps’ life and the waves filtered along the view (4×); ULTRA three times the waves a layer, filtered 8×.',
     },
-    optics: {
-      table: { category: 'Bench' },
-      control: { type: 'inline-radio' },
-      options: ['realistic', 'clear'],
-      description:
-        'The water’s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea’s (15 m visibility); CLEAR to see the seabed and what lies under the sea (750 m).',
-    },
+    opticsColor: waterColorArgType('Bench'),
+    opticsClarity: waterClarityArgType('Bench'),
     displacement: {
       table: { category: 'Bench' },
       control: { type: 'boolean' },
@@ -884,7 +891,8 @@ const meta = {
     pixelRatio: 1,
     scene: 'scenery',
     quality: 'medium',
-    optics: 'realistic',
+    opticsColor: waterOpticsArgsOf('realistic').color,
+    opticsClarity: waterOpticsArgsOf('realistic').clarity,
     pose: '300m',
     sunHour: 10,
     windSpeed: 10,

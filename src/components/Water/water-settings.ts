@@ -32,7 +32,7 @@ export type WaterSettings = {
   /**
    * Wind speed in m/s (U10). Primary driver of the sea state: wave height,
    * wavelength and foam all follow North-Sea JONSWAP/Pierson-Moskowitz
-   * relations (e.g. ~10 m/s ⇒ Hs ~ 2.1 m, peak wavelength ~ 88 m).
+   * relations (e.g. ~10 m/s ⇒ Hs ~ 2.1 m, peak wavelength ~ 88 m). Default 6.5
    */
   windSpeed?: number;
   /**

@@ -25,9 +25,22 @@ const surface = createWaterPlane({ size: 100000 })
 ```
 
 `windSpeed` (U10) is the primary knob — wave height, wavelength and foam all
-follow from it (≈ 10 m/s ⇒ ~2 m significant wave height). `swells` add waves from weather far
+follow from it (≈ 10 m/s ⇒ ~2 m significant wave height; the default, 6.5 m/s, ~0.9 m). `swells` add waves from weather far
 away (height, period, direction), running on in a calm. Colours, foam, reflection and opacity
 are all tunable via props.
+
+How the water looks is `optics`: a preset's name (`'realistic'`, the North Sea's, 15 m
+visibility; `'clear'`, 750 m, to see the bed; `WATER_OPTICS_PRESETS`) or `{ color, clarity }`,
+the colour of water too deep to see through (default `#102c3a`) and how far one sees through
+it in metres. One colour for every part of it: the surface's own tone, the view in the water,
+and a body's walls and tint. What lies in the water fades toward that colour along its path
+through it, the channel the colour is darkest in first (`waterExtinctionOf`), so the colour
+also sets how the water turns with depth: a greener one turns the bed greener the deeper it
+lies. The `Scenery`'s sea and a `ZoneStack`'s take the same `optics`.
+
+```tsx
+<Water geometry={surface} optics={{ color: '#0f3a3a', clarity: 25 }} />
+```
 
 `quality` (`'low' | 'medium' | 'high' | 'ultra'`, default `'medium'`, `WATER_QUALITY`) is how
 much of the sea state is drawn: `medium`, sized for a mid-range laptop's integrated GPU, four

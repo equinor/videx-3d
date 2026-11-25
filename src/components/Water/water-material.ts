@@ -212,6 +212,14 @@ export const DEFAULT_WATER_DEEP_COLOR = '#0a2540';
 export const DEFAULT_WATER_OPACITY = 0.7;
 
 /**
+ * Default wind speed over the water, m/s (see `WaterSettings.windSpeed`): a moderate breeze,
+ * the waves some 0.9 m high.
+ *
+ * @group Components
+ */
+export const DEFAULT_WATER_WIND_SPEED = 6.5;
+
+/**
  * The uniforms the sea's layers are read with (`shaders/sea-layers.glsl`, and the detail
  * octave in `shaders/water-surface.glsl`: the finest layer's tile read again, smaller). A
  * material displaced with the surface (the water body's walls) points these at the same
@@ -532,7 +540,7 @@ export class WaterMaterial extends ShaderMaterial {
     // The sea and its layers' textures, before `this` is there to hold them.
     const spec = WATER_QUALITY[quality] ?? WATER_QUALITY.medium;
     const sea = new SeaState(
-      { windSpeed: 10, windDirection: [1, 0] },
+      { windSpeed: DEFAULT_WATER_WIND_SPEED, windDirection: [1, 0] },
       { layers: spec.layers, detail: spec.detail },
     );
     const bake = new SeaWaveBake(sea.layers, spec.anisotropy);
@@ -588,7 +596,7 @@ export class WaterMaterial extends ShaderMaterial {
         uTime: new Uniform(0),
         uWaterDetailOctaves: new Uniform(detailOctaves),
         uWindDirection: new Uniform(new Vector2(1, 0).normalize()),
-        uWindSpeed: new Uniform(10),
+        uWindSpeed: new Uniform(DEFAULT_WATER_WIND_SPEED),
         uSteepness: new Uniform(1),
         uDisplacement: new Uniform(0),
 

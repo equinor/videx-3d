@@ -217,7 +217,7 @@ water.
 
 ## The air
 
-`air` (default on) thins with height, so the sky changes as the camera climbs: the
+The air (`air`, its options) thins with height, so the sky changes as the camera climbs: the
 zenith deepens toward a saturated blue (a grey sky stays grey) and the haze at the
 horizon closes onto it. Seen from low down, the far sea fades into the horizon's
 colour; from high up it stays clear much further out. Looking down, the haze takes the
@@ -241,8 +241,9 @@ bright band along the horizon, and the clear sky above it closes onto the horizo
 camera rises out of it. The far clouds, seen through little of it, stay crisp. Real haze
 grows over the day, as the sun mixes the air, and is thicker in summer: neither changes by
 itself here, but a host can drive `haze` and `hazeHeight` with the time or the season.
-Heights are measured from the sea's `level` (the void's lid without a sea). `air: false`
-turns all of it off. Inside a `<Weather>`, `visibility`, `haze` and `hazeHeight` left out are
+Heights are measured from the sea's `level` (the void's lid without a sea). With the sky off
+(`sky={false}`, see [No sky](#no-sky-sky-and-voidbackground)) there is no air, and no haze.
+Inside a `<Weather>`, `visibility`, `haze` and `hazeHeight` left out are
 the weather's (`WeatherState.air`), so a weather can bring its own air; given, the Scenery's
 win.
 
@@ -485,7 +486,7 @@ bakes (`uGlobe`, `uWaterCharts`) were `new Vector4()`, whose w of 1 is the globe
 bakes drew the globe on with no radius, and half their sea lay in night.
 
 `subsurface` is the light where the sky's own means nothing: below the seabed, and
-wherever the sky is not drawn (`background: false`, or `'void'`). By default it is a dark backdrop
+wherever the background is not drawn (`background: false`). By default it is a dark backdrop
 with soft light panels above and below the horizon (`panels`, see `ScenerySubsurface`); give
 `map` (an equirectangular or cube texture) to use one of your own instead. The directional
 light changes too: below the seabed it is the subsurface's `light`, steady whatever the time
@@ -504,22 +505,32 @@ lit as the scene is.
 `background: false` hides the sky (and its stage) instantly: nothing is rebuilt or baked
 again, and the scene stays lit, by the subsurface.
 
-`background: 'void'` draws the void's grey gradient in the sky's place, the very gradient
-the stand-in shows while the sky compiles: the lid's colour overhead fading to the
-horizon's, and the depths' below, measured from the horizon the Earth's curve lowers, so
-from high up it meets the far ground's haze without a seam. There is no air, sun, moon,
-stars (all compiled
-out of the sky's layer, `SCENERY_VOID_BACKGROUND`), and no clouds. The void itself,
-a stage and a sea are drawn as ever; with neither water nor a seabed it is the
-void all round. The scene is lit by the subsurface everywhere, as with `false`, so only its
-zone is baked. Changing to or from it recompiles the sky's own layer.
+## No sky: `sky` and `VoidBackground`
+
+`sky={false}` draws none of the sky: no air, sun disc, moon, stars, planets or clouds. What
+is behind the scene shows in its place: its `scene.background`, or the canvas' clear colour.
+The sea, the void and a stage are drawn as ever, and the sun's and the moon's light stay as
+set (the sea's glint with them, the highlight of that light). The void's gradient
+(`SceneryVoid`'s `colors` and `falloff`) stands in for the sky's light: the environment and
+the light probe are baked from it, and the seas reflect it, the `Water`s and a `ZoneStack`'s
+too. It is a uniform: switching it recompiles nothing, and the bakes follow.
+
+`<VoidBackground>` sets the same gradient as the scene's background while it is mounted
+(`scene.background`, the one before it put back after), so what is behind the scene matches
+the light it takes. With or without a `Scenery`; in code, `createVoidGradientTexture` makes
+the texture (an equirectangular one, half floats in linear colour) and `VOID_GRADIENT_DEFAULTS`
+holds its colours.
 
 ```tsx
-<Scenery background="void">
-  <SceneryVoid />
-  <ScenerySea water={false} seabed={false} />
+<Scenery sky={false}>
+  <ScenerySea level={0} depth={100} />
+  <SceneryVoid colors={{ ceiling: '#202428' }} />
+  <VoidBackground ceiling="#202428" />
 </Scenery>
 ```
+
+A `ZoneStack`'s interior fog takes the background over while the camera is in the sea or the
+block, from whatever it is then, and hands it back on leaving.
 
 ## The endless sea
 
@@ -751,14 +762,16 @@ cost of a box.
 
 ## The void (`SceneryVoid`)
 
-`<SceneryVoid>` puts an endless lid overhead below a `level` and a bottomless gradient below the
+`<SceneryVoid>` puts an endless lid overhead below a `level` and the void's gradient below the
 horizon, so a camera under the ground does not see the sky. It is part of the
 background, so it never hides anything in the scene, including objects above the level.
-The lid recedes into the horizon colour (`fadeDistance`; 0 for never) and has a noise relief
-(`detail`, `detailScale`); the depths have faint distant rock (`depthDetail`) and a
-`falloff`. A `<ScenerySea>` turns the void on below its seabed by itself (then the
+The plain void's lid is an even underside in the gradient's `ceiling` colour, receding far
+off into its `horizon` colour (the hollow's simple lid, `hollowPlainLid`), so lid and depths
+meet at the horizon without a seam; below the horizon the gradient darkens to its `depth`
+colour (`falloff`). The gradient is the stand-in's too, and with `sky={false}` the light the
+scene takes. A noise relief on the lid (`detail`, `detailScale`) is off by default. A `<ScenerySea>` turns the void on below its seabed by itself (then the
 void's `level` is the seabed's, and `<SceneryVoid>` only sets its look), and with
-or without a seabed its lid is a roof from below. Its gradient, its rock and its lid are laid
+or without a seabed its lid is a roof from below. Its gradient and its lid are laid
 out by the camera's own up (the look frame), so the void is the same under any field.
 
 Under the `World`'s relief the void starts under the relief, at whatever depth: over
@@ -783,7 +796,7 @@ and the seabed are cut away inside its rim and kept whole around it, and the dat
 field is seen against the crater. Past its walls and under its floor the void is black, with
 the lid overhead. It is real geometry with baked textures, drawn with the background, and
 peeling, moving or flying into it re-bakes and recompiles nothing. `hollow={false}` keeps the
-plain void above, the bottomless gradient. Its design, look, light and cost:
+plain void above: the plain lid over the gradient. Its design, look, light and cost:
 [void.md](./void.md).
 
 ## Cutaway
@@ -851,7 +864,7 @@ default):
 
 | Layer | Drawn from | What |
 |--|--|--|
-| `sky` | `<Scenery>` | the air, sun, moon and stars, or the void's gradient (`background: 'void'`) |
+| `sky` | `<Scenery>` | the air, sun, moon and stars; not drawn with `sky={false}` |
 | `void` | `<SceneryVoid>`, or a sea | below its level, the lid and the depths over everything; above it, the depths only where the sea's layers leave them showing (no seabed, a see-through one, the cutaway, a stage's opening) |
 | `sea` | `<ScenerySea>` | the seabed seen through the water from the air |
 | `water` | `<ScenerySea>` | the view from in the water |
@@ -863,7 +876,7 @@ surface layer, drawing themselves. Transparent parts draw after everything. It w
 
 - Each layer is a program of its own, compiled with only the switches it needs
   (`sceneryLayerDefines`): adding a void compiles its layer and nothing else; the seabed's detail only the sea's, the water's and the
-  stages'. The sky's own (`SceneryMaterial`) recompiles only for `background: 'void'`.
+  stages'. The sky's own (`SceneryMaterial`) never recompiles: `sky` is a uniform.
 - Each frame a layer that can show nothing from where the camera is is not drawn at all
   (`sceneryLayersShown`): in the water the sky only through a cutaway's cut;
   below the seabed only the void; from the air the void only while something opens the
@@ -933,8 +946,9 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   ~8.5 s, twice (drawn to the screen and into the bakes, without a `RenderingPipeline`;
   the bakes have had a small program of their own since 2026-11-18).
 - They compile in the background where the browser has `KHR_parallel_shader_compile`:
-  until the sky, its stages and its bakes are ready, a stand-in (the void's grey
-  gradient, without its detail) is drawn, a stage draws nothing and nothing is
+  until the sky, its stages and its bakes are ready, a stand-in (the void's gradient) is
+  drawn (with `sky={false}`, nothing: the scene's background shows), a stage draws nothing
+  and nothing is
   baked. A recompile (below) shows the stand-in again for as long as it takes. A
   `ZoneStack`'s meshes likewise stay hidden until theirs are ready. The stand-in and the
   void's cliffs (`bakeSkyCliffs`) are compiled the same way, the stand-in first.
@@ -1032,7 +1046,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   both, so a warm load does not stall.
 - Adding or removing a feature compiles or drops only its own layer (see
   [Rendering](#rendering)); the seabed's `detail` and the sea's wave count recompile the
-  sea's layers and its stages; `background: 'void'` the sky's own; and a stage recompiles
+  sea's layers and its stages; and a stage recompiles
   when `seabedOpacity` crosses 1 (its seabed turns see-through, `STAGE_SEE_THROUGH`).
   Every other option only changes uniforms. While a layer compiles the stand-in is drawn
   in place of the whole background, for that layer's compile alone.
@@ -1144,8 +1158,9 @@ the shared preset out.
 | `shaders/sky-fragment.glsl`, `scenery-layer-fragment.glsl` | the sky's layer, and the others over it (one by its `SCENERY_LAYER_*` define) |
 | `shaders/sky-gradient.glsl` | the gradient alone |
 | `scenery-air-colors.ts`, `shaders/sky-air-colors.glsl`, `sky-air-colors-fragment.glsl` | `SkyAirColors`: the colours the haze fades into, drawn per camera place into a lookup, and its readers |
-| `shaders/scenery-void.glsl` | the void's gradient alone: its colours, the depths' gradient, and the whole of it as the stand-in and `background: 'void'` draw it |
+| `shaders/scenery-void.glsl` | the void's gradient alone: its colours, the depths' gradient, and the whole of it as the stand-in draws it and the sky's surface is read with `sky={false}` |
 | `shaders/scenery-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
+| `VoidBackground.tsx`, `sdk/materials/void-gradient.ts` | the void's gradient as the scene's background, and as a texture (`createVoidGradientTexture`, the same formula on the CPU) |
 | `shaders/scenery-sea.glsl` | the sea: surface, water, seabed, cutaway |
 | `shaders/stage-fragment.glsl`, `scenery-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
 

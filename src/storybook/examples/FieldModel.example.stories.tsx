@@ -2661,7 +2661,8 @@ export const Default: Story = {
       Sea: [
         'scenerySea',
         'seaLevel',
-        'scenerySeaOptics',
+        'scenerySeaColor',
+        'scenerySeaClarity',
         'scenerySeaOpacity',
         'seaLayerOpacity',
         'windSpeed',

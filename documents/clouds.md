@@ -132,7 +132,7 @@ and `'scattered cumulus'` the cumulus alone.
   weather altogether draw one sea, the weather's (`WeatherSea`; see
   [water.md](./water.md)).
 - **The air:** a `<Scenery>` takes the weather's `visibility`, `haze` and `hazeHeight` for
-  whichever its `air` leaves out (`air={false}` still has none).
+  whichever its `air` leaves out (with `sky={false}` it has none).
 - **The wind near the surface:** `WeatherWind.gusts` (`WeatherGusts`) is the weather's gust and
   slick field, one field for whatever reads it: `weatherWindAt` (`sdk/weather/wind-field.ts`)
   on the CPU and its twin `weather-wind.glsl` give the local wind over the mean and where a

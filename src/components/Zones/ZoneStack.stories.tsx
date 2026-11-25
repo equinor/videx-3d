@@ -30,8 +30,13 @@ import {
   WellboreFence,
 } from '../../sdk/geometries/wellbore-fence';
 import { darkenColor } from '../../sdk/utils/colors';
-import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import { StoryOitPipeline } from '../../storybook/components/scenery-story-rendering';
+import {
+  waterClarityArgType,
+  waterColorArgType,
+  waterOpticsArgsOf,
+  waterOpticsFromArgs,
+} from '../../storybook/components/water-optics-controls';
 import { sortByStratAge } from '../../storybook/data/strat-ages';
 import { stratLayerColors } from '../../storybook/data/strat-units';
 import {
@@ -48,6 +53,7 @@ import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea, UtmPosition } from '../UtmArea';
+import { DEFAULT_WATER_WIND_SPEED } from '../Water/water-material';
 import { Trajectory } from '../Wellbores/Trajectory/Trajectory';
 import { Wellbore } from '../Wellbores/Wellbore/Wellbore';
 import { WellboreBounds } from '../Wellbores/WellboreBounds/WellboreBounds';
@@ -432,7 +438,8 @@ const INTERIOR_FOG: ZoneStackInteriorFog = {};
 
 type SeaArgs = {
   seaLevel: number;
-  optics: WaterOpticsPreset;
+  opticsColor: string;
+  opticsClarity: number;
   windSpeed: number;
   opacity: number;
   wetBand: number;
@@ -441,7 +448,8 @@ type SeaArgs = {
 
 const SeaStory = ({
   seaLevel,
-  optics,
+  opticsColor,
+  opticsClarity,
   windSpeed,
   opacity,
   wetBand,
@@ -477,8 +485,14 @@ const SeaStory = ({
 
   // The sea belongs to the COLUMN, not to a zone: one lid over the whole stack.
   const sea = useMemo<ZoneStackSea>(
-    () => ({ depth: seaLevel, optics, windSpeed, opacity, wetBand }),
-    [seaLevel, optics, windSpeed, opacity, wetBand],
+    () => ({
+      depth: seaLevel,
+      optics: waterOpticsFromArgs(opticsColor, opticsClarity),
+      windSpeed,
+      opacity,
+      wetBand,
+    }),
+    [seaLevel, opticsColor, opticsClarity, windSpeed, opacity, wetBand],
   );
 
   return (
@@ -751,8 +765,9 @@ export const Sea: StoryObj<SeaArgs> = {
   render: args => <SeaStory {...args} />,
   args: {
     seaLevel: 0,
-    optics: 'realistic',
-    windSpeed: 10,
+    opticsColor: waterOpticsArgsOf('realistic').color,
+    opticsClarity: waterOpticsArgsOf('realistic').clarity,
+    windSpeed: DEFAULT_WATER_WIND_SPEED,
     opacity: 1,
     wetBand: 3,
     interiorFog: false,
@@ -764,13 +779,8 @@ export const Sea: StoryObj<SeaArgs> = {
         'The sea surface, in metres below datum (positive-down, as surfaces are given). The sea bed lies about 90 m down: take this toward it and the bed’s highs come out of the water.',
       table: { category: 'Sea' },
     },
-    optics: {
-      control: { type: 'inline-radio' },
-      options: ['realistic', 'clear'],
-      description:
-        'How the water looks: `realistic` as the North Sea (about 15 m visibility), or `clear`, to see the bed under it.',
-      table: { category: 'Sea' },
-    },
+    opticsColor: waterColorArgType('Sea'),
+    opticsClarity: waterClarityArgType('Sea'),
     windSpeed: {
       control: { type: 'range', min: 0, max: 25, step: 0.5 },
       description: 'Wind speed in m/s, which drives the waves and whitecaps.',

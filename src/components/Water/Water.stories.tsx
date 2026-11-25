@@ -20,10 +20,15 @@ import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { useWaterContact } from './water-contact';
-import { WaterContact } from './water-material';
+import { DEFAULT_WATER_WIND_SPEED, WaterContact } from './water-material';
 import { BuoyancyPoint, useBuoyancy } from './water-sampler';
 import type { WaterQuality } from '../../sdk/weather/sea-state';
-import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
+import {
+  waterClarityArgType,
+  waterColorArgType,
+  waterOpticsArgsOf,
+  waterOpticsFromArgs,
+} from '../../storybook/components/water-optics-controls';
 
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
@@ -211,8 +216,10 @@ type ExampleProps = {
   windSpeed: number;
   steepness: number;
   displacement: boolean;
-  /** the water's look (optics): realistic, or clear to see the bed and what lies under the sea */
-  optics: WaterOpticsPreset;
+  /** the water's look (`optics`): the colour of water too deep to see through */
+  opticsColor: string;
+  /** and how far one sees through it, metres */
+  opticsClarity: number;
   reflectionIntensity: number;
   foamAmount: number;
   foamColor: string;
@@ -407,6 +414,11 @@ const WaterDemo = (props: ExampleProps) => {
     return [Math.cos(rad), Math.sin(rad)];
   }, [props.bedDuneDirection]);
 
+  const optics = useMemo(
+    () => waterOpticsFromArgs(props.opticsColor, props.opticsClarity),
+    [props.opticsColor, props.opticsClarity],
+  );
+
   // Center the geometry at the world origin so every variant frames nicely with
   // the default camera, regardless of its native extent or origin offset.
   const position = useMemo<[number, number, number]>(() => {
@@ -443,7 +455,7 @@ const WaterDemo = (props: ExampleProps) => {
         windSpeed={props.windSpeed}
         steepness={props.steepness}
         displacement={props.displacement}
-        optics={props.optics}
+        optics={optics}
         reflectionIntensity={props.reflectionIntensity}
         foamAmount={props.foamAmount}
         foamColor={props.foamColor}
@@ -545,13 +557,8 @@ const meta = {
       control: { type: 'boolean' },
       table: { category: 'Surface' },
     },
-    optics: {
-      control: { type: 'inline-radio' },
-      options: ['realistic', 'clear'],
-      description:
-        'The water’s look (optics, WATER_OPTICS_PRESETS): REALISTIC about the North Sea’s (15 m visibility); CLEAR to see the bed and what lies under the sea (750 m).',
-      table: { category: 'Surface' },
-    },
+    opticsColor: waterColorArgType('Surface'),
+    opticsClarity: waterClarityArgType('Surface'),
     reflectionIntensity: {
       ...range(0, 2, 0.05),
       table: { category: 'Surface' },
@@ -658,10 +665,11 @@ const commonArgs = {
   detailOctaves: 4,
   detailScale: 0.05,
   windDirection: 45,
-  windSpeed: 10,
+  windSpeed: DEFAULT_WATER_WIND_SPEED,
   steepness: 1,
   displacement: false,
-  optics: 'realistic' as WaterOpticsPreset,
+  opticsColor: waterOpticsArgsOf('realistic').color,
+  opticsClarity: waterOpticsArgsOf('realistic').clarity,
   reflectionIntensity: 1,
   foamAmount: 0.5,
   foamColor: '#ffffff',
