@@ -899,7 +899,8 @@ export const SceneryStageReliefTiles = ({
     // tile wholly inside is never seen. From under the ground it is the lid, seen as any.
     // Per tile while the globe and the opening hold.
     const opening = scenery?.hollowOpen ? scenery.hollowRadius : 0;
-    const holdsKey = `${globe.version},${opening}`;
+    const wander = scenery?.hollowRimWander ?? 0;
+    const holdsKey = `${globe.version},${opening},${wander}`;
     if (view.hollowHoldsKey !== holdsKey) {
       view.hollowHoldsKey = holdsKey;
       view.hollowHolds.clear();
@@ -908,7 +909,7 @@ export const SceneryStageReliefTiles = ({
       if (opening <= 0) return false;
       let inside = view.hollowHolds.get(key);
       if (inside === undefined) {
-        inside = sceneryHollowHoldsTile(globe, opening, key);
+        inside = sceneryHollowHoldsTile(globe, opening, wander, key);
         view.hollowHolds.set(key, inside);
       }
       return inside;

@@ -337,6 +337,18 @@ export type SceneryHollow = {
   radius?: number;
   /** depth of its floor under the seabed, in world units. Default 35 000 */
   floorDepth?: number;
+  /**
+   * how far its rim wanders in and out of `radius`, at most, as a share of it (0 to 0.2):
+   * broad bays and headlands, and a ragged edge. 0 for a round rim. Not the simple style's,
+   * whose rim is round. Default 0.036
+   */
+  rimWander?: number;
+  /**
+   * how strongly its walls step down in terraces, 0 to 1: 0 an even face (its buttresses and
+   * gullies kept), 1 flat benches between sheer faces. Not the simple style's, whose walls are
+   * one even slope. Default 0.8
+   */
+  terraces?: number;
   colors?: {
     /** the walls' rock. Default `#3d3f41` (calm), `#42403d` (molten), `#7c7d7e` (simple) */
     walls?: ColorRepresentation;
@@ -373,28 +385,35 @@ export type SceneryHollow = {
 
 /**
  * How a hollow's rim (see {@link SceneryHollow}) wanders round its axis, in and out of its
- * radius: per wave its number round the rim, its share of the radius and its phase. Some 3.6%
- * at most, so the size holds: broad bays and headlands, and a ragged edge a few km across at
- * the default radius. The walls are built along it, and the relief and the seabed are cut
- * along it (`uSceneryHollowRim`).
+ * radius: per wave its number round the rim, its weight and its phase. Each wave's share of
+ * the radius is its weight's share of {@link SCENERY_HOLLOW_RIM_WEIGHT}, times how far the rim
+ * wanders at most (`SceneryHollow.rimWander`): broad bays and headlands, and a ragged edge a
+ * few km across at the defaults. The walls are built along it, and the relief and the seabed
+ * are cut along it (`uSceneryHollowRim`).
  */
 export const SCENERY_HOLLOW_RIM: readonly (readonly [
   number,
   number,
   number,
 ])[] = [
-  [3, 0.0096, 0.4],
-  [5, 0.0066, 2.1],
-  [7, 0.0048, 4.0],
-  [11, 0.0036, 1.2],
-  [17, 0.0024, 5.3],
-  [29, 0.0018, 0.7],
-  [43, 0.0015, 3.3],
-  [71, 0.0012, 2.6],
-  [97, 0.0021, 1.9],
-  [151, 0.0015, 4.4],
-  [233, 0.0009, 0.3],
+  [3, 32, 0.4],
+  [5, 22, 2.1],
+  [7, 16, 4.0],
+  [11, 12, 1.2],
+  [17, 8, 5.3],
+  [29, 6, 0.7],
+  [43, 5, 3.3],
+  [71, 4, 2.6],
+  [97, 7, 1.9],
+  [151, 5, 4.4],
+  [233, 3, 0.3],
 ];
+
+/** The sum of {@link SCENERY_HOLLOW_RIM}'s weights: their waves together wander by the whole of `rimWander`. */
+export const SCENERY_HOLLOW_RIM_WEIGHT = SCENERY_HOLLOW_RIM.reduce(
+  (sum, [, weight]) => sum + weight,
+  0,
+);
 
 /**
  * The water settings an endless sea shares with the `Water` component, under the same
@@ -670,6 +689,8 @@ export const sceneryDefaults = {
       style: 'calm' as SceneryHollowStyle,
       radius: 100000,
       floorDepth: 35000,
+      rimWander: 0.036,
+      terraces: 0.8,
       cooling: null as number | null,
       lightFalloff: 11000,
       murk: 1,

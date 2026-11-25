@@ -9,8 +9,9 @@
 // z: the angle its rim makes about the globe's centre, before it wanders (with the globe on);
 // w: its radius along the sea, world units (with the globe off, across).
 uniform vec4 uSceneryHollow;
-// How the rim wanders round the axis (SCENERY_HOLLOW_RIM): per wave its number round the rim,
-// its share of the radius and its phase. The CPU builds the walls along the same.
+// How the rim wanders round the axis (SCENERY_HOLLOW_RIM, scaled by SceneryHollow.rimWander):
+// per wave its number round the rim, its share of the radius and its phase. The CPU builds the
+// walls along the same.
 #define HOLLOW_RIM_WAVES 11
 uniform vec3 uSceneryHollowRim[HOLLOW_RIM_WAVES];
 // Where the camera is, set each frame (SceneryHollowParts.setView). x: 1 inside the hollow's
@@ -35,10 +36,8 @@ bool hollowStyleSimple() {
 }
 
 // The rim's radius at `turn` radians round the axis (from true east toward true north), as a
-// share of its radius. The simple style's is round.
+// share of its radius. Round with no wander, as the simple style's.
 float hollowRimScale(float turn) {
-  if(hollowStyleSimple())
-    return 1.0;
   float scale = 1.0;
   for(int i = 0; i < HOLLOW_RIM_WAVES; i++) {
     vec3 wave = uSceneryHollowRim[i];

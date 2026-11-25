@@ -26,6 +26,7 @@ import fragmentShader from './shaders/hollow-fragment.glsl';
 import vertexShader from './shaders/hollow-vertex.glsl';
 import {
   SCENERY_HOLLOW_RIM,
+  SCENERY_HOLLOW_RIM_WEIGHT,
   SceneryHollow,
   SceneryHollowStyle,
   sceneryDefaults,
@@ -92,35 +93,46 @@ const WALL_APRON = 0.35;
 // The simple style's walls: one even slope, reaching in from the rim as far as the crater's
 // walls with their apron do, over the floor's depth.
 const SIMPLE_SLOPE = WALL_INSET + WALL_APRON;
-// Their terraces' strength (0 a plain slope; up to 1, the benches flat between sheer faces).
-const TERRACES = 0.8;
+// The hollow the walls' and the floor's features below are sized for, in world units: the
+// default one. Round the rim they scale with the radius, so as many of them stand round it at
+// any size; how far they stand proud, with the floor's depth, as the walls' reach does, so the
+// walls keep their proportions.
+const SIZED_FOR = { radius: 100000, floorDepth: 35000 };
+const SIZED_FOR_RIM = 2 * Math.PI * SIZED_FOR.radius;
 // Buttresses along the rim, standing proud of the face with steep sides, so one side catches
 // the light and the other not; broad spurs between bays; gullies down the face (and how far
-// apart): in world units, sized to read from across the hollow.
+// apart): sized to read from across the hollow.
 const BUTTRESSES = 15000;
 const BUTTRESS_SPACING = 60000;
 // How far round the rim the buttresses and gullies drift as they go down the face, and jog
-// aside at each terrace (world units); and how much they swell and thin down it (a share).
+// aside at each terrace (per unit of the terraces' strength, SceneryHollow.terraces); and how
+// much they swell and thin down it (a share).
 const BUTTRESS_DRIFT = 5000;
-const BUTTRESS_JOG = 3000;
+const BUTTRESS_JOG = 3750;
 const BUTTRESS_SWELL = 0.4;
 const SPURS = 10000;
 const GULLIES = 7000;
 const GULLY_SPACING = 45000;
 // How far in from its neighbours' average a point of the walls must lie to be open to the
-// whole hollow, or shut in a crease (hollowOpen), in world units; and how far round the rim
-// and down the face that average reaches, in columns and rows.
+// whole hollow, or shut in a crease (hollowOpen); and how far round the rim and down the face
+// that average reaches, in columns and rows.
 const OPENING = 12000;
 const OPEN_REACH = [16, 6];
 // The floor's swell, and the size of its forms.
 const FLOOR_SWELL = 1200;
 const FLOOR_FORMS = 70000;
 
+/** The most a hollow's rim wanders, as a share of its radius (SceneryHollow.rimWander). */
+const SCENERY_HOLLOW_RIM_WANDER_MAX = 0.2;
+
 /** A {@link SceneryHollow} with every default filled in. */
 export type SceneryHollowLook = {
   style: SceneryHollowStyle;
   radius: number;
   floorDepth: number;
+  /** 0 for the simple style, whose rim is round */
+  rimWander: number;
+  terraces: number;
   walls: Color;
   floor: Color;
   embers: Color;
@@ -150,6 +162,15 @@ export function sceneryHollowLook(
     style,
     radius,
     floorDepth: Math.max(given.floorDepth ?? defaults.floorDepth, 1),
+    rimWander:
+      style === 'simple'
+        ? 0
+        : MathUtils.clamp(
+            given.rimWander ?? defaults.rimWander,
+            0,
+            SCENERY_HOLLOW_RIM_WANDER_MAX,
+          ),
+    terraces: MathUtils.clamp(given.terraces ?? defaults.terraces, 0, 1),
     walls: color(given.colors?.walls, styled.colors.walls),
     floor: color(given.colors?.floor, styled.colors.floor),
     embers: color(given.colors?.embers, styled.colors.embers),
@@ -169,25 +190,28 @@ export function sceneryHollowLook(
 
 /**
  * The hollow's rim's radius at `turn` radians round its axis (from true east toward true
- * north), as a share of its radius: {@link SCENERY_HOLLOW_RIM}'s waves. hollow.glsl's
- * `hollowRimScale`.
+ * north), as a share of its radius, for a rim that wanders by `wander` at most (a share of it):
+ * {@link SCENERY_HOLLOW_RIM}'s waves. hollow.glsl's `hollowRimScale`.
  */
-function sceneryHollowRimScale(turn: number) {
-  let scale = 1;
-  for (const [k, a, p] of SCENERY_HOLLOW_RIM) scale += a * Math.sin(k * turn + p);
-  return scale;
+function sceneryHollowRimScale(turn: number, wander: number) {
+  let sum = 0;
+  for (const [k, weight, p] of SCENERY_HOLLOW_RIM)
+    sum += weight * Math.sin(k * turn + p);
+  return 1 + (wander * sum) / SCENERY_HOLLOW_RIM_WEIGHT;
 }
 
 /**
  * How far inside the hollow's rim `point` lies, across its axis at the point's own height:
  * positive inside, in world units. The twin of `hollowInside` (hollow.glsl), for `radius`
- * along the sea about `globe`'s disc centre; with `scale`, as if the rim stood at that share
- * of its radius all round (SCENERY_HOLLOW_RIM_LEAST: where it reaches in furthest).
+ * along the sea about `globe`'s disc centre, the rim wandering by `wander` at most (a share of
+ * it; SceneryHollow.rimWander); with `scale`, as if the rim stood at that share of its radius
+ * all round.
  */
 export function sceneryHollowInside(
   globe: Globe,
   radius: number,
   point: Vector3,
+  wander: number,
   scale?: number,
 ): number {
   const up = globe.up;
@@ -201,6 +225,7 @@ export function sceneryHollowInside(
         offset.dot(globe.uniforms.uGlobeNorth.value),
         offset.dot(globe.uniforms.uGlobeEast.value),
       ),
+      wander,
     );
   const limit = globe.enabled
     ? Math.tan(Math.min(radius / globe.radius, 1.5) * rimScale) *
@@ -208,10 +233,6 @@ export function sceneryHollowInside(
     : radius * rimScale;
   return limit - offset.length();
 }
-
-/** The share of its radius the hollow's rim reaches in to at its furthest (SCENERY_HOLLOW_RIM). */
-const SCENERY_HOLLOW_RIM_LEAST =
-  1 - SCENERY_HOLLOW_RIM.reduce((sum, [, share]) => sum + share, 0);
 
 /** The largest radius the rim grip drags a hollow to (SceneryHollow.handle), in world units. */
 const SCENERY_HOLLOW_RADIUS_MAX = 1500000;
@@ -262,13 +283,14 @@ export function sceneryHollowPointAt(
 
 /**
  * Whether the geographic tile `key` lies wholly inside the hollow's rim on `globe`, for a
- * hollow of `radius`, a couple of km in from where the rim reaches in furthest: all its
- * ground is peeled away while the hollow is open. Its corners suffice, its sides
- * bulging out from the axis by far less than that margin.
+ * hollow of `radius` whose rim wanders by `wander` (a share of it), a couple of km in from
+ * where the rim reaches in furthest: all its ground is peeled away while the hollow is open.
+ * Its corners suffice, its sides bulging out from the axis by far less than that margin.
  */
 export function sceneryHollowHoldsTile(
   globe: Globe,
   radius: number,
+  wander: number,
   key: number,
 ): boolean {
   if (!globe.enabled || !globe.frame) return false;
@@ -281,7 +303,7 @@ export function sceneryHollowHoldsTile(
     );
     globe.sphereAt(tileOffset, 0, tilePoint);
     if (
-      sceneryHollowInside(globe, radius, tilePoint, SCENERY_HOLLOW_RIM_LEAST) <
+      sceneryHollowInside(globe, radius, tilePoint, wander, 1 - wander) <
       HOLLOW_TILE_MARGIN
     )
       return false;
@@ -407,24 +429,28 @@ function planeFractal(x: number, y: number, octaves: number, layer: number) {
 /**
  * A crater wall's face at `turn` radians round the axis, `t` down it (0 the rim, 1 its foot
  * on the floor): how far in from the rim it lies, and how deep under the seabed, in world
- * units. Sized to read from across the hollow: terraces (a slope's depth and reach traded back
- * and forth, one to three of them, varying round the rim), spurs some tens of km proud of it,
- * gullies some 45 km apart, and an apron of fallen rock flaring out onto the floor. The spurs
- * and gullies drift round the rim as they go down, jog at each terrace and swell and thin, so
- * their flanks twist in the light rather than run down the face as slabs. Nothing at the rim,
- * which the relief is cut along. The face may lean out where its features cross;
- * {@link createSceneryHollowGeometry} keeps it from doing so.
+ * units, for a floor `floorDepth` deep and terraces of strength `terraces` (0 to 1,
+ * SceneryHollow.terraces). Sized to read from across the hollow: terraces (a slope's depth
+ * and reach traded back and forth, one to three of them, varying round the rim), ten
+ * buttresses round the rim, broad spurs, fourteen gullies, and an apron of fallen rock
+ * flaring out onto the floor. The spurs and gullies drift round the rim as they go down, jog
+ * at each terrace and swell and thin, so their flanks twist in the light rather than run down
+ * the face as slabs. Round the rim all of it is a share of the turn, so it holds at any
+ * radius; how far in, a share of the floor's depth (as the default hollow's, SIZED_FOR).
+ * Nothing at the rim, which the relief is cut along. The face may lean out where its features
+ * cross; {@link createSceneryHollowGeometry} keeps it from doing so.
  */
 export function sceneryHollowWallAt(
   turn: number,
   t: number,
   floorDepth: number,
-  rimLength: number,
+  terraces: number,
 ): [inset: number, depth: number] {
   const at = turn / (2 * Math.PI);
+  const proud = floorDepth / SIZED_FOR.floorDepth;
   const reach = WALL_INSET * floorDepth * (1 + 0.35 * rimFractal(at, 6, 3, 11));
   const steps = 1.7 + 0.7 * rimFractal(at, 4, 2, 21);
-  const strength = TERRACES * (0.8 + 0.2 * rimFractal(at, 5, 2, 31));
+  const strength = terraces * (0.8 + 0.2 * rimFractal(at, 5, 2, 31));
   const T = 2 * Math.PI * steps;
   // Zero at both ends, so the face starts at the rim and ends on the floor.
   const terrace = ((strength * Math.sin(T * t)) / T) * Math.sin(Math.PI * t);
@@ -432,7 +458,7 @@ export function sceneryHollowWallAt(
   let inset = reach * (t - terrace);
   const fromRim = smooth(Math.min(t / 0.15, 1));
   const cells = (spacing: number) =>
-    Math.max(8, Math.round(rimLength / spacing));
+    Math.max(8, Math.round(SIZED_FOR_RIM / spacing));
   const buttresses = cells(BUTTRESS_SPACING);
   const regions = Math.max(4, Math.round(buttresses / 2));
   // Where the spurs and gullies stand round the rim, `t` down: drifting, each its own way, and
@@ -446,23 +472,24 @@ export function sceneryHollowWallAt(
       smooth(Math.max((band - step - 0.7) / 0.3, 0));
   const shift =
     (BUTTRESS_DRIFT * rimFaceNoise(at, regions, t * 1.5, 73) +
-      BUTTRESS_JOG * jog) /
-    rimLength;
+      BUTTRESS_JOG * terraces * jog) /
+    SIZED_FOR_RIM;
   // Buttresses: ridged, so their crests are sharp and the bays between them deep; swelling
   // and thinning down the face.
   const ridge = 1 - Math.abs(rimFractal(at + shift, buttresses, 2, 37));
   const swell = 1 + BUTTRESS_SWELL * rimFaceNoise(at, buttresses, t * 2, 75);
-  inset += BUTTRESSES * (ridge * ridge - 0.35) * swell * fromRim;
-  // Broad spurs and bays, a few hundred km round.
-  inset += SPURS * rimFractal(at, 8, 2, 41) * fromRim;
+  inset += BUTTRESSES * proud * (ridge * ridge - 0.35) * swell * fromRim;
+  // Broad spurs and bays, eight round the rim.
+  inset += SPURS * proud * rimFractal(at, 8, 2, 41) * fromRim;
   // Gullies down the face, some deeper than others, deepening toward the foot.
   const gullies = cells(GULLY_SPACING);
   const gully = 1 - Math.abs(rimFractal(at + shift, gullies, 2, 51));
   const deep = 0.4 + 0.6 * (0.5 + 0.5 * rimFractal(at, 12, 2, 57));
   inset +=
-    GULLIES * deep * (gully * gully - 0.4) * (0.4 + 0.6 * t) * fromRim +
+    GULLIES * proud * deep * (gully * gully - 0.4) * (0.4 + 0.6 * t) * fromRim +
     0.2 *
       GULLIES *
+      proud *
       rimFaceNoise(at, Math.max(4, Math.round(gullies / 2)), t * 3, 61) *
       fromRim;
   const apron = smooth(Math.max((t - 0.7) / 0.3, 0));
@@ -476,6 +503,10 @@ export type SceneryHollowShape = {
   radius: number;
   /** the floor's depth under the seabed */
   floorDepth: number;
+  /** how far the rim wanders in and out of the radius, at most, as a share of it (SceneryHollow.rimWander) */
+  rimWander: number;
+  /** the walls' terraces' strength, 0 to 1 (SceneryHollow.terraces) */
+  terraces: number;
   /** the seabed's height over the sea's level: the void's lid, its walls' top */
   bed: number;
   /** a plain even slope from the rim to the floor, and a flat floor: the simple style's */
@@ -501,7 +532,14 @@ const pow2Ceil = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(n, 1)));
  */
 function createSceneryHollowGeometry(
   globe: Globe,
-  { radius, floorDepth, bed, simple = false }: SceneryHollowShape,
+  {
+    radius,
+    floorDepth,
+    rimWander,
+    terraces,
+    bed,
+    simple = false,
+  }: SceneryHollowShape,
 ) {
   const up = globe.up;
   east.copy(globe.uniforms.uGlobeEast.value);
@@ -513,7 +551,6 @@ function createSceneryHollowGeometry(
   const rimAngle = on ? Math.min(radius / R, 1.5) : 0;
   // R − s, the disc's sagitta, as r² / (R + s): nothing near-equal subtracted.
   const sag = on ? globe.discRadius ** 2 / (R + s) : 0;
-  const rimLength = 2 * Math.PI * radius;
 
   // A point `across` the axis at `turn`, `height` over the sea's level: where it lies from the
   // disc's centre. On the globe `across` is the arc along the sea, carried down the radial.
@@ -546,11 +583,10 @@ function createSceneryHollowGeometry(
     );
     uv?.push(flat * dx, flat * dz);
   };
-  // The rim's arc out from the axis at `turn`, a few metres beyond the cut: round for the
-  // simple style (hollowRimScale).
+  // The rim's arc out from the axis at `turn`, a few metres beyond the cut: round with no
+  // wander, as the simple style's (hollowRimScale).
   const rimAt = (turn: number) =>
-    (on ? rimAngle * R : radius) * (simple ? 1 : sceneryHollowRimScale(turn)) +
-    3;
+    (on ? rimAngle * R : radius) * sceneryHollowRimScale(turn, rimWander) + 3;
 
   // The walls' insets and depths, row by row down each column; neither shrinks down a column,
   // so where buttresses, gullies and terraces cross the face never leans out over itself.
@@ -564,7 +600,7 @@ function createSceneryHollowGeometry(
       const t = row / ROWS;
       const [inset, depth] = simple
         ? [SIMPLE_SLOPE * floorDepth * t, floorDepth * t]
-        : sceneryHollowWallAt(turn, t, floorDepth, rimLength);
+        : sceneryHollowWallAt(turn, t, floorDepth, terraces);
       last = Math.max(inset, last);
       deepest = Math.min(Math.max(depth, deepest), floorDepth);
       insets[row * SEGMENTS + k] = last;
@@ -591,10 +627,12 @@ function createSceneryHollowGeometry(
     }
   }
   // How open each point is to the hollow, 0 to 1: how far it stands in from its neighbours'
-  // average, round the rim and down the face (a box of OPEN_REACH), over OPENING. Spurs and
-  // ledges' edges open, gullies and bays and the backs of ledges shut.
+  // average, round the rim and down the face (a box of OPEN_REACH), over OPENING (as deep a
+  // share of the floor's depth as the walls' features). Spurs and ledges' edges open, gullies
+  // and bays and the backs of ledges shut.
   const wallOpen: number[] = [];
   const [reachK, reachRow] = OPEN_REACH;
+  const opening = OPENING * (floorDepth / SIZED_FOR.floorDepth);
   for (let row = 0; row <= ROWS; row++)
     for (let k = 0; k <= SEGMENTS; k++) {
       const kk = k % SEGMENTS;
@@ -608,7 +646,7 @@ function createSceneryHollowGeometry(
         }
       }
       const proud = insets[row * SEGMENTS + kk] - sum / n;
-      wallOpen.push(Math.min(Math.max(0.6 + proud / OPENING, 0), 1));
+      wallOpen.push(Math.min(Math.max(0.6 + proud / opening, 0), 1));
     }
   const wallIndex: number[] = [];
   const wallAt = (row: number, k: number) => row * (SEGMENTS + 1) + k;
@@ -650,12 +688,16 @@ function createSceneryHollowGeometry(
   const floorEdges: number[] = [];
   const counts: number[] = [1];
   const starts: number[] = [0];
+  // Its forms as large a share of the radius, and its swell as large a share of the floor's
+  // depth, as the default hollow's (SIZED_FOR).
+  const forms = FLOOR_FORMS * (radius / SIZED_FOR.radius);
+  const swell = FLOOR_SWELL * (floorDepth / SIZED_FOR.floorDepth);
   const swellAt = (turn: number, across: number, f: number) => {
     if (simple) return 0;
-    const x = (across * Math.cos(turn)) / FLOOR_FORMS;
-    const y = (across * Math.sin(turn)) / FLOOR_FORMS;
+    const x = (across * Math.cos(turn)) / forms;
+    const y = (across * Math.sin(turn)) / forms;
     // None at the foot, which meets the walls' last row.
-    return FLOOR_SWELL * planeFractal(x, y, 4, 71) * (1 - smooth(Math.max((f - 0.8) / 0.2, 0)));
+    return swell * planeFractal(x, y, 4, 71) * (1 - smooth(Math.max((f - 0.8) / 0.2, 0)));
   };
   point(0, 0, bed - floorDepth + swellAt(0, 0, 0), floorPositions, floorUvs);
   floorEdges.push(footAt(0));
@@ -889,6 +931,8 @@ export class SceneryHollowParts {
       globe.version,
       shape.radius,
       shape.floorDepth,
+      shape.rimWander,
+      shape.terraces,
       shape.bed,
       !!shape.simple,
     ].join(',');

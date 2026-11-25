@@ -714,6 +714,7 @@ export const Scenery = ({
     material.hollowOpen = hollowOpen;
     if (!hollowLook) return;
     material.hollowRadius = hollowDragged.current ?? hollowLook.radius;
+    material.hollowRimWander = hollowLook.rimWander;
     hollow.setLook(hollowLook);
   }, [material, hollow, hollowOpen, hollowLook]);
   const [probe] = useState(() => new LightProbe());
@@ -1635,8 +1636,7 @@ export const Scenery = ({
               material.globe,
               hollowRadius(),
               site.position,
-              // The simple style's rim is round.
-              hollowLook.style === 'simple' ? 1 : undefined,
+              hollowLook.rimWander,
             )
           : -Infinity;
       // Its sea has no edge: under it, over the ground (or the seabed) under it, is in it.
@@ -1896,6 +1896,8 @@ export const Scenery = ({
       hollow.update({
         radius: hollowRadius(),
         floorDepth: hollowLook.floorDepth,
+        rimWander: hollowLook.rimWander,
+        terraces: hollowLook.terraces,
         bed: material.voidLevel - material.globe.level,
         simple: hollowLook.style === 'simple',
       });

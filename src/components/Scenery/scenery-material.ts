@@ -62,6 +62,7 @@ import { SkyAirColors } from './scenery-air-colors';
 import {
   SCENERY_EARTH_RADIUS,
   SCENERY_HOLLOW_RIM,
+  SCENERY_HOLLOW_RIM_WEIGHT,
   skyDaylight,
   sceneryDefaults,
   skyMoonlight,
@@ -208,6 +209,8 @@ export class SceneryMaterial extends ShaderMaterial {
   // The stage's reach as set (setSeaStage); the uniform holds it only while the stage
   // can draw what it claims (claimStage).
   private stageReach = 0;
+  // How far the hollow's rim wanders (hollowRimWander); the uniform holds its waves.
+  private rimWander: number = sceneryDefaults.void.hollow.rimWander;
 
   /**
    * @param globe the Earth to draw on: a `World`'s, which sets its frame, disc and curvature
@@ -298,7 +301,15 @@ export class SceneryMaterial extends ShaderMaterial {
           new Vector4(0, 0, 0, voidDefaults.hollow.radius),
         ),
         uSceneryHollowRim: new Uniform(
-          SCENERY_HOLLOW_RIM.map(([k, a, p]) => new Vector3(k, a, p)),
+          SCENERY_HOLLOW_RIM.map(
+            ([k, weight, p]) =>
+              new Vector3(
+                k,
+                (voidDefaults.hollow.rimWander * weight) /
+                  SCENERY_HOLLOW_RIM_WEIGHT,
+                p,
+              ),
+          ),
         ),
         // The hollow's look (hollow-look.glsl), set by the Scenery: its rock (a RockTexture),
         // its shape (floor depth, radius, cooling band, light falloff), its colours, and how
@@ -1103,6 +1114,21 @@ export class SceneryMaterial extends ShaderMaterial {
   set hollowRadius(value: number) {
     this.uniforms.uSceneryHollow.value.w = Math.max(value, 0);
     this.syncHollow();
+  }
+
+  /**
+   * how far the hollow's rim wanders in and out of its radius, at most, as a share of it
+   * (`SceneryHollow.rimWander`; 0 round): its waves' shares (SCENERY_HOLLOW_RIM). A uniform
+   */
+  get hollowRimWander(): number {
+    return this.rimWander;
+  }
+  set hollowRimWander(value: number) {
+    this.rimWander = Math.max(value, 0);
+    const waves = this.uniforms.uSceneryHollowRim.value as Vector3[];
+    SCENERY_HOLLOW_RIM.forEach(([, weight], i) => {
+      waves[i].y = (this.rimWander * weight) / SCENERY_HOLLOW_RIM_WEIGHT;
+    });
   }
 
   // The rim's angle about the globe's centre, as hollow.glsl takes it: the globe's radius may

@@ -42,6 +42,8 @@ type VoidArgs = {
   hollowStyle: SceneryHollowStyle;
   hollowRadius: number;
   hollowFloorDepth: number;
+  hollowRimWander: number;
+  hollowTerraces: number;
 } & ProgressArgs;
 
 const VoidStory = ({
@@ -52,6 +54,8 @@ const VoidStory = ({
   hollowStyle,
   hollowRadius,
   hollowFloorDepth,
+  hollowRimWander,
+  hollowTerraces,
 }: VoidArgs) => (
   <World frame={demoFrame}>
     <Scenery onProgress={reportSceneryProgress}>
@@ -63,6 +67,8 @@ const VoidStory = ({
             style: hollowStyle,
             radius: hollowRadius,
             floorDepth: hollowFloorDepth,
+            rimWander: hollowRimWander,
+            terraces: hollowTerraces,
           }
         }
       />
@@ -131,6 +137,8 @@ const meta = {
     hollowStyle: sceneryDefaults.void.hollow.style,
     hollowRadius: sceneryDefaults.void.hollow.radius,
     hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
+    hollowRimWander: sceneryDefaults.void.hollow.rimWander,
+    hollowTerraces: sceneryDefaults.void.hollow.terraces,
   },
   argTypes: {
     ...sceneryHiddenArgTypes(sceneryProgressArgs),
@@ -172,6 +180,18 @@ const meta = {
       100000,
       1000,
       'Depth of its floor under the seabed, in metres (`hollow.floorDepth`): about where the mantle begins.',
+    ),
+    hollowRimWander: range(
+      0,
+      0.2,
+      0.002,
+      'How far its rim wanders in and out of its radius, at most, as a share of it (`hollow.rimWander`): bays and headlands, and a ragged edge. 0 for a round rim. The simple style\u2019s is always round. Rebuilds its geometry.',
+    ),
+    hollowTerraces: range(
+      0,
+      1,
+      0.05,
+      'How strongly its walls step down in terraces (`hollow.terraces`): 0 an even face, its buttresses and gullies kept; 1 flat benches between sheer faces. Not the simple style\u2019s even slope. Rebuilds its geometry.',
     ),
   },
 } satisfies Meta<typeof VoidStory>;

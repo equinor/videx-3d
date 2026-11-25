@@ -38,8 +38,10 @@ dark, dull rock that gives scale and depth.
   the hollow's at once: the stand-in, and inside the rim the void's view down (its lid curving
   away to the far side of the globe), were black below the horizon until the hollow came in.
 - **Nothing re-bakes or recompiles** when the seabed is peeled, the camera flies into the
-  hollow, or any of its look changes: those are uniforms. The bakes (environment, light probe)
-  never see the hollow or the peel (`scenery-baker.ts` overrides both).
+  hollow, or any of its look changes: those are uniforms. A change of its shape (`radius`,
+  `floorDepth`, `rimWander`, `terraces`) rebuilds its geometry once, nothing else. The bakes
+  (environment, light probe) never see the hollow or the peel (`scenery-baker.ts` overrides
+  both).
 - **Past its walls and under its floor the void is solid rock:** black below the horizon, with
   the hollow's lid overhead, the same lid as inside the rim.
 
@@ -47,25 +49,32 @@ dark, dull rock that gives scale and depth.
 
 Built once on the CPU in 64-bit floats about the globe's disc centre, and placed in the shader
 at `uGlobeDisc.xyz + position`, so far points keep their precision (`hollow-vertex.glsl`). It is
-built again only when the globe, the radius, the floor depth or the seabed's height changes.
+built again only when the globe, its shape (`radius`, `floorDepth`, `rimWander`, `terraces`,
+the simple style or not) or the seabed's height changes.
 
-- **The rim** wanders in and out of the radius by some 3.6% (`SCENERY_HOLLOW_RIM`, 11 waves), in
-  broad bays and a ragged edge. The CPU (`sceneryHollowInside`) and the GPU (`hollowInside`,
-  `hollow.glsl`) share it: the walls are built along it, and the relief and the seabed are cut
-  along it.
+- **The rim** wanders in and out of the radius by up to `rimWander` of it (default 3.6%; 0 for a
+  round rim, as the simple style's always is), in 11 waves (`SCENERY_HOLLOW_RIM`, each its weight's
+  share of the wander): broad bays and a ragged edge. The CPU (`sceneryHollowInside`) and the
+  GPU (`hollowInside`, `hollow.glsl`, the waves in `uSceneryHollowRim`) share it: the walls are
+  built along it, and the relief and the seabed are cut along it.
 - **The walls** (`sceneryHollowWallAt`): 1024 columns round the rim and 72 rows down. They have
-  terraces, buttresses about 60 km apart and 15 km proud, broad spurs, gullies about 45 km
-  apart, and an apron of fallen rock onto the floor. The buttresses and gullies drift round
-  the rim as they go down, jog at each terrace and swell and thin, so their flanks are never
-  slabs the full height of the wall. Insets and depths never shrink down a column, so the face
-  never leans out over itself. The columns stand 3 m outside the rim, so the relief cut leaves
-  no crack. Each vertex carries how open it is to the hollow (`hollowOpen`), 0 in a crease.
+  terraces (`terraces`, default 0.8: 0 an even face, 1 flat benches between sheer faces),
+  ten buttresses round the rim, broad spurs, fourteen gullies, and an apron of fallen rock onto
+  the floor. The buttresses and gullies drift round the rim as they go down, jog at each
+  terrace and swell and thin, so their flanks are never slabs the full height of the wall.
+  They are sized on the default hollow (100 km, 35 km deep: buttresses some 60 km apart and
+  15 km proud, gullies some 45 km apart): round the rim they scale with the radius, so as many
+  stand round it at any size, and how far they stand proud with the floor's depth, as the
+  walls' reach does, so the walls keep their proportions. The floor's forms and swell follow
+  the same way. Insets and depths never shrink down a column, so the face never leans out over
+  itself. The columns stand 3 m outside the rim, so the relief cut leaves no crack. Each vertex
+  carries how open it is to the hollow (`hollowOpen`), 0 in a crease.
 - **The walls are 16 sectors** (`SCENERY_HOLLOW_WALL_SECTORS`), runs of one index over one set of
   attributes, each culled against the frustum's sides each frame (`SceneryHollowParts.cull`).
   Placed in the shader, three cannot cull them itself.
 - **The floor:** 48 rings out to the walls' foot, each with a power of two of segments (8 up to
-  1024, the walls' columns at the foot), and a gentle swell (1.2 km over 70 km). Seen from
-  above it is drawn one-sided, so from under it it never hides the data.
+  1024, the walls' columns at the foot), and a gentle swell (1.2 km over 70 km at the default
+  size). Seen from above it is drawn one-sided, so from under it it never hides the data.
 - **The relief:** its tiles wholly inside the rim's furthest reach are not drawn while the
   hollow is open and the camera is over the ground (`sceneryHollowHoldsTile`). They are still
   handed to the layers draped on it. Near the rim each pixel is cut in `relief-fragment.glsl`.

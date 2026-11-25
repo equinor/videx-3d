@@ -210,6 +210,8 @@ export type SceneryArgs = {
   hollowStyle: SceneryHollowStyle;
   hollowRadius: number;
   hollowFloorDepth: number;
+  hollowRimWander: number;
+  hollowTerraces: number;
   hollowWalls?: string;
   hollowFloor?: string;
   hollowEmberColor?: string;
@@ -302,6 +304,8 @@ export const sceneryArgs: SceneryArgs = {
   hollowStyle: sceneryDefaults.void.hollow.style,
   hollowRadius: sceneryDefaults.void.hollow.radius,
   hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
+  hollowRimWander: sceneryDefaults.void.hollow.rimWander,
+  hollowTerraces: sceneryDefaults.void.hollow.terraces,
   hollowLightFalloff: sceneryDefaults.void.hollow.lightFalloff,
   hollowMurk: sceneryDefaults.void.hollow.murk,
   hollowHandle: false,
@@ -654,6 +658,8 @@ export const sceneryVoidFromArgs = (args: SceneryArgs): SceneryVoidProps => ({
     style: args.hollowStyle,
     radius: args.hollowRadius,
     floorDepth: args.hollowFloorDepth,
+    rimWander: args.hollowRimWander,
+    terraces: args.hollowTerraces,
     colors: {
       walls: args.hollowWalls,
       floor: args.hollowFloor,
@@ -803,6 +809,8 @@ const ADVANCED = new Set<string>([
   'voidDetail',
   'voidDetailScale',
   'voidFalloff',
+  'hollowRimWander',
+  'hollowTerraces',
   'hollowWalls',
   'hollowFloor',
   'hollowEmberColor',
@@ -1187,6 +1195,26 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       1000,
       VOID,
       'Depth of the hollow\u2019s floor under the seabed, in metres: about where the mantle begins.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowRimWander: {
+    ...range(
+      0,
+      0.2,
+      0.002,
+      VOID,
+      'How far the hollow\u2019s rim wanders in and out of its radius, at most, as a share of it (`hollow.rimWander`); 0 for a round rim. The simple style\u2019s is always round.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowTerraces: {
+    ...range(
+      0,
+      1,
+      0.05,
+      VOID,
+      'How strongly the hollow\u2019s walls step down in terraces (`hollow.terraces`): 0 an even face, 1 flat benches between sheer faces. Not the simple style\u2019s.',
     ),
     if: { arg: 'hollow' },
   },
