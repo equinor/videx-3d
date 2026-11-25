@@ -430,10 +430,10 @@ export type ZoneLayer = {
 
 /**
  * How a water body tints whatever lies UNDER it, as if seen through the water
- * column — the zone's answer to the `Water` component's `bedWaterTint`.
+ * column: faded by the water over it, by its `optics`, as the `Water` component's bed is.
  *
- * ⭐ Depth-dependent where the `Water` sea bed's is flat, because a zone's sea
- * bed is ordinary geology and can rise THROUGH the water. Absorption that fades
+ * ⭐ Depth-dependent, because a zone's sea bed is ordinary geology and can rise
+ * THROUGH the water. Absorption that fades
  * to nothing at the waterline leaves a coast or an island untinted without
  * anything having to know where the shoreline runs.
  *
@@ -481,13 +481,9 @@ export type ZoneStackSea = WaterSettings &
     /** sea level, metres below datum (POSITIVE-DOWN, as surfaces are given). Default 0. */
     depth?: number;
     /**
-     * Master opacity multiplier for the sea, 0..1. Default 1.
-     *
-     * ⚠️ NOT the same as `waterOpacity`, which is the water's OWN opacity and only
-     * a base: the shader mixes it toward 1 with the Fresnel term, so the surface is
-     * see-through from above and mirror-like at a grazing angle whatever it says.
-     * This then multiplies the result. Water that looks too transparent at
-     * `opacity: 1` is usually carrying `waterOpacity`'s default of 0.7.
+     * Master opacity multiplier for the sea, 0..1: fades the lid, the walls and the body
+     * together. Default 1. At 0 the sea is not drawn. How far one sees through the water is
+     * its `optics`.
      */
     opacity?: number;
     /**
@@ -526,7 +522,10 @@ export type ZoneStackSea = WaterSettings &
  * @group Components
  */
 export type ZoneStackInteriorFog = {
-  /** fog inside the sea. Default true (when the stack declares water) */
+  /**
+   * Fog inside the sea, in the water's own colour, closing in as far as one sees through it
+   * (its `optics`: 5% left at its clarity). Default true (when the stack declares water)
+   */
   water?: boolean;
   /** fog inside the block's rock. Default true */
   rock?: boolean;

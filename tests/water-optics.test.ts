@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   WATER_FADE,
+  WATER_OPACITY_DEPTH,
   WATER_OPTICS_PRESETS,
   waterExtinctionOf,
   waterOpticsOf,
@@ -35,5 +36,24 @@ describe('water optics', () => {
     expect(
       waterOpticsOf({ clarity: 30 }, { bodyFogDensity: 0.004 }).clarity,
     ).toBe(30);
+  });
+
+  it('takes a deprecated waterOpacity as the clarity that hides that share over 10 m', () => {
+    const optics = waterOpticsOf(undefined, { waterOpacity: 0.7 });
+    const shown = waterTransmittance(
+      waterExtinctionOf(optics),
+      WATER_OPACITY_DEPTH,
+    );
+    const mean = Math.exp(
+      (Math.log(shown[0]) + Math.log(shown[1]) + Math.log(shown[2])) / 3,
+    );
+    expect(mean).toBeCloseTo(0.3, 6);
+    // Clamped at the ends; the fog density wins over it.
+    expect(waterOpticsOf(undefined, { waterOpacity: 0 }).clarity).toBe(1000);
+    expect(waterOpticsOf(undefined, { waterOpacity: 1 }).clarity).toBe(1);
+    expect(
+      waterOpticsOf(undefined, { waterOpacity: 0.7, bodyFogDensity: 0.05 })
+        .clarity,
+    ).toBeCloseTo(WATER_FADE / 0.05, 9);
   });
 });

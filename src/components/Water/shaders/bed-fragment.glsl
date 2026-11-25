@@ -12,8 +12,6 @@
 // opaque pass (writing depth), so it occludes geometry below it.
 
 uniform vec3 uColor; // sandy/yellowish base
-uniform vec3 uWaterColor; // tint applied on the water-facing side
-uniform float uWaterTint; // strength of the water tint on top (0..1)
 uniform vec3 uSunDirection;
 uniform vec3 uSunColor;
 uniform float uAmbient;

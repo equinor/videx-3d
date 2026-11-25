@@ -32,10 +32,6 @@ uniform float uWindSpeed; // m/s (drives foam coverage)
 uniform float uSignificantHeight; // Hs (m) for foam crest normalisation
 uniform float uSteepness; // apparent choppiness: the waves' slopes scaled, 1 as the spectrum gives them
 
-uniform vec3 uDeepColor;
-uniform vec3 uShallowColor;
-uniform float uOpacity; // base body opacity (looking straight down)
-
 uniform float uReflectionIntensity;
 
 uniform vec3 uSunDirection; // world space, normalised

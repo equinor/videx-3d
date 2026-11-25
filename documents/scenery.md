@@ -540,7 +540,7 @@ void below its seabed is always there; `<SceneryVoid>` sets its look.
 
 ```tsx
 <Scenery>
-  <ScenerySea level={0} depth={100} windSpeed={10} waterOpacity={0.8} />
+  <ScenerySea level={0} depth={100} windSpeed={10} optics="clear" />
 </Scenery>
 ```
 
@@ -548,8 +548,8 @@ The water takes the `<Water>` component's props under the same names (see
 [Water](./water.md)), so one object can drive both; the sun and the reflected sky come
 from the sky. `water: false` leaves the seabed dry; `seabed: false` leaves the void
 below the water, seen through it from above, while from the void its lid is still a roof,
-as under a seabed. Far off, over the waves' `detailFadeDistance`, the water turns opaque
-whatever its `waterOpacity`; nearer it is as see-through as its depth and optics make it,
+as under a seabed. Far off, over the waves' `detailFadeDistance`, the water turns opaque;
+nearer it is as see-through as its depth and optics make it,
 from any height alike. (It used to turn opaque from 2 to 5 km up, `SCENERY_OCEAN_OPAQUE`, which
 hid the seabed showing wrong through shallow water; removed 2026-11-15 once that was fixed.)
 Seen from the air, the seabed under the background's sea lies as deep as the scene's ground

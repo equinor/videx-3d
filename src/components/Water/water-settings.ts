@@ -2,6 +2,7 @@ import { Vector2, Vector3 } from 'three';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import type { SeaSwell } from '../../sdk/weather/sea-spectrum';
 import {
+  WATER_FADE,
   type WaterOptics,
   type WaterOpticsPreset,
   waterOpticsOf,
@@ -13,7 +14,10 @@ import {
   type WaterFoamTuning,
   type WaterWaveTuning,
 } from './water-material';
-import { WaterVolumeMaterial } from './water-volume-material';
+import {
+  DEFAULT_WATER_BODY_MAX_OPACITY,
+  WaterVolumeMaterial,
+} from './water-volume-material';
 
 /**
  * Sea state and water appearance — everything that describes the water itself,
@@ -78,7 +82,8 @@ export type WaterSettings = {
   /**
    * How the water looks, one model for every sea ({@link WaterOptics}, documents/water.md):
    * a preset's name (`'realistic'`, `'clear'`) or the colour of deep water and how far one
-   * sees through it. Default as `deepColor` and `bodyFogDensity` give it, else `'realistic'`.
+   * sees through it. Default as the deprecated `deepColor`, and `bodyFogDensity` or
+   * `waterOpacity`, give it, else `'realistic'`.
    */
   optics?: WaterOptics | WaterOpticsPreset;
   /**
@@ -94,31 +99,14 @@ export type WaterSettings = {
   shallowColor?: string;
   /**
    * Base body opacity looking straight down (0 = clear, 1 = opaque).
-   * @deprecated how far one sees is `optics` (its `clarity`): no effect on the surface; still
-   * the walls' densest tint where `bodyMaxOpacity` is left out
+   * @deprecated how far one sees is `optics` (its `clarity`); still taken as the clarity that
+   * hides this share of the light over 10 m of water where `optics` is left out
    */
   waterOpacity?: number;
   /**
-   * Water depth at which the sea reaches ~86% of its full colour and opacity, in
-   * metres. Shallower water is clearer and paler, so a shoal or a beach reads as
-   * one.
-   *
-   * ⚠️ Needs a bathymetry grid to have any effect — a `ZoneStack` supplies the
-   * column's shallowest surface. Without one the shader has no depth input and
-   * falls back to the view angle, which cannot tell shallow from deep.
-   * @deprecated shallow water shows its bed by `optics` (the water over it); no effect
-   */
-  shoalDepth?: number;
-  /**
-   * What is left of `waterOpacity` where the bed reaches the surface, 0..1.
-   * Default 0 (fully clear, leaving only the reflection).
-   * @deprecated shallow water shows its bed by `optics` (the water over it); no effect
-   */
-  shoalOpacity?: number;
-  /**
    * Surf where the bed comes up to the surface, 0..1. Default 0 (off).
    *
-   * ⚠️ Needs a bathymetry grid, like `shoalDepth`. ⚠️ Independent of the wind,
+   * ⚠️ Needs a bathymetry grid. ⚠️ Independent of the wind,
    * unlike whitecaps — a shore breaks in a calm.
    */
   shoreFoam?: number;
@@ -244,12 +232,13 @@ export type WaterSettings = {
  */
 export type WaterBodyProps = {
   /**
-   * Per-meter tint build-up of the water body's walls, with the camera's distance to them.
-   * Also the water's clarity where `optics` is left out, and a `ZoneStack`'s interior fog in
-   * its water.
+   * Per-meter tint build-up of the water body.
+   * @deprecated how far one sees is `optics` (its `clarity`, ln 20 over this); still taken as
+   * the water's clarity where `optics` is left out. The walls seen from outside, and a
+   * `ZoneStack`'s interior fog in its water, follow the water's `optics`
    */
   bodyFogDensity?: number;
-  /** Densest tint the water body's walls reach far from the camera (0..1). */
+  /** Densest tint the water body's walls reach far from the camera, seen from outside (0..1). Default 0.9 */
   bodyMaxOpacity?: number;
   /** Animated shimmer amount of the water body, 0 = off. */
   bodyShimmer?: number;
@@ -265,12 +254,6 @@ export type WaterBodyProps = {
 export type BedProps = {
   /** Sea-bed base (sandy/yellowish) colour. Default `#b8a06a`. */
   bedColor?: string;
-  /**
-   * Strength of the water-colour tint applied to the water-facing (top) side
-   * of the sea bed (0..1).
-   * @deprecated the bed is seen through the water over it by `optics`; no effect
-   */
-  bedWaterTint?: number;
   /**
    * Sea-bed opacity (0..1). The sea bed is OIT-routed, so values below 1 let the
    * subsurface geometry below it show through; 1 (default) makes it a solid
@@ -305,7 +288,7 @@ export type BedProps = {
 export type DeprecatedBedProps = {
   /** @deprecated renamed `bedColor` */
   seaBedColor?: string;
-  /** @deprecated renamed `bedWaterTint`, which has no effect */
+  /** @deprecated the bed is seen through the water over it by the water's `optics`; no effect */
   seaBedWaterTint?: number;
   /** @deprecated renamed `bedOpacity` */
   seaBedOpacity?: number;
@@ -333,8 +316,8 @@ export function applyWaterSettings(
 ): void {
   const opacity = props.opacity ?? 1;
 
-  // One look for the water (water-optics.ts): the deprecated deep colour and body fog where
-  // no `optics` is given.
+  // One look for the water (water-optics.ts): the deprecated deep colour, and body fog or
+  // opacity, where no `optics` is given.
   const optics = waterOpticsOf(props.optics, props);
   const current = material.optics;
   if (optics.color !== current.color || optics.clarity !== current.clarity)
@@ -357,13 +340,6 @@ export function applyWaterSettings(
   if (props.steepness !== undefined) material.steepness = props.steepness;
   if (props.displacement !== undefined)
     material.displacement = props.displacement ? 1 : 0;
-  if (props.deepColor) material.deepColor = props.deepColor;
-  if (props.shallowColor) material.shallowColor = props.shallowColor;
-  if (props.waterOpacity !== undefined)
-    material.waterOpacity = props.waterOpacity;
-  if (props.shoalDepth !== undefined) material.shoalDepth = props.shoalDepth;
-  if (props.shoalOpacity !== undefined)
-    material.shoalOpacity = props.shoalOpacity;
   if (props.shoreFoam !== undefined) material.shoreFoam = props.shoreFoam;
   if (props.shoreBreakDepth !== undefined)
     material.shoreBreakDepth = props.shoreBreakDepth;
@@ -410,15 +386,11 @@ export function applyWaterSettings(
     material.detailFadeDistance = props.detailFadeDistance;
 
   material.uniforms.uMasterOpacity.value = opacity;
-  // Drive OIT opacity-aware routing via material.opacity (the pass reads the
-  // ShaderMaterial's `uniforms.opacity` first, then falls back to this). The
-  // ocean has no `opacity` uniform, so this value is what classifies it as
-  // transparent and keeps it in the OIT passes (so subsurface geometry shows
-  // through it instead of being depth-rejected by an opaque-pass draw).
-  material.opacity = Math.min(
-    opacity * (props.waterOpacity ?? material.waterOpacity),
-    0.999,
-  );
+  // OITRenderPass routes by `material.opacity` (it has no `opacity` uniform): below 1 the
+  // surface is drawn in the OIT passes, so what lies under it shows through instead of being
+  // depth-rejected; at 0 it is not drawn. Its shader works out its own alpha, so this routes
+  // it and no more: the master opacity alone, never quite 1.
+  material.opacity = Math.min(opacity, 0.999);
 }
 
 /**
@@ -436,15 +408,10 @@ export function applyWaterBodyProps(
 ): void {
   const opacity = props.opacity ?? 1;
 
-  if (props.deepColor) material.deepColor = props.deepColor;
-  if (props.shallowColor) material.shallowColor = props.shallowColor;
-  if (props.bodyFogDensity !== undefined)
-    material.fogDensity = props.bodyFogDensity;
-  // Densest tint the water body reaches: follows the surface water opacity so
-  // the body reads "denser" blue as the water gets more opaque. An explicit
-  // bodyMaxOpacity overrides this coupling.
-  material.maxOpacity =
-    props.bodyMaxOpacity ?? props.waterOpacity ?? material.maxOpacity;
+  // From outside, the walls' tint builds as what lies in the water fades: by its optics.
+  material.fogDensity =
+    WATER_FADE / Math.max(waterOpticsOf(props.optics, props).clarity, 1e-3);
+  material.maxOpacity = props.bodyMaxOpacity ?? DEFAULT_WATER_BODY_MAX_OPACITY;
   if (props.bodyShimmer !== undefined) material.shimmer = props.bodyShimmer;
   material.masterOpacity = opacity;
   material.opacity = Math.min(opacity, 0.999);
@@ -469,13 +436,6 @@ export function applyBedProps(
   const opacity = props.opacity ?? 1;
 
   if (props.bedColor) material.color = props.bedColor;
-  // Match the bed's water tint to the surface's deep colour.
-  if (props.deepColor) material.waterColor = props.deepColor;
-  // Strength of the blue water tint over the bed: follows the surface water
-  // opacity so the bed reads "denser" blue as the water gets more opaque. An
-  // explicit bedWaterTint overrides this coupling.
-  material.waterTint =
-    props.bedWaterTint ?? props.waterOpacity ?? material.waterTint;
   if (props.sunDirection)
     material.sunDirection = new Vector3(
       props.sunDirection[0],

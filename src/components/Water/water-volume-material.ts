@@ -33,13 +33,13 @@ export type WaterVolumeMaterialParameters = ShaderMaterialParameters & {
 };
 
 /**
- * Default per-metre tint build-up through the water body.
- *
- * ⭐ Also the default density for the sea as a fog medium, so the water seen
- * THROUGH a wall and the water the camera is standing in build up at the same rate
- * rather than through two knobs tuned to match.
+ * Default per-metre tint build-up through the water body, until a water's look is applied
+ * (`applyWaterBodyProps` takes it from the water's `optics`).
  */
 export const DEFAULT_WATER_BODY_FOG_DENSITY = 0.004;
+
+/** Default densest tint the walls reach far from the camera, seen from outside (0..1). */
+export const DEFAULT_WATER_BODY_MAX_OPACITY = 0.9;
 
 /**
  * OIT-compatible water-body (volume) material for the side walls of an ocean
@@ -101,10 +101,8 @@ export class WaterVolumeMaterial extends ShaderMaterial {
         uSeaDeepDepth: new Uniform(0),
         uSteepness: new Uniform(1),
         uDisplacement: new Uniform(0),
-        uDeepColor: new Uniform(new Color('#0a2540')),
-        uShallowColor: new Uniform(new Color('#1b6f8a')),
         uFogDensity: new Uniform(DEFAULT_WATER_BODY_FOG_DENSITY),
-        uMaxOpacity: new Uniform(0.9),
+        uMaxOpacity: new Uniform(DEFAULT_WATER_BODY_MAX_OPACITY),
         uShimmer: new Uniform(0.04),
         uMasterOpacity: new Uniform(1),
       },
@@ -161,23 +159,29 @@ export class WaterVolumeMaterial extends ShaderMaterial {
     this.uniforms.uDisplacement.value = Math.min(Math.max(value, 0), 1);
   }
 
+  // Kept for the deprecated `deepColor` and `shallowColor`, which nothing draws with.
+  private readonly legacyColors = {
+    deep: new Color('#0a2540'),
+    shallow: new Color('#1b6f8a'),
+  };
+
   /** @deprecated the walls take the water's colour (its optics, `linkSea`); no effect */
   get deepColor(): Color {
-    return this.uniforms.uDeepColor.value;
+    return this.legacyColors.deep;
   }
   set deepColor(value: Color | string | number) {
-    this.uniforms.uDeepColor.value.set(value as Color);
+    this.legacyColors.deep.set(value as Color);
   }
 
   /** @deprecated the walls take the water's colour (its optics, `linkSea`); no effect */
   get shallowColor(): Color {
-    return this.uniforms.uShallowColor.value;
+    return this.legacyColors.shallow;
   }
   set shallowColor(value: Color | string | number) {
-    this.uniforms.uShallowColor.value.set(value as Color);
+    this.legacyColors.shallow.set(value as Color);
   }
 
-  /** Per-meter tint build-up through the water body. */
+  /** Per-meter tint build-up through the water body, seen from outside. */
   get fogDensity(): number {
     return this.uniforms.uFogDensity.value;
   }

@@ -595,9 +595,8 @@ export const Scenery = ({
     seabedOptions?.detail === false
       ? undefined
       : (seabedOptions?.detail ?? bedDefaults.detail);
-  const seaOptics = waterOpticsOf(seaOptions?.optics, {
-    deepColor: seaOptions?.deepColor,
-  });
+  // Its look, or the deprecated deep colour and opacity where it gives none.
+  const seaOptics = waterOpticsOf(seaOptions?.optics, seaOptions ?? {});
   const seaOpticsColor = seaOptics.color;
   const seaClarity = seaOptics.clarity;
 

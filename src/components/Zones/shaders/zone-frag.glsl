@@ -20,7 +20,6 @@ varying float vWallV;
 #endif
 
 #ifdef ZONE_WATER_TINT
-uniform vec3 waterTintColor;  // the water colour, in the working colour space
 uniform vec3 waterTintParams; // x: water level (vertex stage), y: strength, z: 1 / depth scale
 uniform vec2 waterTintShore;  // x: 1 / wet band depth, y: darkening amount
 uniform float waterTintShown; // 1 while the water is drawn, 0 while not

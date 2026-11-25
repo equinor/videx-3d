@@ -33,10 +33,13 @@ How the water looks is `optics`: a preset's name (`'realistic'`, the North Sea's
 visibility; `'clear'`, 750 m, to see the bed; `WATER_OPTICS_PRESETS`) or `{ color, clarity }`,
 the colour of water too deep to see through (default `#102c3a`) and how far one sees through
 it in metres. One colour for every part of it: the surface's own tone, the view in the water,
-and a body's walls and tint. What lies in the water fades toward that colour along its path
+a body's walls (seen from outside, their tint builds by the same clarity), and a `ZoneStack`'s
+interior fog in its water. What lies in the water fades toward that colour along its path
 through it, the channel the colour is darkest in first (`waterExtinctionOf`), so the colour
 also sets how the water turns with depth: a greener one turns the bed greener the deeper it
-lies. The `Scenery`'s sea and a `ZoneStack`'s take the same `optics`.
+lies. The `Scenery`'s sea and a `ZoneStack`'s take the same `optics`. Left out, it comes from
+the deprecated props: `deepColor` for its colour, and for its clarity `bodyFogDensity` (ln 20
+over it) or else `waterOpacity`, taken as the share of the light the water hides over 10 m.
 
 ```tsx
 <Water geometry={surface} optics={{ color: '#0f3a3a', clarity: 25 }} />
@@ -207,7 +210,7 @@ const { surface, body, bed } = createWaterBox({ size: 100000, waterDepth: 150 })
 ```
 
 A solid sea bed (`bedOpacity={1}`) occludes the subsurface; lower values let
-it show through. `waterOpacity` controls how clear the water reads looking down.
+it show through. How clear the water reads looking down is its `optics` (its `clarity`).
 
 ## Floating objects (buoyancy)
 
@@ -276,8 +279,9 @@ i.e. marched through the body, which is a long way past what a wall material is;
 deliberately not attempted.
 
 The walls are one double-sided draw (`WaterVolumeMaterial`), a stack's too, both
-faces tinted as fog of the camera's distance to them: `bodyFogDensity` per metre
-(default 0.004), up to `bodyMaxOpacity` (else `waterOpacity`, else 0.9). Their
+faces tinted as fog of the camera's distance to them, at the water's own rate (its
+`optics`: ln 20 over the clarity per metre, as what lies in the water fades), up to
+`bodyMaxOpacity` (default 0.9). Their
 colour is the water's own (its `optics`), lit at the wall's depth, so they match
 the surface. Not a path through the water: no outline logic, so they hold for any
 shape. From in the water they show the water from the camera to them by its
@@ -305,12 +309,12 @@ flattened onto it, and the water body ends at the shoreline. See
 `documents/zones.md` §6. The bed's cap meets the flat lid where the bed's grid puts
 the shore, because its coastline is built into the cap (§6.3.1).
 
-`bedWaterTint` is the one thing that does NOT carry over: it belongs to the bed
-material the component draws, and a zone's sea bed is ordinary geology. The
-shallowest cap is dimmed instead by the daylight its depth leaves it (the stack's
-own water, `water-body.glsl`'s `waterBodyDim`), as the component's bed is; the lid
-and the walls carry the water in front of it. (`bedTint` and `bedTintDepth` are
-deprecated; see `documents/zones.md` §6.4.1 for what they did.)
+The bed carries no tint of its own (the deprecated `seaBedWaterTint` has no effect),
+and a zone's sea bed is ordinary geology: what lies in the water, the component's bed
+and a stack's shallowest cap alike, is dimmed by the daylight its depth leaves it (the
+water's own, `water-body.glsl`'s `waterBodyDim`); the lid and the walls carry the water
+in front of it. (`bedTint` and `bedTintDepth` are deprecated; see `documents/zones.md`
+§6.4.1 for what they did.)
 
 ⭐ **The waves answer the depth: they shoal and die out toward a shore, and break
 in surf there** (`documents/water-waves.md`, Shallow water), by one rule in every

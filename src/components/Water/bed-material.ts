@@ -17,7 +17,7 @@ export type BedMaterialParameters = ShaderMaterialParameters;
 /**
  * OIT-compatible sea-bed material for the bottom face of an ocean box. Applies
  * simple sun-direction diffuse shading so the procedural bed relief is visible,
- * tints the water-facing (top) side toward the water colour, and keeps the
+ * seen from above through the water over it (by its optics, `linkWater`), and keeps the
  * underside a light sandy/yellowish colour. Rendered double-sided.
  *
  * At opacity 1 the OITRenderPass routes it through the opaque pass (writing
@@ -40,8 +40,6 @@ export class BedMaterial extends ShaderMaterial {
       side: DoubleSide,
       uniforms: {
         uColor: new Uniform(new Color('#b8a06a')),
-        uWaterColor: new Uniform(new Color('#0a2540')),
-        uWaterTint: new Uniform(0.6),
         uSunDirection: new Uniform(new Vector3(-0.3, 0.8, -0.5).normalize()),
         uSunColor: new Uniform(new Color('#fff6e0')),
         uAmbient: new Uniform(0.45),
@@ -79,19 +77,23 @@ export class BedMaterial extends ShaderMaterial {
     this.uniforms.uColor.value.set(value as Color);
   }
 
+  // Kept for the deprecated `waterColor` and `waterTint`, which nothing draws with.
+  private readonly legacyTint = { color: new Color('#0a2540'), strength: 0.6 };
+
+  /** @deprecated the bed is seen through the water over it, by the water's `optics`; no effect */
   get waterColor(): Color {
-    return this.uniforms.uWaterColor.value;
+    return this.legacyTint.color;
   }
   set waterColor(value: Color | string | number) {
-    this.uniforms.uWaterColor.value.set(value as Color);
+    this.legacyTint.color.set(value as Color);
   }
 
-  /** Strength of the water tint on the water-facing side (0..1). */
+  /** @deprecated the bed is seen through the water over it, by the water's `optics`; no effect */
   get waterTint(): number {
-    return this.uniforms.uWaterTint.value;
+    return this.legacyTint.strength;
   }
   set waterTint(value: number) {
-    this.uniforms.uWaterTint.value = value;
+    this.legacyTint.strength = value;
   }
 
   get sunDirection(): Vector3 {

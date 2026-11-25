@@ -6,8 +6,7 @@ import {
   type CameraProbe,
 } from '../../sdk/utils/camera-site';
 import { fenceSideAt } from '../../sdk/geometries/fence-segments';
-import { DEFAULT_WATER_DEEP_COLOR } from '../Water/water-material';
-import { DEFAULT_WATER_BODY_FOG_DENSITY } from '../Water/water-volume-material';
+import { WATER_FADE, waterOpticsOf } from '../../sdk/weather/water-optics';
 import {
   ZoneFenceState,
   ZoneSectionState,
@@ -61,8 +60,13 @@ export const StackInteriorFog = ({
   frame,
 }: StackInteriorFogProps) => {
   const level = -(sea?.depth ?? 0);
-  const waterColor = sea?.deepColor ?? DEFAULT_WATER_DEEP_COLOR;
-  const waterDensity = sea?.bodyFogDensity ?? DEFAULT_WATER_BODY_FOG_DENSITY;
+  // The water's look (its optics): the fog in it is the water's own colour, and closes in as
+  // what lies in the water fades, 5% of it left at the clarity. `FogExp2` is
+  // exp(-(d * density)^2), so that is sqrt(ln 20) over the clarity.
+  const waterOptics = waterOpticsOf(sea?.optics, sea ?? {});
+  const waterColor = waterOptics.color;
+  const waterDensity =
+    Math.sqrt(WATER_FADE) / Math.max(waterOptics.clarity, 1e-3);
   const rockColor = interiorFog.rockColor ?? '#0b0a08';
   // ⚠️ `FogExp2` is exp(-(d * density)^2), so 1 / visibility puts ~63% fog at that
   // distance. Expressed as a distance because a useful density at field scale is a

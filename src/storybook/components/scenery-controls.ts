@@ -3,7 +3,6 @@ import { useArgs, useEffect } from 'storybook/preview-api';
 import { builtInColorRamps } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
 import {
-  DEFAULT_WATER_OPACITY,
   DEFAULT_WATER_WIND_SPEED,
   type WaterFoamTuning,
   type WaterWaveTuning,
@@ -148,7 +147,6 @@ export type SceneryArgs = {
   // Sea
   scenerySea: boolean;
   scenerySeabed: boolean;
-  scenerySeaOpacity: number;
   scenerySeabedOpacity: number;
   windSpeed: number;
   foamAmount: number;
@@ -282,7 +280,6 @@ export const sceneryArgs: SceneryArgs = {
   clouds: 'clear',
   cloudsQuality: sceneryDefaults.clouds.quality,
   scenerySea: true,
-  scenerySeaOpacity: DEFAULT_WATER_OPACITY,
   // As `WaterMaterial`'s own defaults.
   windSpeed: DEFAULT_WATER_WIND_SPEED,
   foamAmount: 0.5,
@@ -603,7 +600,6 @@ export const scenerySeaWaterFromArgs = (
   args: SceneryArgs,
   weather = false,
 ): ScenerySeaWater => ({
-  waterOpacity: args.scenerySeaOpacity,
   ...(weather
     ? {}
     : {
@@ -1052,10 +1048,6 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
     SEA,
     'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',
   ),
-  scenerySeaOpacity: {
-    ...range(0, 1, 0.01, SEA, 'The water\u2019s own opacity.'),
-    if: { arg: 'scenerySea' },
-  },
   windSpeed: {
     ...range(0, 25, 0.5, SEA, 'Drives the waves, in m/s.'),
     if: { arg: 'scenerySea' },

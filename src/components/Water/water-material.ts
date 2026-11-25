@@ -73,9 +73,6 @@ export type WaterBathymetry = {
   cellSize: number;
 };
 
-/** Default depth over which water shoals from clear to its full body colour. */
-const DEFAULT_WATER_SHOAL_DEPTH = 25;
-
 /** Default feature size of the shore foam's ragged edge, in metres. */
 const DEFAULT_WATER_SHORE_NOISE_SCALE = 200;
 
@@ -328,9 +325,6 @@ export const WATER_SURFACE_UNIFORMS = [
   'uWindSpeed',
   'uSignificantHeight',
   'uSteepness',
-  'uDeepColor',
-  'uShallowColor',
-  'uOpacity',
   'uReflectionIntensity',
   'uSunDirection',
   'uSunColor',
@@ -648,10 +642,6 @@ export class WaterMaterial extends ShaderMaterial {
           ),
         ),
 
-        uDeepColor: new Uniform(new Color(DEFAULT_WATER_DEEP_COLOR)),
-        uShallowColor: new Uniform(new Color('#1b6f8a')),
-        uOpacity: new Uniform(DEFAULT_WATER_OPACITY),
-
         // Deprecated (no longer drawn): kept so their accessors still answer.
         uTonalVariation: new Uniform(0.4),
         // Stored as cycles per meter; the public `tonalScale` property exposes
@@ -737,10 +727,7 @@ export class WaterMaterial extends ShaderMaterial {
       this.uniforms.uBathySize = new Uniform(
         new Vector2(image.width, image.height),
       );
-      // x: water level (object Y), y: 1 / shoal depth, z: opacity factor at zero depth
-      this.uniforms.uShoal = new Uniform(
-        new Vector3(0, 1 / DEFAULT_WATER_SHOAL_DEPTH, 0),
-      );
+      this.bathymetryLevel = 0;
       // The step the grid's slope is taken over (uShore.w): two of its cells.
       (this.uniforms.uShore.value as Vector4).w = 2 * bathymetry.cellSize;
     }
@@ -1148,36 +1135,50 @@ export class WaterMaterial extends ShaderMaterial {
     this.uniforms.uDisplacement.value = Math.min(Math.max(value, 0), 1);
   }
 
+  // Kept for the deprecated `deepColor`, `shallowColor` and `waterOpacity`, which nothing
+  // draws with: the water's look is its optics.
+  private readonly legacyLook = {
+    deep: new Color(DEFAULT_WATER_DEEP_COLOR),
+    shallow: new Color('#1b6f8a'),
+    opacity: DEFAULT_WATER_OPACITY,
+  };
+
+  /** @deprecated the water's colour is its `optics` (`WaterSettings.optics`); no effect */
   get deepColor(): Color {
-    return this.uniforms.uDeepColor.value;
+    return this.legacyLook.deep;
   }
   set deepColor(value: Color | string | number) {
-    this.uniforms.uDeepColor.value.set(value as Color);
+    this.legacyLook.deep.set(value as Color);
   }
 
+  /** @deprecated the water's look is one model, its `optics`; no effect */
   get shallowColor(): Color {
-    return this.uniforms.uShallowColor.value;
+    return this.legacyLook.shallow;
   }
   set shallowColor(value: Color | string | number) {
-    this.uniforms.uShallowColor.value.set(value as Color);
+    this.legacyLook.shallow.set(value as Color);
   }
 
+  /** @deprecated how far one sees is the water's `optics` (its `clarity`); no effect */
   get waterOpacity(): number {
-    return this.uniforms.uOpacity.value;
+    return this.legacyLook.opacity;
   }
   set waterOpacity(value: number) {
-    this.uniforms.uOpacity.value = value;
+    this.legacyLook.opacity = value;
   }
+
+  // The sea level against the bathymetry grid (waterLevel); null without one.
+  private bathymetryLevel: number | null = null;
 
   /**
    * Sea level in the material's OBJECT frame (Y up), against which the
    * bathymetry is measured. No effect without a bathymetry grid.
    */
   get waterLevel(): number {
-    return this.uniforms.uShoal?.value.x ?? 0;
+    return this.bathymetryLevel ?? 0;
   }
   set waterLevel(value: number) {
-    if (this.uniforms.uShoal) this.uniforms.uShoal.value.x = value;
+    if (this.bathymetryLevel !== null) this.bathymetryLevel = value;
   }
 
   /**
@@ -1198,32 +1199,6 @@ export class WaterMaterial extends ShaderMaterial {
       if (bed !== null) return this.waterLevel - bed;
     }
     return this.water.depth;
-  }
-
-  /**
-   * Water depth at which the sea reaches ~86% of its full body colour and
-   * opacity, in metres. Small values keep the shoaling to a narrow band along a
-   * shore; large ones spread it over the whole shelf.
-   */
-  get shoalDepth(): number {
-    const inverse = this.uniforms.uShoal?.value.y ?? 0;
-    return inverse > 0 ? 1 / inverse : 0;
-  }
-  set shoalDepth(value: number) {
-    if (this.uniforms.uShoal)
-      this.uniforms.uShoal.value.y = 1 / Math.max(value, 1e-3);
-  }
-
-  /**
-   * What is left of the water's own opacity where the bed reaches the surface,
-   * 0..1. Default 0 — water with no depth is fully clear, and only the Fresnel
-   * reflection remains.
-   */
-  get shoalOpacity(): number {
-    return this.uniforms.uShoal?.value.z ?? 0;
-  }
-  set shoalOpacity(value: number) {
-    if (this.uniforms.uShoal) this.uniforms.uShoal.value.z = value;
   }
 
   /**
@@ -1639,8 +1614,7 @@ export class WaterMaterial extends ShaderMaterial {
     if (!geometry.boundingBox) geometry.computeBoundingBox();
     const box = geometry.boundingBox!;
     const e = object.matrixWorld.elements;
-    const shoal = this.uniforms.uShoal?.value as Vector3 | undefined;
-    const levelY = shoal ? shoal.x : (box.min.y + box.max.y) / 2;
+    const levelY = this.bathymetryLevel ?? (box.min.y + box.max.y) / 2;
     water.level = e[5] * levelY + e[13];
     let minX = Infinity;
     let minZ = Infinity;

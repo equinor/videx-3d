@@ -1929,7 +1929,7 @@ export const Default: Story = {
         seaLayerOpacity: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
           description:
-            'The column\u2019s sea as a layer of the stack (`ZoneStackSea.opacity`): multiplies the water\u2019s own `scenerySeaOpacity`, and fades the lid, the walls and the body together.',
+            'The column\u2019s sea as a layer of the stack (`ZoneStackSea.opacity`): fades the lid, the walls and the body together.',
           if: { arg: 'scenerySea' },
           table: { category: 'Sea' },
         },
@@ -2663,7 +2663,6 @@ export const Default: Story = {
         'seaLevel',
         'scenerySeaColor',
         'scenerySeaClarity',
-        'scenerySeaOpacity',
         'seaLayerOpacity',
         'windSpeed',
         'foamAmount',

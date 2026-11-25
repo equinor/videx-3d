@@ -49,19 +49,48 @@ export const DEFAULT_WATER_OPTICS: WaterOpticsPreset = 'realistic';
 export const WATER_FADE = Math.log(20);
 
 /**
- * What a water's look is given by, before {@link WaterOptics}: its deep colour, and the fog
- * density of its body (per metre: what lies `d` away keeps e^(−density·d)). ⚠️ Deprecated
- * props, still honoured.
+ * The depth of water over which a deprecated `waterOpacity` is the share of the light the
+ * water hides, in metres: it is taken as the clarity that hides that much over this depth
+ * ({@link waterOpticsOf}).
+ */
+export const WATER_OPACITY_DEPTH = 10;
+
+// The clarities, in metres, a deprecated opacity or density is taken as at most and at least.
+const LEGACY_CLARITY_RANGE = [1, 1000] as const;
+
+/**
+ * What a water's look is given by, before {@link WaterOptics}: its deep colour; the fog
+ * density of its body (per metre: what lies `d` away keeps e^(−density·d)); and its opacity,
+ * the share of the light it hides over {@link WATER_OPACITY_DEPTH}. ⚠️ Deprecated props,
+ * still honoured.
  */
 export type WaterOpticsLegacy = {
   deepColor?: string;
   bodyFogDensity?: number;
+  waterOpacity?: number;
 };
+
+const clampClarity = (clarity: number) =>
+  Math.min(Math.max(clarity, LEGACY_CLARITY_RANGE[0]), LEGACY_CLARITY_RANGE[1]);
+
+// The clarity a deprecated density or opacity stands for; undefined for neither.
+function legacyClarity(legacy: WaterOpticsLegacy): number | undefined {
+  const density = legacy.bodyFogDensity;
+  if (density !== undefined && density > 0)
+    return clampClarity(WATER_FADE / density);
+  const opacity = legacy.waterOpacity;
+  if (opacity === undefined) return undefined;
+  const kept = 1 - Math.min(Math.max(opacity, 0), 1);
+  if (kept <= 0) return LEGACY_CLARITY_RANGE[0];
+  if (kept >= 1) return LEGACY_CLARITY_RANGE[1];
+  return clampClarity((WATER_OPACITY_DEPTH * WATER_FADE) / -Math.log(kept));
+}
 
 /**
  * A water's optics with nothing left out: `optics` (a preset's name, or its own colour and
- * clarity over the default preset's), else the deprecated `deepColor` and `bodyFogDensity`
- * where given, else the default preset.
+ * clarity over the default preset's), else the deprecated `deepColor` for its colour and
+ * `bodyFogDensity`, then `waterOpacity`, for its clarity, where given, else the default
+ * preset.
  *
  * @group Weather
  */
@@ -72,14 +101,9 @@ export function waterOpticsOf(
   if (typeof optics === 'string')
     return { ...(WATER_OPTICS_PRESETS[optics] ?? defaults()) };
   const base = defaults();
-  const density = legacy.bodyFogDensity;
   return {
     color: optics?.color ?? legacy.deepColor ?? base.color,
-    clarity:
-      optics?.clarity ??
-      (density !== undefined && density > 0
-        ? WATER_FADE / density
-        : base.clarity),
+    clarity: optics?.clarity ?? legacyClarity(legacy) ?? base.clarity,
   };
 }
 

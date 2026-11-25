@@ -255,12 +255,10 @@ export function createFenceOverlayUniforms(): ZoneFenceOverlayUniforms {
 }
 
 /**
- * Tinting of whatever lies under a water level. See
- * {@link ZoneMaterialParameters.waterTint}.
+ * Tinting of whatever lies under a water level: the water over it fades it by the scene's
+ * water (its optics, water-body.glsl). See {@link ZoneMaterialParameters.waterTint}.
  */
 export type ZoneWaterTintParameters = {
-  /** the water colour to tint toward */
-  color: ColorRepresentation;
   /** the water level, in the stack's own metres (Y up, so a level below datum is negative) */
   level: number;
   /** tint strength deep down (0..1) */
@@ -325,10 +323,9 @@ export type ZoneMaterialParameters = {
    * if seen through the water column. Omit for none, which compiles the branch
    * out.
    *
-   * ⭐ Depth-dependent, unlike the flat tint the `Water` component's own sea bed
-   * uses: a zone's sea bed can rise THROUGH the water (a coast, an island), and
-   * absorption that fades to nothing at the waterline gets that right without
-   * anything having to know where the shoreline runs.
+   * ⭐ Depth-dependent: a zone's sea bed can rise THROUGH the water (a coast, an
+   * island), and absorption that fades to nothing at the waterline gets that right
+   * without anything having to know where the shoreline runs.
    */
   waterTint?: ZoneWaterTintParameters;
   /**
@@ -435,7 +432,6 @@ const shader = {
       ...createSurfaceDetailUniforms(),
       zoneAmbient: { value: new Vector2(1.35, 0.5) },
       zoneSaturation: { value: 1 },
-      waterTintColor: { value: new Color() },
       // x: water level, y: strength, z: 1 / depth scale
       waterTintParams: { value: new Vector3() },
       // x: 1 / wet band depth, y: darkening amount
@@ -634,7 +630,6 @@ export class ZoneMaterial extends ShaderMaterial {
 
     const u = this.uniforms;
     defines.ZONE_WATER_TINT = '';
-    (u.waterTintColor.value as Color).set(tint.color);
     (u.waterTintParams.value as Vector3).set(
       tint.level,
       tint.strength,

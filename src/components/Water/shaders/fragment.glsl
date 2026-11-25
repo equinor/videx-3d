@@ -45,7 +45,6 @@ uniform float uMasterOpacity; // master multiplier (CommonComponent opacity prop
 uniform sampler2D uBathyMap;
 uniform mat3 uBathyToUv; // object XZ -> uv
 uniform vec2 uBathySize; // grid size in texels
-uniform vec3 uShoal;     // x: water level (object Y), y: 1 / depth scale, z: opacity at zero depth
 #endif
 
 #if defined(WATER_BATHYMETRY) || defined(WATER_FENCE)

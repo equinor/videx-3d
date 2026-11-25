@@ -154,14 +154,14 @@ describe('ZoneMaterial', () => {
     it('compiles the branch out when none is asked for, or it is off', () => {
       expect('ZONE_WATER_TINT' in defines(new ZoneMaterial())).toBe(false);
       const off = new ZoneMaterial({
-        waterTint: { color: '#0a2540', level: 0, strength: 0, depth: 80 },
+        waterTint: { level: 0, strength: 0, depth: 80 },
       });
       expect('ZONE_WATER_TINT' in defines(off)).toBe(false);
     });
 
     it('packs the level, strength and depth scale for the shader', () => {
       const material = new ZoneMaterial({
-        waterTint: { color: '#0a2540', level: -25, strength: 0.6, depth: 50 },
+        waterTint: { level: -25, strength: 0.6, depth: 50 },
       });
       expect('ZONE_WATER_TINT' in defines(material)).toBe(true);
       const params = material.uniforms.waterTintParams.value;
@@ -173,7 +173,7 @@ describe('ZoneMaterial', () => {
 
     it('takes its depth from the bed grid only when one is given', () => {
       const plain = new ZoneMaterial({
-        waterTint: { color: '#0a2540', level: 0, strength: 0.6, depth: 50 },
+        waterTint: { level: 0, strength: 0.6, depth: 50 },
       });
       expect('ZONE_BATHYMETRY' in defines(plain)).toBe(false);
 
@@ -184,7 +184,6 @@ describe('ZoneMaterial', () => {
       );
       const mapped = new ZoneMaterial({
         waterTint: {
-          color: '#0a2540',
           level: 0,
           strength: 0.6,
           depth: 50,

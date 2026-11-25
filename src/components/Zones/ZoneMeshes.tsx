@@ -22,7 +22,6 @@ import {
 } from '../../sdk/geometries/surface-zone';
 import { StackTiling } from '../../sdk/geometries/surface-stack';
 import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
-import { DEFAULT_WATER_DEEP_COLOR } from '../Water/water-material';
 import {
   capCullingBlocked,
   capCut,
@@ -476,7 +475,6 @@ export const ZoneMeshes = ({
     const waterTint = ((): ZoneWaterTintParameters | undefined => {
       if (!sea) return undefined;
       return {
-        color: sea.deepColor ?? DEFAULT_WATER_DEEP_COLOR,
         level: -(sea.depth ?? 0),
         strength: 1,
         depth: DEFAULT_BED_TINT_DEPTH,

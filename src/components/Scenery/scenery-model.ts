@@ -398,13 +398,7 @@ export const SCENERY_HOLLOW_RIM: readonly (readonly [
  */
 export type ScenerySeaWater = Omit<
   WaterSettings,
-  | 'skyColor'
-  | 'horizonColor'
-  | 'sunDirection'
-  | 'sunColor'
-  | 'displacement'
-  | 'shoalDepth'
-  | 'shoalOpacity'
+  'skyColor' | 'horizonColor' | 'sunDirection' | 'sunColor' | 'displacement'
 >;
 
 /**
