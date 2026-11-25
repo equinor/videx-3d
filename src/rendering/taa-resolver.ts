@@ -332,7 +332,9 @@ export class TaaResolver {
    * Reproject the running history to the current view and blend it with the freshly
    * composited frame in `buffer`, writing the result back into `buffer`. Must be
    * called after {@link restoreJitter} so the camera matrices are the clean
-   * (un-jittered) transform.
+   * (un-jittered) transform. Copied back from the history rather than swapped in as
+   * the pipeline's buffer ({@link PassBuffers}): the passes after draw into the
+   * buffer, and the history must stay as it was.
    *
    * `frontDepth` is the OIT front-layer's view-space linear depth (normalised by
    * `camera.far`); pass `null` when it was not written this frame (front peel

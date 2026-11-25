@@ -326,7 +326,9 @@ export class TemporalResolver {
    * Reads `buffer.texture` as the current frame and writes the average into the
    * history target, then copies that back into `buffer` (an overwrite blit, so the
    * buffer's alpha is replaced rather than blended). The history targets are
-   * ping-ponged for the next frame.
+   * ping-ponged for the next frame. Copied rather than swapped in as the pipeline's
+   * buffer ({@link PassBuffers}): the passes after draw into the buffer, and the
+   * history must stay as it was.
    */
   resolve(renderer: WebGLRenderer, buffer: WebGLRenderTarget, camera: Camera) {
     this.curViewProj.multiplyMatrices(

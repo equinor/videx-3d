@@ -36,7 +36,7 @@ import {
   OitCapableMaterial,
   OitPass,
 } from '../oit-material';
-import { Pass } from '../Pass';
+import { Pass, type PassBuffers } from '../Pass';
 import { getRenderingState } from '../rendering-state';
 import copyFragmentShader from '../shaders/copy-frag.glsl';
 import copyVertexShader from '../shaders/copy-vert.glsl';
@@ -1076,7 +1076,11 @@ export class OITRenderPass extends Pass {
     t.total = any ? total : -1;
   }
 
-  render(renderer: WebGLRenderer, buffer: WebGLRenderTarget) {
+  render(
+    renderer: WebGLRenderer,
+    buffer: WebGLRenderTarget,
+    buffers?: PassBuffers,
+  ) {
     const { scene, camera } = this;
 
     // Register as an active OIT pipeline on first render (see releaseOit). Doing this
@@ -1480,21 +1484,23 @@ export class OITRenderPass extends Pass {
     // mode it runs only while the camera is moving: temporal accumulation already
     // anti-aliases (and recovers sub-pixel detail on) the still frames, and running
     // SMAA on top would only soften the converged image. The two are therefore
-    // mutually exclusive per frame.
+    // mutually exclusive per frame. Into the pipeline's spare when it has one, which
+    // becomes the buffer (`buffers`): no copy back.
+    let result = buffer;
     if (wantSmaa && this.smaa) {
       const runSmaa =
         this.antialias === 'smaa' || (this.temporal?.isMoving ?? true);
       if (runSmaa) {
-        this.smaa.render(renderer, buffer);
+        result = this.smaa.render(renderer, result, buffers);
       }
     }
 
     // ---- spatial FXAA resolve ----------------------------------------------
     // Purely spatial, runs every frame. Cheaper and softer than SMAA, with no OIT
     // or temporal coupling (also exposed as the standalone FXAAPass for non-OIT
-    // setups). Composites in place into the shared buffer.
+    // setups). Composites into the shared buffer, as SMAA does.
     if (wantFxaa && this.fxaa) {
-      this.fxaa.render(renderer, buffer);
+      result = this.fxaa.render(renderer, result, buffers);
     }
 
     // ---- restore -----------------------------------------------------------
@@ -1512,7 +1518,7 @@ export class OITRenderPass extends Pass {
 
     // ---- debug: render-target thumbnails ----------------------------------
     if (this.debugTargets) {
-      this.renderDebugTargets(renderer, buffer);
+      this.renderDebugTargets(renderer, result);
     }
   }
 

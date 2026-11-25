@@ -267,7 +267,7 @@ const focusOnCtrlClick = (event: EventEmitterCallbackEvent) => {
   );
 };
 
-// Always-on OIT pipeline (SMAA), matching the other zone spikes.
+// The OIT pipeline (SMAA) for `pipeline: 'oit'`, with its tuning controls (Diagnostics).
 const ZonePipeline = ({
   frontPeelTolerance,
   skipFrontPeeling,
@@ -1686,13 +1686,15 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         toneMapping={props.toneMapping}
         exposure={props.exposure}
       />
-      <ZonePipeline
-        frontPeelTolerance={props.frontPeelTolerance}
-        skipFrontPeeling={props.skipFrontPeeling}
-        mergeFront={props.mergeFront}
-        tailSlices={props.tailSlices}
-        tailSliceSpacing={props.tailSliceSpacing}
-      />
+      {props.pipeline === 'oit' && (
+        <ZonePipeline
+          frontPeelTolerance={props.frontPeelTolerance}
+          skipFrontPeeling={props.skipFrontPeeling}
+          mergeFront={props.mergeFront}
+          tailSlices={props.tailSlices}
+          tailSliceSpacing={props.tailSliceSpacing}
+        />
+      )}
     </World>
   );
 };
@@ -1885,7 +1887,7 @@ export const Default: Story = {
         reliefMarkers: false,
       },
       argTypes: {
-        // Behind `scenery`; the story draws through its own OIT pipeline always.
+        // Behind `scenery`; `pipeline` is the story's own (Diagnostics).
         ...sceneryArgTypes({ shownIf: 'scenery' }),
         ...sceneryReliefArgTypes('scenery'),
         ...sceneryMinimapArgTypes,
@@ -1894,7 +1896,13 @@ export const Default: Story = {
           description:
             'The relief drawn from tiles, the sea\u2019s seabed \u2014 the demo reliefs ticked, and the column\u2019s own sea bed baked in finest (`bakeSeabed`) \u2014 and the column\u2019s sea bed built on it (`ZoneStack.relief`), so its top is the ground the stage draws, and the stage draws it as the sea\u2019s. Off, there is no seabed: the column draws its own, and the void lies below the water about it. Rebuilds the column. Made on demand: `npm run generate-relief`.',
         },
-        pipeline: { table: { disable: true } },
+        pipeline: {
+          control: { type: 'inline-radio' },
+          options: ['default', 'oit'],
+          description:
+            '`default` lets R3F render; `oit` renders through an order-independent transparency pipeline (`OITRenderPass` with SMAA, then `OutputPass`), tuned by the OIT controls that show with it.',
+          table: { category: 'Diagnostics' },
+        },
         scenery: {
           description:
             'Put the field under the videx `<Scenery>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The Scenery owns the water then: the column\u2019s own is hidden while its stage draws the sea (`ZoneStack.drawSea`).',
@@ -2464,78 +2472,82 @@ export const Default: Story = {
         },
         surfaceOpacity: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         wallOpacity: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         frontPeelTolerance: {
           control: { type: 'select' },
           options: [1e-7, 1e-6, 1e-5, 1e-4, 1e-3],
           description:
             'OIT: how close to the nearest transparent fragment a fragment may be and still count as the FRONT layer, as a fraction of its view distance — so the slab is roughly `distance × tolerance` metres. ⭐ Only visible at `surfaceOpacity` < 1, and the thing to watch is where a horizon leaves the cut face: too large and the cap is composited exactly instead of averaged into the tail, which reads as a harder, more opaque band along every layer contact. ⚠️ Too small and the true front fragment fails its own test, so the pixel resolves entirely through the tail and shimmers.',
-          table: { category: 'Appearance' },
+          if: { arg: 'pipeline', eq: 'oit' },
+          table: { category: 'Diagnostics' },
         },
         skipFrontPeeling: {
           control: { type: 'boolean' },
           description:
             'OIT: drop the exact front layer and resolve every transparent fragment through the weighted-blended tail. ⭐ The A/B for any front-peel question — if an artefact survives this, the peel is not what made it.',
-          table: { category: 'Appearance' },
+          if: { arg: 'pipeline', eq: 'oit' },
+          table: { category: 'Diagnostics' },
         },
         mergeFront: {
           control: { type: 'boolean' },
           description:
             'OIT: render the exact front layer in the same geometry pass as the tail instead of a separate front pass.',
-          table: { category: 'Appearance' },
+          if: { arg: 'pipeline', eq: 'oit' },
+          table: { category: 'Diagnostics' },
         },
         tailSlices: {
           control: { type: 'inline-radio' },
           options: [0, 2, 3],
           description:
             'OIT: split the weighted-blended tail into per-pixel depth slices (between the nearest and farthest transparent fragment), composited back to front.',
-          table: { category: 'Appearance' },
+          if: { arg: 'pipeline', eq: 'oit' },
+          table: { category: 'Diagnostics' },
         },
         tailSliceSpacing: {
           control: { type: 'inline-radio' },
           options: ['linear', 'log'],
-          if: { arg: 'tailSlices', neq: 0 },
-          table: { category: 'Appearance' },
+          if: { arg: 'pipeline', eq: 'oit' },
+          table: { category: 'Diagnostics' },
         },
-        wireframe: { table: { category: 'Appearance' } },
+        wireframe: { table: { category: 'Zone stack' } },
         peel: {
           control: { type: 'number', min: 0, max: 40, step: 1 },
           description:
             'Hide the first N UNITS, exposing what is under them — a COUNT, so whole units only. Pure appearance: no rebuild, free to sweep. Clamped to what is drawn.',
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         cullHiddenCaps: {
           description:
             'Skip the cap triangles buried between two opaque units. ⭐ The A/B for the saving: compare `Tris` and `GPU` in `stats`. Switched off by itself at any opacity below 1, in wireframe, or with walls hidden.',
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         cullOffscreen: {
           description:
             'With `lodLevels`, skip each cap’s tiles that lie wholly outside the view. Saves vertex work only (off-screen triangles draw no pixels), so it pays with many triangles: close-ups and views inside the column. A/B with `GPU` in `stats`.',
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         inferredStyle: {
           control: { type: 'inline-radio' },
           options: ['none', 'hatched', 'checker', 'zigzag'],
           description:
             'Mark the regions the seal INFERRED — where a surface has no data of its own and its height was carried in from its neighbours.',
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         detail: {
           control: { type: 'select' },
           options: ['none', ...ZONE_DETAIL_PRESET_NAMES],
           description:
             'Procedural surface detail, applied uniformly. ⚠️ The strat column carries no lithology, so there is nothing to pick a per-unit preset from — that mapping would be the host’s, like the colour.',
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         detailStrength: {
           control: { type: 'range', min: 0, max: 2, step: 0.05 },
-          table: { category: 'Appearance' },
+          table: { category: 'Zone stack' },
         },
         zonePicking: {
           description:

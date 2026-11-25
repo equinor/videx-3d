@@ -533,8 +533,8 @@ needed. Set `antialias` to one of (the default is **`'taa'`**):
   lines well). No reprojection, so nothing ghosts; the moving frame is shown as-is.
 - **`'smaa'`** — subpixel morphological AA every frame (quality via `smaaQuality`:
   `'low' | 'medium' | 'high' | 'ultra'`). Anti-aliases moving frames too, but (like all
-  morphological techniques) cannot recover sub-pixel 1px lines. It sRGB-encodes the
-  linear FP16 buffer for edge detection so its contrast thresholds behave correctly.
+  morphological techniques) cannot recover sub-pixel 1px lines. It finds edges on the
+  linear FP16 buffer clamped to 0–1, and blends in linear space.
 - **`'temporal-smaa'`** — both, mutually exclusive per frame: temporal while still
   (crisp, recovers 1px lines), SMAA while moving. SMAA never softens the converged
   still image and only costs GPU time during motion.
@@ -567,6 +567,19 @@ const passes = useMemo<Pass[]>(
 
 Inside an OIT pipeline, prefer `OITRenderPass.antialias = 'fxaa'` over adding a
 separate `FXAAPass` — it's the same resolver wired into the pass.
+
+### A pass that rewrites the whole buffer
+
+A pass draws into the pipeline's shared buffer, or reads it:
+`render(renderer, buffer, buffers)`. One that reads it to write a result of the same
+size — an anti-aliasing resolve — cannot write the target it reads. In a
+`RenderingPipeline` it gets `buffers` (`PassBuffers`): it writes the result into
+`buffers.spare` and calls `buffers.swap()`, and the passes after it draw into and read
+the spare, with no copy back. The spare is made on first use, single-sample, and shares
+the buffer's depth texture: draw into it with `depthTest` and `depthWrite` off. SMAA and
+FXAA work this way. The temporal modes copy their result back from their history, which
+must stay as it was while later passes draw into the buffer. A pass driven by other code
+gets no `buffers`: resolve into a target of its own and copy back.
 
 ### Shading aliasing is a separate problem
 
@@ -690,6 +703,7 @@ after the pipeline), rather than relying on `toneMapped = false`.
 
 - `OITRenderPass` — [src/rendering/passes/OITRenderPass.ts](../src/rendering/passes/OITRenderPass.ts)
 - `RenderingPipeline` — [src/rendering/RenderingPipeline.tsx](../src/rendering/RenderingPipeline.tsx)
+- `Pass`, `PassBuffers` — [src/rendering/Pass.ts](../src/rendering/Pass.ts)
 - `makeOitCompatible`, `attachOitVariants`, `isOitCapable` — [src/rendering/oit-material.ts](../src/rendering/oit-material.ts)
 - `OitMaterial` — [src/rendering/OitMaterial.tsx](../src/rendering/OitMaterial.tsx)
 - `LAYERS`, `createLayers` — [src/layers/layers.ts](../src/layers/layers.ts)

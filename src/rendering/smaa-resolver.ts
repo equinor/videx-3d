@@ -3,19 +3,17 @@ import {
   Color,
   HalfFloatType,
   LinearFilter,
-  MeshBasicMaterial,
   NoBlending,
   RawShaderMaterial,
   RGBAFormat,
   ShaderMaterial,
-  SRGBColorSpace,
   Texture,
-  UnsignedByteType,
   WebGLRenderer,
   WebGLRenderTarget,
 } from 'three';
 import { SMAAPass as StdlibSMAAPass } from 'three-stdlib';
 import { FullscreenRenderer } from './fullscreen-renderer';
+import type { PassBuffers } from './Pass';
 import copyFrag from './shaders/copy-frag.glsl';
 import copyVert from './shaders/copy-vert.glsl';
 
@@ -48,20 +46,42 @@ const SMAA_PRESETS: Record<
 };
 
 /**
+ * Each colour tap of three-stdlib's SMAA edge shader (`texture2D( colorTex, … ).rgb`), clamped
+ * to 0–1, and how many it found (seven).
+ *
+ * Edges are found on the linear buffer clamped to 0–1, as on the 8-bit copy of it they were
+ * found on until 2026-11-25: three drew that copy linear, into sRGB storage the GPU decoded
+ * back on reading, so all it did was clamp, for a full-size draw (0.7 ms at 2440 × 2050).
+ *
+ * @internal
+ */
+export function smaaClampedEdgeTaps(shader: string) {
+  let taps = 0;
+  const clamped = shader.replace(
+    /texture2D\( colorTex, ([^)]+?) \)\.rgb/g,
+    (_, at: string) => {
+      taps++;
+      return `clamp( texture2D( colorTex, ${at} ).rgb, 0.0, 1.0 )`;
+    },
+  );
+  return { shader: clamped, taps };
+}
+
+/**
  * Subpixel Morphological Anti-Aliasing (SMAA) resolver, used internally by
  * {@link OITRenderPass} when its `antialias` mode is `'smaa'` or `'temporal-smaa'`.
  * It detects edges by colour discontinuity and reconstructs anti-aliased
  * silhouettes using precomputed area/search lookup tables, giving clean long edges
  * with little detail blurring.
  *
- * It operates in linear space (the OIT buffer is linear FP16) but detects edges on
- * an sRGB-encoded copy so the perceptual thresholds behave as intended; the blend
- * and output stay linear, so brightness is untouched.
+ * It works in the buffer's linear space: edges on its colour clamped to 0–1
+ * ({@link smaaClampedEdgeTaps}), the blend and output linear, so brightness is untouched.
  *
  * This wraps the well-tested SMAA shaders and lookup textures from `three-stdlib`
  * and drives the three sub-passes (edge detection, blend-weight calculation,
- * neighbourhood blending) through a {@link FullscreenRenderer}, compositing the
- * result back into the shared buffer in place.
+ * neighbourhood blending) through a {@link FullscreenRenderer}. The blend reads the
+ * buffer, so it writes elsewhere: into a pipeline's spare target, swapped in
+ * ({@link PassBuffers}), or without one into a scratch target of its own, copied back.
  *
  * Like all morphological techniques it cannot recover sub-pixel features (e.g. 1px
  * WebGL lines that fall between samples) — those are handled by the temporal
@@ -69,11 +89,11 @@ const SMAA_PRESETS: Record<
  */
 export class SmaaResolver {
   private inner: StdlibSMAAPass;
-  private scratch: WebGLRenderTarget;
-  private encoded: WebGLRenderTarget;
-  private encodeMaterial: MeshBasicMaterial;
+  private scratch: WebGLRenderTarget | null = null;
   private blitMaterial: RawShaderMaterial;
   private fullscreenRenderer = new FullscreenRenderer();
+  private width = 1;
+  private height = 1;
 
   private materialEdges: ShaderMaterial;
   private materialWeights: ShaderMaterial;
@@ -88,48 +108,17 @@ export class SmaaResolver {
     // three-stdlib's SMAAPass builds the edge/weight render targets, the three
     // sub-pass materials and (asynchronously, from embedded base64 PNGs) the
     // area + search lookup textures. We reuse those resources but drive the draws
-    // ourselves so the resolver can composite in place into OIT's single buffer.
+    // ourselves so the resolver can composite into OIT's buffer.
     this.inner = new StdlibSMAAPass(1, 1);
     this.materialEdges = this.inner.materialEdges as ShaderMaterial;
     this.materialWeights = this.inner.materialWeights as ShaderMaterial;
     this.materialBlend = this.inner.materialBlend as ShaderMaterial;
-
-    this.scratch = new WebGLRenderTarget(1, 1, {
-      format: RGBAFormat,
-      type: HalfFloatType,
-      depthBuffer: false,
-      generateMipmaps: false,
-      minFilter: LinearFilter,
-      magFilter: LinearFilter,
-      wrapS: ClampToEdgeWrapping,
-      wrapT: ClampToEdgeWrapping,
-      samples: 0,
-    });
-
-    // sRGB-encoded copy of the buffer used ONLY as the edge-detection input. The
-    // SMAA edge thresholds are tuned for perceptual (sRGB) contrast; detecting on
-    // the raw linear FP16 buffer misses low-contrast edges. An 8-bit byte target is
-    // required because three only applies the sRGB OETF when the destination is a
-    // byte target. Blend/output stay in the linear buffer, so brightness is
-    // untouched and the OutputPass still does the single final encode.
-    this.encoded = new WebGLRenderTarget(1, 1, {
-      format: RGBAFormat,
-      type: UnsignedByteType,
-      depthBuffer: false,
-      generateMipmaps: false,
-      minFilter: LinearFilter,
-      magFilter: LinearFilter,
-      wrapS: ClampToEdgeWrapping,
-      wrapT: ClampToEdgeWrapping,
-      samples: 0,
-    });
-    this.encoded.texture.colorSpace = SRGBColorSpace;
-    this.encodeMaterial = new MeshBasicMaterial({
-      depthTest: false,
-      depthWrite: false,
-      toneMapped: true,
-      blending: NoBlending,
-    });
+    this.materialEdges.fragmentShader = smaaClampedEdgeTaps(
+      this.materialEdges.fragmentShader,
+    ).shader;
+    // Into a target that may share the pipeline's depth texture (PassBuffers): no depth.
+    this.materialBlend.depthTest = false;
+    this.materialBlend.depthWrite = false;
 
     this.blitMaterial = new RawShaderMaterial({
       uniforms: {
@@ -173,23 +162,43 @@ export class SmaaResolver {
   }
 
   setSize(width: number, height: number) {
-    const w = Math.max(1, Math.floor(width));
-    const h = Math.max(1, Math.floor(height));
-    this.inner.setSize(w, h);
-    this.scratch.setSize(w, h);
-    this.encoded.setSize(w, h);
+    this.width = Math.max(1, Math.floor(width));
+    this.height = Math.max(1, Math.floor(height));
+    this.inner.setSize(this.width, this.height);
+    this.scratch?.setSize(this.width, this.height);
   }
 
   dispose() {
     this.inner.dispose();
-    this.scratch.dispose();
-    this.encoded.dispose();
-    this.encodeMaterial.dispose();
+    this.scratch?.dispose();
     this.blitMaterial.dispose();
     this.fullscreenRenderer.dispose();
   }
 
-  render(renderer: WebGLRenderer, buffer: WebGLRenderTarget) {
+  /** Where the blend goes without a pipeline's spare: made on first use. */
+  private ensureScratch() {
+    return (this.scratch ??= new WebGLRenderTarget(this.width, this.height, {
+      format: RGBAFormat,
+      type: HalfFloatType,
+      depthBuffer: false,
+      generateMipmaps: false,
+      minFilter: LinearFilter,
+      magFilter: LinearFilter,
+      wrapS: ClampToEdgeWrapping,
+      wrapT: ClampToEdgeWrapping,
+      samples: 0,
+    }));
+  }
+
+  /**
+   * Anti-alias `buffer`. With `buffers` the result goes into the pipeline's spare, swapped
+   * in; without, it is copied back into `buffer`. Returns the target that holds it.
+   */
+  render(
+    renderer: WebGLRenderer,
+    buffer: WebGLRenderTarget,
+    buffers?: PassBuffers,
+  ): WebGLRenderTarget {
     // The edge-detection and blend-weight sub-passes use `discard` for non-edge
     // pixels, so they only write where edges are found. The pipeline runs with
     // renderer.autoClear = false, and this resolver drives the draws itself (it
@@ -203,21 +212,9 @@ export class SmaaResolver {
     const prevClearAlpha = renderer.getClearAlpha();
     renderer.setClearColor(BLACK, 0);
 
-    // 0) Encode an sRGB copy of the linear buffer for edge detection only. SMAA's
-    // contrast thresholds are tuned for perceptual space; running them on the raw
-    // linear FP16 buffer misses low-contrast edges (e.g. transparent-over-opaque
-    // silhouettes). The byte target makes three apply the sRGB OETF. The buffer
-    // itself is left linear, so brightness/output encoding are unaffected.
-    this.encodeMaterial.map = buffer.texture;
-    this.fullscreenRenderer.renderMaterial(
-      renderer,
-      this.encoded,
-      this.encodeMaterial,
-    );
-
-    // 1) Edge detection: encoded (sRGB) colour -> edges RT.
+    // 1) Edge detection: the buffer's colour, clamped to 0–1 -> edges RT.
     (this.materialEdges.uniforms.tDiffuse.value as Texture | null) =
-      this.encoded.texture;
+      buffer.texture;
     renderer.setRenderTarget(this.inner.edgesRT);
     renderer.clear(true, false, false);
     this.fullscreenRenderer.renderMaterial(
@@ -237,22 +234,24 @@ export class SmaaResolver {
     );
 
     // 3) Neighbourhood blending: weights RT (tDiffuse) + linear buffer colour
-    // (tColor) -> scratch. Blending stays in linear space so the result is
-    // unchanged in brightness; only the edge mask came from the sRGB copy. Can't
-    // read and write the buffer at once, so resolve to scratch.
+    // (tColor), in linear space. It can't write the buffer it reads: into the
+    // pipeline's spare, which becomes the buffer, or else into scratch, copied back.
     (this.materialBlend.uniforms.tColor.value as Texture | null) =
       buffer.texture;
-    this.fullscreenRenderer.renderMaterial(
-      renderer,
-      this.scratch,
-      this.materialBlend,
-    );
-
-    // 4) Copy the anti-aliased result back into the shared buffer in place.
-    (this.blitMaterial.uniforms.source.value as Texture | null) =
-      this.scratch.texture;
-    this.fullscreenRenderer.renderMaterial(renderer, buffer, this.blitMaterial);
+    const out = buffers ? buffers.spare : this.ensureScratch();
+    this.fullscreenRenderer.renderMaterial(renderer, out, this.materialBlend);
+    let result = buffer;
+    if (buffers) result = buffers.swap();
+    else {
+      (this.blitMaterial.uniforms.source.value as Texture | null) = out.texture;
+      this.fullscreenRenderer.renderMaterial(
+        renderer,
+        buffer,
+        this.blitMaterial,
+      );
+    }
 
     renderer.setClearColor(prevClearColor, prevClearAlpha);
+    return result;
   }
 }

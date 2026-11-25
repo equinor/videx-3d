@@ -11,6 +11,7 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { Pass } from './Pass';
+import { PipelineBuffers } from './pipeline-buffers';
 import { setPipelinePasses } from './precompile';
 
 /** Transparent-black used to reset the default framebuffer each frame. */
@@ -44,7 +45,9 @@ export type RenderingPipelineProps = {
  * Generic render pipeline component that runs an ordered list of {@link Pass} objects
  * against a shared `WebGLRenderTarget` (color + depth texture). Use it to compose
  * custom rendering pipelines — e.g. a {@link OITRenderPass} based pipeline for
- * order-independent transparency.
+ * order-independent transparency. A pass that writes a full-screen result read from
+ * the buffer (an anti-aliasing resolve) may write it into a spare target and swap the
+ * two ({@link PassBuffers}): the spare is made only once a pass asks for it.
  *
  * @example
  * ```tsx
@@ -103,6 +106,12 @@ export const RenderingPipeline = ({
     });
   }, [samples, supersample]);
 
+  // A spare target like it, for passes that write a full-screen result (PassBuffers).
+  const buffers = useMemo(
+    () => new PipelineBuffers(renderTarget),
+    [renderTarget],
+  );
+
   useEffect(() => {
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
@@ -113,9 +122,10 @@ export const RenderingPipeline = ({
 
   useEffect(() => {
     return () => {
+      buffers.dispose();
       renderTarget.dispose();
     };
-  }, [renderTarget]);
+  }, [renderTarget, buffers]);
 
   useEffect(() => {
     return () => {
@@ -148,9 +158,11 @@ export const RenderingPipeline = ({
       h = Math.max(1, Math.floor(h * scale));
     }
     renderTarget.setSize(w, h);
+    buffers.setSize(w, h);
     passes.forEach(p => p.setSize?.(w, h, viewport.dpr));
   }, [
     renderTarget,
+    buffers,
     renderer,
     size,
     viewport.dpr,
@@ -178,8 +190,11 @@ export const RenderingPipeline = ({
     renderer.clear(true, true, true);
     renderer.setClearColor(prevClearColor, prevClearAlpha);
 
+    // Each frame starts on the main target; a pass that writes a full-screen result into
+    // the spare swaps them for the passes after it.
+    buffers.reset();
     for (const pass of passes) {
-      pass.render(renderer, renderTarget);
+      pass.render(renderer, buffers.current, buffers);
     }
   }, priority);
 

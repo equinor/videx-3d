@@ -1,10 +1,11 @@
 import { WebGLRenderer, WebGLRenderTarget } from 'three';
 import { FxaaResolver } from '../fxaa-resolver';
-import { Pass } from '../Pass';
+import { Pass, type PassBuffers } from '../Pass';
 
 /**
- * Standalone FXAA post pass. Wraps a `FxaaResolver` and composites it in
- * place into the shared pipeline buffer, so it works after any base pass
+ * Standalone FXAA post pass. Wraps a `FxaaResolver` and composites it into the
+ * shared pipeline buffer (in a {@link RenderingPipeline}, by swapping in its spare
+ * target, {@link PassBuffers}), so it works after any base pass
  * ({@link RenderPass} or {@link OITRenderPass}) — unlike the OIT-internal SMAA /
  * temporal modes it does not require order-independent transparency.
  *
@@ -22,7 +23,11 @@ export class FXAAPass extends Pass {
     this.resolver.dispose();
   }
 
-  render(renderer: WebGLRenderer, buffer: WebGLRenderTarget) {
-    this.resolver.render(renderer, buffer);
+  render(
+    renderer: WebGLRenderer,
+    buffer: WebGLRenderTarget,
+    buffers?: PassBuffers,
+  ) {
+    this.resolver.render(renderer, buffer, buffers);
   }
 }

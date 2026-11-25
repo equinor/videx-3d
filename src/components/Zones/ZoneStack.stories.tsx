@@ -639,24 +639,24 @@ export const Default: StoryObj<DefaultArgs> = {
     surfaceOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description: 'Opacity of the horizons (the caps).',
-      table: { category: 'Appearance' },
+      table: { category: 'Zone stack' },
     },
     wallOpacity: {
       control: { type: 'range', min: 0, max: 1, step: 0.05 },
       description: 'Opacity of the walls around the slabs.',
-      table: { category: 'Appearance' },
+      table: { category: 'Zone stack' },
     },
     wireframe: {
       control: 'boolean',
       description: 'Draw the tessellation as a wireframe.',
-      table: { category: 'Appearance' },
+      table: { category: 'Zone stack' },
     },
     detail: {
       control: 'select',
       options: ['none', ...ZONE_DETAIL_PRESET_NAMES],
       description:
         'Procedural relief on every cap and wall, named for a rock type (`ZoneLayer.detail`). It shows as the camera comes close.',
-      table: { category: 'Appearance' },
+      table: { category: 'Zone stack' },
     },
   },
 };
