@@ -9,7 +9,7 @@
 #include <common>
 #include <logdepthbuf_pars_fragment>
 #ifdef GEO_TILE_WATER
-#include ../../Scenery/shaders/sky.glsl
+#include ../../Scenery/shaders/scenery.glsl
 #include ./geo-water.glsl
 #endif
 #ifdef USE_OIT

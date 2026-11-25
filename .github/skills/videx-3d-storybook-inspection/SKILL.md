@@ -53,7 +53,7 @@ Then `screenshot_page`.
 
 ⚠️ Under a `Scenery` far from the field (beyond its stage), **scene Y is not altitude**: the
 sea lies on a globe, 3 km below Y = 0 at 200 km. Pose there with `globe.orbit` or
-`globe.place`, never with a hard-coded Y. Sky stories with a `SceneryDebugPanel` have buttons
+`globe.place`, never with a hard-coded Y. Scenery stories with a `SceneryDebugPanel` have buttons
 for the same.
 
 `profile` needs the tab in front and the user's hands off (ask first), and no other GPU
@@ -84,8 +84,8 @@ coordinates yourself.
   three bearings. Keeping the target fixed is what makes the frames comparable.
 - ⚠️ Surface colour depends heavily on angle, because you may be seeing an
   interior layer through a cut. Do not identify a surface by its colour alone.
-- Turn distracting geometry off while debugging: `water: false` in particular
-  hides the seabed entirely.
+- Turn distracting geometry off while debugging: the sea's water in particular
+  (`scenerySea: false` in the field model) hides the seabed entirely.
 - Zoom in further than feels necessary. Misalignments of a metre or two are
   invisible at 300 m and obvious at 60 m.
 
@@ -99,19 +99,20 @@ coordinates yourself.
 - Storybook URL args: `?id=<story>&viewMode=story&args=key:value;key2:value2`,
   booleans as `!true` / `!false`, `#` in colours as `%23`. Prefer `setArgs` over
   URL args once the page is up.
-- Story ids used here: `spikes-zones-fieldcolumn--default`,
-  `spikes-scenery-stagedebug--default`, `spikes-scenery-relieftiles--default`,
+- Story ids used here: `examples-field-model--default` (the zone stack on the demo field;
+  `--with-scenery` under a sky), `debug-scenery-stage--default` (a stage of any size with every
+  option and debug view; dev Storybook only), `components-scenery-relief--default`,
   `debug-scenery-cloud-bench--default` (the 3D clouds alone, fixed 1280 × 720 at 1; time them
   with `window.videx3d.cloudBench`: `pass`, `frames`, `count`, `ab` — documents/clouds.md,
-  "Measuring"), `debug-ocean-sea-bench--default` / `--stand-alone-ocean` (the Scenery's sea or
-  the stand-alone `Ocean`, fixed 1920 × 1080 at 1; time each sea draw with
-  `window.videx3d.seaBench`: `frames`, `tour`, `ab` — documents/ocean.md, "Measuring"). ⚠️ The
-  sea's wave bake (`OceanMaterial.renderWaves`) draws outside the scene: no draw group times it,
+  "Measuring"), `debug-water-sea-bench--default` / `--stand-alone-ocean` (the Scenery's sea or
+  the stand-alone `Water`, fixed 1920 × 1080 at 1; time each sea draw with
+  `window.videx3d.seaBench`: `frames`, `tour`, `ab` — documents/water.md, "Measuring"). ⚠️ The
+  sea's wave bake (`WaterMaterial.renderWaves`) draws outside the scene: no draw group times it,
   only `frame` holds it — judge a sea change by the frame too.
 - ⚠️ GPU A/B on the Iris Xe: the clock jumps between plateaus (one march 11→52 ms) and a program
   just compiled runs ~2× slow for seconds. Judge only interleaved per-round ratios with a no-op
   control, new programs drawn untimed ~3 s first (`cloudBench.ab` does both).
-- ⚠️ `camera.settled()` never resolves with the camera in the water (StageDebug at −30 m): a
+- ⚠️ `camera.settled()` never resolves with the camera in the water (the stage debug story at −30 m): a
   script awaiting it hangs. After `transition: false` the pose has landed; wait two
   animation frames instead.
 - To wait for a `Scenery` to finish compiling (after an arg that recompiles, say), poll

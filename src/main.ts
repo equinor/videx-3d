@@ -12,7 +12,7 @@ export * from './components/Html';
 export * from './components/Labels';
 export * from './components/Layers';
 export * from './components/ObservableGroup/ObservableGroup';
-export * from './components/Ocean';
+export * from './components/Water';
 export * from './components/Pipeline';
 export * from './components/Progress';
 export * from './components/SDFTest/SDFTest';

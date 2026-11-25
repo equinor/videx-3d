@@ -1202,7 +1202,7 @@ const DebugCanvas = ({
 };
 
 const meta = {
-  title: 'debug/OIT Pipeline',
+  title: 'Debug/OIT Pipeline',
   render: (args: DebugArgs) => (
     <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: 2 }}>
       {args.layout === 'sideBySide' ? (

@@ -122,8 +122,8 @@ export class SkyAirColors {
     const u = this.uniforms;
     skyAirFrame(
       u.uGlobeCameraLook.value as Vector3,
-      u.uSkyEast.value as Vector3,
-      u.uSkyNorth.value as Vector3,
+      u.uSceneryEast.value as Vector3,
+      u.uSceneryNorth.value as Vector3,
       u.uSkyAirEast.value as Vector3,
       u.uSkyAirNorth.value as Vector3,
     );
@@ -138,18 +138,19 @@ export class SkyAirColors {
 
 /**
  * The air's lookup's bearings' frame (`uSkyAirEast`, `uSkyAirNorth`), level about `look` (unit),
- * the up the camera sees the sky by: `skyEast` made level there, or `skyNorth` where `look`
- * lies near `skyEast`, and north a quarter turn on. Writes `east` and `north`, unit and at right
+ * the up the camera sees the sky by: `sceneryEast` made level there, or `sceneryNorth` where `look`
+ * lies near `sceneryEast`, and north a quarter turn on. Writes `east` and `north`, unit and at right
  * angles to `look` and to each other.
  */
 export function skyAirFrame(
   look: Vector3,
-  skyEast: Vector3,
-  skyNorth: Vector3,
+  sceneryEast: Vector3,
+  sceneryNorth: Vector3,
   east: Vector3,
   north: Vector3,
 ) {
-  const reference = Math.abs(look.dot(skyEast)) < 0.9 ? skyEast : skyNorth;
+  const reference =
+    Math.abs(look.dot(sceneryEast)) < 0.9 ? sceneryEast : sceneryNorth;
   east.copy(reference).addScaledVector(look, -reference.dot(look)).normalize();
   north.crossVectors(look, east);
 }

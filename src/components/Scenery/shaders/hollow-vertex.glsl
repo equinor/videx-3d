@@ -16,8 +16,8 @@ attribute float hollowEdge;
 // How open to the hollow, 0 shut in a crease (the walls'; 1 on the floor).
 attribute float hollowOpen;
 
-// The sky's: level toward the subsurface light (SceneryMaterial.setAbyssLight).
-uniform vec3 uSkyAbyssLight;
+// The sky's: level toward the subsurface light (SceneryMaterial.setVoidLight).
+uniform vec3 uSceneryVoidLight;
 
 varying vec3 vHollowWorld;
 varying vec3 vHollowNormal;
@@ -73,7 +73,7 @@ void main() {
   vec3 up = globeUpAt(world);
   vHollowUp = up;
   vHollowEast = normalize(uGlobeEast - up * dot(uGlobeEast, up));
-  vec3 level = normalize(uSkyAbyssLight - up * dot(uSkyAbyssLight, up));
+  vec3 level = normalize(uSceneryVoidLight - up * dot(uSceneryVoidLight, up));
   vHollowRake = level * HOLLOW_RAKE_COS + up * HOLLOW_RAKE_SIN;
   #ifdef HOLLOW_FLOOR
   mat2 mantle = mat2(0.799, 0.602, -0.602, 0.799);

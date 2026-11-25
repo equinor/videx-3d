@@ -39,7 +39,7 @@ import { registerVidex3d } from './videx3d';
 /**
  * Timing the 3D clouds (`SceneryClouds`) on the GPU, from the browser console:
  * `window.videx3d.cloudBench` in a story that renders `<CloudBenchBridge />` (the
- * `debug/Scenery/Cloud Bench` story, and the Clouds spike). Storybook only.
+ * `Debug/Scenery/Cloud Bench` story). Storybook only.
  *
  * - {@link CloudBench.pass}: each pass alone (march, shadows, bake), the loop held, back to back.
  * - {@link CloudBench.frames}: frames as they run, each step of the clouds' frame timed apart.

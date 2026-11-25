@@ -3,7 +3,7 @@ import { expose } from 'comlink';
 import {
   generatorStatsKey,
   stackRelease,
-  stackWater,
+  stackSea,
   surfaceZone,
   wellboreOutline,
 } from '../../../components/Zones/zone-defs';
@@ -49,7 +49,7 @@ import {
   generateGeoTubeNodes,
   generateOverlayTile,
   generateSceneryReliefTile,
-  generateStackWater,
+  generateStackSea,
   generateSurfaceZone,
   generateSurfaceGeometry,
   generateSurfaceTexturesData,
@@ -88,7 +88,7 @@ registry.add(overlayTile, generateOverlayTile);
 registry.add(geoTubeNodes, generateGeoTubeNodes);
 registry.add(surfaceZone, generateSurfaceZone);
 registry.add(wellboreOutline, generateWellboreOutline);
-registry.add(stackWater, generateStackWater);
+registry.add(stackSea, generateStackSea);
 registry.add(stackRelease, releaseStackResources);
 registry.add(generatorStatsKey, generatorStats);
 registry.add(perforationSymbols, generatePerforations);

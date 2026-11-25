@@ -278,9 +278,9 @@ The corresponding numbers are on
 
 ## Water tint
 
-`ZoneWaterTint` on `ZoneStackWater` tints whatever lies **under** the sea, as if seen
-through the water column — the zone's answer to the `Ocean` component's
-`seaBedWaterTint`.
+`ZoneWaterTint` on `ZoneStackSea` tints whatever lies **under** the sea, as if seen
+through the water column — the zone's answer to the `Water` component's
+`bedWaterTint`.
 
 | Field | Default | Meaning |
 |-------|---------|---------|
@@ -289,13 +289,13 @@ through the water column — the zone's answer to the `Ocean` component's
 | `wetBand` | 0 (off) | depth of the darker wet band just below the waterline |
 | `wetStrength` | 0.4 | how much `wetBand` darkens the ground |
 
-It is **depth-dependent** where the `Ocean`'s is flat, because a zone's sea bed is
+It is **depth-dependent** where the `Water`'s is flat, because a zone's sea bed is
 ordinary geology and can rise **through** the water (a coast, an island). Absorption
 that fades to nothing at the waterline leaves land untinted without anything having
 to know where the shoreline runs — and stays right as the level is swept.
 
 The depth is read from the **bed's own grid** (`ZONE_BATHYMETRY`: the column's bed
-channel, handed back by the `stackWater` generator and packed by
+channel, handed back by the `stackSea` generator and packed by
 `buildChannelDepthMap`) rather than from each fragment's height, so the gradient
 follows the bathymetry rather than the tessellation; where that grid is unmapped it
 falls back to the fragment's own depth. Being the channel the column is built on, it

@@ -115,7 +115,7 @@ export function traceThicknessLines(
  *
  * @group Geometries
  */
-export const LEVEL_LINE_TOLERANCE = 0.1;
+const LEVEL_LINE_TOLERANCE = 0.1;
 
 /** The result of {@link traceLevelLines}. */
 export type LevelLines = ThicknessLines & {

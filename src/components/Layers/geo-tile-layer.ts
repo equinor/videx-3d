@@ -26,7 +26,7 @@ import type { Globe } from '../../sdk/projection/globe';
 import { geoTileRegion } from '../../sdk/tiles/geo-tile-keys';
 import { tileAddress, tileParent } from '../../sdk/tiles/tile-keys';
 import type { SceneryMaterial } from '../Scenery/scenery-material';
-import { sceneryOceanDefines } from '../Scenery/scenery-stage';
+import { scenerySeaDefines } from '../Scenery/scenery-stage';
 import fragmentTemplate from './shaders/geo-tile-fragment.glsl';
 import vertexShader from './shaders/geo-tile-vertex.glsl';
 
@@ -293,7 +293,7 @@ export function createGeoTileMaterial({
   uniforms,
   cells,
   relief,
-  sky,
+  scenery,
 }: {
   globe: Globe;
   textures: GeoTileTextures;
@@ -301,9 +301,11 @@ export function createGeoTileMaterial({
   uniforms?: Record<string, IUniform>;
   cells: number;
   relief: { heights: DataArrayTexture; cells: number } | null;
-  sky: SceneryMaterial | null;
+  scenery: SceneryMaterial | null;
 }): ShaderMaterial {
-  const defines: Record<string, unknown> = sky ? sceneryOceanDefines(sky) : {};
+  const defines: Record<string, unknown> = scenery
+    ? scenerySeaDefines(scenery)
+    : {};
   const own: Record<string, IUniform> = {
     ...globe.uniforms,
     ...uniforms,
@@ -323,11 +325,11 @@ export function createGeoTileMaterial({
     own.uReliefTileHeights = new Uniform(relief.heights);
     own.uReliefTileCells = new Uniform(relief.cells);
   }
-  if (sky) defines.GEO_TILE_WATER = '';
+  if (scenery) defines.GEO_TILE_WATER = '';
   // The sky's own uniform objects, inherited rather than copied, as its other materials do.
-  const all = sky
+  const all = scenery
     ? Object.assign(
-        Object.create(sky.uniforms) as Record<string, IUniform>,
+        Object.create(scenery.uniforms) as Record<string, IUniform>,
         own,
       )
     : own;
@@ -343,9 +345,9 @@ export function createGeoTileMaterial({
     defines,
     transparent: true,
     depthWrite: false,
-    lights: !!sky,
+    lights: !!scenery,
   });
-  if (!sky) return material;
+  if (!scenery) return material;
   // Alpha is per fragment: below 1, so OITRenderPass routes it as transparent.
   material.opacity = 0.999;
   return attachOitVariants(material);

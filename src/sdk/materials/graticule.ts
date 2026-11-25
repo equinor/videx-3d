@@ -23,7 +23,7 @@ export const GRATICULE_MIN_SPACING = 120;
  * within this latitude, in degrees; beyond, they stop there ({@link graticuleMeridianThinning}).
  * As `graticule.glsl`'s `GRATICULE_POLE_CAP`.
  */
-export const GRATICULE_POLE_CAP = 60;
+const GRATICULE_POLE_CAP = 60;
 
 /**
  * How narrow a cell of latitude and longitude may get, east–west for its height: meridians

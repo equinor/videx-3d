@@ -103,9 +103,9 @@ each `videx-progress-popup__card` in its `__stack`. The bar is decorative
 
 ## In Storybook
 
-Every story drawing a sky, and the `FieldColumn` story, report into one store held
+Every story drawing a `Scenery`, and the field model story, report into one store held
 outside the canvas (`storyProgress` in `src/storybook/decorators/progress-decorator.tsx`):
-the sky as `sky`, the zone stack as `model`. `sceneryDecorators` include its decorator, and
+the Scenery as `scenery`, the zone stack as `model`. `sceneryDecorators` include its decorator, and
 the `Progress` controls choose the display (`progressDisplay`), its `progressSplit`,
 `progressDelay` and the rest. The look is the stories' own stylesheet,
 `src/storybook/styles/progress.css`.

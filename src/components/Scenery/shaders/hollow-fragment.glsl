@@ -19,9 +19,9 @@
 
 // The sky's: the seabed's height along up (the void's level), the scale of everything it
 // draws, and the sea's seabed's colour, which the walls' top continues.
-uniform float uSkyAbyssLevel;
-uniform float uSkyIntensity;
-uniform vec3 uSkyOceanBedColor;
+uniform float uSceneryVoidLevel;
+uniform float uSceneryIntensity;
+uniform vec3 uScenerySeabedColor;
 
 varying vec3 vHollowWorld;
 varying vec3 vHollowNormal;
@@ -96,7 +96,7 @@ varying vec3 vHollowRake;
 // `color`, at `alt` under the seabed, seen through the void's dark from the camera, as much as
 // `weight`: what the dark takes away along the part of the view under the seabed.
 vec3 hollowVeil(vec3 color, float alt, float weight) {
-  float camera = globeCameraHeight() - uSkyAbyssLevel;
+  float camera = globeCameraHeight() - uSceneryVoidLevel;
   float dist = distance(vHollowWorld, cameraPosition);
   // From above the seabed, only the part of the view under it.
   float inside = camera > 0.0 ? dist * -alt / max(camera - alt, 1.0) : dist;
@@ -107,7 +107,7 @@ vec3 hollowVeil(vec3 color, float alt, float weight) {
 // How far off the camera is, for how the floor is exposed: 0 close over it, 1 far off, by its
 // height over the seabed on a log scale, as a zoom feels.
 float hollowFar() {
-  float height = max(globeCameraHeight() - uSkyAbyssLevel, 1.0);
+  float height = max(globeCameraHeight() - uSceneryVoidLevel, 1.0);
   return smoothstep(log(HOLLOW_NEAR.x), log(HOLLOW_NEAR.y), log(height));
 }
 
@@ -177,7 +177,7 @@ vec3 hollowStrata(float folded, float depth, float mottle) {
   shade = mix(shade, vec3(basalt), smoothstep(20000.0, 23000.0, folded));
   // The seabed's hue at the walls' own shade, a little lighter, along the cut's top: the
   // ground it is cut in, at its own depth, so the rim meets the ground all round.
-  vec3 bed = uSkyOceanBedColor * (dot(uHollowWallColor, HOLLOW_LUMA) / max(dot(uSkyOceanBedColor, HOLLOW_LUMA), 1e-4));
+  vec3 bed = uScenerySeabedColor * (dot(uHollowWallColor, HOLLOW_LUMA) / max(dot(uScenerySeabedColor, HOLLOW_LUMA), 1e-4));
   vec3 tone = mix(bed * mix(HOLLOW_TOP_LIGHT, HOLLOW_CALM_TOP_LIGHT, hollowStyleCalm()), uHollowWallColor, smoothstep(0.0, HOLLOW_TOP_DEPTH, depth));
   return tone * shade;
 }
@@ -336,7 +336,7 @@ void main() {
   // own dark edge (hollowLid).
   float shut = uHollowView.y;
   float corner = HOLLOW_SHUT_TOP.y * exp(min(alt, 0.0) / HOLLOW_SHUT_TOP.x);
-  color *= mix(1.0, HOLLOW_SHUT_WALL, shut * uSkyHollow.y) * (1.0 - corner * shut);
+  color *= mix(1.0, HOLLOW_SHUT_WALL, shut * uSceneryHollow.y) * (1.0 - corner * shut);
   // The cut's top edge catches the light, a little, so the crust's outline reads at any distance.
   float fp = max(fwidth(alt), 1.0);
   color *= 1.0 + HOLLOW_TOP_EDGE * (1.0 - shut) * exp(min(alt, 0.0) / max(500.0, fp));
@@ -348,7 +348,7 @@ void main() {
 
   // From under the floor, seen through the rock.
   color *= hollowThroughRock(length(vHollowWorld - cameraPosition), vHollowWorld);
-  gl_FragColor = vec4(color * uSkyIntensity, 1.0);
+  gl_FragColor = vec4(color * uSceneryIntensity, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <dithering_fragment>

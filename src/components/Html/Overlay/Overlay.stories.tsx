@@ -15,7 +15,7 @@ import storyArgs from '../../../storybook/story-args.json';
 import { GeoGraticule } from '../../Layers/GeoGraticule';
 import { GeoRelief } from '../../Layers/GeoRelief';
 import { Scenery } from '../../Scenery/Scenery';
-import { SceneryOcean } from '../../Scenery/SceneryOcean';
+import { ScenerySea } from '../../Scenery/ScenerySea';
 import { SceneryStage } from '../../Scenery/SceneryStage';
 import { World } from '../../World/World';
 import { AltitudeControl } from '../AltitudeControl/AltitudeControl';
@@ -62,7 +62,7 @@ const OverlayStory = ({ minimap, altitude, wellMap, ...args }: OverlayArgs) => {
     <World frame={demoFrame} boundary={STAGE_BOUNDS}>
       <SceneryGenerators>
         <Scenery>
-          <SceneryOcean level={LEVEL} depth={DEPTH} />
+          <ScenerySea level={LEVEL} depth={DEPTH} />
           <SceneryStage />
         </Scenery>
         <GeoRelief layers={layers} depth={DEPTH} color={{ ramp: 'terrain' }} />
@@ -145,7 +145,7 @@ const OwnLayoutStory = ({
     <World frame={demoFrame} boundary={STAGE_BOUNDS}>
       <SceneryGenerators>
         <Scenery>
-          <SceneryOcean level={LEVEL} depth={DEPTH} />
+          <ScenerySea level={LEVEL} depth={DEPTH} />
           <SceneryStage />
           {graticule && <GeoGraticule latLon labels />}
         </Scenery>

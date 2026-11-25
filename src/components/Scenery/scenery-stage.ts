@@ -17,8 +17,8 @@ import {
 } from '../../sdk/geometries/planar-geometry';
 import { Vec2 } from '../../sdk/types/common';
 import { attachOitVariants } from '../../rendering/oit-material';
-import skyVertexShader from './shaders/sky-vertex.glsl';
-import skySurfaceShader from './shaders/sky-surface-fragment.glsl';
+import sceneryVertexShader from './shaders/scenery-vertex.glsl';
+import scenerySurfaceShader from './shaders/scenery-surface-fragment.glsl';
 import fragmentShader from './shaders/stage-fragment.glsl';
 import vertexShader from './shaders/stage-vertex.glsl';
 import {
@@ -249,16 +249,20 @@ export type SceneryStageMaterialOptions = {
   curvedDepth?: boolean;
   /**
    * the bed's: the stage draws its surface over it, so where that surface hides it whole
-   * (skyOceanSurfaceHides) its shading is skipped, its depth still written
+   * (scenerySeaSurfaceHides) its shading is skipped, its depth still written
    */
   underSurface?: boolean;
 };
 
 /** The defines a material drawing the sky's sea needs, from the sky's switches. */
-export function sceneryOceanDefines(sky: SceneryMaterial) {
-  const defines: Record<string, unknown> = { SKY_OCEAN: '', SKY_ABYSS: '' };
+export function scenerySeaDefines(scenery: SceneryMaterial) {
+  const defines: Record<string, unknown> = {
+    SCENERY_SEA: '',
+    SCENERY_VOID: '',
+  };
   for (const key of SCENERY_SHARED_DEFINES) {
-    if (sky.switches[key] !== undefined) defines[key] = sky.switches[key];
+    if (scenery.switches[key] !== undefined)
+      defines[key] = scenery.switches[key];
   }
   return defines;
 }
@@ -268,14 +272,14 @@ export function sceneryOceanDefines(sky: SceneryMaterial) {
  * material's uniform objects, so it follows every change to the sky and its water.
  *
  * The sky shows what lies beyond the seabed through any gap in the stage (see
- * `skyOceanStaged`). A `seeThrough` seabed is drawn at the sea's seabed opacity
- * (`SceneryMaterial.oceanSeabedOpacity`); the surface always is.
+ * `scenerySeaStaged`). A `seeThrough` seabed is drawn at the sea's seabed opacity
+ * (`SceneryMaterial.seabedOpacity`); the surface always is.
  * The transparent parts are wired for the `OITRenderPass`.
  * The seabed is lit by the scene's lights, as the sky's is; a seabed or sea that changes
  * the sky's defines (its detail, its waves) needs new materials.
  */
 export function createSceneryStageMaterial(
-  sky: SceneryMaterial,
+  scenery: SceneryMaterial,
   part: SceneryStagePart,
   {
     seeThrough = false,
@@ -283,7 +287,7 @@ export function createSceneryStageMaterial(
     underSurface = false,
   }: SceneryStageMaterialOptions = {},
 ) {
-  const defines = sceneryOceanDefines(sky);
+  const defines = scenerySeaDefines(scenery);
   const surface = part === 'surface';
   if (surface) defines.STAGE_SURFACE = '';
   else defines.STAGE_BED = '';
@@ -296,7 +300,7 @@ export function createSceneryStageMaterial(
     vertexShader,
     fragmentShader,
     // Inherits the sky's uniforms rather than copying them, so what the sky adds later reaches it too.
-    uniforms: sky.uniforms,
+    uniforms: scenery.uniforms,
     defines,
     transparent,
     depthWrite: !transparent,
@@ -314,12 +318,12 @@ export function createSceneryStageMaterial(
  * background and blended over it. It shares the sky material's uniform objects. On the
  * far plane, as the background is; the bakes draw it without a depth test.
  */
-export function createScenerySurfaceMaterial(sky: SceneryMaterial) {
+export function createScenerySurfaceMaterial(scenery: SceneryMaterial) {
   return new ShaderMaterial({
-    vertexShader: skyVertexShader,
-    fragmentShader: skySurfaceShader,
-    uniforms: sky.uniforms,
-    defines: { ...sceneryOceanDefines(sky), SKY_AT_FAR: '' },
+    vertexShader: sceneryVertexShader,
+    fragmentShader: scenerySurfaceShader,
+    uniforms: scenery.uniforms,
+    defines: { ...scenerySeaDefines(scenery), SCENERY_AT_FAR: '' },
     side: DoubleSide,
     depthTest: false,
     depthWrite: false,

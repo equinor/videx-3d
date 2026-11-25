@@ -7,7 +7,7 @@ This section provides further documentation and examples on how to use this libr
 - [Generators](./generators.md)
 - [Georeferencing: placing the scene on the Earth](./georeferencing.md)
 - [Geographic layers: polygons, labels and tracks](./layers.md)
-- [Ocean](./ocean.md)
+- [Water](./water.md)
 - [Minimap: an inlet map that follows the camera](./minimap.md)
 - [GeoMap: a map of the Earth, on its own or over the 3D view](./geo-map.md)
 - [Overlay: gadgets, panels and maps over the 3D view](./overlay.md)

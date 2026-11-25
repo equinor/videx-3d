@@ -1168,9 +1168,7 @@ export async function buildSpecStack(
 /**
  * The diagnostics a built stack reports, in the shape the zone metrics carry.
  */
-export function stackDiagnostics(
-  result: SpecStackResult,
-): SurfaceZoneDiagnostics {
+function stackDiagnostics(result: SpecStackResult): SurfaceZoneDiagnostics {
   const build = result.build;
   const dropped = build.collapsed;
   // A shared column arrives already ordered, so the build's own resolve pass finds
@@ -1315,7 +1313,7 @@ function lodDiagnostics(
  * ⚠️ A layer that failed to load is dropped, so `fill` is taken from the layer that
  * SURVIVED at that position — an interval is between the layers actually drawn.
  */
-export function toAssembleLayers(
+function toAssembleLayers(
   result: Pick<SpecStackResult, 'build' | 'fills' | 'source' | 'ceilings'>,
 ): AssembleZoneLayer[] {
   return result.build.layers.map((layer, i) => ({

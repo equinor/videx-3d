@@ -21,7 +21,7 @@ export const GRATICULE_LABEL_DENSITY = 0.5;
  * parallel's name would cross some meridian's where the two lines meet, however they are
  * staggered.
  */
-export const GRATICULE_LABEL_PERIOD = 4;
+const GRATICULE_LABEL_PERIOD = 4;
 
 /** A graticule label's font size, by default, as a fraction of its cell's narrower side. */
 export const GRATICULE_LABEL_SIZE = 0.18;
@@ -30,7 +30,7 @@ export const GRATICULE_LABEL_SIZE = 0.18;
  * The finer step's weight its labels switch to it at, going finer, and back at, going
  * coarser: apart, so they do not flicker between the two at the switch.
  */
-export const GRATICULE_LABEL_SWITCH: readonly [number, number] = [0.55, 0.45];
+const GRATICULE_LABEL_SWITCH: readonly [number, number] = [0.55, 0.45];
 
 /** How much larger than its step's size a label drawn `'smooth'` grows at the most. */
 export const GRATICULE_LABEL_SMOOTH_MAX = 1.6;

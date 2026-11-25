@@ -30,23 +30,23 @@ const report = (...items: ProgressItem[]): ProgressReport => ({ items });
 describe('createProgressStore', () => {
   it('starts a run per source, never moves its percentage backwards, and ends it', () => {
     const store = createProgressStore();
-    const sky = store.source('sky');
+    const scenery = store.source('scenery');
     expect(store.getSnapshot()).toMatchObject({ sources: [], expanded: null });
 
-    sky(report(working('shaders', 0.4)));
+    scenery(report(working('shaders', 0.4)));
     expect(store.getSnapshot().sources[0]).toMatchObject({
-      key: 'sky',
+      key: 'scenery',
       building: true,
       session: 1,
       percent: 40,
       outcome: null,
     });
-    sky(report(working('shaders', 0.2)));
+    scenery(report(working('shaders', 0.2)));
     expect(store.getSnapshot().sources[0].percent).toBe(40);
-    sky(report(working('shaders', 1)));
+    scenery(report(working('shaders', 1)));
     expect(store.getSnapshot().sources[0].percent).toBe(99);
 
-    sky(report(done('shaders')));
+    scenery(report(done('shaders')));
     const ended = store.getSnapshot().sources[0];
     expect(ended).toMatchObject({
       building: false,
@@ -55,13 +55,13 @@ describe('createProgressStore', () => {
     });
     expect(ended.finishedAt).not.toBeNull();
 
-    sky(report(working('shaders', 0.1)));
+    scenery(report(working('shaders', 0.1)));
     expect(store.getSnapshot().sources[0]).toMatchObject({
       session: 2,
       percent: 10,
       finishedAt: null,
     });
-    sky(report(done('shaders', 'failed')));
+    scenery(report(done('shaders', 'failed')));
     expect(store.getSnapshot().sources[0].outcome).toBe('failed');
   });
 
@@ -78,8 +78,8 @@ describe('createProgressStore', () => {
 
   it('hands out the same report function for a key, with the latest options', () => {
     const store = createProgressStore();
-    const first = store.source('sky', { name: 'Scenery' });
-    const again = store.source('sky', { name: 'Himmel', group: 'scene' });
+    const first = store.source('scenery', { name: 'Scenery' });
+    const again = store.source('scenery', { name: 'Himmel', group: 'scene' });
     expect(again).toBe(first);
     first(report(working('x', 0)));
     expect(store.getSnapshot().sources[0]).toMatchObject({
@@ -90,9 +90,9 @@ describe('createProgressStore', () => {
 
   it('drops a source that reports nothing, ending its run without an outcome', () => {
     const store = createProgressStore();
-    const sky = store.source('sky');
-    sky(report(working('shaders', 0.3)));
-    sky(report());
+    const scenery = store.source('scenery');
+    scenery(report(working('shaders', 0.3)));
+    scenery(report());
     const snapshot = store.getSnapshot();
     expect(snapshot.sources).toEqual([]);
     expect(snapshot.all).toMatchObject({
@@ -121,17 +121,17 @@ describe('createProgressStore', () => {
 describe('several sources', () => {
   it('runs as one from the first start to the last end, over those that took part', () => {
     const store = createProgressStore();
-    const sky = store.source('sky');
+    const scenery = store.source('scenery');
     const model = store.source('model');
     // Ready before the run: not part of it.
     model(report(done('zone')));
-    sky(report(working('shaders', 0.5)));
+    scenery(report(working('shaders', 0.5)));
     expect(store.getSnapshot().all).toMatchObject({
       building: true,
       session: 1,
       percent: 50,
-      sources: ['sky'],
-      current: 'sky',
+      sources: ['scenery'],
+      current: 'scenery',
     });
 
     model(report(working('zone', 0)));
@@ -139,9 +139,9 @@ describe('several sources', () => {
     // Never backwards: the model joining at 0 does not pull it down.
     expect(both).toMatchObject({ session: 1, percent: 50, current: 'model' });
     // In the order the sources first reported.
-    expect(both.sources).toEqual(['model', 'sky']);
+    expect(both.sources).toEqual(['model', 'scenery']);
 
-    sky(report(done('shaders')));
+    scenery(report(done('shaders')));
     expect(store.getSnapshot().all).toMatchObject({
       building: true,
       percent: 50,
@@ -157,28 +157,32 @@ describe('several sources', () => {
 
   it('keeps a run per group, of its own sources', () => {
     const store = createProgressStore();
-    store.source('sky', { group: 'scene' })(report(working('shaders', 0.2)));
+    store.source('scenery', { group: 'scene' })(
+      report(working('shaders', 0.2)),
+    );
     store.source('relief', { group: 'scene' })(report(done('tiles')));
     store.source('model', { group: 'data' })(report(working('zone', 0.6)));
     const { groups, all } = store.getSnapshot();
     expect(Object.keys(groups)).toEqual(['scene', 'data']);
-    expect(groups.scene).toMatchObject({ percent: 20, sources: ['sky'] });
+    expect(groups.scene).toMatchObject({ percent: 20, sources: ['scenery'] });
     expect(groups.data).toMatchObject({ percent: 60, sources: ['model'] });
-    expect(all).toMatchObject({ percent: 40, sources: ['sky', 'model'] });
+    expect(all).toMatchObject({ percent: 40, sources: ['scenery', 'model'] });
   });
 
   it('selects one source, one group, or every source', () => {
     const store = createProgressStore();
-    store.source('sky', { group: 'scene' })(report(working('shaders', 0.2)));
+    store.source('scenery', { group: 'scene' })(
+      report(working('shaders', 0.2)),
+    );
     store.source('model')(report(working('zone', 0.6)));
     const snapshot = store.getSnapshot();
     expect(selectProgress(snapshot)?.sources.map(s => s.key)).toEqual([
-      'sky',
+      'scenery',
       'model',
     ]);
     expect(
       selectProgress(snapshot, { group: 'scene' })?.sources.map(s => s.key),
-    ).toEqual(['sky']);
+    ).toEqual(['scenery']);
     expect(selectProgress(snapshot, { source: 'model' })?.level).toMatchObject({
       percent: 60,
       sources: ['model'],
@@ -192,14 +196,17 @@ describe('several sources', () => {
 describe('describeProgress', () => {
   it('shows a lone source by its title and items, and several by a row each', () => {
     const store = createProgressStore();
-    store.source('sky', { name: 'Scenery', title: 'Preparing the sky' })(
+    store.source('scenery', {
+      name: 'Scenery',
+      title: 'Preparing the scenery',
+    })(
       report(
         working('shaders', 0.5, 'Compiling shaders', { name: 'Shaders' }),
         working('relief', 0, undefined, { name: 'Relief' }),
       ),
     );
     const lone = describeProgress(store.getSnapshot())!;
-    expect(lone.title).toBe('Preparing the sky');
+    expect(lone.title).toBe('Preparing the scenery');
     expect(lone.stage).toBe('Shaders: Compiling shaders 1/4');
     expect(lone.rows.map(r => [r.name, r.stage, r.percent])).toEqual([
       ['Shaders', 'Compiling shaders 1/4', 50],
@@ -213,7 +220,7 @@ describe('describeProgress', () => {
     expect(both.title).toBe('Loading');
     expect(both.stage).toBe('Model: Building mesh 1/4');
     expect(both.rows.map(r => [r.key, r.name, r.stage, r.percent])).toEqual([
-      ['sky', 'Scenery', 'Compiling shaders 1/4', 25],
+      ['scenery', 'Scenery', 'Compiling shaders 1/4', 25],
       ['model', 'Model', 'Building mesh 1/4', 20],
     ]);
 
@@ -222,8 +229,8 @@ describe('describeProgress', () => {
     })!;
     expect(relabelled.title).toBe('Laster');
     expect(
-      describeProgress(store.getSnapshot(), { source: 'sky' })!.title,
-    ).toBe('Preparing the sky');
+      describeProgress(store.getSnapshot(), { source: 'scenery' })!.title,
+    ).toBe('Preparing the scenery');
   });
 
   it('heads a run with the one source that took part, and sums only its stats', () => {
@@ -231,16 +238,16 @@ describe('describeProgress', () => {
     store.source('model', { name: 'Model' })(
       report({ ...done('zone'), stats: { tiles: 4 } }),
     );
-    const sky = store.source('sky', {
+    const scenery = store.source('scenery', {
       name: 'Scenery',
-      title: 'Preparing the sky',
+      title: 'Preparing the scenery',
     });
-    sky(report(working('shaders', 0.5, 'Compiling shaders')));
+    scenery(report(working('shaders', 0.5, 'Compiling shaders')));
     expect(describeProgress(store.getSnapshot())!).toMatchObject({
-      title: 'Preparing the sky',
+      title: 'Preparing the scenery',
       stage: 'Scenery: Compiling shaders 1/4',
     });
-    sky(report({ ...done('shaders'), stats: { programs: 9 } }));
+    scenery(report({ ...done('shaders'), stats: { programs: 9 } }));
     expect(describeProgress(store.getSnapshot())!.stats).toEqual({
       programs: 9,
     });

@@ -10,7 +10,7 @@ import type {
 import type { SceneryMaterial } from './scenery-material';
 import type {
   SceneryVoidProps,
-  SceneryOceanProps,
+  ScenerySeaProps,
   SceneryZone,
 } from './scenery-model';
 import type { SceneryGround } from './scenery-ground';
@@ -36,8 +36,8 @@ export type SceneryCutawayFeature = {
 
 /** What a scenery's feature components hand it, each null while there is none. */
 export type SceneryFeatures = {
-  ocean: SceneryOceanProps | null;
-  abyss: SceneryVoidProps | null;
+  sea: ScenerySeaProps | null;
+  void: SceneryVoidProps | null;
   cutaway: SceneryCutawayFeature | null;
 };
 
@@ -46,6 +46,8 @@ export type SceneryFeatures = {
  * itself rather than as one of its background's layers.
  */
 export type SceneryView = {
+  /** the sky is on (the `Scenery`'s `sky`): off, nothing of it is drawn, baked or lit by, clouds included */
+  sky: boolean;
   /** the clouds: the sky is drawn and ready, the camera's zone shows it, and they are not hidden (`SceneryDebug.hide`) */
   clouds: boolean;
   /** shadows of what draws itself in the sky are read: the scene's light is the sky's (not below the seabed) */
@@ -93,7 +95,7 @@ export type ScenerySkyOverlay = {
 
 /**
  * What the sea reflects of a {@link ScenerySkyOverlay} away from where {@link ScenerySkyOverlay.texture}
- * was baked (sky-ocean.glsl, `skyOceanReflectedClouds`): read by direction alone, the bake
+ * was baked (scenery-sea.glsl, `scenerySeaReflectedClouds`): read by direction alone, the bake
  * blows its clouds up by the camera's height over the sea against their base, and far off the
  * weather is another's.
  */
@@ -133,8 +135,8 @@ export const SceneryRegistryContext = createContext<SceneryRegistry | null>(
 );
 
 const COMPONENTS: Record<keyof SceneryFeatures, string> = {
-  ocean: 'SceneryOcean',
-  abyss: 'SceneryVoid',
+  sea: 'ScenerySea',
+  void: 'SceneryVoid',
   cutaway: 'SceneryCutaway',
 };
 

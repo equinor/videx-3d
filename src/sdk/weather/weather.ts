@@ -117,7 +117,7 @@ export function cloudLayersByLevel(
  *
  * @group Weather
  */
-export const CLOUD_LAYERS_TIE = 0.1;
+const CLOUD_LAYERS_TIE = 0.1;
 
 /**
  * `layers` (one at each {@link CloudLevel}, as {@link cloudLayersByLevel} gives them) kept in
@@ -676,7 +676,7 @@ export function cloudLayersOf(preset: CloudLayersPreset): CloudLayer[] {
 
 /**
  * The way `wind` blows toward, level, as X and Z of `frame` (unit length): the way the waves
- * it raises travel, as an `Ocean`'s `windDirection` takes it. Default frame: north `-Z`
+ * it raises travel, as a `Water`'s `windDirection` takes it. Default frame: north `-Z`
  * (`CRS.utmToWorld`), so east is `+X`.
  *
  * @group Weather
@@ -694,7 +694,7 @@ export function windToward(wind: WeatherWind, frame?: CompassFrame): Vec2 {
  *
  * @group Weather
  */
-export function weatherOceanWind(
+export function weatherWind(
   weather: WeatherState | null | undefined,
   own: {
     windSpeed?: number;
@@ -749,7 +749,7 @@ export function weatherSeaSwells(
  *
  * @group Weather
  */
-export const CLOUD_WIND_ALOFT: Readonly<
+const CLOUD_WIND_ALOFT: Readonly<
   Record<CloudLevel, { speed: number; veer: number }>
 > = {
   low: { speed: 1.5, veer: 15 },

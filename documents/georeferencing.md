@@ -96,7 +96,7 @@ generator functions from `@equinor/videx-3d/generators`.
 | Component / helper | Use |
 |--|--|
 | `Scenery` | the sky and the light, with the globe. `observer={{ date }}` inside a `World` puts the sun, moon and stars where they are at that moment over the frame's origin |
-| `SceneryOcean` | the endless sea (`level`) and seabed (`depth`) |
+| `ScenerySea` | the endless sea (`level`) and seabed (`depth`) |
 | `SceneryStage` | the sea and seabed on real geometry around the field (its `boundary`), and with `relief` the land and seabed beyond, from your elevation data, read in the `World`'s frame |
 | `SceneryAnchor` | places rigid content far from the field on the globe (a facility 100 km out) |
 | `applyGlobe(material, globe)` | puts long content (a pipeline) on the globe per vertex |
@@ -136,7 +136,7 @@ blocks (`reliefWindow`). See [relief.md](./relief.md#data).
     <GeneratorsProvider registry>        incl. the sceneryReliefTile generator
       <World frame boundary>             ← where the scene lies on the Earth, once; owns the globe
         <Scenery observer={{ date }}>    ← sun from the frame's origin + date; draws on the globe
-          <SceneryOcean />
+          <ScenerySea />
           <SceneryStage />               ← its boundary the World's
         </Scenery>
         <GeoRelief layers />             ← land and seabed, by longitude/latitude, on the globe
@@ -318,11 +318,11 @@ map.
 </World>
 ```
 
-### 4. Sky and sea
+### 4. Scenery and sea
 
 ```tsx
 <Scenery observer={{ date: new Date('2024-09-10T12:00:00Z') }}>
-  <SceneryOcean level={0} depth={100} />
+  <ScenerySea level={0} depth={100} />
 </Scenery>
 ```
 
@@ -342,7 +342,7 @@ from your grids, coarse to fine, each finer one winning where it has data.
 ```tsx
 <World frame={frame} boundary={[-8000, -8000, 8000, 8000]}>
   <Scenery observer={{ date }}>
-    <SceneryOcean level={0} depth={100} />
+    <ScenerySea level={0} depth={100} />
     <SceneryStage />
   </Scenery>
   <GeoRelief
@@ -437,7 +437,7 @@ import { Canvas } from '@react-three/fiber'
 import { CameraControls } from '@react-three/drei'
 import {
   AltitudeControl, DataProvider, GeneratorsProvider, GeoLabels, GeoMapCameraMarker,
-  GeoMapPolygons, GeoPolygons, GeoRelief, Minimap, Overlay, Scenery, SceneryOcean,
+  GeoMapPolygons, GeoPolygons, GeoRelief, Minimap, Overlay, Scenery, ScenerySea,
   SceneryStage, UtmArea, Wgs84Position, World,
 } from '@equinor/videx-3d'
 import { CRS, geoFrameFromCrs, getProjectionDefFromUtmZone } from '@equinor/videx-3d/sdk'
@@ -453,7 +453,7 @@ export const FieldView = ({ store, registry, licences }) => (
       <GeneratorsProvider registry={registry}>
         <World frame={frame} boundary={[-8000, -8000, 8000, 8000]}>
           <Scenery observer={{ date: new Date('2024-09-10T12:00:00Z') }}>
-            <SceneryOcean level={0} depth={100} />
+            <ScenerySea level={0} depth={100} />
             <SceneryStage />
           </Scenery>
           <GeoRelief

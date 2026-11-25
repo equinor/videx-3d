@@ -41,7 +41,7 @@ uniform vec4 sectionPlane;
 varying float vSectionDist;
 #endif
 
-#if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_WATER_SECTION) || defined(ZONE_WATER_FENCE)
+#if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_SEA_SECTION) || defined(ZONE_SEA_FENCE)
 // OBJECT space for the same reason the water tint's depth is: a depth grid is in
 // metres, and a vertical exaggeration would rescale a world-space height away from
 // them. XZ locates the texture, Y is what a contact line is drawn against.
@@ -103,7 +103,7 @@ void main() {
   vSectionDist = dot(sectionPlane.xyz, transformed) + sectionPlane.w;
   #endif
 
-  #if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_WATER_SECTION) || defined(ZONE_WATER_FENCE)
+  #if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_SEA_SECTION) || defined(ZONE_SEA_FENCE)
   vObjectPos = transformed;
   #endif
 

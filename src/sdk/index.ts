@@ -25,7 +25,8 @@ export * from './geometries/geometry';
 export * from './geometries/geometry-footprint';
 export * from './geometries/geometry-attributes';
 export * from './geometries/grid-sampling';
-export * from './geometries/ocean-geometry';
+export * from './geometries/water-geometry';
+export * from './geometries/water-geometry-deprecated';
 export {
   getTypedArrayFromBuffer,
   getTypedArrayType,
@@ -166,6 +167,7 @@ export { applyWaterFog, type WaterBody } from './materials/water-body';
 export * from './materials/depth-material';
 export * from './materials/tube-material';
 export * from './materials/uv-material';
+export * from './materials/void-gradient';
 // Types the public API exposes in props, hooks and callbacks, from modules that are
 // otherwise internal.
 export type {
@@ -204,5 +206,5 @@ export type {
 } from './utils/camera-site';
 export type { FenceSideName } from './utils/one-sided-offset';
 export type { SeaSwell } from './weather/sea-spectrum';
-export type { SeaQuality } from './weather/sea-state';
+export type { WaterQuality } from './weather/sea-state';
 export type { WeatherGusts } from './weather/wind-field';

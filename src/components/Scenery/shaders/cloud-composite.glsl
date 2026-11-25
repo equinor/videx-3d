@@ -9,7 +9,7 @@ uniform sampler2D uCloudImage; // premultiplied colour and alpha, filtered
 uniform sampler2D uCloudDepth; // log2 of the distance to their front, over CLOUD_DEPTH_RANGE
 uniform vec2 uCloudImageSize; // texels
 uniform float uCloudSoften; // 1 without temporal accumulation, 0 with
-uniform float uSkyIntensity;
+uniform float uSceneryIntensity;
 #ifdef USE_LOGARITHMIC_DEPTH_BUFFER
 uniform float logDepthBufFC;
 #endif
@@ -58,7 +58,7 @@ void main() {
   // Past the far plane, still over the background.
   gl_FragDepth = depthInsideFar(depthOfView(projectionMatrix, view), 1e-7);
 
-  gl_FragColor = vec4(cloud.rgb / cloud.a * uSkyIntensity, min(cloud.a, 1.0));
+  gl_FragColor = vec4(cloud.rgb / cloud.a * uSceneryIntensity, min(cloud.a, 1.0));
 
   #include <tonemapping_fragment>
   #include <colorspace_fragment>

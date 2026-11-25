@@ -18,7 +18,7 @@ each on or off ([Without a Scenery](#without-a-scenery)), and its tiles stay in 
 ```tsx
 <World frame={geoFrameFromCrs(crs)} boundary={[minX, minZ, maxX, maxZ]}>
   <Scenery>
-    <SceneryOcean level={0} depth={120} />
+    <ScenerySea level={0} depth={120} />
     <SceneryStage occupants={[{ outline, onStage, onGround }]} />
   </Scenery>
   <GeoRelief
@@ -114,7 +114,7 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   over every field loaded in the `World` (each `UtmArea` with a `boundary`, in its own frame,
   each of its own shape; `useWorldFields`), it is see-through at the sea's `seabedOpacity`, so a neighbour's wells
   under its seabed show too; around them, always opaque. Up to eight such regions
-  (`SKY_RELIEF_MAX_REGIONS`), the eight nearest the camera when there are more, each tested
+  (`SCENERY_RELIEF_MAX_REGIONS`), the eight nearest the camera when there are more, each tested
   in its own field's frame, turned as it is (`reliefTileInRegion`). The stage hands the
   `World` what only it has — its area, its occupants' outlines and cut, their ground — and the
   relief takes them from there.
@@ -128,7 +128,7 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   tiles under it, whatever the view.
 - Each time it chooses, it tells the tiles it draws to its `World`
   (`WorldReliefState.tiles`, `useWorldRelief`; a `Scenery` in the `World` hands on the same as
-  `SceneryOceanState.reliefTiles`): a `SceneryReliefHub` — the heights' texture array, per
+  `ScenerySeaState.reliefTiles`): a `SceneryReliefHub` — the heights' texture array, per
   tile drawn its slot, the tile it blends from and how far, and the ground's range over any
   geographic tile — so a tiled layer in the `World` lies on it exactly (`drape`, see
   [layers.md](./layers.md#on-the-relief-drape)).
@@ -153,8 +153,8 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   loaded, and from space the sky's glow at the Earth's edge showed across the whole of it.
 - Under a relief the sky's own seabed shows only where no tile is drawn yet, or past their
   edge, and it is drawn last, behind them by depth, so it costs nothing where they are. It is
-  drawn plain: in the relief's own look (`SceneryMaterial.oceanReliefLooks`) by the ground
-  map's height, from the air and from space alike (`skyOceanBedAlbedo`), without contours or
+  drawn plain: in the relief's own look (`SceneryMaterial.seaReliefLooks`) by the ground
+  map's height, from the air and from space alike (`scenerySeabedAlbedo`), without contours or
   the seabed's sand detail. While the tiles load, the Earth
   is then a coarse version of itself rather than the seabed's flat colour.
 - The sea stays flat over the disc holding the `boundary` and lies on the sky's globe beyond it;
@@ -163,14 +163,14 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
   camera, so the ground holds still against the sea from anywhere. What is drawn flat
   beyond the disc stands off it unless placed on the globe (`SceneryAnchor`, `applyGlobe`; see
   [scenery.md](./scenery.md#the-globe)).
-- The ground under the camera is the sky's (`oceanGround`, which the `Scenery` takes from the
+- The ground under the camera is the sky's (`seaGround`, which the `Scenery` takes from the
   camera site each frame: the relief's probe, `CameraSite.ground`, see
   [camera.md](./camera.md#where-the-camera-is)), sampled on the triangles drawn:
   under the relief the camera is in the ground, for the lighting and the void — below the
   sea, and in land above it too — and over it in the water, however deep (a trench below
-  the sea's `depth`: `SceneryMaterial.oceanTrench`). Under it the relief is the void's lid:
+  the sea's `depth`: `SceneryMaterial.seaTrench`). Under it the relief is the void's lid:
   its undersides are drawn, shaded as the void's lid, and nothing above them is. In it
-  above the sea's own seabed (`SceneryMaterial.oceanBuried`) none of the sea or the
+  above the sea's own seabed (`SceneryMaterial.seaBuried`) none of the sea or the
   overview is drawn: the sky shows the void as from just below the sea's seabed and the
   scene is lit as the subsurface, so from inside a hill the data is seen in rock rather
   than the sea through it. The void is the same under any field: its gradient and its lid

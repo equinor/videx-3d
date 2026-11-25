@@ -30,7 +30,7 @@ export const RELIEF_TILE_CELLS = 32;
  *
  * @group Geometries
  */
-export const RELIEF_BLOCK = 128;
+const RELIEF_BLOCK = 128;
 
 // Nodes between the points projected exactly; the rest are interpolated.
 const LATTICE = 4;
@@ -578,7 +578,7 @@ const smoothstep = (a: number, b: number, t: number) => {
  *
  * @group Geometries
  */
-export function reliefLayerWeight(
+function reliefLayerWeight(
   edge: ReliefLayerEdge,
   feather: number,
 ): (col: number, row: number, coverage: number) => number {

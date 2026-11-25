@@ -214,7 +214,7 @@ const Card = ({
  *
  * @example
  * <div style={{ position: 'relative' }}>
- *   <Canvas>…<Scenery onProgress={progress.source('sky', { name: 'Scenery' })} />…</Canvas>
+ *   <Canvas>…<Scenery onProgress={progress.source('scenery', { name: 'Scenery' })} />…</Canvas>
  *   <ProgressPopup store={progress} position="top" split="source" exitDuration={300} />
  * </div>
  *

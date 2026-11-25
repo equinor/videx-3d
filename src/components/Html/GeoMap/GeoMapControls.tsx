@@ -40,10 +40,7 @@ export type GeoMapLayout = Partial<
 >;
 
 /** Where each of a map's items goes unless its layout says. */
-export const GEO_MAP_DEFAULT_LAYOUT: Record<
-  GeoMapItem,
-  Required<AnchorPlacement>
-> = {
+const GEO_MAP_DEFAULT_LAYOUT: Record<GeoMapItem, Required<AnchorPlacement>> = {
   compass: { anchor: 'top-left', direction: 'column', order: 0 },
   controls: { anchor: 'top-right', direction: 'column', order: 0 },
   extent: { anchor: 'bottom-left', direction: 'column', order: 0 },

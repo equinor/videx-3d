@@ -22,7 +22,7 @@ import { WellboreSelectedEvent } from '../../events/wellbore-events';
 import { DepthSelectorDecorator } from '../decorators/depth-selector-decorator';
 
 const meta = {
-  title: 'examples/Wellbore',
+  title: 'Examples/Wellbore',
   component: Wellbore,
 } satisfies Meta<typeof Wellbore>;
 

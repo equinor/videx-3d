@@ -1,0 +1,190 @@
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import {
+  reportReliefProgress,
+  reportSceneryProgress,
+  SCENERY_DEMO_RELIEF_LAYERS,
+  sceneryDecorators,
+  sceneryHiddenArgTypes,
+  sceneryProgressArgs,
+} from '../../storybook/components/scenery-controls';
+import { SceneryDemoField } from '../../storybook/components/scenery-features';
+import { demoFrame } from '../../storybook/data/demo-crs';
+import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import type { ProgressArgs } from '../../storybook/decorators/progress-decorator';
+import storyArgs from '../../storybook/story-args.json';
+import { GeoRelief } from '../Layers/GeoRelief';
+import { World } from '../World/World';
+import { Scenery } from './Scenery';
+import { ScenerySea } from './ScenerySea';
+import { SceneryStage } from './SceneryStage';
+import { SceneryVoid } from './SceneryVoid';
+import { sceneryDefaults, type SceneryHollowStyle } from './scenery-model';
+import type { SceneryStageBounds } from './scenery-stage';
+
+// The void under a `Scenery`'s seabed (`<SceneryVoid>`, documents/void.md): by default a hollow
+// in the crust about the field, crater walls down to a floor some 35 km under the seabed.
+// Peeling the seabed (`ScenerySea`'s `seabed={false}`) opens it: the field's wellbores and its
+// reservoir are seen against it, the relief cut away inside its rim. With `hollow={false}`, the
+// plain void: an endless lid overhead and a bottomless gradient below the horizon.
+
+// The field's water depth: the sea's seabed, the void's lid.
+const DEPTH = storyArgs.waterDepth;
+// The stage's area, scene X/Z about the field's origin: wide enough to hold its wellbores.
+const FIELD_BOUNDS: SceneryStageBounds = [-10000, -10000, 10000, 10000];
+
+type VoidArgs = {
+  water: boolean;
+  seabed: boolean;
+  relief: boolean;
+  hollow: boolean;
+  hollowStyle: SceneryHollowStyle;
+  hollowRadius: number;
+  hollowFloorDepth: number;
+} & ProgressArgs;
+
+const VoidStory = ({
+  water,
+  seabed,
+  relief,
+  hollow,
+  hollowStyle,
+  hollowRadius,
+  hollowFloorDepth,
+}: VoidArgs) => (
+  <World frame={demoFrame}>
+    <Scenery onProgress={reportSceneryProgress}>
+      <ScenerySea level={0} depth={DEPTH} water={water} seabed={seabed} />
+      <SceneryVoid
+        hollow={
+          hollow && {
+            style: hollowStyle,
+            radius: hollowRadius,
+            floorDepth: hollowFloorDepth,
+          }
+        }
+      />
+      <SceneryStage boundary={FIELD_BOUNDS} />
+    </Scenery>
+    {relief && (
+      <GeoRelief
+        layers={SCENERY_DEMO_RELIEF_LAYERS}
+        depth={DEPTH}
+        onProgress={reportReliefProgress}
+      />
+    )}
+    <SceneryDemoField reservoir />
+  </World>
+);
+
+const toggle = (category: string, description: string) => ({
+  control: { type: 'boolean' as const },
+  description,
+  table: { category },
+});
+
+const range = (
+  min: number,
+  max: number,
+  step: number,
+  description: string,
+) => ({
+  control: { type: 'range' as const, min, max, step },
+  description,
+  table: { category: 'Void' },
+  if: { arg: 'hollow' },
+});
+
+/**
+ * The void under the seabed (`<SceneryVoid>`): by default a hollow in the crust about the
+ * field, which peeling the sea's seabed opens. Changing any of it recompiles nothing and bakes
+ * nothing.
+ */
+const meta = {
+  title: 'Components/Scenery/SceneryVoid',
+  component: VoidStory,
+  decorators: [
+    Canvas3dDecorator,
+    // The surfaces' and the relief's, read from the store by generators.
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+    ...sceneryDecorators,
+  ],
+  parameters: {
+    scale: 1000,
+    // From the field to the whole hollow.
+    far: 50000000,
+    // Over the field from some 6 km, looking down past its wellbores into the hollow.
+    cameraPosition: [-10000, 6000, 9000],
+    cameraTarget: [0, -2500, 0],
+    ownLighting: () => true,
+  },
+  args: {
+    ...sceneryProgressArgs,
+    // Peeled: no water, no seabed.
+    water: false,
+    seabed: false,
+    relief: true,
+    hollow: true,
+    hollowStyle: sceneryDefaults.void.hollow.style,
+    hollowRadius: sceneryDefaults.void.hollow.radius,
+    hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
+  },
+  argTypes: {
+    ...sceneryHiddenArgTypes(sceneryProgressArgs),
+    water: toggle(
+      'Sea',
+      'The sea\u2019s water (`ScenerySea` `water`): on, the void is seen through it.',
+    ),
+    seabed: toggle(
+      'Sea',
+      'The sea\u2019s seabed (`ScenerySea` `seabed`): off, it is peeled and the hollow opens, the relief and the seabed cut away inside its rim. On, it is the void\u2019s lid: fly under it to see the void closed.',
+    ),
+    relief: toggle(
+      'Scene',
+      'The demo reliefs about the field (`GeoRelief`): land and seabed, cut away over the open hollow. Made on demand by `npm run generate-relief`.',
+    ),
+    hollow: toggle(
+      'Void',
+      'The void as a hollow in the crust under the field (`hollow`). Off, the plain void: an endless lid and a bottomless gradient, and a peeled seabed gone everywhere.',
+    ),
+    hollowStyle: {
+      control: { type: 'inline-radio' },
+      options: ['calm', 'molten', 'simple'],
+      description:
+        'How it looks (`hollow.style`): CALM, grey rock and dark cracks, a sober backdrop; MOLTEN, a warm floor, its cracks glowing and pulsing; SIMPLE, a diagram, an even slope with depth lines.',
+      table: { category: 'Void' },
+      if: { arg: 'hollow' },
+    },
+    hollowRadius: range(
+      50000,
+      1500000,
+      10000,
+      'Its rim\u2019s radius along the sea from the field, in metres (`hollow.radius`): at 500 km its walls stand at the horizon seen from the sea.',
+    ),
+    hollowFloorDepth: range(
+      5000,
+      100000,
+      1000,
+      'Depth of its floor under the seabed, in metres (`hollow.floorDepth`): about where the mantle begins.',
+    ),
+  },
+} satisfies Meta<typeof VoidStory>;
+
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+/**
+ * Over the field from some 6 km, the sea peeled: its wellbores and its reservoir over the
+ * hollow.
+ */
+export const Default: Story = {};
+
+/** The whole hollow from 1500 km up over the field, the land about it. */
+export const Hollow: Story = {
+  parameters: {
+    cameraPosition: [0, 1500000, 1800000],
+    cameraTarget: [0, 0, 0],
+  },
+};

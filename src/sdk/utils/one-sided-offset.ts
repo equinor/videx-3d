@@ -179,7 +179,7 @@ export type OneSidedOffset = {
 };
 
 /** The pruned boundary before any fold is bridged — the raw "follow" of the well. */
-export type OffsetRuns = {
+type OffsetRuns = {
   /** each contiguous stretch of boundary, in TD→head order, ≥ 2 points */
   runs: Vec2[][];
   /**

@@ -12,7 +12,7 @@ the seabed and the land, and inside a `Scenery` be seen through its sea as the s
 ```tsx
 <World frame={frame} boundary={boundary}>
   <Scenery>
-    <SceneryOcean />
+    <ScenerySea />
     <SceneryStage />
     {/* Inside the Scenery: seen through its sea. */}
     <GeoTubes
@@ -174,7 +174,7 @@ const shader: GeoTileLayerShader = {
 With `drape`, the layer lies on the relief the `World`'s `GeoRelief` draws — the seabed and
 the land — exactly as drawn, through its swaps between levels of detail too. The relief
 tells what it draws each time it chooses (`WorldReliefState.tiles`, also handed on as
-`SceneryOceanState.reliefTiles`, a `SceneryReliefHub`: the heights' texture array, and per
+`ScenerySeaState.reliefTiles`, a `SceneryReliefHub`: the heights' texture array, and per
 tile drawn its slot, the tile it blends from and how far, and its edge mask and parent's slot,
 toward the edges a coarser tile touches). The relief's tiles and the layer's share the geographic quadtree,
 so each tile of the layer is drawn as one square per relief tile under it
@@ -212,7 +212,7 @@ as broken dashes (found in the `Pipelines` story, 2026-10-29).
 Inside a `Scenery` with a sea, `water` `'fog'` (the default, but `GeoPolygons`') draws the
 layer as the seabed under it is seen: from above, dimmed with its depth and through the
 water in front of it; from in the water, through the water between; taken with the seabed
-by the cutaway (the relief's own water, `skyOceanFog` and its kin). As the seabed, it is
+by the cutaway (the relief's own water, `scenerySeaFog` and its kin). As the seabed, it is
 gone under water too deep to see through, and far off, where the sea turns opaque. It is
 then drawn among
 the see-through objects, after the relief and before the sea's surface (`renderOrder` 0.5,
@@ -224,7 +224,7 @@ always `'clear'`.
 than 3000 km, and only while the camera is over its area (see
 [scenery.md](./scenery.md#the-globe)); past that the background draws it, on the far plane,
 where it hides nothing by depth. So with `'fog'` a layer hides itself under it
-(`skyOceanCover`, sky-ocean.glsl, taken in `geo-water.glsl`): its alpha takes the cover of
+(`scenerySeaCover`, scenery-sea.glsl, taken in `geo-water.glsl`): its alpha takes the cover of
 what the background draws between the camera and it, by the layer's own height, with no depth
 needed — the same past the far plane:
 
@@ -550,7 +550,7 @@ ill defined. Without a globe with a frame (a `Scenery` alone), flat on `frame`.
 
 - **Waves far off:** `useBuoyancy` reads the waves drawn under the object anywhere on the
   globe: under a `Scenery` its sampler takes a point along up onto the still sea, into the
-  chart the sea is drawn in there (`OceanCharts`, `chartedSeaHeights`), and the pose is the
+  chart the sea is drawn in there (`WaterCharts`, `chartedSeaHeights`), and the pose is the
   object's group's, whose +Y is up there. Its contact foam (a `Tanker` names its group as the
   footprint's `frame`) is taken through the world into the plane the sea draws it in. Checked
   399 km out: the ship rides ±0.2 m about the still sea, its foam at its waterline
@@ -569,7 +569,7 @@ drawn inside the `Scenery`'s sea, stage and relief shaders, built 2026-10-27): i
 ```tsx
 <World frame={frame} boundary={boundary}>
   <Scenery observer={observer}>
-    <SceneryOcean />
+    <ScenerySea />
     <SceneryStage />
     <GeoGraticule
       utm={{ color: '#ffd23f', thickness: 2 }}
@@ -641,7 +641,7 @@ kind (`graticuleClear`: exact, a line covers nothing past its width and its soft
 pixel still works out where it lies. With no kind on, or hidden, nothing is drawn and no
 tile chosen; the step and the origin are set once a frame on the CPU. Taken out of the
 sea's, the stages' and the relief's shaders, the lines no longer cost them a uniform branch
-and their code, nor the bakes a define of their own (`SKY_NO_GRATICULE`, gone).
+and their code, nor the bakes a define of their own (`SCENERY_NO_GRATICULE`, gone).
 
 **Labels** (`labels`, off by default): `true` names every kind drawn, or per kind
 `{ latLon, utm, timeZones }`, each `true` or its own look; a kind not drawn is not named,
@@ -832,7 +832,7 @@ laid on another's tiles (`sdk/tiles/tile-cover.ts`: `tilesUnder`, `tileAncestors
 - **The relief past the far plane**: there only its overview is drawn. `GeoTubes` and
   `GeoSymbols` stand on its tiles' ground (`heightAt`, from the tiles in), but a draped
   `GeoTileLayer`, laid on the relief's tiles drawn, lies at `height` there; and what lies
-  under the ground is hidden only below the sea's `depth` (`skyOceanCover`), not under the
+  under the ground is hidden only below the sea's `depth` (`scenerySeaCover`), not under the
   relief's own land and seabed. Reading the overview's index (`SceneryReliefAtlas`) per
   vertex would mend both.
 - **Labels on the ground**: `GeoLabels` lie flat at a height (the sea's, say), not on the

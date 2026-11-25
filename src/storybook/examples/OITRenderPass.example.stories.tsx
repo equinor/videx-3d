@@ -13,7 +13,7 @@ import {
 } from '../../components/Html/OutputPanel/output-panel-state.ts';
 import { ObservableGroup } from '../../components/ObservableGroup/ObservableGroup.tsx';
 import { Surface } from '../../components/Surfaces/Surface.tsx';
-import { Tanker } from '../../components/Tanker/Tanker.tsx';
+import { Tanker } from '../components/Tanker/Tanker';
 import { UtmArea } from '../../components/UtmArea/UtmArea.tsx';
 import { UtmPosition } from '../../components/UtmArea/UtmPosition.tsx';
 import { Casings } from '../../components/Wellbores/Casings/Casings.tsx';
@@ -37,7 +37,7 @@ import {
   CompletionTools,
   Distance,
   EventEmitterCallbackEvent,
-  Ocean,
+  Water,
   OITAntialiasMode,
   OITRenderPass,
   Pass,
@@ -49,7 +49,7 @@ import {
 } from '../../main.ts';
 import { OutputPass } from '../../rendering/passes/OutputPass.ts';
 import { RenderingPipeline } from '../../rendering/RenderingPipeline.tsx';
-import { createOceanBox } from '../../sdk/geometries/ocean-geometry.ts';
+import { createWaterBox } from '../../sdk/geometries/water-geometry.ts';
 import { CRS } from '../../sdk/projection/crs.ts';
 import { Vec2, Vec3 } from '../../sdk/types/common.ts';
 import { AnnotationsDecoratorNoAutoUpdate } from '../decorators/annotations-decorator.tsx';
@@ -87,9 +87,9 @@ const stratColumnId = storyArgs.defaultStratColumn;
 
 const v = new Vector3();
 
-// Fixed ocean wind (matches the previous Ocean example defaults: 30°, 10 m/s).
-const oceanWindRad = (30 * Math.PI) / 180;
-const oceanWind: Vec2 = [Math.cos(oceanWindRad), Math.sin(oceanWindRad)];
+// Fixed ocean wind (matches the previous Water example defaults: 30°, 10 m/s).
+const waterWindRad = (30 * Math.PI) / 180;
+const waterWind: Vec2 = [Math.cos(waterWindRad), Math.sin(waterWindRad)];
 
 type ExampleProps = {
   selected?: string;
@@ -123,7 +123,7 @@ type ExampleProps = {
   emitterDepthStamp: boolean;
   emitterDepthThreshold: number;
   precomputeSurfaceNormals: boolean;
-  showOcean: boolean;
+  showWater: boolean;
   showTanker: boolean;
   colors: {
     wellbore: string;
@@ -387,11 +387,11 @@ const Example = (args: ExampleProps) => {
     return undefined;
   }, []);
 
-  // Ocean box volume (10 km across): a tessellated surface at y = 0 plus a
+  // Water box volume (10 km across): a tessellated surface at y = 0 plus a
   // water body and an irregular sea bed varying between 100 m and 200 m depth.
-  const oceanBox = useMemo(
+  const waterBox = useMemo(
     () =>
-      createOceanBox({
+      createWaterBox({
         size: 10000,
         waterDepth: 120,
         depthVariation: 20,
@@ -401,11 +401,11 @@ const Example = (args: ExampleProps) => {
 
   useEffect(
     () => () => {
-      oceanBox.surface.dispose();
-      oceanBox.body.dispose();
-      oceanBox.bed.dispose();
+      waterBox.surface.dispose();
+      waterBox.body.dispose();
+      waterBox.bed.dispose();
     },
-    [oceanBox],
+    [waterBox],
   );
 
   return (
@@ -643,14 +643,14 @@ const Example = (args: ExampleProps) => {
             ))}
         </ObservableGroup>
 
-        {args.showOcean && (
-          <Ocean
-            name="Ocean"
-            geometry={oceanBox.surface}
-            bodyGeometry={oceanBox.body}
-            bedGeometry={oceanBox.bed}
+        {args.showWater && (
+          <Water
+            name="Water"
+            geometry={waterBox.surface}
+            bodyGeometry={waterBox.body}
+            bedGeometry={waterBox.bed}
             position={[0, 0, 0]}
-            windDirection={oceanWind}
+            windDirection={waterWind}
             windSpeed={10}
             displacement={false}
             waterOpacity={0.7}
@@ -658,7 +658,7 @@ const Example = (args: ExampleProps) => {
             foamAmount={0.5}
             deepColor="#0a2540"
             shallowColor="#1b6f8a"
-            seaBedOpacity={0.9}
+            bedOpacity={0.9}
             wireframe={false}
             renderOrder={1}
             sunDirection={[-1, 2, -3]}
@@ -673,7 +673,7 @@ const Example = (args: ExampleProps) => {
                 details="high"
               />
             )}
-          </Ocean>
+          </Water>
         )}
       </UtmArea>
     </>
@@ -681,7 +681,7 @@ const Example = (args: ExampleProps) => {
 };
 
 const meta = {
-  title: 'examples/OIT Rendering Pipeline',
+  title: 'Examples/OIT Rendering Pipeline',
   loaders: [
     async () => {
       useOutputPanelState.setState({ groups: {} });
@@ -879,14 +879,14 @@ const meta = {
       table: { category: 'Advanced (Diagnostics)' },
     },
 
-    // --- Ocean ---
-    showOcean: {
+    // --- Water ---
+    showWater: {
       control: { type: 'boolean' },
-      table: { category: 'Ocean' },
+      table: { category: 'Water' },
     },
     showTanker: {
       control: { type: 'boolean' },
-      table: { category: 'Ocean' },
+      table: { category: 'Water' },
     },
 
     colors: { control: { disable: true } },
@@ -936,7 +936,7 @@ const commonArgs = {
   emitterDepthStamp: false,
   emitterDepthThreshold: 0.5,
   precomputeSurfaceNormals: true,
-  showOcean: false,
+  showWater: false,
   showTanker: false,
 };
 

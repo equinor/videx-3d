@@ -8,7 +8,10 @@
 > ([2](#2-the-core-component-pair)); a zone's footprint is its **boundary**
 > (`ZoneBoundary`, the `boundary` prop — [3.4](#34-boundary-sources)); a layer, called a
 > "boundary" before, is a **horizon** in the docs; and the fence's stiff rod is the
-> **batten**, its `rodStiffness` now `ZoneFence.stiffness` ([3.8](#38-section-and-fence)).
+> **batten**, its `rodStiffness` now `ZoneFence.stiffness` ([3.8](#38-section-and-fence));
+> and (2026-11-24) `immersion` is `interiorFog` (`ZoneStackInteriorFog`, its `sediment`/`color`
+> now `rock`/`rockColor`; `StackInteriorFog`; the hook `useMediumFog`/`FogMedium` in `hooks/`)
+> ([3.7](#37-immersion--flagged)).
 > Everything else is open.
 
 - [1. Cross-cutting issues](#1-cross-cutting-issues)
@@ -26,8 +29,8 @@
 ### 1.1 Two prefix families, no rule
 
 Stack-level declarations are prefixed `Zone*` (`ZoneSection`, `ZoneFence`,
-`ZoneContact`, `ZoneCarrier`, `ZoneWaterTint`) **and** `Stack*` (`ZoneStackWater`,
-`ZoneStackImmersion`). `ZoneCarrier` extends `StackCarrier`. The SDK adds `SurfaceStack*`
+`ZoneContact`, `ZoneCarrier`, `ZoneWaterTint`) **and** `Stack*` (`ZoneStackSea`,
+`ZoneStackInteriorFog`). `ZoneCarrier` extends `StackCarrier`. The SDK adds `SurfaceStack*`
 and `SurfaceZone*` for the same family.
 
 ### 1.2 Domain clashes
@@ -45,7 +48,7 @@ and `SurfaceZone*` for the same family.
 | Word | Meanings in the current API |
 |------|-----------------------------|
 | **cut** | boundary source (`cutSource`, `CutoutSource`); section/fence cuts (`prepareCuts`, `ZoneCutDepths`); neighbour footprints (`capCuts`, `SurfaceZoneCut`, `SeamCut`) |
-| **section** | the plane cut (`ZoneSection`); "any cut may take this unit, fence included" (`ZoneLayer.section`); "return cut channels" (`SurfaceZoneSpec.section`, `StackWaterSpec.section`, `SurfaceZone.section`, `StackSectionSource`); cut faces also used by fences (`useZoneSection`, `ZoneSectionFace`); seismic sections (`WellboreSeismicSection`) |
+| **section** | the plane cut (`ZoneSection`); "any cut may take this unit, fence included" (`ZoneLayer.section`); "return cut channels" (`SurfaceZoneSpec.section`, `StackSeaSpec.section`, `SurfaceZone.section`, `StackSectionSource`); cut faces also used by fences (`useZoneSection`, `ZoneSectionFace`); seismic sections (`WellboreSeismicSection`) |
 | **fill** | the volume below a layer (`ZoneLayer.fill`); hole-fill reach (`maxFill`, `DEFAULT_ZONE_MAX_FILL`) |
 | **offset** | synthetic layer below the one above (`ZoneLayer.offset`); cut-face nudge (`ZoneSection.offset`, `ZoneFence.offset`); polygon `offset: Vec2`; popup pixel offset |
 | **tolerance** | vertical window widening (`WellboreCutoutOptions.tolerance`); plan deviation of the fence face (`ZoneFence.tolerance`) |
@@ -76,7 +79,7 @@ and `SurfaceZone*` for the same family.
 | **D (chosen)** | `ZoneStack` | `Zone` | a zone lies between two horizons, as in the modelling tools | — |
 
 **Proposed prefix rule** (open): stack-level types take the provider's prefix
-(`StackSection`, `StackFence`, `StackFloor`, `ZoneStackWater`), zone-level types take the
+(`StackSection`, `StackFence`, `StackFloor`, `ZoneStackSea`), zone-level types take the
 child's (`ZoneLayer`, `ZonePeel`, `ZoneBoundary`), and an established domain name wins
 over either (`FluidContact`).
 
@@ -150,10 +153,10 @@ Not `basement`, which is already a `ZoneDetail` preset.
 
 | Current | Issue | Suggestion |
 |---------|-------|------------|
-| `ZoneStackWater.depth` | domain clash ([1.2](#12-domain-clashes)) | `level` or `seaLevel` |
-| `ZoneWaterTint` (`bedTint`, `bedTintDepth`, `wetBand`, `wetStrength`) | `Zone` prefix on a stack type; `Ocean` calls the idea `seaBedWaterTint` | `SeaBedTint`, aligned with `Ocean` |
-| `ZoneStackWater.opacity` vs `waterOpacity` | a documented ⚠️ trap is a naming smell | keep (matches `Ocean`), or `masterOpacity` |
-| `ZoneStackWater.resolution` | triangle edge length; `LevelledBase.resolution` too | fine |
+| `ZoneStackSea.depth` | domain clash ([1.2](#12-domain-clashes)) | `level` or `seaLevel` |
+| `ZoneWaterTint` (`bedTint`, `bedTintDepth`, `wetBand`, `wetStrength`) | `Zone` prefix on a stack type; `Water` calls the idea `bedWaterTint` | `SeaBedTint`, aligned with `Water` |
+| `ZoneStackSea.opacity` vs `waterOpacity` | a documented ⚠️ trap is a naming smell | keep (matches `Water`), or `masterOpacity` |
+| `ZoneStackSea.resolution` | triangle edge length; `LevelledBase.resolution` too | fine |
 
 ### 3.7 Immersion ⚑ (flagged)
 
@@ -165,11 +168,11 @@ reaches host geometry.
 
 | Name | Kind |
 |------|------|
-| `ZoneStackProps.immersion: ZoneStackImmersion` | prop / type |
-| `ZoneStackImmersion` fields: `water`, `sediment`, `color`, `visibility`, `background`, `transition`, `settle` | fields |
-| `StackImmersionFog` / `StackImmersionFogProps` | component (rendered by the stack, yet exported) |
-| `useImmersionFog` / `ImmersionFogOptions` | generic hook |
-| `ImmersionMedium` (`color`, `density`, `amount`) | hook input |
+| `ZoneStackProps.immersion: ZoneStackInteriorFog` | prop / type |
+| `ZoneStackInteriorFog` fields: `water`, `sediment`, `color`, `visibility`, `background`, `transition`, `settle` | fields |
+| `StackInteriorFog` / `StackInteriorFogProps` | component (rendered by the stack, yet exported) |
+| `useMediumFog` / `MediumFogOptions` | generic hook |
+| `FogMedium` (`color`, `density`, `amount`) | hook input |
 | story args `immersion`, `immersionColor`, `immersionVisibility`, `immersionTransition`, `immersionSettle`, `immersionBackground` | Storybook |
 
 **Why it is unintuitive:**
@@ -190,13 +193,13 @@ reaches host geometry.
 | `insideFog` / `StackInsideFog` | plainest | informal |
 | `cameraInsideFog` | states the trigger exactly | long |
 | `submergedFog` / `submersion` | intuitive for water | wrong for rock |
-| `mediumFog` | matches the hook's model (`ImmersionMedium`) | "medium" is abstract too |
+| `mediumFog` | matches the hook's model (`FogMedium`) | "medium" is abstract too |
 | `positionCue` / `insideCue` | states the purpose | does not say it is fog |
 
 **Field suggestions** (independent of the prop name): `sediment` → `rock` (or `block`),
-`color` → `rockColor`. Hook: `useImmersionFog` → `useMediumFog`, `ImmersionMedium` →
+`color` → `rockColor`. Hook: `useMediumFog` → `useMediumFog`, `FogMedium` →
 `FogMedium`, and move it to `hooks/` — nothing in it is zone-specific. Stop exporting
-`StackImmersionFog`.
+`StackInteriorFog`.
 
 ### 3.8 Section and fence
 
@@ -241,7 +244,7 @@ the domain has a name: **`FluidContact`**, `FLUID_CONTACT_TYPES`. Fields are fin
 
 ### 3.12 Generator keys and constants
 
-- Keys `surfaceZone`, `wellboreOutline`, `stackWater`, `stackRelease`,
+- Keys `surfaceZone`, `wellboreOutline`, `stackSea`, `stackRelease`,
   `generatorStatsKey`: only the last has a `Key` suffix; `stackRelease` is a command.
 - `TAPER_MIN_THICKNESS` is `minThickness`'s default without the `DEFAULT_` prefix;
   `DEFAULT_PALETTE` has no family prefix.
@@ -273,7 +276,7 @@ the domain has a name: **`FluidContact`**, `FLUID_CONTACT_TYPES`. Fields are fin
 `src/components/Zones/index.ts` re-exports internals that would otherwise become
 contract:
 
-- `ZoneMeshes`, `ZoneSectionDebug`, `StackImmersionFog`, `useZoneSection`
+- `ZoneMeshes`, `ZoneSectionDebug`, `StackInteriorFog`, `useZoneSection`
 - `ZoneStackContextValue` and the registry types `ZoneMarginEntry`,
   `ZoneBoundaryEntry`, `ZoneSurfaceClaim`, `ZoneBoundaryRegistry`, `ZoneSeamRegistry`
 - shader helpers `ZoneMaterial`, `createFenceUniforms`, `applyFenceSide`,

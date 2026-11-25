@@ -94,7 +94,7 @@ What it does:
 > ⚠️⚠️ **Everything built from the same column must derive that key here.** The
 > cache is keyed by it, so two callers asking for the same column under different
 > names pay for the fetch, the resample and the resolve twice, and hold two copies.
-> This is why `buildStackWaterSpec` calls `stackColumnSpec` too.
+> This is why `buildStackSeaSpec` calls `stackColumnSpec` too.
 
 The spec is memoised on its inputs, and the build **token** rides outside it
 (`{ ...spec, build: { key, token: ++n } }`) on purpose: the token changes on every

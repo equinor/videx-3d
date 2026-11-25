@@ -16,7 +16,7 @@ describe('CameraSiteStore', () => {
     store.probe(site => {
       runs.push('sky');
       site.buried = site.ground !== null && site.position.y < site.ground;
-    }, CAMERA_PROBE_ORDER.sky);
+    }, CAMERA_PROBE_ORDER.scenery);
     store.probe(site => {
       runs.push('ground');
       site.ground = -10;

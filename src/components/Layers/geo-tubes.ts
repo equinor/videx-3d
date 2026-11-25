@@ -26,8 +26,8 @@ import { geoTileKeyAt, geoTileRegion } from '../../sdk/tiles/geo-tile-keys';
 import { tileAddress, tileParent } from '../../sdk/tiles/tile-keys';
 import type { SceneryMaterial } from '../Scenery/scenery-material';
 import type { SceneryReliefDrawn } from '../Scenery/scenery-relief-hub';
-import { SKY_RELIEF_MAX_TILES } from '../Scenery/scenery-relief-tiles';
-import { sceneryOceanDefines } from '../Scenery/scenery-stage';
+import { SCENERY_RELIEF_MAX_TILES } from '../Scenery/scenery-relief-tiles';
+import { scenerySeaDefines } from '../Scenery/scenery-stage';
 import { GeoTileStyles } from './geo-tile-layer';
 import fragmentShader from './shaders/geo-tube-fragment.glsl';
 import vertexShader from './shaders/geo-tube-vertex.glsl';
@@ -106,7 +106,7 @@ class GeoTubeReliefGroups {
   private first = Infinity;
   private last = -Infinity;
 
-  constructor(max = SKY_RELIEF_MAX_TILES) {
+  constructor(max = SCENERY_RELIEF_MAX_TILES) {
     this.max = max;
     const rows = Math.ceil((2 * max) / GEO_TUBE_GROUPS_WIDTH);
     this.data = new Float32Array(GEO_TUBE_GROUPS_WIDTH * rows * 4);
@@ -435,17 +435,19 @@ export function createGeoTubeMaterial({
   styles,
   relief,
   groups,
-  sky,
+  scenery,
   translucent,
 }: {
   globe: Globe;
   styles: Texture;
   relief: { heights: DataArrayTexture; cells: number } | null;
   groups: GeoTubeReliefGroups;
-  sky: SceneryMaterial | null;
+  scenery: SceneryMaterial | null;
   translucent: boolean;
 }): ShaderMaterial {
-  const defines: Record<string, unknown> = sky ? sceneryOceanDefines(sky) : {};
+  const defines: Record<string, unknown> = scenery
+    ? scenerySeaDefines(scenery)
+    : {};
   const own: Record<string, IUniform> = {
     ...globe.uniforms,
     resolution: new Uniform(new Vector2(1, 1)),
@@ -467,12 +469,12 @@ export function createGeoTubeMaterial({
     own.uReliefTileCells = new Uniform(relief.cells);
     own.uTubeReliefGroups = new Uniform(groups.texture);
   }
-  if (sky) defines.GEO_TUBE_WATER = '';
+  if (scenery) defines.GEO_TUBE_WATER = '';
   if (!translucent) defines.OPAQUE = '';
   // The sky's own uniform objects, inherited rather than copied, as its other materials do.
-  const uniforms = sky
+  const uniforms = scenery
     ? Object.assign(
-        Object.create(sky.uniforms) as Record<string, IUniform>,
+        Object.create(scenery.uniforms) as Record<string, IUniform>,
         own,
       )
     : own;
@@ -483,7 +485,7 @@ export function createGeoTubeMaterial({
     defines,
     transparent: translucent,
     depthWrite: !translucent,
-    lights: !!sky,
+    lights: !!scenery,
   });
   // Alpha is per fragment: below 1, so OITRenderPass routes it as transparent.
   if (translucent) material.opacity = 0.999;

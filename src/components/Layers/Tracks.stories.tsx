@@ -17,9 +17,9 @@ import { Annotations } from '../Annotations/Annotations';
 import { AnnotationsLayer } from '../Annotations/AnnotationsLayer';
 import { GeoMapTracks } from '../Html/GeoMap/layers/GeoMapTracks';
 import { Scenery } from '../Scenery/Scenery';
-import { SceneryOcean } from '../Scenery/SceneryOcean';
+import { ScenerySea } from '../Scenery/ScenerySea';
 import { SceneryStage } from '../Scenery/SceneryStage';
-import { Tanker } from '../Tanker/Tanker';
+import { Tanker } from '../../storybook/components/Tanker/Tanker';
 import { World } from '../World/World';
 import { GeoTracks } from './GeoTracks';
 
@@ -210,7 +210,7 @@ const ShipsStory = ({
             distanceFactor={1000}
           />
           <Scenery>
-            <SceneryOcean level={LEVEL} depth={DEPTH} />
+            <ScenerySea level={LEVEL} depth={DEPTH} />
             <SceneryStage boundary={STAGE_BOUNDS} />
             <GeoTracks
               tracks={ships}
@@ -249,7 +249,7 @@ const ShipsStory = ({
 };
 
 const meta = {
-  title: 'Components/Layers/Tracks',
+  title: 'Components/Geo layers/Tracks',
   component: ShipsStory,
   decorators: [
     Canvas3dDecorator,

@@ -75,7 +75,7 @@ type SurfaceSampler = {
   registering.
 - **The carrier**, which is tagged `ceiling` too (it reuses that flag for its
   material). Deliberate: the column's floor is not a surface to stand on. The
-  immersion fog derives the block's base arithmetically for this reason.
+  interior fog derives the block's base arithmetically for this reason.
 - Anywhere nothing is drawn: outside the boundary, inside a hole, where a unit has
   pinched out, or where the section has cut the ground away.
 

@@ -11,7 +11,7 @@ import {
 } from '../src/sdk/projection/place-frame';
 
 // The demo field (UTM 31N) and a field over the Norwegian Trench, 123 km east in UTM 32N, as
-// the WorldFields story has them: a 16 km stage about Volve, one of Troll's size there.
+// the World story's `Fields` has them: a 16 km stage about Volve, one of Troll's size there.
 const utm31 = getProjectionDefFromUtmZone('31N');
 const utm32 = getProjectionDefFromUtmZone('32N');
 const volve: GeoFrame = { projection: utm31, origin: [434500, 6478000] };

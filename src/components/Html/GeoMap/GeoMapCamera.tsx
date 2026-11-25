@@ -15,7 +15,7 @@ import {
   dropMarkerOn,
   flatMapSurface,
   mapViewUp,
-  rayAtSeaLevel,
+  rayAtMeanSeaLevel,
 } from '../../../sdk/projection/map-view';
 import type { Vec2, Vec3 } from '../../../sdk/types/common';
 import { readCameraTarget, setCameraPose } from '../../../sdk/utils/camera';
@@ -209,7 +209,7 @@ export const GeoMapCamera = forwardRef<GeoMapCameraHandle, GeoMapCameraProps>(
       const aim: Vec3 = [pivot.x, pivot.y, pivot.z];
       const target: Vec2 = hasControls
         ? surface.foot(aim)
-        : rayAtSeaLevel(
+        : rayAtMeanSeaLevel(
             eye,
             [forward.x, forward.y, forward.z],
             level,

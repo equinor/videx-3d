@@ -17,7 +17,7 @@ import type { ZoneLayer } from './zone-defs';
 /**
  * Whether a cut takes cap `i`. ⭐ A unit is bounded by TWO caps, so keeping one
  * whole keeps the cap that FLOORS it too; `seaKept` keeps cap 0, the sea bed —
- * as the floor of a sea the cut leaves whole, or on its own (`ZoneStackWater.keepBed`) —
+ * as the floor of a sea the cut leaves whole, or on its own (`ZoneStackSea.keepBed`) —
  * and `ZoneLayer.keepCap` keeps a cap alone.
  */
 export function capCut(
@@ -104,7 +104,7 @@ export function openIntervals(
 export type CapCutRule = {
   /** whether it takes the column's floor (`sectionCarrier` / `fenceCarrier`) */
   carrier: boolean;
-  /** whether it leaves the sea bed's cap whole: the sea stays, or `ZoneStackWater.keepBed` */
+  /** whether it leaves the sea bed's cap whole: the sea stays, or `ZoneStackSea.keepBed` */
   seaKept: boolean;
 };
 

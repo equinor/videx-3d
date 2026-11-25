@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
-import { Tanker } from '../Tanker/Tanker';
+import { Tanker } from '../../storybook/components/Tanker/Tanker';
 import { Bounds } from './Bounds';
 import { Distance } from './Distance';
 
@@ -124,7 +124,7 @@ export const MultipleBands: Story = {
  * A real-world use case: swap a full-detail `Tanker` for a low-poly version by camera
  * distance. Both share one `Bounds` sized to the hull; the high-detail hull +
  * superstructure shows within `lodDistance`, the cheap low-poly hull beyond it. Zoom out
- * to see the swap (rendered without an `<Ocean>`, so the vessel is static).
+ * to see the swap (rendered without a `<Water>`, so the vessel is static).
  */
 export const TankerLOD: Story = {
   name: 'Tanker LOD (real-world)',

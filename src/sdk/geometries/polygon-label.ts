@@ -334,7 +334,7 @@ export function polygonLabelRect(
  * How much more room a label turned along a polygon's main axis must have than one
  * reading level for it to turn (see {@link polygonLabelPlaces}): text reads best level.
  */
-export const POLYGON_LABEL_TURN_GAIN = 1.25;
+const POLYGON_LABEL_TURN_GAIN = 1.25;
 
 /**
  * Where a label goes inside a polygon in each of the shapes it may take — its text broken

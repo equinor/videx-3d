@@ -163,7 +163,7 @@ export type GeoReliefProps = {
  * @example
  * <World frame={frame} boundary={boundary}>
  *   <Scenery>
- *     <SceneryOcean level={0} depth={120} />
+ *     <ScenerySea level={0} depth={120} />
  *     <SceneryStage />
  *   </Scenery>
  *   <GeoRelief
@@ -285,19 +285,20 @@ export const GeoRelief = ({
   // With a sky, by it, and only where the sea has a seabed (without one the void lies below
   // the water), or the void is a hollow, whose opening its shader cuts while the seabed is
   // peeled, the ground kept whole around it; without one, plainly, its land and seabed as asked.
-  const sky = relief?.sky ?? null;
+  const scenery = relief?.scenery ?? null;
   const stage = relief?.stage ?? null;
   const mounted = !!world && hasLayers && !!relief;
   const drawn = mounted && !!relief?.present;
-  const shown = drawn && (sky ? sky.seabed || sky.hollow : land || seabed);
+  const shown =
+    drawn && (scenery ? scenery.seabed || scenery.hollow : land || seabed);
   // The sea's depth where no layer has data, as the sky last gave it: the tiles' base, which
   // would load them all again were it to change as the sky goes.
-  const [seaDepth, setSeaDepth] = useState<number>(sceneryDefaults.ocean.depth);
-  const skyDepth = sky?.depth;
+  const [seaDepth, setSeaDepth] = useState<number>(sceneryDefaults.sea.depth);
+  const sceneryDepth = scenery?.depth;
   useEffect(() => {
-    if (skyDepth !== undefined) setSeaDepth(skyDepth);
-  }, [skyDepth]);
-  const base = -(depth ?? skyDepth ?? seaDepth);
+    if (sceneryDepth !== undefined) setSeaDepth(sceneryDepth);
+  }, [sceneryDepth]);
+  const base = -(depth ?? sceneryDepth ?? seaDepth);
   // Its tiles on demand, for what samples the same ground elsewhere (the clouds' terrain).
   const loader = useReliefTileLoader(layers, base);
   const provideLoader = relief?.provideLoader;
@@ -308,52 +309,55 @@ export const GeoRelief = ({
 
   // Compiled with the sky's own before either is drawn; again when its parts may have changed.
   const root = useRef<Group>(null);
-  const register = sky?.stage;
+  const register = scenery?.stage;
   useLayoutEffect(() => {
     if (!register || !root.current) return;
     return register(root.current);
   }, [
     register,
     mounted,
-    sky?.definesKey,
-    sky?.seabedOpacity,
+    scenery?.definesKey,
+    scenery?.seabedOpacity,
     stage?.occupants,
     debug,
   ]);
 
   if (!mounted || !relief || !world) return null;
   return (
-    <group ref={root} visible={sky ? sky.visible && sky.ready : true}>
+    <group
+      ref={root}
+      visible={scenery ? scenery.visible && scenery.ready : true}
+    >
       {/* Its tiles, and with a sky past them the overview: the same tiles, coarser, drawn
           per pixel where the ground in view reaches past the far plane. */}
       <SceneryStageReliefTiles
-        sky={sky?.material ?? null}
+        scenery={scenery?.material ?? null}
         globe={world.globe}
         source={{ layers, base }}
         looks={looks.texture}
         reach={far}
-        level={sky?.level ?? world.globe.level}
+        level={scenery?.level ?? world.globe.level}
         pixelError={pixelError}
         cellPixels={cellPixels}
         transition={transition}
-        definesKey={sky?.definesKey}
+        definesKey={scenery?.definesKey}
         visible={visible && shown}
         onStats={onStats}
         onLoading={progress.loading}
         cameraGround={shown}
         stage={stage?.boundary ?? world.boundary}
         fields={fields}
-        seeThrough={sky ? sky.seabedOpacity < 1 : fieldOpacity < 1}
-        opacity={sky ? 1 : opacity}
+        seeThrough={scenery ? scenery.seabedOpacity < 1 : fieldOpacity < 1}
+        opacity={scenery ? 1 : opacity}
         fieldOpacity={fieldOpacity}
-        land={sky ? true : land}
-        seabed={sky ? true : seabed}
+        land={scenery ? true : land}
+        seabed={scenery ? true : seabed}
         debug={debug}
         grounds={stage?.grounds}
         groundLive={stage?.groundLive ?? false}
         occupants={stage?.occupants}
         onSampler={onSampler}
-        skyOrder={sky ? sky.renderOrder + 1 : 0}
+        sceneryOrder={scenery ? scenery.renderOrder + 1 : 0}
         hub={relief.tiles}
       />
       {labelled && (
@@ -361,8 +365,12 @@ export const GeoRelief = ({
           hub={relief.tiles}
           globe={world.globe}
           looks={contourLabels}
-          water={!!sky?.water}
-          visible={visible && shown && (sky ? sky.visible && sky.ready : true)}
+          water={!!scenery?.water}
+          visible={
+            visible &&
+            shown &&
+            (scenery ? scenery.visible && scenery.ready : true)
+          }
           cellPixels={cellPixels}
         />
       )}

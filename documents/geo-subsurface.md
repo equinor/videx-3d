@@ -3,7 +3,7 @@
 > **Status (2026-11-03): draft, nothing of it built.** Saved to be picked up on demand, a part at
 > a time; each part gets its own review before it is built. Settled with the user on
 > 2026-11-03 (the answers are recorded under [Decided](#decided-draft)). Built with it: only
-> `GeoTracks` anywhere on the globe ([layers.md, Tracks](./layers.md#tracks-tracklayer)),
+> `GeoTracks` anywhere on the globe ([layers.md, Tracks](./layers.md#tracks-geotracks)),
 > whose `globeUprightMatrix` the models below would share.
 >
 > **Revised 2026-11-19:** a level of detail told by the `World` to any content (LOD clients,

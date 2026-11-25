@@ -5,7 +5,7 @@
  * weights. Shifted only, never turned: the waves still run downwind. Variance-preserving: a
  * blend of n copies is Σ wᵢ·xᵢ / √Σ wᵢ², so the sea is as rough where cells meet.
  *
- * The GPU's twin is `shaders/sea-hex.glsl` (the Ocean component's); both hash in 32-bit
+ * The GPU's twin is `shaders/sea-hex.glsl` (the Water component's); both hash in 32-bit
  * integers, so a point blends the same copies on either.
  */
 

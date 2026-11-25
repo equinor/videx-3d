@@ -64,7 +64,7 @@ export type LabelGlyphMetrics = {
 };
 
 /** The pixels a font is measured at: as large as the atlas draws it, so hinting rounds alike. */
-export const LABEL_MEASURE_SIZE = 48;
+const LABEL_MEASURE_SIZE = 48;
 
 /**
  * A font's metrics, measured on a canvas as asked for and kept: each character's

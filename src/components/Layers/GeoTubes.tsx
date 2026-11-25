@@ -33,7 +33,7 @@ import {
   type LayerVisibility,
 } from '../../sdk/layers/layer-visibility';
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useScenerySea } from '../Scenery/scenery-context';
 import { useCameraSite } from '../../hooks/useCameraSite';
 import { useWorldRelief } from '../World/world-relief';
 import { GeoTileStyles } from './geo-tile-layer';
@@ -166,11 +166,11 @@ export const GeoTubes = <P,>({
 }: GeoTubesProps<P>) => {
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
-  const ocean = useSceneryOcean();
+  const scenerySea = useScenerySea();
   const cameraSite = useCameraSite();
-  const sky = water === 'fog' && ocean ? ocean.material : null;
+  const scenery = water === 'fog' && scenerySea ? scenerySea.material : null;
   // The relief's tiles drawn: the World's, else the sky's.
-  const hub = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
+  const hub = useWorldRelief()?.tiles ?? scenerySea?.reliefTiles ?? null;
   const size = useThree(state => state.size);
   const features = useGeoFeatures(data);
 
@@ -238,7 +238,7 @@ export const GeoTubes = <P,>({
     return hub.subscribe(take);
   }, [hub]);
 
-  const definesKey = sky ? ocean?.definesKey : '';
+  const definesKey = scenery ? scenerySea?.definesKey : '';
   const material = useMemo(
     () =>
       globe
@@ -247,13 +247,13 @@ export const GeoTubes = <P,>({
             styles: styleTexture,
             relief: hub ? reliefTextures : null,
             groups: nodes.groups,
-            sky,
+            scenery,
             translucent,
           })
         : null,
     // The style's texture is set below; the sky's defines are compiled in.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [globe, hub, reliefTextures, nodes, sky, translucent, definesKey],
+    [globe, hub, reliefTextures, nodes, scenery, translucent, definesKey],
   );
   useEffect(() => () => material?.dispose(), [material]);
   useEffect(() => {
@@ -373,7 +373,7 @@ export const GeoTubes = <P,>({
       return;
     }
     // Revealed as a map: on the sea, over it, fading in.
-    const revealed = sky ? layerRevealAt(altitude, revealRef.current) : 0;
+    const revealed = scenery ? layerRevealAt(altitude, revealRef.current) : 0;
     drawOverSea(mesh.current, revealed > 0, 0);
     (material.uniforms.uGeoReveal.value as Vector2).set(
       revealed > 0 ? 1 : 0,
@@ -492,7 +492,7 @@ export const GeoTubes = <P,>({
       frustumCulled={false}
       layers={LAYERS_TUBES}
       visible={false}
-      onBeforeRender={sky ? sky.onBeforeDraw : undefined}
+      onBeforeRender={scenery ? scenery.onBeforeDraw : undefined}
     />
   );
 };

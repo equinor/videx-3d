@@ -9,7 +9,7 @@ import {
   Vector3,
   type WebGLRenderer,
 } from 'three';
-import { OceanMaterial } from '../src/components/Ocean/ocean-material';
+import { WaterMaterial } from '../src/components/Water/water-material';
 import {
   prefilteredEnvironment,
   SceneSky,
@@ -80,11 +80,11 @@ describe('SceneSky', () => {
   });
 });
 
-describe('OceanMaterial sky', () => {
+describe('WaterMaterial sky', () => {
   it('glints with the scene sun unless given its own, and back to it on null', () => {
     const scene = new Scene();
     lit(scene, new Vector3(0, 1, 0), 3);
-    const material = new OceanMaterial();
+    const material = new WaterMaterial();
     material.updateSky(renderer, scene);
     expect(material.sunDirection.y).toBeCloseTo(1);
     expect(material.sunColor.r).toBeCloseTo(3);
@@ -105,15 +105,15 @@ describe('OceanMaterial sky', () => {
 
   it('compiles the environment in as it comes and goes, by its size', () => {
     const scene = new Scene();
-    const material = new OceanMaterial();
+    const material = new WaterMaterial();
     material.updateSky(renderer, scene);
-    expect(material.defines.OCEAN_SKY_ENV).toBeUndefined();
+    expect(material.defines.WATER_SKY_ENV).toBeUndefined();
     const version = material.version;
 
     // A 128 px cube prefiltered (the Scenery's): 512 tall, its finest mip 7.
     scene.environment = prefiltered(512);
     material.updateSky(renderer, scene);
-    expect(material.defines.OCEAN_SKY_ENV).toBe('');
+    expect(material.defines.WATER_SKY_ENV).toBe('');
     expect(material.defines.CUBEUV_MAX_MIP).toBe('7.0');
     expect(material.defines.CUBEUV_TEXEL_HEIGHT).toBe(1 / 512);
     expect(material.version).toBeGreaterThan(version);
@@ -126,7 +126,7 @@ describe('OceanMaterial sky', () => {
 
     scene.environment = null;
     material.updateSky(renderer, scene);
-    expect(material.defines.OCEAN_SKY_ENV).toBeUndefined();
+    expect(material.defines.WATER_SKY_ENV).toBeUndefined();
     expect(material.defines.CUBEUV_MAX_MIP).toBeUndefined();
     material.dispose();
   });

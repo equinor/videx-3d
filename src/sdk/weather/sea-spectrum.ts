@@ -39,7 +39,7 @@ export type SeaSpectrumInput = {
   spreadFloor?: number;
   /**
    * ⚠️ Tuning, to be settled: the wind sea's waves above this many times its peak frequency
-   * fade out (as the `Ocean` drew 0.6–3× until 2026-11). Default none.
+   * fade out (as the `Water` drew 0.6–3× until 2026-11). Default none.
    */
   tail?: number;
 };
@@ -54,7 +54,7 @@ const SWELL_WIDTH = 0.07;
 
 /**
  * The fully developed wind sea for a wind (m/s): its peak angular frequency and significant
- * wave height (Pierson–Moskowitz), as the `Ocean` has always taken them: 10 m/s gives
+ * wave height (Pierson–Moskowitz), as the `Water` has always taken them: 10 m/s gives
  * Hs ≈ 2.1 m and a peak wavelength ≈ 88 m.
  */
 export function windSeaPeak(windSpeed: number) {
@@ -199,7 +199,7 @@ type Part = {
 
 /**
  * The spectrum of the wind sea and swells `input` describes: the wind sea fully developed for
- * the wind (Elfouhaily et al. 1997: its long waves at the `Ocean`'s Hs and peak, its short
+ * the wind (Elfouhaily et al. 1997: its long waves at the `Water`'s Hs and peak, its short
  * waves, from about a metre down, growing with the wind's friction velocity), each swell a
  * narrow peak about its period, every part spread about its direction (cos^2s). Deep water:
  * ω² = g·k.
@@ -213,8 +213,8 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
   if (wind.height > 0 && scale2 > 0) {
     const wp = wind.omega;
     const m0 = (wind.height / 4) ** 2 * scale2;
-    // Elfouhaily's spectrum about the `Ocean`'s peak (its inverse wave age from that peak and
-    // the wind, ≈ 0.855), its long waves scaled to the `Ocean`'s Hs; its short waves as the
+    // Elfouhaily's spectrum about the `Water`'s peak (its inverse wave age from that peak and
+    // the wind, ≈ 0.855), its long waves scaled to the `Water`'s Hs; its short waves as the
     // wind's friction velocity gives them, absolute (heightScale² on both).
     const kp = (wp * wp) / SEA_G;
     const u = Math.max(input.windSpeed, MIN_WIND);
@@ -329,7 +329,7 @@ export function seaSpectrum(input: SeaSpectrumInput): SeaSpectrum {
 
 /**
  * The sea's mean square slope for a wind (m/s), the smallest waves included (Cox and Munk,
- * 1954), as the `Ocean`'s glint has it.
+ * 1954), as the `Water`'s glint has it.
  */
 export function coxMunkSlopeVariance(windSpeed: number): number {
   return 0.003 + 0.00512 * Math.max(windSpeed, 0);

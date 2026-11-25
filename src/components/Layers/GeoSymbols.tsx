@@ -32,11 +32,11 @@ import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useScenerySea } from '../Scenery/scenery-context';
 import { useCameraSite } from '../../hooks/useCameraSite';
 import { useWorldRelief } from '../World/world-relief';
 import type { SceneryMaterial } from '../Scenery/scenery-material';
-import { sceneryOceanDefines } from '../Scenery/scenery-stage';
+import { scenerySeaDefines } from '../Scenery/scenery-stage';
 import { Symbols } from '../Symbol/Symbol';
 import {
   drawOverSea,
@@ -110,10 +110,12 @@ function createDefaultGeometry() {
  */
 function createGeoSymbolMaterial(
   globe: Globe,
-  sky: SceneryMaterial | null,
+  scenery: SceneryMaterial | null,
 ): ShaderMaterial {
-  const defines: Record<string, unknown> = sky ? sceneryOceanDefines(sky) : {};
-  if (sky) defines.GEO_SYMBOL_WATER = '';
+  const defines: Record<string, unknown> = scenery
+    ? scenerySeaDefines(scenery)
+    : {};
+  if (scenery) defines.GEO_SYMBOL_WATER = '';
   const own: Record<string, IUniform> = {
     ...globe.uniforms,
     resolution: new Uniform(new Vector2(1, 1)),
@@ -122,9 +124,9 @@ function createGeoSymbolMaterial(
     uGeoReveal: new Uniform(new Vector2(0, 1)),
   };
   // The sky's own uniform objects, inherited rather than copied, as its other materials do.
-  const uniforms = sky
+  const uniforms = scenery
     ? Object.assign(
-        Object.create(sky.uniforms) as Record<string, IUniform>,
+        Object.create(scenery.uniforms) as Record<string, IUniform>,
         own,
       )
     : own;
@@ -133,7 +135,7 @@ function createGeoSymbolMaterial(
     fragmentShader,
     uniforms,
     defines,
-    lights: !!sky,
+    lights: !!scenery,
   });
   return attachOitVariants(material);
 }
@@ -173,10 +175,11 @@ export const GeoSymbols = <P,>({
 }: GeoSymbolsProps<P>) => {
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
-  const ocean = useSceneryOcean();
+  const scenerySea = useScenerySea();
   const cameraSite = useCameraSite();
   // The relief's tiles drawn: the World's, else the sky's.
-  const reliefTiles = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
+  const reliefTiles =
+    useWorldRelief()?.tiles ?? scenerySea?.reliefTiles ?? null;
   const hub = onGround ? reliefTiles : null;
   const size = useThree(state => state.size);
   const features = useGeoFeatures(data);
@@ -187,12 +190,12 @@ export const GeoSymbols = <P,>({
   );
   useEffect(() => () => ownGeometry?.dispose(), [ownGeometry]);
   // Its own material, made with the sky's defines (compiled in): new ones need a new one.
-  const sky = water === 'fog' && ocean ? ocean.material : null;
-  const definesKey = sky ? ocean?.definesKey : '';
+  const scenery = water === 'fog' && scenerySea ? scenerySea.material : null;
+  const definesKey = scenery ? scenerySea?.definesKey : '';
   const ownMaterial = useMemo(
-    () => (material || !globe ? null : createGeoSymbolMaterial(globe, sky)),
+    () => (material || !globe ? null : createGeoSymbolMaterial(globe, scenery)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [material, globe, sky, definesKey],
+    [material, globe, scenery, definesKey],
   );
   useEffect(() => () => ownMaterial?.dispose(), [ownMaterial]);
   // Its own material widens each symbol on the GPU.
@@ -251,7 +254,7 @@ export const GeoSymbols = <P,>({
     const mesh = group.current?.children[0] as InstancedMesh | undefined;
     if (!group.current || !mesh || !globe || !globe.frame) return;
     // Revealed as a map: on the sea where it stands under it, over the sea, fading in.
-    const revealed = sky
+    const revealed = scenery
       ? layerRevealAt(globe.altitude(camera.position), revealRef.current)
       : 0;
     const lifted = revealed > 0;
@@ -272,7 +275,7 @@ export const GeoSymbols = <P,>({
     // Moved every frame: the bounds three found once no longer hold.
     mesh.frustumCulled = false;
     // Drawn with the sky's shaders: their camera uniforms set for the camera drawing it.
-    if (sky && !material) mesh.onBeforeRender = sky.onBeforeDraw;
+    if (scenery && !material) mesh.onBeforeRender = scenery.onBeforeDraw;
     const relief = hub?.current ?? null;
     const now = performance.now();
     const resident = relief ? relief.resident : -1;

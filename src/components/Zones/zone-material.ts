@@ -48,7 +48,7 @@ import fragmentShader from './shaders/zone-frag.glsl';
 import vertexShader from './shaders/zone-vert.glsl';
 
 /** Ambient multipliers facing up / facing down. See {@link ZoneMaterialParameters.ambient}. */
-export const DEFAULT_ZONE_AMBIENT: Vec2 = [1.35, 0.5];
+const DEFAULT_ZONE_AMBIENT: Vec2 = [1.35, 0.5];
 
 /**
  * The shared uniforms the tile diagnostic reads: where a zone's tiles are, and
@@ -325,7 +325,7 @@ export type ZoneMaterialParameters = {
    * if seen through the water column. Omit for none, which compiles the branch
    * out.
    *
-   * ⭐ Depth-dependent, unlike the flat tint the `Ocean` component's own sea bed
+   * ⭐ Depth-dependent, unlike the flat tint the `Water` component's own sea bed
    * uses: a zone's sea bed can rise THROUGH the water (a coast, an island), and
    * absorption that fades to nothing at the waterline gets that right without
    * anything having to know where the shoreline runs.
@@ -585,16 +585,16 @@ export class ZoneMaterial extends ShaderMaterial {
 
     if (parameters.water) {
       const defines = this.defines as Record<string, unknown>;
-      defines.ZONE_WATER = '';
+      defines.ZONE_SEA = '';
       parameters.water.bind(this.uniforms);
       // Where a cut takes the water, none stands over what it removed.
       const cut = parameters.waterCut;
       if (cut?.section) {
-        defines.ZONE_WATER_SECTION = '';
+        defines.ZONE_SEA_SECTION = '';
         this.uniforms.waterSectionPlane = cut.section;
       }
       if (cut?.fence) {
-        defines.ZONE_WATER_FENCE = '';
+        defines.ZONE_SEA_FENCE = '';
         // The same curve as the material's own cut, when it has one.
         if (!parameters.fence) applyFenceField(this.uniforms, cut.fence);
       }

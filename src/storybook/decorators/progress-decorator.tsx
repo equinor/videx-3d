@@ -17,7 +17,7 @@ import '../styles/progress.css';
 
 /**
  * The stories' progress, held OUTSIDE the canvas as a host would: a `Scenery` reports into it
- * as `sky` (through `sceneryPropsFromArgs`), a zone stack as `model`. Each source goes away
+ * as `scenery` (through `sceneryPropsFromArgs`), a zone stack as `model`. Each source goes away
  * when what reports it unmounts, so a story never shows another's.
  */
 export const storyProgress = createProgressStore();

@@ -350,12 +350,11 @@ export function cloudsGustyLook(
  *
  * @group Components
  */
-export const CLOUDS_CHAINS: Readonly<Record<CloudLevel, readonly CloudType[]>> =
-  {
-    low: ['cumulus', 'stratocumulus', 'stratus'],
-    mid: ['altocumulus', 'altostratus'],
-    high: ['cirrus', 'cirrostratus'],
-  };
+const CLOUDS_CHAINS: Readonly<Record<CloudLevel, readonly CloudType[]>> = {
+  low: ['cumulus', 'stratocumulus', 'stratus'],
+  mid: ['altocumulus', 'altostratus'],
+  high: ['cirrus', 'cirrostratus'],
+};
 
 // The types' rows in the march's tables (uCloudType*, uCloudCoverTable): each chain's types
 // next to each other, in its order, so a level's place along its chain reads between two
@@ -618,7 +617,7 @@ const createCompositeMaterial = (
       // A tent of four taps as the image is scaled up: there is no accumulation of frames.
       uCloudSoften: new Uniform(1),
       uCloudRays: new Uniform(new Vector4(1, 1, 0, 0)),
-      uSkyIntensity: intensity,
+      uSceneryIntensity: intensity,
     },
     transparent: true,
     depthTest: true,
@@ -721,7 +720,7 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   time = 0;
   /** How fast the weather's clock runs (its seconds a second; 0 stood). Set each frame with {@link time}. */
   rate = 1;
-  private readonly sky: SceneryMaterial;
+  private readonly scenery: SceneryMaterial;
   private readonly marchScene = new Scene();
   private readonly target = createImage();
   // The cover volume the levels read, drawn once they are.
@@ -956,8 +955,8 @@ export class CloudsRenderer implements ScenerySkyOverlay {
   private readonly sceneCoverScene = new Scene();
   private readonly sceneCoverPixel = new Uint8Array(4);
 
-  constructor(sky: SceneryMaterial, renderOrder: number) {
-    this.sky = sky;
+  constructor(scenery: SceneryMaterial, renderOrder: number) {
+    this.scenery = scenery;
     const geometry = this.geometry;
 
     this.marchDefines = {
@@ -975,7 +974,7 @@ export class CloudsRenderer implements ScenerySkyOverlay {
     };
     this.marchUniforms = {
       // The sky's own uniform objects: the sun, the air, the globe.
-      ...sky.uniforms,
+      ...scenery.uniforms,
       uCloudShape: new Uniform<Texture | null>(null),
       uCloudCover: new Uniform<Texture>(this.coverVolume.target.texture),
       // The spread each level of the cover volume's mipmaps averages away (CloudCoverVolume.spread).
@@ -1060,7 +1059,7 @@ export class CloudsRenderer implements ScenerySkyOverlay {
     this.compositeMaterial = createCompositeMaterial(
       'scenery-clouds',
       this.target,
-      sky.uniforms.uSkyIntensity,
+      scenery.uniforms.uSceneryIntensity,
     );
     this.composite = new Mesh(geometry, this.compositeMaterial);
     this.composite.name = 'scenery-clouds';
@@ -1377,7 +1376,7 @@ void main() {
       }),
     );
     bake.onBeforeRender = (renderer, _scene, camera) => {
-      this.sky.prepareDraw(renderer, camera);
+      this.scenery.prepareDraw(renderer, camera);
       this.updateCamera(camera, BAKE_SIZE);
     };
     return {
@@ -1463,7 +1462,7 @@ void main() {
   // carried it at `time`; and the angle a pixel of the image `height` texels high spans.
   private updateCamera(camera: Camera, height: number) {
     const settings = this.settings!;
-    const globe = this.sky.globe;
+    const globe = this.scenery.globe;
     this.updateFrame(globe);
     const u = this.marchMaterial.uniforms;
     const radius = globe.radius;
@@ -1748,7 +1747,7 @@ void main() {
     // `medium`: 33.8 ms against 11.3).
     size.divideScalar(Math.max(renderer.getPixelRatio(), 1e-3));
 
-    this.sky.prepareDraw(renderer, camera);
+    this.scenery.prepareDraw(renderer, camera);
     const share = MathUtils.clamp(settings.quality.resolution, 0.25, 1);
     const width = Math.max(Math.round(size.x * share), 1);
     const height = Math.max(Math.round(size.y * share), 1);
@@ -2052,7 +2051,7 @@ void main() {
       levels: levels.length,
       half: settings.local.radius * COVER_MARGIN,
       texel: finest,
-      key: `${this.settingsSerial},${this.sky.globe.version}`,
+      key: `${this.settingsSerial},${this.scenery.globe.version}`,
       time: this.time,
       refresh: MathUtils.clamp(shortest / 20, 30, 600),
       winds: this.levelWinds,
@@ -2069,7 +2068,7 @@ void main() {
   // updateCamera: the camera fixed on the Earth (cameraEarth) is the frame's.
   private updatePlaceMap(renderer: WebGLRenderer) {
     const settings = this.settings!;
-    const globe = this.sky.globe;
+    const globe = this.scenery.globe;
     if (!settings.global || !globe.enabled || !this.weather.ready) {
       this.placeMap.update(renderer, null);
       return;
@@ -2125,7 +2124,7 @@ void main() {
    */
   bake(renderer: WebGLRenderer, position: Vector3) {
     // Baked already as it is, from there.
-    const sun = this.sky.sunDirection;
+    const sun = this.scenery.sunDirection;
     if (
       this.bakedAt.distanceToSquared(position) < 1 &&
       this.bakedVersion === this.version &&
@@ -2200,8 +2199,8 @@ void main() {
    */
   updateLight(renderer: WebGLRenderer, delta: number) {
     const settings = this.settings;
-    const up = this.sky.up;
-    let sine = up.dot(this.sky.sunDirection);
+    const up = this.scenery.up;
+    let sine = up.dot(this.scenery.sunDirection);
     // By night, the moon's (as cloudLightWay takes it).
     if (sine < -0.105)
       sine = up.dot(
@@ -2242,7 +2241,7 @@ void main() {
   private readSceneCover(renderer: WebGLRenderer) {
     const map = this.marchMaterial.uniforms.uCloudMapNext
       .value as CubeTexture | null;
-    const globe = this.sky.globe;
+    const globe = this.scenery.globe;
     const read = this.sceneCoverFor;
     if (
       !map ||
@@ -2295,7 +2294,7 @@ void main() {
    */
   updateShadow(renderer: WebGLRenderer, camera: Camera) {
     const settings = this.settings;
-    const globe = this.sky.globe;
+    const globe = this.scenery.globe;
     cameraAt.setFromMatrixPosition(camera.matrixWorld);
     const altitude = globe.altitude(cameraAt);
     const drawn = this.shadowDrawn;
@@ -2332,7 +2331,7 @@ void main() {
       .normalize();
     const eastward = shadowEast.crossVectors(north, up).normalize();
     // The light, as cloudLightWay takes it at the middle.
-    const sun = this.sky.sunDirection;
+    const sun = this.scenery.sunDirection;
     const light =
       up.dot(sun) > -0.105
         ? sun
@@ -2376,7 +2375,7 @@ void main() {
       lived > SHADOW_LIVED ||
       Math.abs(Math.log(reach / Math.max(drawn.reach, 1))) > Math.log(1.2);
     if (stale) {
-      this.sky.syncCamera(camera);
+      this.scenery.syncCamera(camera);
       this.updateCamera(camera, shadowSize);
       const u = this.shadowUniforms;
       (u.uCloudShadowPlace.value as Vector4).set(
@@ -2421,7 +2420,7 @@ void main() {
    */
   updateReflection() {
     const settings = this.settings;
-    const globe = this.sky.globe;
+    const globe = this.scenery.globe;
     this.updateEarth(globe);
     const reflection = this.reflection;
     const lowest = settings?.levels[0];

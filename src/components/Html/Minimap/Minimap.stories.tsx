@@ -12,7 +12,7 @@ import { GeneratorsProviderDecorator } from '../../../storybook/decorators/gener
 import { SceneryGenerators } from '../../../storybook/decorators/scenery-generators';
 import { GeoRelief } from '../../Layers/GeoRelief';
 import { Scenery } from '../../Scenery/Scenery';
-import { SceneryOcean } from '../../Scenery/SceneryOcean';
+import { ScenerySea } from '../../Scenery/ScenerySea';
 import { SceneryStage } from '../../Scenery/SceneryStage';
 import { World } from '../../World/World';
 import { AltitudeControl } from '../AltitudeControl/AltitudeControl';
@@ -153,7 +153,7 @@ const MinimapStory = ({
     <World frame={demoFrame}>
       <SceneryGenerators>
         <Scenery>
-          <SceneryOcean level={LEVEL} depth={DEPTH} />
+          <ScenerySea level={LEVEL} depth={DEPTH} />
           <SceneryStage boundary={STAGE_BOUNDS} />
         </Scenery>
         <GeoRelief

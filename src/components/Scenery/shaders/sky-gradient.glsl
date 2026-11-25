@@ -1,8 +1,11 @@
-// The sky's gradient and the sun's halo: what the sky is drawn from.
+// The sky's gradient and the sun's halo: what the sky is drawn from. With no sky
+// (uScenerySky 0), the void's gradient everywhere it is read.
 
 #include ../../../sdk/materials/shaderLib/globe.glsl
+#include ./scenery-void.glsl
 
-uniform vec3 uSkyUp; // normalised
+uniform float uScenerySky; // 1 while the sky is drawn; 0 with none (Scenery's `sky`)
+uniform vec3 uSceneryUp; // normalised
 uniform vec3 uSkyZenithColor;
 uniform vec3 uSkyHorizonColor;
 uniform vec3 uSkyGroundColor;
@@ -20,8 +23,8 @@ uniform vec4 uSkyAirLight;
 uniform vec3 uSkyAirSunColor;
 uniform vec3 uSkyAir; // its ground along up, the height it thins by e over (0 for none), and its visibility there (0 for no haze)
 uniform vec2 uSkyHaze; // the low haze layer: the height it thins by e over, and its share of the haze at the ground
-uniform float uSkyCurvature; // 1 over the Earth's radius; 0 for a flat sea
-uniform vec4 uSkyStageFlat; // the disc about the scene the sea stays flat over: its centre (world) and radius, as the globe's
+uniform float uSceneryCurvature; // 1 over the Earth's radius; 0 for a flat sea
+uniform vec4 uSceneryStageFlat; // the disc about the scene the sea stays flat over: its centre (world) and radius, as the globe's
 
 // The twilight sky on the sun's side, linear: gold about the sun, orange around it, deep
 // orange high up; and the sun's disc, overexposed even when its light is red.
@@ -47,8 +50,8 @@ uniform vec4 uSkyStageFlat; // the disc about the scene the sea stays flat over:
 #define SKY_AIR_PATH 0.5
 // From high up, a glow over the Earth's edge: it fades by e every this much the view passes
 // over the ground (softer than the air itself), and shows between these camera heights.
-#define SKY_RIM_HEIGHT 60000.0
-#define SKY_RIM_SHOWN vec2(20000.0, 80000.0)
+#define SCENERY_RIM_HEIGHT 60000.0
+#define SCENERY_RIM_SHOWN vec2(20000.0, 80000.0)
 // From high up the view takes in the night side as well as the day: between these camera
 // heights over the air's ground the ground, the sea and the rim come to be lit by the sun
 // over their own horizon (skyDayAt). Below, the sky's light, the camera's sun's, holds.
@@ -223,7 +226,7 @@ float skyAirHaze(vec3 origin, vec3 dir, float dist) {
 // From the globe (globeCameraHorizon): where the view grazes it, about the camera's own up,
 // from the level the camera sees the sky by (globeCameraLook).
 float skyHorizonAt(vec3 dir, float height) {
-  if(uSkyCurvature <= 0.0 || height <= 0.0)
+  if(uSceneryCurvature <= 0.0 || height <= 0.0)
     return 0.0;
   return globeCameraHorizon(dir);
 }
@@ -237,7 +240,7 @@ float skyHorizon(vec3 dir) {
 // camera's own looking up; toward the horizon, as low as the Earth's curve brings it — below
 // the sea where the view meets it, so the air meets the sea's edge.
 float skyLowest(vec3 dir, float height) {
-  if(uSkyCurvature <= 0.0)
+  if(uSceneryCurvature <= 0.0)
     return height;
   return height - globeCameraDescent(dir);
 }
@@ -267,7 +270,7 @@ SkyLight skyLight(float share) {
 // horizon drops, by the root of its height over the camera's. 0 on a flat sea and in the bakes.
 float skyLightShareAt(float height) {
   float camera = skyCameraHeight();
-  if(uSkyCurvature <= 0.0 || uSkyAirLight.w <= 0.0 || camera <= 0.0)
+  if(uSceneryCurvature <= 0.0 || uSkyAirLight.w <= 0.0 || camera <= 0.0)
     return 0.0;
   return sqrt(clamp(height / camera, 0.0, 1.0));
 }
@@ -413,10 +416,12 @@ float skySpace(vec3 dir, float height) {
 }
 
 // The gradient alone along `dir` (no halo, no twilight's glow), with the horizon's sine along
-// its bearing `horizon` (skyHorizonAt), in `daylight`: what skySurfaceSeen starts from, and
-// what a sea's reflection takes at low quality (OCEAN_PLAIN_SKY).
+// its bearing `horizon` (skyHorizonAt), in `daylight`: what scenerySurfaceSeen starts from, and
+// what a sea's reflection takes at low quality (WATER_PLAIN_SKY). With no sky, the void's.
 vec3 skyGradientSeen(vec3 dir, float blend, float horizon, float daylight) {
   float y = skyOverHorizon(dot(dir, globeCameraLook()), horizon);
+  if(uScenerySky < 0.5)
+    return sceneryVoidGradient(y);
   // Higher up, the sky deepens, and its haze closes onto the horizon as the camera rises out of it.
   float below = skyAirBelow();
   vec3 zenith = mix(uSkyZenithColor, skyDeepZenith(), below * below);
@@ -429,11 +434,13 @@ vec3 skyGradientSeen(vec3 dir, float blend, float horizon, float daylight) {
 
 // Gradient, daylight, the sun's halo and the twilight glow; no disc. Seen along `dir` with
 // the horizon's sine along its bearing `horizon` (skyHorizonAt), in the light `seen`: the
-// air's own light, without the dark of space.
-vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
+// air's own light, without the dark of space. With no sky, the void's gradient.
+vec3 scenerySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
   vec3 look = globeCameraLook();
   float y = skyOverHorizon(dot(dir, look), horizon);
   vec3 color = skyGradientSeen(dir, blend, horizon, seen.daylight);
+  if(uScenerySky < 0.5)
+    return color;
 
   float toward = max(dot(dir, uSkySunDirection), 0.0);
   float overHorizon = smoothstep(-blend, 0.0, y);
@@ -474,8 +481,8 @@ vec3 skySurfaceSeen(vec3 dir, float blend, float horizon, SkyLight seen) {
 }
 
 // The same seen from `height` over the air's ground, which lowers the horizon.
-vec3 skySurfaceAt(vec3 dir, float blend, float height) {
-  return skySurfaceSeen(dir, blend, skyHorizonAt(dir, height), skyLight(skyLightShare(dir, height)));
+vec3 scenerySurfaceAt(vec3 dir, float blend, float height) {
+  return scenerySurfaceSeen(dir, blend, skyHorizonAt(dir, height), skyLight(skyLightShare(dir, height)));
 }
 
 // The same from the camera. Toward space, by the air the view passes, it deepens to the blue
@@ -483,14 +490,16 @@ vec3 skySurfaceAt(vec3 dir, float blend, float height) {
 // Earth's edge: pale low down, deep blue higher, brighter toward the sun. From space only
 // the glow is left: the air's own gradient, lit by the field's light, would show its pale
 // horizon as a line a pixel or two thin, and over the night side too. The horizon and the
-// lowest the view passes taken once, for all of it.
-vec3 skySurface(vec3 dir, float blend) {
+// lowest the view passes taken once, for all of it. With no sky, the void's gradient.
+vec3 scenerySurface(vec3 dir, float blend) {
   float height = skyCameraHeight();
   float horizon = skyHorizonAt(dir, height);
+  if(uScenerySky < 0.5)
+    return sceneryVoidGradient(skyOverHorizon(dot(dir, globeCameraLook()), horizon));
   float lowest = skyLowest(dir, height);
   // skyLightShare, from the lowest already found.
   SkyLight seen = skyLight(skyLightShareAt(lowest));
-  vec3 color = skySurfaceSeen(dir, blend, horizon, seen);
+  vec3 color = scenerySurfaceSeen(dir, blend, horizon, seen);
   if(!skyNearSpace(height))
     return color;
   float air = skyAirHeightFrom(dir, height, horizon, lowest);
@@ -502,10 +511,10 @@ vec3 skySurface(vec3 dir, float blend) {
   float above = max(lowest, 0.0);
   // From far off the glow is wider than the air, so it never thins below a few pixels: the
   // metres a pixel spans at the Earth's edge, as far off as the view grazes it.
-  float R = uSkyCurvature > 0.0 ? 1.0 / uSkyCurvature : 0.0;
+  float R = uSceneryCurvature > 0.0 ? 1.0 / uSceneryCurvature : 0.0;
   float edgeMetres = sqrt(max(height, 0.0) * (2.0 * R + height)) * length(fwidth(dir));
-  float rimHeight = max(SKY_RIM_HEIGHT, 3.0 * edgeMetres);
-  float rim = exp(-above / rimHeight) * smoothstep(SKY_RIM_SHOWN.x, SKY_RIM_SHOWN.y, height);
+  float rimHeight = max(SCENERY_RIM_HEIGHT, 3.0 * edgeMetres);
+  float rim = exp(-above / rimHeight) * smoothstep(SCENERY_RIM_SHOWN.x, SCENERY_RIM_SHOWN.y, height);
   if(rim > 1e-3) {
     float toward = max(dot(dir, uSkySunDirection), 0.0);
     // From high up, lit where the view passes closest to the Earth: dark over its night side.
@@ -515,7 +524,7 @@ vec3 skySurface(vec3 dir, float blend) {
     // ground at the edge (skySpaceAir) in its light there, so the two sides of the edge meet
     // in one colour.
     vec3 edge = mix(uSkyHorizonColor, skySpaceAir(1.0, dot(uSkySunDirection, globeUpAt(closest))), fromSpace);
-    vec3 glow = mix(skyDeepZenith(), edge, exp(-above / max(0.35 * SKY_RIM_HEIGHT, 1.5 * edgeMetres)));
+    vec3 glow = mix(skyDeepZenith(), edge, exp(-above / max(0.35 * SCENERY_RIM_HEIGHT, 1.5 * edgeMetres)));
     float light = mix(seen.daylight * (0.55 + 0.45 * toward * toward), 1.0, fromSpace);
     color += glow * rim * light * skyDayAt(closest);
   }
@@ -528,7 +537,7 @@ vec3 skyHorizonColor(vec3 way, float blend) {
   float height = skyCameraHeight();
   float sine = skyHorizonAt(way, height);
   vec3 dir = way * sqrt(1.0 - sine * sine) + globeCameraLook() * sine;
-  return skySurfaceSeen(dir, blend, sine, skyLight(skyLightShare(dir, height)));
+  return scenerySurfaceSeen(dir, blend, sine, skyLight(skyLightShare(dir, height)));
 }
 
 #include ./sky-air-colors.glsl

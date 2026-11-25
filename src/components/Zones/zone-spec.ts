@@ -12,8 +12,8 @@ import {
   zoneLayerFill,
   ZoneResolveOptions,
   DEFAULT_WATER_RESOLUTION,
-  ZoneStackWater,
-  StackWaterSpec,
+  ZoneStackSea,
+  StackSeaSpec,
   SurfaceZoneCut,
   SurfaceZoneLayerSpec,
   SurfaceZoneSpec,
@@ -208,13 +208,13 @@ export function stackColumnSpec(
 }
 
 /**
- * Build the serializable {@link StackWaterSpec} for the `stackWater` generator.
+ * Build the serializable {@link StackSeaSpec} for the `stackSea` generator.
  *
  * The sea is the COLUMN's, so it is built from the same column spec the zones
  * use: its bed is the column's declared sea bed, on the same channels.
  */
-export function buildStackWaterSpec(
-  water: ZoneStackWater,
+export function buildStackSeaSpec(
+  sea: ZoneStackSea,
   utmToArea: UtmToArea,
   boundaryPolygon: PlanarPolygonGeometry,
   options: {
@@ -231,18 +231,18 @@ export function buildStackWaterSpec(
     /** the stack declares a cut, so the sea needs the channels to close it with */
     section?: boolean;
   },
-): StackWaterSpec {
+): StackSeaSpec {
   return {
     polygon: {
       coordinates: boundaryPolygon.coordinates as PlanarPolygonCoordinates,
       offset: boundaryPolygon.offset,
     },
-    depth: water.depth ?? 0,
+    depth: sea.depth ?? 0,
     // A flat lid is shaded per pixel and needs nothing but the boundary; only
     // displaced vertices need something to displace.
     resolution:
-      water.resolution ??
-      (water.displacement ? DEFAULT_WATER_RESOLUTION : undefined),
+      sea.resolution ??
+      (sea.displacement ? DEFAULT_WATER_RESOLUTION : undefined),
     rimSpacing: options.rimSpacing,
     maxError: options.maxError,
     stack: stackColumnSpec(

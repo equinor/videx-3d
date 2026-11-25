@@ -101,17 +101,6 @@ export type ZoneBoundary =
   | PolygonCutoutSource
   | WellboreCutoutOverride;
 
-/** Narrow a boundary prop to a {@link CutoutSource}. */
-export function isCutoutSource(value: unknown): value is CutoutSource {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'kind' in value &&
-    ((value as CutoutSource).kind === 'polygon' ||
-      (value as CutoutSource).kind === 'wellbores')
-  );
-}
-
 /**
  * Resolve a {@link Zone}'s `boundary` prop against the {@link ZoneStack}'s
  * default source into a concrete {@link CutoutSource} (or `null` when nothing is

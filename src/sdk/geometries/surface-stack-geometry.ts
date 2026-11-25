@@ -123,106 +123,6 @@ export type StackGeometryLayer = {
   normalMap?: StackCapNormalMap | null;
 };
 
-/**
- * Turn a resolved stack into one renderable geometry per layer.
- *
- * ⭐ Split cap layout: every layer SHARES one `xz` attribute and the topology, and
- * carries only a per-layer `y` (its heights). A cap holds no `position` or `uv` —
- * the materials assemble the position from `xz` + `y` in the shader (see
- * `ZoneMaterial`). Normals are per layer, computed over the shared index buffer.
- *
- * ⚠️ The index `BufferAttribute` is **shared** by every layer that keeps the full
- * triangle set — with a deep stack, duplicating it would cost more memory than all
- * the vertex data. Any consumer must therefore dispose the layers of a stack
- * together (three re-uploads the buffer if a surviving geometry is drawn after a
- * sibling was disposed, so it degrades to a re-upload rather than breaking).
- *
- * @param tessellation the shared tessellation
- * @param positionsXZ scene XZ of every shared vertex ({@link stackVertexPositions});
- *   shared by reference with the section source, so neither duplicates it
- * @param heights per-layer vertex heights (already resolved); each array BECOMES
- *   that layer's `y` attribute
- * @param layerIndices optional per-layer index subsets (see
- *   {@link collapseStackTriangles}); `null`/omitted entries use the shared set
- * @param caps per layer: whether to build a geometry at all
- * @param inferred per-layer vertex weights (see `sampleStackWeights`); a layer
- *   with any weight above zero gets an `inferred` attribute, whose PRESENCE is
- *   what tells the appearance layer the layer is partly invented
- * @param peelIndices optional per-layer widened index for a peel/section patch
- *
- * @group Geometries
- */
-export function buildStackGeometries(
-  tessellation: StackTessellation,
-  positionsXZ: Float32Array,
-  heights: Float32Array[],
-  layerIndices?: (Uint32Array | null)[],
-  caps?: boolean[],
-  inferred?: Float32Array[],
-  peelIndices?: (Uint32Array | null)[],
-): StackGeometryLayer[] {
-  const build = createStackGeometryBuilder(
-    tessellation,
-    positionsXZ,
-    heights,
-    layerIndices,
-    caps,
-    inferred,
-    peelIndices,
-  );
-  return heights.map((_, i) => build(i));
-}
-
-/**
- * {@link buildStackGeometries} one layer at a time — same arguments; the returned
- * function builds layer `i` — so a caller can hand each cap on as soon as it
- * exists (see {@link SurfaceStackOptions.stream}).
- *
- * @group Geometries
- */
-export function createStackGeometryBuilder(
-  tessellation: StackTessellation,
-  positionsXZ: Float32Array,
-  heights: Float32Array[],
-  layerIndices?: (Uint32Array | null)[],
-  caps?: boolean[],
-  inferred?: Float32Array[],
-  peelIndices?: (Uint32Array | null)[],
-): (layer: number) => StackGeometryLayer {
-  const shared = new BufferAttribute(tessellation.indices, 1);
-  // ⭐ Split cap layout: every cap SHARES one `xz` attribute; only `y` differs per
-  // layer, and that `y` IS the height array (shared by reference with the section
-  // source, so the two never duplicate it). A cap therefore stores no full
-  // (x, y, z) position — the materials assemble it in the shader (see
-  // `ZoneMaterial`).
-  const sharedXZ = new BufferAttribute(positionsXZ, 2);
-
-  return (i: number): StackGeometryLayer => {
-    const y = heights[i];
-    const rimY = stackRimHeights(y, tessellation.rimVertices);
-    // A layer can take part WITHOUT being drawn — when the zone above or below
-    // already draws that surface. Its rim still matters (the walls hang from it),
-    // but building a mesh nobody renders would be pure waste, and an unowned
-    // geometry is a leak waiting to happen.
-    if (caps && caps[i] === false) return { geometry: null, rimY };
-    const arrays = buildStackCapArrays(
-      stackCapInput(
-        tessellation.indices,
-        positionsXZ,
-        y,
-        i,
-        layerIndices,
-        peelIndices,
-      ),
-    );
-    return {
-      geometry: stackCapGeometry(arrays, sharedXZ, shared, y, inferred?.[i]),
-      rimY,
-      patchIndex: arrays.patchIndex,
-    };
-  };
-}
-
 function stackCapInput(
   shared: Uint32Array,
   positionsXZ: Float32Array,
@@ -1022,7 +922,7 @@ export function buildSurfaceStack(
  *
  * @group Geometries
  */
-export function beginSurfaceStack(
+function beginSurfaceStack(
   reference: StackReference,
   _layers: StackLayer[],
   options: SurfaceStackOptions,

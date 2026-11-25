@@ -282,7 +282,7 @@ export const DEFAULT_OUTLINE_CELL_SIZE = 100;
  * nodes and the outline breaks into blobs or vanishes — which is why a small
  * `radius` needs a small cell, not the other way round.
  */
-export const OUTLINE_CELLS_PER_RADIUS = 3;
+const OUTLINE_CELLS_PER_RADIUS = 3;
 
 /**
  * What {@link createWellboreOutline} actually did, for callers that need to see

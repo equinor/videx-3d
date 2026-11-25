@@ -21,7 +21,7 @@ const origin = storyArgs.origin as Vec2;
 const converter = proj4(getProjectionDefFromUtmZone(utmZone), wgs84Def);
 
 const meta = {
-  title: 'Components/Containers/UtmArea',
+  title: 'Components/Georeferencing/UtmArea',
   component: UtmArea,
 } satisfies Meta<typeof UtmArea>;
 

@@ -6,7 +6,7 @@ import { EventEmitter } from './EventEmitter';
 import { useEventEmitter } from './EventEmitterContext';
 
 const meta = {
-  title: 'Components/misc/EventEmitter',
+  title: 'Components/Misc/EventEmitter',
   decorators: [Canvas3dDecorator],
   component: EventEmitter,
 } satisfies Meta<typeof EventEmitter>;

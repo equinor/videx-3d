@@ -11,12 +11,12 @@ import {
 import { releaseMaterial } from '../../rendering/precompile';
 import { drawsSharedTextures } from '../../common/shared-textures';
 import { SURFACE_DETAIL_DEFINES } from '../../sdk/materials/surface-detail';
-import layerFragmentShader from './shaders/sky-layer-fragment.glsl';
-import skyVertexShader from './shaders/sky-vertex.glsl';
+import layerFragmentShader from './shaders/scenery-layer-fragment.glsl';
+import sceneryVertexShader from './shaders/scenery-vertex.glsl';
 import { SCENERY_SEA_DEFINES, type SceneryMaterial } from './scenery-material';
 import {
   createScenerySurfaceMaterial,
-  sceneryOceanDefines,
+  scenerySeaDefines,
 } from './scenery-stage';
 
 /**
@@ -45,11 +45,13 @@ export const SCENERY_LAYER_ORDER: Record<SceneryBackgroundLayer, number> = {
 };
 
 /** The layers a scenery with `sky`'s switches draws, in order. */
-export function sceneryLayers(sky: SceneryMaterial): SceneryBackgroundLayer[] {
+export function sceneryLayers(
+  scenery: SceneryMaterial,
+): SceneryBackgroundLayer[] {
   const layers: SceneryBackgroundLayer[] = ['sky'];
-  if (sky.abyss) layers.push('void');
+  if (scenery.void) layers.push('void');
   // The view in the water is compiled with the sea, so switching the water on is instant.
-  if (sky.ocean) layers.push('sea', 'water', 'surface');
+  if (scenery.sea) layers.push('sea', 'water', 'surface');
   return layers;
 }
 
@@ -58,30 +60,30 @@ export function sceneryLayers(sky: SceneryMaterial): SceneryBackgroundLayer[] {
  * order wherever it is made, as a program is keyed on the order of its defines.
  */
 export function sceneryLayerDefines(
-  sky: SceneryMaterial,
+  scenery: SceneryMaterial,
   layer: Exclude<SceneryOverLayer, 'surface'>,
 ) {
-  const defines: Record<string, unknown> = { SKY_AT_FAR: '' };
-  const switches = sky.switches;
+  const defines: Record<string, unknown> = { SCENERY_AT_FAR: '' };
+  const switches = scenery.switches;
   if (layer === 'void') {
-    defines.SKY_LAYER_ABYSS = '';
-    defines.SKY_ABYSS = '';
+    defines.SCENERY_LAYER_VOID = '';
+    defines.SCENERY_VOID = '';
     // Under a sea, where it leaves the void showing: the sea's code, but not its seabed's detail.
-    if (sky.ocean) {
-      defines.SKY_OCEAN = '';
+    if (scenery.sea) {
+      defines.SCENERY_SEA = '';
       for (const key of SCENERY_SEA_DEFINES)
         if (switches[key] !== undefined) defines[key] = switches[key];
     }
   } else {
-    defines[layer === 'sea' ? 'SKY_LAYER_SEA' : 'SKY_LAYER_WATER'] = '';
-    Object.assign(defines, sceneryOceanDefines(sky));
+    defines[layer === 'sea' ? 'SCENERY_LAYER_SEA' : 'SCENERY_LAYER_WATER'] = '';
+    Object.assign(defines, scenerySeaDefines(scenery));
     // With no void of its own under it, the sea fills in its own.
-    if (!sky.abyss) delete defines.SKY_ABYSS;
+    if (!scenery.void) delete defines.SCENERY_VOID;
     // Under a relief its seabed shows only where none of its tiles is drawn: plain, in the
-    // relief's look (SceneryMaterial.oceanReliefBed), without the detail.
-    if (sky.oceanReliefBed) {
+    // relief's look (SceneryMaterial.seaReliefBed), without the detail.
+    if (scenery.seaReliefBed) {
       for (const key of SURFACE_DETAIL_DEFINES) delete defines[key];
-      defines.SKY_OCEAN_BED_LOOK = '';
+      defines.SCENERY_SEABED_LOOK = '';
     }
   }
   return defines;
@@ -95,19 +97,19 @@ export function sceneryLayerDefines(
  * `transparent`, so it stays in the opaque list, after them.
  */
 export function createSceneryLayerMaterial(
-  sky: SceneryMaterial,
+  scenery: SceneryMaterial,
   layer: SceneryOverLayer,
   depthTest = true,
 ): ShaderMaterial {
   const material =
     layer === 'surface'
-      ? createScenerySurfaceMaterial(sky)
+      ? createScenerySurfaceMaterial(scenery)
       : drawsSharedTextures(
           new ShaderMaterial({
-            vertexShader: skyVertexShader,
+            vertexShader: sceneryVertexShader,
             fragmentShader: layerFragmentShader,
-            uniforms: sky.uniforms,
-            defines: sceneryLayerDefines(sky, layer),
+            uniforms: scenery.uniforms,
+            defines: sceneryLayerDefines(scenery, layer),
             side: DoubleSide,
             depthWrite: false,
             fog: true,
@@ -132,15 +134,15 @@ export function createSceneryLayerMaterial(
  * defines, read from `sky`'s switches in this render), and disposed once replaced or gone.
  */
 export function useSceneryLayerMaterial(
-  sky: SceneryMaterial,
+  scenery: SceneryMaterial,
   layer: Exclude<SceneryOverLayer, 'surface'>,
   on: boolean,
 ) {
-  const key = on ? JSON.stringify(sceneryLayerDefines(sky, layer)) : null;
+  const key = on ? JSON.stringify(sceneryLayerDefines(scenery, layer)) : null;
   const gl = useThree(state => state.gl);
   const material = useMemo(
-    () => (key === null ? null : createSceneryLayerMaterial(sky, layer)),
-    [sky, layer, key],
+    () => (key === null ? null : createSceneryLayerMaterial(scenery, layer)),
+    [scenery, layer, key],
   );
   // Let go once its program has linked (`releaseMaterial`).
   useEffect(
@@ -156,8 +158,8 @@ export function useSceneryLayerMaterial(
 export type SceneryLayerView = {
   /** the camera's height along up, as the sky measures it (`SceneryMaterial.heightOf`) */
   height: number;
-  /** the sea, if any: its levels, its switches, and whether the camera is in rock under a stage's ground (`SceneryMaterial.oceanBuried`) or over it below the sea's seabed (`SceneryMaterial.oceanTrench`) */
-  ocean: {
+  /** the sea, if any: its levels, its switches, and whether the camera is in rock under a stage's ground (`SceneryMaterial.seaBuried`) or over it below the sea's seabed (`SceneryMaterial.seaTrench`) */
+  sea: {
     level: number;
     depth: number;
     water: boolean;
@@ -165,10 +167,10 @@ export type SceneryLayerView = {
     trench?: boolean;
   } | null;
   /** the void, if any: its level and how far below it it fades in (without a sea; with one it is the seabed) */
-  abyss: { level: number; transition: number } | null;
+  void: { level: number; transition: number } | null;
   /** how much of the water a cutaway cuts: 0 without one */
   cutawayWater: number;
-  /** the void can show from above the seabed (`SceneryMaterial.abyssOpenFromAbove`) */
+  /** the void can show from above the seabed (`SceneryMaterial.voidOpenFromAbove`) */
   voidOpen: boolean;
 };
 
@@ -183,8 +185,8 @@ const LEVEL_MARGIN = 0.01;
  */
 export function sceneryLayersShown({
   height: cameraHeight,
-  ocean,
-  abyss,
+  sea,
+  void: voidBand,
   cutawayWater,
   voidOpen,
 }: SceneryLayerView): Record<
@@ -192,33 +194,34 @@ export function sceneryLayersShown({
   boolean
 > {
   const m = LEVEL_MARGIN;
-  const bed = ocean ? ocean.level - ocean.depth : 0;
-  // In a trench, every layer's view starts just above the seabed (skyViewOrigin).
-  const height = ocean?.trench
-    ? bed + Math.min(1, 0.5 * ocean.depth)
+  const bed = sea ? sea.level - sea.depth : 0;
+  // In a trench, every layer's view starts just above the seabed (sceneryViewOrigin).
+  const height = sea?.trench
+    ? bed + Math.min(1, 0.5 * sea.depth)
     : cameraHeight;
-  // Surely below the seabed, as every layer's view starts from there in rock (skyViewOrigin).
-  const belowBed = !!ocean && (ocean.buried || height < bed - m);
-  const maybeBelowBed = !!ocean && (ocean.buried || height < bed + m);
+  // Surely below the seabed, as every layer's view starts from there in rock (sceneryViewOrigin).
+  const belowBed = !!sea && (sea.buried || height < bed - m);
+  const maybeBelowBed = !!sea && (sea.buried || height < bed + m);
   const inWater =
-    !!ocean &&
-    ocean.water &&
+    !!sea &&
+    sea.water &&
     !belowBed &&
     height > bed + m &&
-    height < ocean.level - m;
+    height < sea.level - m;
   const maybeInWater =
-    !!ocean && ocean.water && !belowBed && height < ocean.level + m;
-  // Under the void's lid once it has faded in, it hides all of the sky (skyAbyssUnder).
+    !!sea && sea.water && !belowBed && height < sea.level + m;
+  // Under the void's lid once it has faded in, it hides all of the sky (sceneryVoidUnder).
   const covered =
-    !!abyss && (ocean ? belowBed : height < abyss.level - abyss.transition - m);
+    !!voidBand &&
+    (sea ? belowBed : height < voidBand.level - voidBand.transition - m);
   const underLid =
-    !!abyss && (ocean ? maybeBelowBed : height < abyss.level + m);
+    !!voidBand && (sea ? maybeBelowBed : height < voidBand.level + m);
   // In the water only up through the cutaway's cut.
   const sky = !covered && !(inWater && cutawayWater <= 0);
   return {
     sky,
-    void: underLid || (!!abyss && !!ocean && !belowBed && voidOpen),
-    sea: !!ocean && !belowBed && !inWater,
+    void: underLid || (!!voidBand && !!sea && !belowBed && voidOpen),
+    sea: !!sea && !belowBed && !inWater,
     water: maybeInWater,
   };
 }

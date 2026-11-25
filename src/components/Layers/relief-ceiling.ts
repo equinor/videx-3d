@@ -3,7 +3,7 @@ import {
   GEO_TILE_ROOT_SPAN,
   geoTileKeyAt,
 } from '../../sdk/tiles/geo-tile-keys';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useScenerySea } from '../Scenery/scenery-context';
 import type { SceneryReliefDrawn } from '../Scenery/scenery-relief-hub';
 import { useWorldRelief } from '../World/world-relief';
 
@@ -95,8 +95,8 @@ export type ReliefCeiling = {
  */
 export function useReliefCeiling(interval = 250): ReliefCeiling | null {
   const world = useWorldRelief();
-  const ocean = useSceneryOcean();
-  const hub = world?.tiles ?? ocean?.reliefTiles ?? null;
+  const sea = useScenerySea();
+  const hub = world?.tiles ?? sea?.reliefTiles ?? null;
   const [version, setVersion] = useState(0);
   useEffect(() => {
     if (!hub) return;

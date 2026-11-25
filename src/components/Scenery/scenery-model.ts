@@ -1,5 +1,9 @@
 import { Color, ColorRepresentation, MathUtils, type Texture } from 'three';
 import type { SurfaceDetail } from '../../sdk/materials/surface-detail';
+import {
+  VOID_GRADIENT_DEFAULTS,
+  type VoidGradient,
+} from '../../sdk/materials/void-gradient';
 import { EARTH_RADIUS } from '../../sdk/projection/globe';
 import type { Vec2, Vec3 } from '../../sdk/types/common';
 import {
@@ -24,13 +28,13 @@ import type {
   CloudLevel,
   CloudType,
 } from '../../sdk/weather/weather';
-import type { OceanWaterProps } from '../Ocean/ocean-material-sync';
-import type { SeaQuality } from '../../sdk/weather/sea-state';
+import type { WaterSettings } from '../Water/water-settings';
+import type { WaterQuality } from '../../sdk/weather/sea-state';
 
 /**
  * The sun of a {@link Scenery}.
  */
-export type SkySun = {
+export type ScenerySun = {
   /** compass bearing in degrees: 0 = north (-Z), 90 = east (+X). Default 200 */
   azimuth?: number;
   /** degrees above the horizon. Default 35 */
@@ -56,7 +60,7 @@ export type SkySun = {
  * with an observer, the real one, where it stands and as much of it lit as is, by day
  * too. The sky's directional light comes from it once the sun is well down.
  */
-export type SkyMoon = {
+export type SceneryMoon = {
   /** intensity of the sky's directional light by moonlight, at full night. Default 0.3 */
   intensity?: number;
   /** its colour, and its light's. Default `#c4cfdf` */
@@ -73,7 +77,7 @@ export type SkyMoon = {
  * over faint procedural ones (none brighter than magnitude 6.5); without one, procedural
  * stars.
  */
-export type SkyStars = {
+export type SceneryStars = {
   /** Default 1 */
   brightness?: number;
   /** how many procedural ones, from 0 (none) to 1. Default 0.5 */
@@ -233,7 +237,7 @@ export type SceneryCloudsProps = {
  * closes onto the horizon, and seen from low down the far sea fades into the horizon. Most of
  * its haze lies low, in a layer that thins far faster than the clear air above it.
  */
-export type SkyAir = {
+export type SceneryAir = {
   /** height over which the clear air thins by e, in world units; 0 for no change with height. Default 8000 */
   scaleHeight?: number;
   /** distance over which the air at sea level hazes the sea by e, in world units; 0 for no haze. Default 60000 */
@@ -248,7 +252,7 @@ export type SkyAir = {
  * Sky gradient colours, as display colours: the sky reproduces them exactly
  * without tone mapping.
  */
-export type SkyColors = {
+export type SceneryColors = {
   /** straight up */
   zenith?: ColorRepresentation;
   /** just above the horizon */
@@ -261,43 +265,44 @@ export type SkyColors = {
 
 /**
  * Below `level`, the void: by default a hollow in the crust about the field (`hollow`), else
- * an endless lid overhead and a bottomless gradient below the horizon. It is part of the
- * background, so it never hides anything in the scene, including objects above the level.
+ * the plain void: an endless lid overhead and the void's gradient below the horizon. It is
+ * part of the background, so it never hides anything in the scene, including objects above
+ * the level.
  */
 export type SceneryVoidProps = {
   /** height of the lid along `up`, in world units; with a sea, its seabed's. Default 0 */
   level?: number;
+  /**
+   * The void's gradient ({@link VoidGradient}): the stand-in draws it while the sky compiles,
+   * the plain void below its horizon, and with the `Scenery`'s `sky={false}` it lights the
+   * scene and its seas reflect it. The plain void's lid is `ceiling`, receding far off into
+   * `horizon`. Past the hollow's walls the void is black.
+   */
   colors?: {
-    /** the lid overhead */
+    /** straight up, and the plain void's lid */
     ceiling?: ColorRepresentation;
-    /** where lid and depths meet, far away. The plain void's only (`hollow: false`): past the hollow the void is black */
+    /** where ceiling and depths meet */
     horizon?: ColorRepresentation;
-    /** straight down. The plain void's only (`hollow: false`) */
+    /** straight down */
     depth?: ColorRepresentation;
   };
-  /** distance over which the lid recedes into the horizon colour, in world units; 0 for never. Default 20000 */
-  fadeDistance?: number;
   /** depth below `level` over which the void fades in, in world units; without a sea only, as under one it begins at the seabed. Default 200 */
   transition?: number;
   /** depth of the camera below `level` over which the whole void dims toward black, in world units; 0 for none. Default 0 */
   darkening?: number;
-  /** strength of the noise relief on the lid; 0 for none. Default 0.2 */
+  /** strength of a noise relief on the lid (not the simple hollow's); 0 for none. Default 0 */
   detail?: number;
-  /** size of the noise relief, in world units. Default 1000 */
+  /** size of that noise relief, in world units. Default 1000 */
   detailScale?: number;
-  /** strength of the faint distant rock in the depths, wavy strata broken by crags; 0 for none. The plain void's only (`hollow: false`). Default 0.08 */
-  depthDetail?: number;
-  /** size of that rock's features, relative. The plain void's only (`hollow: false`). Default 1 */
-  depthDetailScale?: number;
-  /** how the depths darken below the horizon: the gradient's exponent; smaller reaches the depth colour sooner. The plain void's only (`hollow: false`). Default 0.5 */
-  falloff?: number;
+  /** how the gradient darkens below the horizon: its exponent; smaller reaches the depth colour sooner. Default 0.5 */
+  falloff?: VoidGradient['falloff'];
   /**
    * The void as a hollow in the crust under the field (see {@link SceneryHollow}): a floor
    * deep under the seabed and walls about it, which the seabed is the lid of. Peeling the
-   * seabed (`SceneryOcean`'s `seabed: false`) opens it: the relief and the sea's seabed are
+   * seabed (`ScenerySea`'s `seabed: false`) opens it: the relief and the sea's seabed are
    * cut away inside its rim and stay whole around it. Past its walls and under its floor the
-   * void is black, with the lid overhead. `false` for the plain void, its bottomless gradient
-   * alone, and a peeled seabed gone everywhere. See documents/void.md. Default on
+   * void is black, with the lid overhead. `false` for the plain void, a plain lid over the
+   * gradient, and a peeled seabed gone everywhere. See documents/void.md. Default on
    */
   hollow?: boolean | SceneryHollow;
 };
@@ -366,7 +371,7 @@ export type SceneryHollow = {
  * radius: per wave its number round the rim, its share of the radius and its phase. Some 6%
  * at most, so the size holds: broad bays and headlands, and a ragged edge some tens of km
  * across that reads from across the hollow. The walls are built along it, and the relief and
- * the seabed are cut along it (`uSkyHollowRim`).
+ * the seabed are cut along it (`uSceneryHollowRim`).
  */
 export const SCENERY_HOLLOW_RIM: readonly (readonly [
   number,
@@ -387,12 +392,12 @@ export const SCENERY_HOLLOW_RIM: readonly (readonly [
 ];
 
 /**
- * The water settings an endless sea shares with the `Ocean` component, under the same
+ * The water settings an endless sea shares with the `Water` component, under the same
  * names. The sun and the reflected sky come from the {@link Scenery}. Its waves shoal and
  * break, and its surf stands, by the depth of the scene's ground under it (`documents/scenery.md`).
  */
-export type SceneryOceanWater = Omit<
-  OceanWaterProps,
+export type ScenerySeaWater = Omit<
+  WaterSettings,
   | 'skyColor'
   | 'horizonColor'
   | 'sunDirection'
@@ -403,7 +408,7 @@ export type SceneryOceanWater = Omit<
 >;
 
 /**
- * The look of a {@link SceneryOceanProps}'s seabed. It is lit by the scene's lights with the
+ * The look of a {@link ScenerySeaProps}'s seabed. It is lit by the scene's lights with the
  * model and options of a `ZoneMaterial`, so a zone layer given the same values
  * continues it without a seam.
  */
@@ -427,11 +432,11 @@ export type ScenerySeabed = {
 /**
  * An endless sea: a wavy surface at `level` over a flat seabed `depth` below it, seen
  * from above, from inside the water and, below the seabed, as the abyss (which the
- * ocean turns on, at the seabed). The water takes the `Ocean` component's props, so
+ * ocean turns on, at the seabed). The water takes the `Water` component's props, so
  * one object can drive both. It is part of the background, so it never hides anything
  * in the scene.
  */
-export type SceneryOceanProps = SceneryOceanWater & {
+export type ScenerySeaProps = ScenerySeaWater & {
   /** the water; off leaves the seabed dry, with no surface or fog. Default true */
   water?: boolean;
   /** the seabed, and its look; off leaves the void below the water, seen through it from above, its lid still a roof from below. Default true */
@@ -447,12 +452,12 @@ export type SceneryOceanProps = SceneryOceanWater & {
   /** depth of the seabed below the surface, in world units. Default 100 */
   depth?: number;
   /**
-   * How much of the sea it draws, as `Ocean`'s `quality` (`SEA_QUALITY`,
-   * `OCEAN_QUALITY_DEFINES`); at `low` its reflection takes the sky's gradient alone, without
+   * How much of the sea it draws, as `Water`'s `quality` (`WATER_QUALITY`,
+   * `WATER_QUALITY_DEFINES`); at `low` its reflection takes the sky's gradient alone, without
    * the twilight's glow or the sun's halo. Default `'medium'`, sized for a mid-range laptop's
    * integrated GPU.
    */
-  quality?: SeaQuality;
+  quality?: WaterQuality;
 };
 
 /** The colour and intensity of a {@link ScenerySubsurface}'s light panels. */
@@ -514,14 +519,14 @@ export type SceneryZone = 'air' | 'water' | 'subsurface';
 
 /** What decides a {@link SceneryZone}: the sky's levels and switches, as on `SceneryMaterial`. */
 export type SceneryZoneLevels = {
-  ocean: boolean;
-  oceanLevel: number;
-  oceanDepth: number;
-  oceanWater: boolean;
-  abyss: boolean;
-  abyssLevel: number;
+  sea: boolean;
+  seaLevel: number;
+  seaDepth: number;
+  seaWater: boolean;
+  void: boolean;
+  voidLevel: number;
   /** the ground's height under the camera where a stage draws its own — the seabed, or land above the sea; else the sea's flat seabed */
-  oceanGround?: number | null;
+  seaGround?: number | null;
   /** a cutaway is on: the scene is lit as from above the water, wherever the camera is */
   cutaway?: boolean;
   /** the sky itself is drawn: neither hidden nor the void's gradient in its place */
@@ -540,13 +545,13 @@ export function sceneryZone(
   levels: SceneryZoneLevels,
 ): SceneryZone {
   if (!levels.background) return 'subsurface';
-  if (levels.ocean) {
-    const ground = levels.oceanGround ?? levels.oceanLevel - levels.oceanDepth;
+  if (levels.sea) {
+    const ground = levels.seaGround ?? levels.seaLevel - levels.seaDepth;
     if (height <= ground) return 'subsurface';
-    if (height > levels.oceanLevel) return 'air';
-    return levels.oceanWater && !levels.cutaway ? 'water' : 'air';
+    if (height > levels.seaLevel) return 'air';
+    return levels.seaWater && !levels.cutaway ? 'water' : 'air';
   }
-  return levels.abyss && height < levels.abyssLevel ? 'subsurface' : 'air';
+  return levels.void && height < levels.voidLevel ? 'subsurface' : 'air';
 }
 
 /** How far below the sea surface its water is filmed from, in world units. */
@@ -554,7 +559,7 @@ export const SCENERY_WATER_BAKE_DEPTH = 1;
 
 /**
  * The void's lid over a camera at `height` along up, while it is in the ground: the ground
- * under it where a stage draws its own (`oceanGround`), else the sea's flat seabed. From
+ * under it where a stage draws its own (`seaGround`), else the sea's flat seabed. From
  * there the lid hides all above it — the relief draws its underside, the sea and the sky
  * are not drawn — so nothing lying above it need be drawn either. Null over the ground, and
  * without a sea. A dry sea's seabed, or one with a cutaway, is a lid all the same.
@@ -563,11 +568,11 @@ export function sceneryLidOverCamera(
   height: number,
   levels: Pick<
     SceneryZoneLevels,
-    'ocean' | 'oceanLevel' | 'oceanDepth' | 'oceanGround'
+    'sea' | 'seaLevel' | 'seaDepth' | 'seaGround'
   >,
 ): number | null {
-  if (!levels.ocean) return null;
-  const ground = levels.oceanGround ?? levels.oceanLevel - levels.oceanDepth;
+  if (!levels.sea) return null;
+  const ground = levels.seaGround ?? levels.seaLevel - levels.seaDepth;
   return height <= ground ? ground : null;
 }
 
@@ -678,15 +683,16 @@ export const sceneryDefaults = {
   discScale: 1,
   void: {
     level: 0,
-    colors: { ceiling: '#2a2d32', horizon: '#4a5058', depth: '#0e1013' },
-    fadeDistance: 20000,
+    colors: {
+      ceiling: VOID_GRADIENT_DEFAULTS.ceiling,
+      horizon: VOID_GRADIENT_DEFAULTS.horizon,
+      depth: VOID_GRADIENT_DEFAULTS.depth,
+    },
     transition: 200,
     darkening: 0,
-    detail: 0.2,
+    detail: 0,
     detailScale: 1000,
-    depthDetail: 0.08,
-    depthDetailScale: 1,
-    falloff: 0.5,
+    falloff: VOID_GRADIENT_DEFAULTS.falloff,
     hollow: {
       style: 'calm' as SceneryHollowStyle,
       radius: 500000,
@@ -740,7 +746,7 @@ export const sceneryDefaults = {
       >,
     },
   },
-  ocean: {
+  sea: {
     level: 0,
     depth: 100,
     seabed: {
@@ -803,7 +809,7 @@ export function skyMoonlight(elevation: number) {
  * Where and when a {@link Scenery} is seen from: the sun, the moon and its phase are then
  * the real ones for that moment and place.
  */
-export type SkyObserver = {
+export type SceneryObserver = {
   /** the moment */
   date: Date;
   /** degrees north. Default the enclosing `World`'s origin's */
@@ -813,9 +819,9 @@ export type SkyObserver = {
 };
 
 /** Whether a sky can be computed for `observer`: a real moment and a place on Earth. */
-export function skyObserverValid(
-  observer: SkyObserver | null | undefined,
-): observer is Required<SkyObserver> {
+export function sceneryObserverValid(
+  observer: SceneryObserver | null | undefined,
+): observer is Required<SceneryObserver> {
   return (
     !!observer &&
     observer.date instanceof Date &&
@@ -897,7 +903,7 @@ export function skyTwilight(elevation: number) {
   );
 }
 
-/** The share of the sky's cells holding a star, for a {@link SkyStars} density. */
+/** The share of the sky's cells holding a star, for a {@link SceneryStars} density. */
 export function skyStarShare(density: number) {
   return MathUtils.clamp(density, 0, 1) * 0.06;
 }
@@ -983,7 +989,7 @@ export function skyThroughAir(elevation: number, target = new Color()) {
  * The moon's `color` as its light reaches the field from an `elevation` in degrees: dimmed by
  * the air as its disc is (the cube root of {@link skyThroughAir}'s luminance: 0.64 at 10°,
  * 0.27 at 3°), but not tinted: what moonlight lights is seen by night eyes, without colour.
- * Its disc takes the air's hue too (`skyMoonThroughAir` in `sky.glsl`).
+ * Its disc takes the air's hue too (`skyMoonThroughAir` in `scenery.glsl`).
  */
 export function skyMoonColor(
   color: Color,

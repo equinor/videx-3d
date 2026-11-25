@@ -9,7 +9,7 @@ import { ZoneDepthMap } from './zone-depth-map';
  * in the library derives geology from it: a contact is drawn where its own grid
  * says it is, and two contacts are never ordered against each other.
  */
-export const ZONE_CONTACT_TYPES = ['goc', 'gwc', 'owc', 'hwc', 'fwl'] as const;
+const ZONE_CONTACT_TYPES = ['goc', 'gwc', 'owc', 'hwc', 'fwl'] as const;
 
 /** Gas/oil, gas/water, oil/water, hydrocarbon/water, free water level. */
 export type ZoneContactType = (typeof ZONE_CONTACT_TYPES)[number];
@@ -18,7 +18,7 @@ export type ZoneContactType = (typeof ZONE_CONTACT_TYPES)[number];
  * Widest a screen-space contact line may get, in metres. At field scale anything
  * thicker starts reading as a band rather than a line.
  */
-export const DEFAULT_CONTACT_MAX_WIDTH = 25;
+const DEFAULT_CONTACT_MAX_WIDTH = 25;
 
 /**
  * Default colour per contact type, keyed on the fluid ABOVE the contact — the
@@ -26,7 +26,7 @@ export const DEFAULT_CONTACT_MAX_WIDTH = 25;
  *
  * ⚠️ A convention chosen here, not a standard. Override with `color`.
  */
-export const ZONE_CONTACT_COLORS: Record<ZoneContactType, string> = {
+const ZONE_CONTACT_COLORS: Record<ZoneContactType, string> = {
   goc: '#c8452f',
   gwc: '#c8452f',
   owc: '#3f7a3f',

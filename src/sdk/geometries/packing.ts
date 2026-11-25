@@ -121,7 +121,7 @@ export function packAttribute(
 }
 
 /** Serialize a geometry's bounding volumes, or `undefined` if it has none. */
-export function packBounds(geometry: BufferGeometry): PackedBounds | undefined {
+function packBounds(geometry: BufferGeometry): PackedBounds | undefined {
   const { boundingSphere, boundingBox } = geometry;
   if (!boundingSphere && !boundingBox) return undefined;
   const bounds: PackedBounds = {};
@@ -140,7 +140,7 @@ export function packBounds(geometry: BufferGeometry): PackedBounds | undefined {
 }
 
 /** Restore packed bounding volumes onto a geometry (see {@link packBounds}). */
-export function unpackBounds(
+function unpackBounds(
   geometry: BufferGeometry,
   bounds: PackedBounds | undefined,
 ): void {

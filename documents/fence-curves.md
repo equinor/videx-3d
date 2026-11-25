@@ -521,9 +521,9 @@ authority, not the number.
 Anything that has to agree with the cut reads the same lookup:
 
 - the **fragment discard**, through `fenceSide` in `sdk/materials/shaderLib/fence-field.glsl`;
-- the **sea**, whose two materials read that same zone through `OCEAN_FENCE`, so the water ends
+- the **sea**, whose two materials read that same zone through `WATER_FENCE`, so the water ends
   on the curve rather than a fraction of a cell either side of it;
-- the **immersion fog**, which asks whether the camera is standing in the half that was taken
+- the **interior fog**, which asks whether the camera is standing in the half that was taken
   away — exactly, so the fog switches at the cut rather than metres before it;
 - the **cut face**, which is the curve itself.
 
@@ -532,8 +532,8 @@ What the fence removes is opt-out per medium, the same way `ZoneSection`'s is, a
 column reads immediately as a field seen in section, while a sea cut in half alongside it mostly
 reads as missing.
 
-- `ZoneFence.water` hands the fence's shared uniforms to `OceanMaterial` and
-  `OceanVolumeMaterial`, and the water body is then CLOSED by a face of its own. Left off, the
+- `ZoneFence.sea` hands the fence's shared uniforms to `WaterMaterial` and
+  `WaterVolumeMaterial`, and the water body is then CLOSED by a face of its own. Left off, the
   sea bed cap is kept whole as the sea's floor instead, as for any kept unit.
 - `ZoneFence.carrier` cuts the column's floor with the rest.
 
@@ -565,7 +565,7 @@ value from the source object rather than through the uniform that was never writ
 ### The sea's cut face
 
 The sea is built by `buildSurfaceStack` as a stack of exactly two boundaries — the level and the
-bed — so it can emit a `StackSectionSource` like any other stack. With `StackWaterSpec.section` in
+bed — so it can emit a `StackSectionSource` like any other stack. With `StackSeaSpec.section` in
 hand, the water's cut face uses the same builders the zones use: `buildFenceRibbons` for a fence,
 `sectionStackInterval` for a plane.
 
@@ -573,7 +573,7 @@ hand, the water's cut face uses the same builders the zones use: `buildFenceRibb
 declared sea bed, along the same curve the block's face follows. There is no second opinion
 about where the sea bed is to leave a gap along the seam.
 
-⭐ It is drawn with a third `OceanVolumeMaterial` carrying no cut of its own. The face lies exactly
+⭐ It is drawn with a third `WaterVolumeMaterial` carrying no cut of its own. The face lies exactly
 on the curve, so testing it against the thing it exists to close punches holes along its length —
 the same reason `ZoneMeshes` builds the block's faces with both cut gates off.
 

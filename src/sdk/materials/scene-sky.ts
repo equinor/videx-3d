@@ -57,7 +57,7 @@ export type SceneSkySource = {
 };
 
 /** How often the scene is searched again for its sun, in milliseconds. */
-export const SCENE_SKY_LIGHT_SEARCH = 500;
+const SCENE_SKY_LIGHT_SEARCH = 500;
 
 function emptySource(): SceneSkySource {
   return {

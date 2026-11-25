@@ -41,38 +41,38 @@ import { sceneWaterBody } from '../../sdk/materials/water-body';
 import { sceneSky, type SceneSkySource } from '../../sdk/materials/scene-sky';
 import { setSceneGroundMap } from '../../sdk/materials/ground-map';
 import { waterOpticsOf } from '../../sdk/weather/water-optics';
-import { OceanMaterial } from '../Ocean/ocean-material';
-import { applyOceanWaterProps } from '../Ocean/ocean-material-sync';
+import { WaterMaterial } from '../Water/water-material';
+import { applyWaterSettings } from '../Water/water-settings';
 import { useWorld } from '../World/world-context';
 import { useWorldRelief } from '../World/world-relief';
-import { useWeatherOceanWind } from '../Weather/useWeatherOceanWind';
+import { useWeatherWind } from '../Weather/useWeatherWind';
 import { useWeather } from '../Weather/weather-context';
-import { useWeatherOceanSea } from '../Weather/useWeatherOceanSea';
+import { useWeatherWaves } from '../Weather/useWeatherWaves';
 import { useWeatherStep } from '../Weather/useWeatherStep';
 import type { ProgressReport } from '../Progress/progress-store';
 import {
-  createOceanContactRegistry,
-  OceanContactContext,
-} from '../Ocean/ocean-contact';
+  createWaterContactRegistry,
+  WaterContactContext,
+} from '../Water/water-contact';
 import {
   chartedSeaHeights,
-  createOceanSampler,
-  OceanSamplerContext,
-  type OceanPlane,
-} from '../Ocean/ocean-sampler';
+  createWaterSampler,
+  WaterSamplerContext,
+  type WaterPlane,
+} from '../Water/water-sampler';
 import {
   createSceneryProgress,
   SCENERY_PROGRESS_LABELS,
   SceneryProgressLabels,
 } from './scenery-progress';
-import standInFragmentShader from './shaders/sky-stand-in-fragment.glsl';
-import skyVertexShader from './shaders/sky-vertex.glsl';
+import standInFragmentShader from './shaders/scenery-stand-in-fragment.glsl';
+import sceneryVertexShader from './shaders/scenery-vertex.glsl';
 import { SceneryBaker } from './scenery-baker';
 import { SceneryBakeSchedule } from './scenery-bake-schedule';
 import {
   SceneryContext,
-  SceneryOceanContext,
-  SceneryOceanState,
+  ScenerySeaContext,
+  ScenerySeaState,
   SceneryState,
 } from './scenery-context';
 import {
@@ -99,32 +99,32 @@ import {
 import { SceneryHollowGrip } from './scenery-hollow-grip';
 import { SceneryReliefHub } from './scenery-relief-hub';
 import { SceneryGround } from './scenery-ground';
-import { sceneryOceanDefines } from './scenery-stage';
+import { scenerySeaDefines } from './scenery-stage';
 import {
   SKY_HDR_SUN_RADIANCE,
   SceneryVoidProps,
-  SkyAir,
-  SkyColors,
+  SceneryAir,
+  SceneryColors,
   skyDaylight,
   sceneryDefaults,
   skyCelestialFrame,
   skyEphemeris,
-  SkyMoon,
+  SceneryMoon,
   skyMoonlight,
   skyMoonShine,
   skyMoonColor,
   skyMoonSize,
-  SkyObserver,
-  skyObserverValid,
-  SceneryOceanProps,
+  SceneryObserver,
+  sceneryObserverValid,
+  ScenerySeaProps,
   ScenerySeabed,
   skyStarShare,
   skyStarFrame,
-  SkyStars,
+  SceneryStars,
   ScenerySubsurface,
   scenerySubsurfaceColors,
   scenerySubsurfaceLightPosition,
-  SkySun,
+  ScenerySun,
   skySunColor,
   skyTwilight,
   sceneryWaterDimming,
@@ -207,7 +207,7 @@ export type SceneryDebug = {
  * @expand
  */
 export type SceneryProps = {
-  sun?: SkySun;
+  sun?: ScenerySun;
   /**
    * Where and when the sky is seen from: the sun and the moon — with its phase, up by
    * day too — are then the real ones for that moment and place, and so are the stars and
@@ -215,8 +215,8 @@ export type SceneryProps = {
    * `sun.azimuth` and `elevation` are ignored while it is valid; without one, they set the
    * sun, the moon is a full one opposite it and the stars are procedural.
    */
-  observer?: SkyObserver | null;
-  colors?: SkyColors;
+  observer?: SceneryObserver | null;
+  colors?: SceneryColors;
   /** the world's up direction. Default `[0, 1, 0]` */
   up?: Vec3;
   /**
@@ -244,20 +244,27 @@ export type SceneryProps = {
    */
   globe?: boolean;
   /**
-   * Draw the sky, and its `SceneryStage`, behind the scene. Switched instantly: nothing
-   * is rebuilt or baked again, and the environment and the light probe stay on, lit by
-   * the `subsurface`. `'void'` draws the void's grey gradient in the sky's place (the
-   * stand-in's, while the sky compiles): no air, sun, moon, stars or clouds, and the
-   * scene lit by the `subsurface` everywhere; the void and a sea are drawn as
-   * ever. Changing to or from it recompiles the sky's own layer. Default true
+   * Draw the background behind the scene: the sky, its sea, void and `SceneryStage`.
+   * Switched instantly: nothing is rebuilt or baked again, and the environment and the light
+   * probe stay on, lit by the `subsurface`. Default true
    */
-  background?: boolean | 'void';
+  background?: boolean;
+  /**
+   * Draw the sky: the air, the sun's disc, the moon, the stars, the planets and the clouds.
+   * Off, none of them is drawn and whatever is behind the scene shows in their place: its
+   * `scene.background` (a `VoidBackground`, say) or the canvas' clear colour. The sea, the
+   * void and a stage are drawn as ever, the sun's and the moon's light stays as set, and the
+   * void's gradient (`SceneryVoidProps.colors`) stands in for the sky's light: the
+   * environment and the light probe are baked from it, and the seas reflect it. Switched
+   * without recompiling. Default true
+   */
+  sky?: boolean;
   /** bake the sky into `scene.environment`, which lights MeshStandard/MeshPhysical materials. Default true */
   environment?: boolean | SceneryEnvironmentOptions;
   /** bake the sky into a LightProbe, which lights every `lights: true` material. Default true */
   lightProbe?: boolean | SceneryLightProbeOptions;
   /**
-   * The light below the seabed (or the abyss level), and wherever the sky is not drawn:
+   * The light below the seabed (or the void's level), and wherever the background is not drawn:
    * soft light panels on a dark backdrop, or a map of your own, and a steady directional
    * light in place of the sun's (see {@link ScenerySubsurface}). Default the panels and a fixed light
    */
@@ -266,10 +273,10 @@ export type SceneryProps = {
   capture?: SceneryCaptureOptions;
   /** add a directional light from the sun, and from the moon at night. Default true */
   sunLight?: boolean;
-  /** a moon opposite the sun, for some light at night (see {@link SkyMoon}). Default true */
-  moon?: boolean | SkyMoon;
-  /** stars at night, and with an `observer` the planets (see {@link SkyStars}). Default true */
-  stars?: boolean | SkyStars;
+  /** a moon opposite the sun, for some light at night (see {@link SceneryMoon}). Default true */
+  moon?: boolean | SceneryMoon;
+  /** stars at night, and with an `observer` the planets (see {@link SceneryStars}). Default true */
+  stars?: boolean | SceneryStars;
   /**
    * How many times bigger than their `size` the sun's and the moon's discs are drawn, glare
    * and rays with them, both alike, as games do. Default 1: their real size, half a degree
@@ -277,8 +284,8 @@ export type SceneryProps = {
    * screen, so everything in it, the moon too, shows a little over twice smaller than there).
    */
   discScale?: number;
-  /** the air thinning with height, and hazing the far sea (see {@link SkyAir}). Default true */
-  air?: boolean | SkyAir;
+  /** the air thinning with height, and hazing the far sea (see {@link SceneryAir}); none with `sky` off */
+  air?: SceneryAir;
   /**
    * The output is tone mapped, so the sun disc may go past display white. Defaults to
    * the renderer's `toneMapping`; set it when a pipeline pass tone maps instead.
@@ -303,9 +310,9 @@ export type SceneryProps = {
   /** the texts of its progress (see {@link SCENERY_PROGRESS_LABELS}) */
   progressLabels?: Partial<SceneryProgressLabels>;
   /**
-   * What it holds: its features (`SceneryClouds`, `SceneryOcean`, `SceneryVoid`,
+   * What it holds: its features (`SceneryClouds`, `ScenerySea`, `SceneryVoid`,
    * `SceneryCutaway`), in any order and at any depth, and its stages and the scene, which
-   * read its sun and sea (`useScenery`, `useSceneryOcean`).
+   * read its sun and sea (`useScenery`, `useScenerySea`).
    */
   children?: ReactNode;
 };
@@ -319,10 +326,10 @@ const DEFAULT_CAPTURE_INTERVAL = 250;
 // long as bakes come apart while the sky changes.
 const PROBE_EASE = 0.15;
 const DEFAULT_CAPTURE_MAX_WAIT = 1000;
-// Roughness added to the sea's sun glint at the height of twilight (OceanMaterial.sunGlintSpread).
+// Roughness added to the sea's sun glint at the height of twilight (WaterMaterial.sunGlintSpread).
 const SKY_TWILIGHT_GLINT_SPREAD = 0.08;
 // The elevation of the light raking the void's lid from below, in degrees: level.
-const ABYSS_LIGHT_ELEVATION = 0;
+const VOID_LIGHT_ELEVATION = 0;
 const DEFAULT_UP: Vec3 = [0, 1, 0];
 const DEFAULT_NORTH: Vec3 = [0, 0, -1];
 
@@ -340,13 +347,13 @@ const FOAM_AHEAD_STEP = 100;
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 
 // Drawn while the sky's shaders compile: the void's gradient, whatever the sky is.
-function createSceneryStandInMaterial(sky: SceneryMaterial) {
+function createSceneryStandInMaterial(scenery: SceneryMaterial) {
   return new ShaderMaterial({
     name: 'scenery-stand-in',
-    vertexShader: skyVertexShader,
+    vertexShader: sceneryVertexShader,
     fragmentShader: standInFragmentShader,
-    uniforms: sky.uniforms,
-    defines: { SKY_AT_FAR: '' },
+    uniforms: scenery.uniforms,
+    defines: { SCENERY_AT_FAR: '' },
     side: DoubleSide,
     depthWrite: false,
     fog: true,
@@ -354,8 +361,8 @@ function createSceneryStandInMaterial(sky: SceneryMaterial) {
 }
 
 const NO_FEATURES: SceneryFeatures = {
-  ocean: null,
-  abyss: null,
+  sea: null,
+  void: null,
   cutaway: null,
 };
 
@@ -371,7 +378,7 @@ const LAYER_DATA = {
  * The world around the data: a procedural sky that shows where the horizon and the sun
  * are, and the light that comes from it — a directional sun light, an environment map and
  * a light probe, all from the same sky — and whatever else it holds: clouds that draw
- * themselves (`SceneryClouds`), an endless sea (`SceneryOcean`) with the void below it
+ * themselves (`SceneryClouds`), an endless sea (`ScenerySea`) with the void below it
  * (`SceneryVoid`) and a cut through it (`SceneryCutaway`), and stages that draw the sea
  * and the relief on real geometry (`SceneryStage`). Each is drawn as a layer of its own and
  * compiled on its own (see `SceneryBackgroundLayer`), so a scenery without a sea compiles
@@ -389,7 +396,7 @@ const LAYER_DATA = {
  * @example
  * <Scenery sun={{ azimuth: 200, elevation: 35 }}>
  *   <SceneryClouds />
- *   <SceneryOcean depth={120} />
+ *   <ScenerySea depth={120} />
  * </Scenery>
  *
  * @group Components
@@ -404,6 +411,7 @@ export const Scenery = ({
   horizonBlend = sceneryDefaults.horizonBlend,
   globe = sceneryDefaults.globe,
   background = true,
+  sky = true,
   environment = true,
   lightProbe = true,
   subsurface,
@@ -412,7 +420,7 @@ export const Scenery = ({
   moon = true,
   stars = true,
   discScale = sceneryDefaults.discScale,
-  air = true,
+  air,
   hdr,
   renderOrder = 1e9,
   debug,
@@ -450,7 +458,7 @@ export const Scenery = ({
     longitude: observer.longitude ?? geoPlace?.longitude,
   };
   // Primitives, so an observer object made each render recomputes nothing.
-  const observing = skyObserverValid(located);
+  const observing = sceneryObserverValid(located);
   const observedAt = observing ? located.date.getTime() : NaN;
   const observedLatitude = observing ? located.latitude : NaN;
   const observedLongitude = observing ? located.longitude : NaN;
@@ -477,7 +485,7 @@ export const Scenery = ({
   const sunRays = sun?.rays ?? sceneryDefaults.sun.rays;
   const sunShimmer = sun?.shimmer ?? sceneryDefaults.sun.shimmer;
   const sunTwilight = sun?.twilight ?? sceneryDefaults.sun.twilight;
-  const moonOptions: SkyMoon | null = moon === true ? {} : moon || null;
+  const moonOptions: SceneryMoon | null = moon === true ? {} : moon || null;
   const hasMoon = moonOptions !== null;
   const moonDefaults = sceneryDefaults.moon;
   const moonIntensity = moonOptions?.intensity ?? moonDefaults.intensity;
@@ -489,7 +497,7 @@ export const Scenery = ({
       (ephemeris ? skyMoonSize(ephemeris.moon.distance) : moonDefaults.size))
     : 0;
   const moonGlow = moonOptions ? (moonOptions.glow ?? moonDefaults.glow) : 0;
-  const starsOptions: SkyStars | null = stars === true ? {} : stars || null;
+  const starsOptions: SceneryStars | null = stars === true ? {} : stars || null;
   const starBrightness = starsOptions
     ? (starsOptions.brightness ?? sceneryDefaults.stars.brightness)
     : 0;
@@ -514,48 +522,41 @@ export const Scenery = ({
   }, [geoFrame, geoPlace]);
   const [northX, northY, northZ] = north ?? trueNorth ?? DEFAULT_NORTH;
 
-  const abyssOptions: SceneryVoidProps | null = features.abyss;
-  const hasAbyss = abyssOptions !== null;
-  const abyssDefaults = sceneryDefaults.void;
-  const abyssLevel = abyssOptions?.level ?? abyssDefaults.level;
-  const abyssCeiling = toHex(
-    abyssOptions?.colors?.ceiling ?? abyssDefaults.colors.ceiling,
+  const voidOptions: SceneryVoidProps | null = features.void;
+  const hasVoid = voidOptions !== null;
+  const voidDefaults = sceneryDefaults.void;
+  const voidLevel = voidOptions?.level ?? voidDefaults.level;
+  const voidCeiling = toHex(
+    voidOptions?.colors?.ceiling ?? voidDefaults.colors.ceiling,
   );
-  const abyssHorizon = toHex(
-    abyssOptions?.colors?.horizon ?? abyssDefaults.colors.horizon,
+  const voidHorizon = toHex(
+    voidOptions?.colors?.horizon ?? voidDefaults.colors.horizon,
   );
-  const abyssDepth = toHex(
-    abyssOptions?.colors?.depth ?? abyssDefaults.colors.depth,
+  const voidDepth = toHex(
+    voidOptions?.colors?.depth ?? voidDefaults.colors.depth,
   );
-  const abyssFadeDistance =
-    abyssOptions?.fadeDistance ?? abyssDefaults.fadeDistance;
-  const abyssTransition = abyssOptions?.transition ?? abyssDefaults.transition;
-  const abyssDarkening = abyssOptions?.darkening ?? abyssDefaults.darkening;
-  const abyssDetail = abyssOptions?.detail ?? abyssDefaults.detail;
-  const abyssDetailScale =
-    abyssOptions?.detailScale ?? abyssDefaults.detailScale;
-  const abyssDepthDetail =
-    abyssOptions?.depthDetail ?? abyssDefaults.depthDetail;
-  const abyssDepthDetailScale =
-    abyssOptions?.depthDetailScale ?? abyssDefaults.depthDetailScale;
-  const abyssFalloff = abyssOptions?.falloff ?? abyssDefaults.falloff;
+  const voidTransition = voidOptions?.transition ?? voidDefaults.transition;
+  const voidDarkening = voidOptions?.darkening ?? voidDefaults.darkening;
+  const voidDetail = voidOptions?.detail ?? voidDefaults.detail;
+  const voidDetailScale = voidOptions?.detailScale ?? voidDefaults.detailScale;
+  const voidFalloff = voidOptions?.falloff ?? voidDefaults.falloff;
   // The void as a hollow in the crust about the field: on by default. Compared by value, as
   // the props are an inline object.
-  const hollowKey = JSON.stringify(abyssOptions?.hollow ?? null);
+  const hollowKey = JSON.stringify(voidOptions?.hollow ?? null);
   const hollowLook = useMemo(
     () => sceneryHollowLook(JSON.parse(hollowKey) ?? undefined),
     [hollowKey],
   );
-  // Drawn at all; the void's gradient in the sky's place; the sky itself.
+  // The background drawn at all; the sky in it.
   const drawn = background !== false;
-  const voided = background === 'void';
-  const skyShown = background === true;
+  const skyOn = sky !== false;
 
-  const oceanOptions: SceneryOceanProps | null = features.ocean;
-  const hasOcean = oceanOptions !== null;
-  const oceanDefaults = sceneryDefaults.ocean;
-  const oceanLevel = oceanOptions?.level ?? oceanDefaults.level;
-  const airOptions: SkyAir | null = air === true ? {} : air || null;
+  const seaOptions: ScenerySeaProps | null = features.sea;
+  const hasSea = seaOptions !== null;
+  const seaDefaults = sceneryDefaults.sea;
+  const seaLevel = seaOptions?.level ?? seaDefaults.level;
+  // None with no sky.
+  const airOptions: SceneryAir | null = skyOn ? (air ?? {}) : null;
   // What its air leaves out, the enclosing Weather's.
   const weatherAir = useWeather()?.air;
   const airScaleHeight = airOptions
@@ -573,18 +574,18 @@ export const Scenery = ({
     weatherAir?.hazeHeight ??
     sceneryDefaults.air.hazeHeight;
   // The air's ground: the sea's surface, or the void's lid.
-  const airLevel = hasOcean ? oceanLevel : hasAbyss ? abyssLevel : 0;
-  const oceanDepth = oceanOptions?.depth ?? oceanDefaults.depth;
-  const oceanWater = oceanOptions?.water ?? true;
-  const oceanSeabed = oceanOptions?.seabed !== false;
-  const oceanSeabedOpacity = MathUtils.clamp(
-    oceanOptions?.seabedOpacity ?? oceanDefaults.seabedOpacity,
+  const airLevel = hasSea ? seaLevel : hasVoid ? voidLevel : 0;
+  const seaDepth = seaOptions?.depth ?? seaDefaults.depth;
+  const seaWater = seaOptions?.water ?? true;
+  const seabed = seaOptions?.seabed !== false;
+  const seabedOpacity = MathUtils.clamp(
+    seaOptions?.seabedOpacity ?? seaDefaults.seabedOpacity,
     0,
     1,
   );
   const seabedOptions: ScenerySeabed | null =
-    typeof oceanOptions?.seabed === 'object' ? oceanOptions.seabed : null;
-  const bedDefaults = oceanDefaults.seabed;
+    typeof seaOptions?.seabed === 'object' ? seaOptions.seabed : null;
+  const bedDefaults = seaDefaults.seabed;
   const bedColor = toHex(seabedOptions?.color ?? bedDefaults.color);
   const bedSpecular = toHex(seabedOptions?.specular ?? bedDefaults.specular);
   const bedShininess = seabedOptions?.shininess ?? bedDefaults.shininess;
@@ -594,11 +595,11 @@ export const Scenery = ({
     seabedOptions?.detail === false
       ? undefined
       : (seabedOptions?.detail ?? bedDefaults.detail);
-  const oceanOptics = waterOpticsOf(oceanOptions?.optics, {
-    deepColor: oceanOptions?.deepColor,
+  const seaOptics = waterOpticsOf(seaOptions?.optics, {
+    deepColor: seaOptions?.deepColor,
   });
-  const oceanOpticsColor = oceanOptics.color;
-  const oceanClarity = oceanOptics.clarity;
+  const seaOpticsColor = seaOptics.color;
+  const seaClarity = seaOptics.clarity;
 
   const environmentOptions = environment === true ? {} : environment || null;
   const hasEnvironment = environmentOptions !== null;
@@ -612,12 +613,12 @@ export const Scenery = ({
 
   const [material] = useState(() => {
     // On the World's globe, inside one: what the World places, and the sky, lie on one Earth.
-    const sky = new SceneryMaterial(undefined, world?.globe);
+    const scenery = new SceneryMaterial(undefined, world?.globe);
     // The bakes take the define, so they share its program, but not the depth test.
-    sky.defines.SKY_AT_FAR = '';
-    sky.depthTest = true;
-    sky.name = 'scenery-sky';
-    return sky;
+    scenery.defines.SCENERY_AT_FAR = '';
+    scenery.depthTest = true;
+    scenery.name = 'scenery-sky';
+    return scenery;
   });
   // The ground under it, from its World's relief: how deep its sea is, what its clouds rise
   // over. Drawn into the sky's maps, so every material sharing the sky's uniforms reads them.
@@ -628,7 +629,7 @@ export const Scenery = ({
     () => ({
       material,
       set: setFeature,
-      view: { clouds: false, shadows: false, renderOrder: 0 },
+      view: { sky: true, clouds: false, shadows: false, renderOrder: 0 },
       overlay,
       ground: sceneryGround,
     }),
@@ -638,8 +639,8 @@ export const Scenery = ({
   const [geometry] = useState(createSceneryGeometry);
   const [baker] = useState(() => new SceneryBaker(material));
   // The hollow under the seabed: on with the void, unless turned off.
-  const hollowOn = (hasAbyss || hasOcean) && hollowLook !== null;
-  const hollowOpen = hollowOn && hasOcean && !oceanSeabed;
+  const hollowOn = (hasVoid || hasSea) && hollowLook !== null;
+  const hollowOpen = hollowOn && hasSea && !seabed;
   const [hollow] = useState(() => new SceneryHollowParts(material));
   // A layout effect, as its bake's below: when both run again (React's Fast Refresh), every
   // cleanup comes before every setup, so what this lets go is baked again, not after.
@@ -653,7 +654,7 @@ export const Scenery = ({
     undefined,
   );
   useLayoutEffect(() => {
-    const given = abyssOptions?.hollow;
+    const given = voidOptions?.hollow;
     onHollowRadius.current =
       typeof given === 'object' ? given.onRadiusChange : undefined;
   });
@@ -704,56 +705,55 @@ export const Scenery = ({
   const [probe] = useState(() => new LightProbe());
   const [lightTarget] = useState(() => new Object3D());
   // The sea's water: never drawn, the sky's sea shares its uniforms.
-  const seaQuality = oceanOptions?.quality ?? 'medium';
+  const scenerySeaQuality = seaOptions?.quality ?? 'medium';
   const water = useMemo(
-    () => (hasOcean ? new OceanMaterial({ quality: seaQuality }) : null),
-    [hasOcean, seaQuality],
+    () => (hasSea ? new WaterMaterial({ quality: scenerySeaQuality }) : null),
+    [hasSea, scenerySeaQuality],
   );
 
   useEffect(() => () => water?.dispose(), [water]);
 
-  // For floating children, as in an `Ocean`: the waves they ride, and their contact foam.
-  // Both in the waves' plane, true east and south at the field (skyOceanPlane), which a
+  // For floating children, as in a `Water`: the waves they ride, and their contact foam.
+  // Both in the waves' plane, true east and south at the field (scenerySeaPlane), which a
   // projected grid turns from the scene's X and Z; read live, so it follows the frame.
-  const wavePlane = useMemo<OceanPlane>(
+  const wavePlane = useMemo<WaterPlane>(
     () => ({
-      east: material.uniforms.uSkyEast.value,
-      north: material.uniforms.uSkyNorth.value,
+      east: material.uniforms.uSceneryEast.value,
+      north: material.uniforms.uSceneryNorth.value,
     }),
     [material],
   );
-  const contacts = useMemo(createOceanContactRegistry, []);
+  const contacts = useMemo(createWaterContactRegistry, []);
 
   // In render rather than an effect, so a stage or layer made in this commit compiles with
   // it. A no-op unless a switch changed. The waves' defines likewise, for the sea's layers.
-  material.oceanBedDetail = bedDetail;
+  material.seabedDetail = bedDetail;
   // Under a relief, its tiles are the seabed: the sea's layers draw their own plain.
-  material.oceanReliefBed = !!worldRelief?.present;
-  material.voidBackground = voided;
-  material.ocean = hasOcean;
+  material.seaReliefBed = !!worldRelief?.present;
+  material.sea = hasSea;
   // With a sea, the void lies below its seabed.
-  material.abyss = hasAbyss || hasOcean;
-  // Its Fresnel, glitter and whitecaps' life defines (OceanMaterial.fresnelPower, sparkle,
+  material.void = hasVoid || hasSea;
+  // Its Fresnel, glitter and whitecaps' life defines (WaterMaterial.fresnelPower, sparkle,
   // foamLife), so here too, before the switches are read.
   if (water) {
-    water.fresnelPower = oceanOptions?.fresnelPower ?? null;
-    water.sparkle = oceanOptions?.sparkle ?? null;
-    water.foamLife = oceanOptions?.foamLife ?? null;
+    water.fresnelPower = seaOptions?.fresnelPower ?? null;
+    water.sparkle = seaOptions?.sparkle ?? null;
+    water.foamLife = seaOptions?.foamLife ?? null;
   }
-  if (water) material.linkOcean(water);
-  // What a stage and its relief compile with from the sky, as a key (SceneryOceanState).
-  const definesKey = JSON.stringify(sceneryOceanDefines(material));
+  if (water) material.linkWater(water);
+  // What a stage and its relief compile with from the sky, as a key (ScenerySeaState).
+  const definesKey = JSON.stringify(scenerySeaDefines(material));
 
   // The background's layers over the sky, each with only the switches it needs.
-  const abyssLayer = useSceneryLayerMaterial(
+  const voidLayer = useSceneryLayerMaterial(
     material,
     'void',
-    hasAbyss || hasOcean,
+    hasVoid || hasSea,
   );
-  const seaLayer = useSceneryLayerMaterial(material, 'sea', hasOcean);
-  const waterLayer = useSceneryLayerMaterial(material, 'water', hasOcean);
+  const seaLayer = useSceneryLayerMaterial(material, 'sea', hasSea);
+  const waterLayer = useSceneryLayerMaterial(material, 'water', hasSea);
   const skyMesh = useRef<Mesh>(null);
-  const abyssMesh = useRef<Mesh>(null);
+  const voidMesh = useRef<Mesh>(null);
   const seaMesh = useRef<Mesh>(null);
   const waterMesh = useRef<Mesh>(null);
   // Where the camera is, for which layers can show there (sceneryLayersShown).
@@ -761,17 +761,17 @@ export const Scenery = ({
   const layerView = useCallback(
     (height: number, voidOpen: boolean): SceneryLayerView => ({
       height,
-      ocean: material.ocean
+      sea: material.sea
         ? {
-            level: material.oceanLevel,
-            depth: material.oceanDepth,
-            water: material.oceanWater,
-            buried: material.oceanBuried,
-            trench: material.oceanTrench,
+            level: material.seaLevel,
+            depth: material.seaDepth,
+            water: material.seaWater,
+            buried: material.seaBuried,
+            trench: material.seaTrench,
           }
         : null,
-      abyss: material.abyss
-        ? { level: material.abyssLevel, transition: material.abyssTransition }
+      void: material.void
+        ? { level: material.voidLevel, transition: material.voidTransition }
         : null,
       cutawayWater,
       voidOpen,
@@ -966,10 +966,10 @@ export const Scenery = ({
   );
   // The void's lid is raked by a light level at the subsurface light's bearing, so a relief's
   // underside shows its shape.
-  const abyssLightDirection = useMemo(
+  const voidLightDirection = useMemo(
     () =>
       new Vector3().fromArray(
-        directionFromCompass(subsurfaceAzimuth, ABYSS_LIGHT_ELEVATION, {
+        directionFromCompass(subsurfaceAzimuth, VOID_LIGHT_ELEVATION, {
           up: [upX, upY, upZ],
           north: [northX, northY, northZ],
         }),
@@ -977,8 +977,8 @@ export const Scenery = ({
     [subsurfaceAzimuth, upX, upY, upZ, northX, northY, northZ],
   );
   useLayoutEffect(() => {
-    material.setAbyssLight(abyssLightDirection);
-  }, [material, abyssLightDirection]);
+    material.setVoidLight(voidLightDirection);
+  }, [material, voidLightDirection]);
   const light = useRef<DirectionalLight>(null);
   // 0 the sky's light, 1 the subsurface's; null until the first frame, which takes the zone's.
   const subsurfaceShare = useRef<number | null>(null);
@@ -993,7 +993,7 @@ export const Scenery = ({
   useLayoutEffect(() => {
     material.hollow = hollowDrawn;
   }, [material, hollowDrawn]);
-  // Stages hand over their parts, compiled with the sky's own (see SceneryOceanState.stage).
+  // Stages hand over their parts, compiled with the sky's own (see ScenerySeaState.stage).
   const stages = useRef(new Set<Object3D>());
   const [stageVersion, setStageVersion] = useState(0);
   const addStage = useCallback((object: Object3D) => {
@@ -1013,52 +1013,44 @@ export const Scenery = ({
   // the drawn ones do by the scene's ground (its map is the GPU's alone): the relief's ground
   // under them where its tiles are in, else the sea's own depth.
   const sampler = useMemo(() => {
-    if (!water || !oceanWater) return null;
+    if (!water || !seaWater) return null;
     const point = new Vector3();
     const at = { latitude: 0, longitude: 0 };
     // The still water's depth under a world point on the sea.
     const depthUnder = (sea: Vector3) => {
       const earth = material.globe;
-      if (!earth.frame) return oceanDepth;
+      if (!earth.frame) return seaDepth;
       earth.geographic(sea, at);
       const height = reliefHub.current?.heightAt(at.longitude, at.latitude);
-      return height == null ? oceanDepth : Math.max(-height, 0);
+      return height == null ? seaDepth : Math.max(-height, 0);
     };
     const depthAt = (x: number, z: number) =>
-      depthUnder(point.set(x, oceanLevel, z));
+      depthUnder(point.set(x, seaLevel, z));
     // Anywhere on the globe, in the charts the sea is drawn in: what floating objects placed
     // far off ride (useBuoyancy).
     return Object.assign(
-      createOceanSampler(water, oceanLevel, wavePlane, depthAt),
+      createWaterSampler(water, seaLevel, wavePlane, depthAt),
       chartedSeaHeights({
         globe: material.globe,
-        charts: material.oceanCharts,
+        charts: material.seaCharts,
         heightAt: (x, z, depth) =>
           water.seaState.heightAtDepth(x, z, depth, water.shoreBreakDepth),
         depthAt: depthUnder,
       }),
     );
-  }, [
-    water,
-    oceanWater,
-    oceanLevel,
-    oceanDepth,
-    wavePlane,
-    material,
-    reliefHub,
-  ]);
+  }, [water, seaWater, seaLevel, seaDepth, wavePlane, material, reliefHub]);
 
-  const oceanState = useMemo<SceneryOceanState | null>(
+  const seaContext = useMemo<ScenerySeaState | null>(
     () =>
       water
         ? {
             material,
             renderOrder,
-            level: oceanLevel,
-            depth: oceanDepth,
-            water: oceanWater,
-            seabed: oceanSeabed,
-            seabedOpacity: oceanSeabedOpacity,
+            level: seaLevel,
+            depth: seaDepth,
+            water: seaWater,
+            seabed: seabed,
+            seabedOpacity: seabedOpacity,
             hollow: hollowOn,
             definesKey,
             visible: drawn,
@@ -1071,11 +1063,11 @@ export const Scenery = ({
       water,
       material,
       renderOrder,
-      oceanLevel,
-      oceanDepth,
-      oceanWater,
-      oceanSeabed,
-      oceanSeabedOpacity,
+      seaLevel,
+      seaDepth,
+      seaWater,
+      seabed,
+      seabedOpacity,
       hollowOn,
       definesKey,
       drawn,
@@ -1085,10 +1077,11 @@ export const Scenery = ({
     ],
   );
   // The World's relief is shaded with this sky's sea.
-  const provideSky = worldRelief?.provideSky;
+  const provideScenery = worldRelief?.provideScenery;
   useLayoutEffect(
-    () => (oceanState && provideSky ? provideSky(oceanState) : undefined),
-    [oceanState, provideSky],
+    () =>
+      seaContext && provideScenery ? provideScenery(seaContext) : undefined,
+    [seaContext, provideScenery],
   );
 
   // Made with the sea's water; the seabed's detail, which it does not draw, leaves it be.
@@ -1134,16 +1127,13 @@ export const Scenery = ({
   const probeSkipped = useRef(new Set<SceneryZone>());
   const captureInterval = capture?.interval ?? DEFAULT_CAPTURE_INTERVAL;
   const captureMaxWait = capture?.maxWait ?? DEFAULT_CAPTURE_MAX_WAIT;
-  // The zones the camera can be in; the subsurface also lights an undrawn sky, and the
-  // void's gradient everywhere, so then nothing else is baked.
+  // The zones the camera can be in; the subsurface also lights an undrawn background.
   const zones = useMemo<SceneryZone[]>(
     () =>
-      voided
-        ? ['subsurface']
-        : hasOcean && oceanWater
-          ? ['air', 'water', 'subsurface']
-          : ['air', 'subsurface'],
-    [voided, hasOcean, oceanWater],
+      hasSea && seaWater
+        ? ['air', 'water', 'subsurface']
+        : ['air', 'subsurface'],
+    [hasSea, seaWater],
   );
 
   const subsurfaceMap = subsurface?.map ?? null;
@@ -1259,6 +1249,7 @@ export const Scenery = ({
       airHaze,
       airHazeHeight,
     );
+    material.sky = skyOn;
     material.zenithColor = zenith;
     material.horizonColor = horizon;
     material.groundColor = ground;
@@ -1299,6 +1290,7 @@ export const Scenery = ({
     airVisibility,
     airHaze,
     airHazeHeight,
+    skyOn,
     zenith,
     horizon,
     ground,
@@ -1308,42 +1300,34 @@ export const Scenery = ({
   ]);
 
   useLayoutEffect(() => {
-    material.abyss = hasAbyss || hasOcean;
-    material.abyssLevel = hasOcean ? oceanLevel - oceanDepth : abyssLevel;
-    // The hollow is all of the void there is: past its walls and under its floor, the rock is
-    // black below the horizon, and the void's lid overhead recedes into black. Until it is
-    // drawn, the void's own grey, which the stand-in draws too.
-    material.abyssCeilingColor = abyssCeiling;
-    material.abyssHorizonColor = hollowDrawn ? 0x000000 : abyssHorizon;
-    material.abyssDepthColor = hollowDrawn ? 0x000000 : abyssDepth;
-    material.abyssFadeDistance = abyssFadeDistance;
-    material.abyssTransition = abyssTransition;
-    material.abyssDarkening = abyssDarkening;
-    material.abyssDetail = abyssDetail;
-    material.abyssDetailScale = abyssDetailScale;
-    material.abyssDepthDetail = abyssDepthDetail;
-    material.abyssDepthDetailScale = abyssDepthDetailScale;
-    material.abyssFalloff = abyssFalloff;
+    material.void = hasVoid || hasSea;
+    material.voidLevel = hasSea ? seaLevel - seaDepth : voidLevel;
+    // The gradient (scenery-void.glsl): the stand-in's, the plain void's and, with no sky, the
+    // sky's light. Past the hollow's walls the void is black (sceneryVoidDepths).
+    material.voidCeilingColor = voidCeiling;
+    material.voidHorizonColor = voidHorizon;
+    material.voidDepthColor = voidDepth;
+    material.voidTransition = voidTransition;
+    material.voidDarkening = voidDarkening;
+    material.voidDetail = voidDetail;
+    material.voidDetailScale = voidDetailScale;
+    material.voidFalloff = voidFalloff;
     dirty.current = true;
   }, [
     material,
-    hasAbyss,
-    hasOcean,
-    oceanLevel,
-    oceanDepth,
-    abyssLevel,
-    abyssCeiling,
-    abyssHorizon,
-    abyssDepth,
-    abyssFadeDistance,
-    abyssTransition,
-    abyssDarkening,
-    abyssDetail,
-    abyssDetailScale,
-    abyssDepthDetail,
-    abyssDepthDetailScale,
-    abyssFalloff,
-    hollowDrawn,
+    hasVoid,
+    hasSea,
+    seaLevel,
+    seaDepth,
+    voidLevel,
+    voidCeiling,
+    voidHorizon,
+    voidDepth,
+    voidTransition,
+    voidDarkening,
+    voidDetail,
+    voidDetailScale,
+    voidFalloff,
   ]);
 
   // Not baked: the bakes keep a level horizon. Inside a World, the World's `globe` says.
@@ -1361,37 +1345,37 @@ export const Scenery = ({
   }, [material, geoFrame, inWorld]);
 
   useLayoutEffect(() => {
-    if (water) material.linkOcean(water);
-    material.ocean = water !== null;
-    material.oceanLevel = oceanLevel;
-    material.oceanDepth = oceanDepth;
-    material.oceanBedColor = bedColor;
-    material.oceanBedSpecular = bedSpecular;
-    material.oceanBedShininess = bedShininess;
-    material.oceanBedAmbient = [bedAmbientUp, bedAmbientDown];
+    if (water) material.linkWater(water);
+    material.sea = water !== null;
+    material.seaLevel = seaLevel;
+    material.seaDepth = seaDepth;
+    material.seabedColor = bedColor;
+    material.seabedSpecular = bedSpecular;
+    material.seabedShininess = bedShininess;
+    material.seabedAmbient = [bedAmbientUp, bedAmbientDown];
     // A dry seabed is lit as if no water lay over it.
-    material.oceanOptics = oceanWater
-      ? { color: oceanOpticsColor, clarity: oceanClarity }
+    material.seaOptics = seaWater
+      ? { color: seaOpticsColor, clarity: seaClarity }
       : null;
-    material.oceanWater = oceanWater;
-    material.oceanSeabed = oceanSeabed;
-    material.oceanSeabedOpacity = oceanSeabedOpacity;
+    material.seaWater = seaWater;
+    material.seabed = seabed;
+    material.seabedOpacity = seabedOpacity;
     dirty.current = true;
   }, [
     material,
     water,
-    oceanLevel,
-    oceanDepth,
+    seaLevel,
+    seaDepth,
     bedColor,
     bedSpecular,
     bedShininess,
     bedAmbientUp,
     bedAmbientDown,
-    oceanOpticsColor,
-    oceanClarity,
-    oceanWater,
-    oceanSeabed,
-    oceanSeabedOpacity,
+    seaOpticsColor,
+    seaClarity,
+    seaWater,
+    seabed,
+    seabedOpacity,
   ]);
 
   // Its own wind and swells where given, the enclosing Weather's for what it leaves out: in
@@ -1401,26 +1385,26 @@ export const Scenery = ({
     windDirection: seaWindDirection,
     gusts: seaGusts,
     swells: seaSwells,
-  } = useWeatherOceanWind(
-    oceanOptions?.windSpeed,
-    oceanOptions?.windDirection,
-    oceanOptions?.gusts,
-    oceanOptions?.swells,
+  } = useWeatherWind(
+    seaOptions?.windSpeed,
+    seaOptions?.windDirection,
+    seaOptions?.gusts,
+    seaOptions?.swells,
   );
   // Leaving its waves to the weather, it draws the weather's sea.
-  useWeatherOceanSea(water, {
-    windSpeed: oceanOptions?.windSpeed,
-    windDirection: oceanOptions?.windDirection,
-    swells: oceanOptions?.swells,
-    amplitude: oceanOptions?.amplitude,
-    waveTuning: oceanOptions?.waveTuning,
+  useWeatherWaves(water, {
+    windSpeed: seaOptions?.windSpeed,
+    windDirection: seaOptions?.windDirection,
+    swells: seaOptions?.swells,
+    amplitude: seaOptions?.amplitude,
+    waveTuning: seaOptions?.waveTuning,
   });
 
   // Every render: the props are an inline object, and applying them is cheap.
   useLayoutEffect(() => {
-    if (!water || !oceanOptions) return;
-    applyOceanWaterProps(water, {
-      ...oceanOptions,
+    if (!water || !seaOptions) return;
+    applyWaterSettings(water, {
+      ...seaOptions,
       windSpeed: seaWindSpeed,
       windDirection: seaWindDirection,
       gusts: seaGusts,
@@ -1430,9 +1414,9 @@ export const Scenery = ({
 
   // The bakes see the water too, but an inline object is new every render. Not the seabed's
   // opacity: the bakes take the seabed whole.
-  const waterKey = oceanOptions
+  const waterKey = seaOptions
     ? JSON.stringify({
-        ...oceanOptions,
+        ...seaOptions,
         windSpeed: seaWindSpeed,
         windDirection: seaWindDirection,
         seabedOpacity: undefined,
@@ -1451,7 +1435,7 @@ export const Scenery = ({
     water.sunGlintSpread = glintSpread;
   }, [water, lightDirection, glintSpread]);
 
-  // The sky the scene's other seas reflect (an `Ocean`'s, a `ZoneStack`'s: sceneSky),
+  // The sky the scene's other seas reflect (a `Water`'s, a `ZoneStack`'s: sceneSky),
   // written each frame as its own sea's.
   const [publishedSky] = useState(() => ({
     direction: new Vector3(),
@@ -1460,12 +1444,12 @@ export const Scenery = ({
   }));
   const skySource = useRef<SceneSkySource | null>(null);
   useLayoutEffect(() => {
-    const sky = sceneSky(scene);
-    const source = sky.claim(material);
+    const shared = sceneSky(scene);
+    const source = shared.claim(material);
     source.sun = publishedSky;
     skySource.current = source;
     return () => {
-      sky.release(material);
+      shared.release(material);
       skySource.current = null;
     };
   }, [scene, material, publishedSky]);
@@ -1512,12 +1496,12 @@ export const Scenery = ({
   useLayoutEffect(() => {
     const group = own.current;
     if (!group) return;
-    const layers = [abyssLayer, seaLayer, waterLayer, surfaceLayer];
+    const layers = [voidLayer, seaLayer, waterLayer, surfaceLayer];
     const key = [
       JSON.stringify(material.defines),
       JSON.stringify(material.switches),
       layers.map(layer => layer?.uuid ?? '').join(','),
-      surfaceLayer !== null && oceanWater,
+      surfaceLayer !== null && seaWater,
       stageVersion,
       sunLight,
       hasProbe,
@@ -1576,20 +1560,19 @@ export const Scenery = ({
     scene,
     sceneCamera,
     material,
-    abyssLayer,
+    voidLayer,
     seaLayer,
     waterLayer,
     surfaceLayer,
     layerView,
-    oceanWater,
+    seaWater,
     stageVersion,
     sunLight,
     hasProbe,
     water,
-    hasAbyss,
-    hasOcean,
+    hasVoid,
+    hasSea,
     definesKey,
-    voided,
     progress,
     hollowOn,
   ]);
@@ -1602,34 +1585,34 @@ export const Scenery = ({
     return () => sceneWater.release(material);
   }, [scene, material]);
 
-  // Where the camera is under this sky (the camera site's, `CAMERA_PROBE_ORDER.sky`): its
+  // Where the camera is under this Scenery (the camera site's, `CAMERA_PROBE_ORDER.scenery`): its
   // height and altitude over the sea; the ground of the relief this sky shades under it, and
   // from that whether it is in the ground (the void's lid over it) or in a trench; how far
   // inside the hollow's rim; and its sea's water. The latest closure, as the hollow's radius
   // is read through refs.
-  const skyProbeLatest = useRef<CameraProbe | null>(null);
+  const sceneryProbeLatest = useRef<CameraProbe | null>(null);
   useLayoutEffect(() => {
-    skyProbeLatest.current = site => {
+    sceneryProbeLatest.current = site => {
       const height = material.heightOf(site.position);
-      const level = material.oceanLevel;
+      const level = material.seaLevel;
       site.height = height;
       site.seaLevel = level;
       site.altitude = height - level;
-      const under = skyGroundOf(site);
-      const bed = level - material.oceanDepth;
+      const under = sceneryGroundOf(site);
+      const bed = level - material.seaDepth;
       // Under the relief's ground (the camera site's, as the relief has it) above the sea's own
       // seabed, as from inside rock: below the sea or in land above it.
       site.buried =
-        material.ocean && under !== null && site.underground && height > bed;
+        material.sea && under !== null && site.underground && height > bed;
       // Over the relief's ground below the sea's own seabed, as in a trench: in the water, or
       // over a dry sea's bed in the air.
       site.trench =
-        material.ocean && under !== null && !site.underground && height <= bed;
+        material.sea && under !== null && !site.underground && height <= bed;
       site.lid = sceneryLidOverCamera(height, {
-        ocean: material.ocean,
-        oceanLevel: level,
-        oceanDepth: material.oceanDepth,
-        oceanGround: under,
+        sea: material.sea,
+        seaLevel: level,
+        seaDepth: material.seaDepth,
+        seaGround: under,
       });
       // How far inside the hollow's rim: its walls about the camera and its lid over it, at
       // any depth; under its floor, seen through the rock.
@@ -1644,7 +1627,7 @@ export const Scenery = ({
             )
           : -Infinity;
       // Its sea has no edge: under it, over the ground (or the seabed) under it, is in it.
-      if (material.ocean && material.oceanWater) {
+      if (material.sea && material.seaWater) {
         const floor = under ?? bed;
         reportCameraWater(site, {
           depth: level - height,
@@ -1657,13 +1640,15 @@ export const Scenery = ({
     };
   });
   // The relief's ground under the camera, while the relief this sky shades is drawn.
-  const skyGroundOf = (site: CameraSite) =>
-    worldRelief?.present && worldRelief.sky === oceanState ? site.ground : null;
-  const skyProbe = useCallback<CameraProbe>(
-    (site, probeCamera) => skyProbeLatest.current?.(site, probeCamera),
+  const sceneryGroundOf = (site: CameraSite) =>
+    worldRelief?.present && worldRelief.scenery === seaContext
+      ? site.ground
+      : null;
+  const sceneryProbe = useCallback<CameraProbe>(
+    (site, probeCamera) => sceneryProbeLatest.current?.(site, probeCamera),
     [],
   );
-  const cameraSite = useCameraProbe(skyProbe, CAMERA_PROBE_ORDER.sky);
+  const cameraSite = useCameraProbe(sceneryProbe, CAMERA_PROBE_ORDER.scenery);
 
   // Bakes run here so several prop changes in one frame cost one bake.
   const step = useWeatherStep();
@@ -1671,14 +1656,12 @@ export const Scenery = ({
     const sceneWater = sceneWaterBody(scene);
     const seaUp = material.up;
     sceneWater.up = [seaUp.x, seaUp.y, seaUp.z];
-    sceneWater.level = material.oceanLevel;
-    sceneWater.depth = material.oceanDepth;
+    sceneWater.level = material.seaLevel;
+    sceneWater.depth = material.seaDepth;
     sceneWater.daylight = material.daylight;
     sceneWater.extent = null;
     sceneWater.optics =
-      water && oceanWater
-        ? { color: oceanOpticsColor, clarity: oceanClarity }
-        : null;
+      water && seaWater ? { color: seaOpticsColor, clarity: seaClarity } : null;
     if (sceneWater.owner !== material) {
       sceneWater.setBed(null);
       sceneWater.owner = material;
@@ -1686,7 +1669,7 @@ export const Scenery = ({
     // Its ground: drawn as it comes in and asked for about the camera as it moves; the sea's
     // seabed where it covers.
     if (groundReady) sceneryGround.update(gl, material.globe, camera.position);
-    sceneWater.setGround(sceneryGround.map, 1, material.oceanLevel);
+    sceneWater.setGround(sceneryGround.map, 1, material.seaLevel);
     // The waves at the enclosing Weather's pace.
     const waveStep = step(delta);
     // Its waves for this frame, baked once the layers shown are known (below): only while one
@@ -1700,10 +1683,10 @@ export const Scenery = ({
       // chart every pixel takes (none while a line where two meet is in view), ahead of it the
       // way it looks: the level part of its look, as the chart has it a short way on.
       bakeWaves = () => {
-        const charts = material.oceanCharts;
+        const charts = material.seaCharts;
         let foamAt: Vector2 | null = null;
         let foamAhead: Vector2 | null = null;
-        if ((charts.uniforms.uOceanChartOnly.value as number) >= 0) {
+        if ((charts.uniforms.uWaterChartOnly.value as number) >= 0) {
           const earth = material.globe;
           const stillUp = earth.upAt(camera.position, foamUp);
           const still = foamPoint
@@ -1724,7 +1707,7 @@ export const Scenery = ({
         water.renderWaves(
           gl,
           camera,
-          material.heightOf(camera.position) - material.oceanLevel,
+          material.heightOf(camera.position) - material.seaLevel,
           foamAt,
           foamAhead,
         );
@@ -1733,10 +1716,11 @@ export const Scenery = ({
     }
     // What draws itself in the sky (the 3D clouds): in the air's bakes, which are due again
     // as it changes; in the sea's reflection; and the share of the light it lets through.
-    const skyOverlay = overlay.current;
+    // None with no sky.
+    const skyOverlay = skyOn ? overlay.current : null;
     baker.setOverlay(skyOverlay);
-    material.oceanClouds = skyOverlay?.texture ?? null;
-    material.setOceanCloudReflection(skyOverlay?.reflection ?? null);
+    material.seaClouds = skyOverlay?.texture ?? null;
+    material.setSeaCloudReflection(skyOverlay?.reflection ?? null);
     const overlayKey = skyOverlay ? skyOverlay.version : -1;
     if (overlayKey !== overlayVersion.current) {
       overlayVersion.current = overlayKey;
@@ -1773,20 +1757,20 @@ export const Scenery = ({
     // Camera controls move the camera before this runs but leave its matrices to the render:
     // read with this frame's position, last frame's would swing the cutaway as it moves.
     if (cutaway) camera.updateMatrixWorld();
-    material.oceanGround = skyGroundOf(site);
-    material.oceanBuried = site.buried;
-    material.oceanTrench = site.trench;
+    material.seaGround = sceneryGroundOf(site);
+    material.seaBuried = site.buried;
+    material.seaTrench = site.trench;
     const cameraInside = site.hollow;
     const inHollow = !!hollowLook && cameraInside > 0;
-    // From the sea surface down the layer is clear everywhere (skyOceanSurfaceLayer), and
+    // From the sea surface down the layer is clear everywhere (scenerySeaSurfaceLayer), and
     // in rock there is no sea to see.
     if (surfaceMesh.current)
       surfaceMesh.current.visible =
         drawn &&
         ready &&
         !debug?.hide?.includes('surface') &&
-        height > material.oceanLevel &&
-        !material.oceanBuried;
+        height > material.seaLevel &&
+        !material.seaBuried;
     // The sky's own light where the camera is: by the sun over the level it sees the sky by
     // (Globe.lookUp), the field's over the field. From high up, over the horizon the
     // Earth's curve lowers. The scene's lights and the bakes stay the field's.
@@ -1805,15 +1789,15 @@ export const Scenery = ({
         : 0;
     material.setAirLight(seen ?? elevation, dip, moonShine);
     const zone = sceneryZone(height, {
-      ocean: material.ocean,
-      oceanLevel: material.oceanLevel,
-      oceanDepth: material.oceanDepth,
-      oceanWater: material.oceanWater,
-      oceanGround: material.oceanGround,
+      sea: material.sea,
+      seaLevel: material.seaLevel,
+      seaDepth: material.seaDepth,
+      seaWater: material.seaWater,
+      seaGround: material.seaGround,
       cutaway: cutawayWater > 0,
-      abyss: material.abyss,
-      abyssLevel: material.abyssLevel,
-      background: skyShown,
+      void: material.void,
+      voidLevel: material.voidLevel,
+      background: drawn,
     });
     zoneInView.current = zone;
 
@@ -1858,12 +1842,12 @@ export const Scenery = ({
     let cutsSeabed = false;
     if (cutaway) cutsSeabed = cutaway.frame(camera, delta, height, zone);
     else {
-      (material.uniforms.uSkyOceanCutawayShape.value as Vector3).y = 0;
-      (material.uniforms.uSkyOceanCutawayGrip.value as Vector2).x = 0;
+      (material.uniforms.uScenerySeaCutawayShape.value as Vector3).y = 0;
+      (material.uniforms.uScenerySeaCutawayGrip.value as Vector2).x = 0;
     }
 
     // Whether the void can show from above the lid, as through this frame's cutaway.
-    const voidOpen = material.abyssOpenFromAbove(cutsSeabed);
+    const voidOpen = material.voidOpenFromAbove(cutsSeabed);
 
     // The background's layers where they can show from here; each draws nothing elsewhere.
     const shown = sceneryLayersShown(layerView(height, voidOpen));
@@ -1872,10 +1856,10 @@ export const Scenery = ({
     // those do. Over a dry sea nothing reads them: the sky's sea layer is its seabed alone, and
     // neither the sky nor a stage draws a surface. Below the seabed none can. Then the bake
     // (and the whitecaps' life, which a long step then fades as it would have) waits, while the
-    // sea's clock runs on; a sea of another's (an Ocean, a stack's water) bakes its own. Until
+    // sea's clock runs on; a sea of another's (a Water, a stack's water) bakes its own. Until
     // 2026-11-19 it ran there every frame (2.2 ms at sea level on an RTX A1000; 1.4 ms of main
     // thread over a dry sea).
-    if (bakeWaves && (shown.water || (shown.sea && material.oceanWater)))
+    if (bakeWaves && (shown.water || (shown.sea && material.seaWater)))
       bakeWaves();
     const showLayer = (mesh: Mesh | null, layer: keyof typeof shown) => {
       if (mesh)
@@ -1887,17 +1871,19 @@ export const Scenery = ({
           !debug?.hide?.includes('background');
     };
     showLayer(skyMesh.current, 'sky');
-    showLayer(abyssMesh.current, 'void');
+    // With no sky, what is behind the scene shows in its place.
+    if (skyMesh.current && !skyOn) skyMesh.current.visible = false;
+    showLayer(voidMesh.current, 'void');
     // The hollow, where it can show: through an opening in the seabed, or from below it inside
     // its rim. Below it outside the rim the camera is in solid crust: the void's own layer.
     if (hollowLook) {
       hollow.update({
         radius: hollowRadius(),
         floorDepth: hollowLook.floorDepth,
-        bed: material.abyssLevel - material.globe.level,
+        bed: material.voidLevel - material.globe.level,
         simple: hollowLook.style === 'simple',
       });
-      const belowBed = height < material.abyssLevel || material.oceanBuried;
+      const belowBed = height < material.voidLevel || material.seaBuried;
       const hollowShown =
         hollowDrawn &&
         drawn &&
@@ -1925,7 +1911,7 @@ export const Scenery = ({
               hollowLook.air,
             )
           : 0,
-        material.abyssLevel - hollowLook.floorDepth - height,
+        material.voidLevel - hollowLook.floorDepth - height,
         delta,
       );
       hollow.setOrder(renderOrder);
@@ -1937,10 +1923,11 @@ export const Scenery = ({
     showLayer(waterMesh.current, 'water');
     // For the clouds, which draw themselves (SceneryClouds): where the sky shows.
     registry.view.renderOrder = renderOrder;
+    registry.view.sky = skyOn;
     registry.view.clouds =
       drawn &&
       ready &&
-      !voided &&
+      skyOn &&
       shown.sky &&
       !debug?.hide?.includes('clouds') &&
       !debug?.hide?.includes('background');
@@ -2023,8 +2010,8 @@ export const Scenery = ({
     const dim =
       zone === 'water'
         ? sceneryWaterDimming(
-            material.oceanLevel - height,
-            material.oceanFogDensity,
+            material.seaLevel - height,
+            material.seaFogDensity,
           )
         : 1;
     if (hasEnvironment) {
@@ -2063,11 +2050,11 @@ export const Scenery = ({
           onBeforeRender={material.onBeforeDraw}
           dispose={null}
         />
-        {abyssLayer && (
+        {voidLayer && (
           <mesh
-            ref={abyssMesh}
+            ref={voidMesh}
             geometry={geometry}
-            material={abyssLayer}
+            material={voidLayer}
             frustumCulled={false}
             renderOrder={renderOrder + SCENERY_LAYER_ORDER.void}
             visible={false}
@@ -2109,7 +2096,7 @@ export const Scenery = ({
             dispose={null}
           />
         )}
-        {surfaceLayer && oceanWater && (
+        {surfaceLayer && seaWater && (
           <mesh
             ref={surfaceMesh}
             geometry={geometry}
@@ -2128,7 +2115,7 @@ export const Scenery = ({
         material={standIn}
         frustumCulled={false}
         renderOrder={renderOrder}
-        visible={drawn && !ready && standInReady}
+        visible={drawn && skyOn && !ready && standInReady}
         dispose={null}
       />
       {hasProbe && <primitive object={probe} />}
@@ -2139,15 +2126,15 @@ export const Scenery = ({
           <primitive object={lightTarget} />
         </>
       )}
-      <SceneryOceanContext.Provider value={oceanState}>
-        <OceanSamplerContext.Provider value={sampler}>
-          <OceanContactContext.Provider value={sampler && contacts}>
+      <ScenerySeaContext.Provider value={seaContext}>
+        <WaterSamplerContext.Provider value={sampler}>
+          <WaterContactContext.Provider value={sampler && contacts}>
             <SceneryRegistryContext.Provider value={registry}>
               {children}
             </SceneryRegistryContext.Provider>
-          </OceanContactContext.Provider>
-        </OceanSamplerContext.Provider>
-      </SceneryOceanContext.Provider>
+          </WaterContactContext.Provider>
+        </WaterSamplerContext.Provider>
+      </ScenerySeaContext.Provider>
       {debug?.environment && <SceneryCubeView cube={environmentCube} />}
     </SceneryContext.Provider>
   );

@@ -31,7 +31,7 @@ import {
 import { Minimap } from '../Html/Minimap/Minimap';
 import { Overlay } from '../Html/Overlay/Overlay';
 import { Scenery } from '../Scenery/Scenery';
-import { SceneryOcean } from '../Scenery/SceneryOcean';
+import { ScenerySea } from '../Scenery/ScenerySea';
 import { SceneryStage } from '../Scenery/SceneryStage';
 import { World } from '../World/World';
 import { GeoLabels } from './GeoLabels';
@@ -126,7 +126,7 @@ const PipelinesStory = ({
     <World frame={demoFrame}>
       <SceneryGenerators>
         <Scenery>
-          <SceneryOcean level={LEVEL} depth={DEPTH} water={sea} />
+          <ScenerySea level={LEVEL} depth={DEPTH} water={sea} />
           <SceneryStage boundary={STAGE_BOUNDS} />
           <GeoRelief
             layers={layers}
@@ -193,7 +193,7 @@ const PipelinesStory = ({
 };
 
 const meta = {
-  title: 'Components/Layers/Pipelines',
+  title: 'Components/Geo layers/Pipelines',
   component: PipelinesStory,
   decorators: [
     Canvas3dDecorator,
@@ -230,7 +230,7 @@ const meta = {
   argTypes: {
     sea: {
       description:
-        'The sea’s water (`SceneryOcean`’s `water`): off, the seabed lies dry and in plain view.',
+        'The sea’s water (`ScenerySea`’s `water`): off, the seabed lies dry and in plain view.',
       table: { category: 'Scene' },
     },
     relief: {

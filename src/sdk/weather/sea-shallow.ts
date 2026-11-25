@@ -21,7 +21,7 @@
 
 /**
  * The depth waves break at, as a multiple of their significant height: the measured breaking
- * criterion (a height of some 0.78 of the depth). The default of `OceanWaterProps.shoreBreakDepth`.
+ * criterion (a height of some 0.78 of the depth). The default of `WaterSettings.shoreBreakDepth`.
  *
  * @group Weather
  */

@@ -2,7 +2,7 @@ import { Color } from 'three';
 import type { Vec3 } from '../types/common';
 
 /**
- * How a body of water looks, one model for every sea the library draws (the `Ocean`, the
+ * How a body of water looks, one model for every sea the library draws (the `Water`, the
  * `Scenery`'s sea, a `ZoneStack`'s water): the colour of water too deep to see through, and how
  * far one sees through it. What lies in the water, the seabed and anything else, fades along
  * its path through it toward that colour, lit by the daylight left at its depth; red goes
@@ -119,18 +119,4 @@ export function waterExtinctionOf(optics: Required<WaterOptics>): Vec3 {
 export function waterTransmittance(extinction: Vec3, distance: number): Vec3 {
   const d = Math.max(distance, 0);
   return extinction.map(e => Math.exp(-e * d)) as Vec3;
-}
-
-/**
- * The daylight left `depth` metres under the surface, per channel: it falls at half the
- * extinction (the diffuse light's, about half the beam's in sea water). As `water-fog.glsl`'s
- * `waterFogDim`.
- *
- * @group Weather
- */
-export function waterDaylight(extinction: Vec3, depth: number): Vec3 {
-  return waterTransmittance(
-    extinction.map(e => 0.5 * e) as Vec3,
-    Math.max(depth, 0),
-  );
 }

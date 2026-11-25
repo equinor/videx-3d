@@ -1,5 +1,5 @@
 // The 3D clouds' fullscreen triangle (SceneryClouds), for the march, the rebuild and the
-// composite: each pixel's view ray, rebuilt from the camera as the sky's is (sky-vertex.glsl,
+// composite: each pixel's view ray, rebuilt from the camera as the sky's is (scenery-vertex.glsl,
 // from a point at NDC depth 0, never the far plane), and where it lies on the screen. The
 // interleaved march (`temporal`) draws a quarter of the image's pixels into an image half as wide
 // and high: its rays are scaled and moved (uCloudRays: NDC scale xy, offset zw) to pass through

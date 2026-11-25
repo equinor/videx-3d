@@ -43,7 +43,7 @@ import fragmentShader from './shaders/geo-map-fragment.glsl';
 import vertexShader from './shaders/geo-map-vertex.glsl';
 
 /** Cells along each side of a map's grid in the scene's map: the longitude and latitude are exact at its corners and interpolated between. */
-export const GEO_MAP_GRID = 8;
+const GEO_MAP_GRID = 8;
 // The same in a projection, whose longitudes and latitudes bend across a whole hemisphere,
 // and in the scene's map past SCENE_WIDE_FROM, where it bends too and may stop holding.
 const PROJECTED_GRID = 32;

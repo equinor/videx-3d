@@ -8,7 +8,7 @@ import {
   CameraUpTransition,
 } from '../../sdk/utils/camera';
 import { useWorld } from '../World/world-context';
-import { useSceneryOcean } from './scenery-context';
+import { useScenerySea } from './scenery-context';
 
 /**
  * When {@link useLevelHorizon} levels the camera: `'rest'` once it has come to rest, its view
@@ -75,7 +75,7 @@ export function useLevelHorizon({
   tolerance = 0.05,
   duration = 600,
 }: LevelHorizonOptions = {}) {
-  const material = useSceneryOcean()?.material ?? null;
+  const material = useScenerySea()?.material ?? null;
   const world = useWorld();
   const levelling = globe ?? material?.globe ?? world?.globe ?? null;
   const camera = useThree(state => state.camera);

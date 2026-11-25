@@ -5,7 +5,7 @@ import type { Globe } from '../../sdk/projection/globe';
 import type { Vec2 } from '../../sdk/types/common';
 import { useWorld } from '../World/world-context';
 import { placeOnGlobe, releaseFromGlobe } from './scenery-anchor';
-import { useSceneryOcean } from './scenery-context';
+import { useScenerySea } from './scenery-context';
 
 /**
  * SceneryAnchor props
@@ -45,7 +45,7 @@ export type SceneryAnchorProps = {
  * @group Components
  */
 export const SceneryAnchor = ({ at, globe, children }: SceneryAnchorProps) => {
-  const material = useSceneryOcean()?.material ?? null;
+  const material = useScenerySea()?.material ?? null;
   const world = useWorld();
   const placing = globe ?? material?.globe ?? world?.globe ?? null;
   const group = useRef<Group>(null);

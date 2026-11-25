@@ -58,13 +58,13 @@ export function labelFadeRanges(
 }
 
 /** From 0 at `from` (and below) to 1 at `to` (and above); a step at `from` if they meet. */
-export function labelRamp(value: number, from: number, to: number) {
+function labelRamp(value: number, from: number, to: number) {
   if (to > from) return Math.min(Math.max((value - from) / (to - from), 0), 1);
   return value >= from ? 1 : 0;
 }
 
 /** About how wide a character is, in ems, for a text not yet measured: a little over most fonts'. */
-export const LABEL_CHARACTER_WIDTH = 0.6;
+const LABEL_CHARACTER_WIDTH = 0.6;
 
 /**
  * About how far a centred label's text reaches from its position, its font's size `size`
@@ -82,7 +82,7 @@ export function labelReachEstimate(text: string, size: number) {
  * How wide the bends of `labelAutoScale` are, on a log scale: about a factor of 1.5 in
  * distance. Outside them it is exact.
  */
-export const LABEL_AUTO_KNEE = 0.4;
+const LABEL_AUTO_KNEE = 0.4;
 
 // The lesser of `a` and `b`, bent over `k` where they meet (a polynomial smooth minimum):
 // exactly the lesser once they are `k` apart.
@@ -196,7 +196,7 @@ const ranges: LabelFadeRanges = { facing: [0, 0], pixels: [0, 0] };
  * the map maker's way, and one along a line straight up or down the screen does not flip
  * back and forth as the view turns by a hair.
  */
-export const LABEL_FLIP_TILT = 10;
+const LABEL_FLIP_TILT = 10;
 
 const FLIP_COS = Math.cos((LABEL_FLIP_TILT * Math.PI) / 180);
 const FLIP_SIN = Math.sin((LABEL_FLIP_TILT * Math.PI) / 180);

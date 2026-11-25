@@ -20,10 +20,10 @@ describe('createReliefTilePlainMaterial', () => {
       expect(material.uniforms[name], name).toBe(uniform);
   });
 
-  it('reads nothing of a sky, and is lit by the scene’s lights', () => {
+  it('reads nothing of a Scenery, and is lit by the scene’s lights', () => {
     const material = createReliefTilePlainMaterial(globe, textures, looks);
-    expect(material.fragmentShader).not.toMatch(/uSky/);
-    expect(material.vertexShader).not.toMatch(/uSky/);
+    expect(material.fragmentShader).not.toMatch(/u(Sky|Scenery)/);
+    expect(material.vertexShader).not.toMatch(/u(Sky|Scenery)/);
     expect(material.lights).toBe(true);
     expect(material.uniforms.ambientLightColor).toBeDefined();
     expect(material.uniforms.directionalLights).toBeDefined();

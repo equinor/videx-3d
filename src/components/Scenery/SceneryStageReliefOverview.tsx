@@ -24,7 +24,7 @@ export type SceneryReliefOverviewState = {
 };
 
 type SceneryStageReliefOverviewProps = {
-  sky: SceneryMaterial;
+  scenery: SceneryMaterial;
   /** the tiles chosen for it, indexed in `geoTileSquare`'s coordinates, by the tiles' frame loop */
   atlas: SceneryReliefAtlas;
   /** what the tiles' frame loop tells it, each frame */
@@ -35,10 +35,10 @@ type SceneryStageReliefOverviewProps = {
   looks: Texture;
   /** how far from the camera the tiles draw: the overview draws past it */
   reach: number;
-  /** what it compiles with from the sky, as a key (`SceneryOceanState.definesKey`): a new one needs a new material */
+  /** what it compiles with from the sky, as a key (`ScenerySeaState.definesKey`): a new one needs a new material */
   definesKey?: string;
   /** the sky's sea surface layer's `renderOrder`: the overview draws after it */
-  skyOrder: number;
+  sceneryOrder: number;
   visible: boolean;
 };
 
@@ -52,24 +52,26 @@ type SceneryStageReliefOverviewProps = {
  * ground in view costs nothing.
  */
 export const SceneryStageReliefOverview = ({
-  sky,
+  scenery,
   atlas,
   told,
   base,
   looks,
   reach,
   definesKey,
-  skyOrder,
+  sceneryOrder,
   visible,
 }: SceneryStageReliefOverviewProps) => {
   const [wanted, setWanted] = useState(false);
   const gl = useThree(state => state.gl);
   const material = useMemo(
     () =>
-      wanted ? createSceneryReliefFarMaterial(sky, atlas, base, looks) : null,
+      wanted
+        ? createSceneryReliefFarMaterial(scenery, atlas, base, looks)
+        : null,
     // The sky's defines are compiled in: new ones need a new material. The base is set below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [wanted, sky, atlas, looks, definesKey],
+    [wanted, scenery, atlas, looks, definesKey],
   );
   // Let go once its program has linked (`releaseMaterial`).
   useEffect(
@@ -128,9 +130,9 @@ export const SceneryStageReliefOverview = ({
       geometry={geometry}
       material={material}
       frustumCulled={false}
-      renderOrder={skyOrder + 1}
+      renderOrder={sceneryOrder + 1}
       visible={false}
-      onBeforeRender={sky.onBeforeDraw}
+      onBeforeRender={scenery.onBeforeDraw}
     />
   );
 };

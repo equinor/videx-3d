@@ -29,7 +29,7 @@ const geometry = new BoxGeometry(1, 16, 16);
 const material = new MeshStandardMaterial();
 
 const meta = {
-  title: 'Components/Misc/Symbols',
+  title: 'Components/Misc/Symbol',
   component: Symbols,
 } satisfies Meta<typeof Symbols>;
 

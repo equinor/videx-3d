@@ -371,7 +371,8 @@ export const SceneryClouds = ({
     volume.time = clock.time;
     volume.rate = clock.paused ? 0 : clock.timeScale;
     volume.composite.renderOrder = registry.view.renderOrder + AFTER_SURFACE;
-    const drawn = ready && enabled && volume.cloudy;
+    // With no sky, nothing: not drawn, baked or lit by.
+    const drawn = ready && enabled && volume.cloudy && registry.view.sky;
     volume.composite.visible = drawn && registry.view.clouds;
     // Its ground as the scenery has drawn it so far.
     if (drawn) volume.updateTerrain();

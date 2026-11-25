@@ -120,10 +120,10 @@ works it out once a frame for everything that asks:
 | Field | Written by | Read by |
 | --- | --- | --- |
 | `ground` | the relief's tiles (`ground`): the relief's ground under the camera, on its triangles | the `Scenery`, a `SceneryStage` |
-| `height`, `seaLevel`, `altitude` | a `Scenery` (`sky`) | the geographic layers (`layerShownAt`), a `SceneryStage` |
+| `height`, `seaLevel`, `altitude` | a `Scenery` (`scenery`) | the geographic layers (`layerShownAt`), a `SceneryStage` |
 | `lid`, `buried`, `trench`, `hollow` | a `Scenery`: the void's lid over the camera in the ground, in rock above the seabed, in a trench, how far inside the hollow's rim | the `Scenery`'s own frame, the layers, a `SceneryStage` |
-| `water` | each sea (`water`): an `Ocean`, a `ZoneStack`'s water, a `Scenery`'s sea (`reportCameraWater`: the one the camera is in, one with an edge over an endless one) | the seas' own water bodies (`WaterBody.cameraOver`) |
-| `medium` | a `ZoneStack`'s `immersion` (`medium`): water or rock, to fade by | `useImmersionFog` |
+| `water` | each sea (`water`): a `Water`, a `ZoneStack`'s water, a `Scenery`'s sea (`reportCameraWater`: the one the camera is in, one with an edge over an endless one) | the seas' own water bodies (`WaterBody.cameraOver`) |
+| `medium` | a `ZoneStack`'s `interiorFog` (`medium`): water or rock, to fade by | `useMediumFog` |
 
 Without a probe for a field it stays `null` and its readers fall back to working it out
 (a layer with no `Scenery` takes its altitude from its own globe). A site is the store's
@@ -131,11 +131,11 @@ own: read it within the frame, do not keep it.
 
 ⚠️ A probe runs when something first asks, which may be inside another component's frame
 callback or as a material renders: keep it cheap (a few lookups) and free of side effects
-other than its own state, as an `Ocean` syncing its water to the camera.
+other than its own state, as a `Water` syncing its water to the camera.
 
 ### Over the water, exactly
 
-An `Ocean`'s water is where its surface geometry lies in plan, whatever its outline:
+A `Water`'s water is where its surface geometry lies in plan, whatever its outline:
 `geometryFootprint(geometry)` (`sdk/geometries/geometry-footprint.ts`) keeps, per geometry,
 an exact point test (`contains`, a grid of the triangles: a few tested per lookup). The camera
 is tested with it on the CPU (`CameraWater.over`, to the shaders as `WaterBody.cameraOver`):

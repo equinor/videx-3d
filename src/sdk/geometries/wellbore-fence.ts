@@ -35,7 +35,6 @@ import {
   TraceProblemOptions,
   TraceProblemSpan,
   traceProblemSpans,
-  trimFenceCore,
 } from '../utils/one-sided-offset';
 import {
   convexHull2D,
@@ -228,7 +227,7 @@ const fenceMargin = (requested?: number) => {
 const DEFAULT_TOLERANCE = 0.01;
 
 /** Degrees a `'free'` head's minimum TD angle is widened by per retry ({@link WellboreFenceOptions.headMinTdAngle}). */
-export const HEAD_ANGLE_FALLBACK_STEP = 15;
+const HEAD_ANGLE_FALLBACK_STEP = 15;
 
 /**
  * Sharp-edge constraint the cut is SIMPLIFIED against — the same arm-weighted rule the
@@ -713,7 +712,7 @@ function mergeOverlappingObstacles(
  *
  * @group Geometries
  */
-export function fenceKickoffIndex(well: Vec2[], samples: FenceSamples): number {
+function fenceKickoffIndex(well: Vec2[], samples: FenceSamples): number {
   const kickoff = fenceKickoff(samples);
   if (!kickoff.found && !kickoff.fromStart) return well.length - 1;
   const target = samples.plan[kickoff.index] ?? well[0];
@@ -1404,9 +1403,7 @@ export type FenceFieldOptions = {
 };
 
 /** Metres per cell for a footprint, when the caller has no opinion. */
-export function fenceCellSize(
-  bounds: [number, number, number, number],
-): number {
+function fenceCellSize(bounds: [number, number, number, number]): number {
   const span = Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]);
   return Math.min(50, Math.max(10, span / 400));
 }
@@ -1745,10 +1742,7 @@ export function sampleFenceField(
  *
  * @group Geometries
  */
-export function fieldRemovedShare(
-  field: FenceField,
-  outline: OutlineMask,
-): number {
+function fieldRemovedShare(field: FenceField, outline: OutlineMask): number {
   const { mask, nx, ny, cell, origin } = outline;
   let removed = 0;
   let total = 0;
@@ -1773,7 +1767,7 @@ export type FenceSide = {
   curve: FenceSideCurve;
   field: FenceField;
   /**
-   * The exact boundary lookup, which is what the shader and the immersion fog read.
+   * The exact boundary lookup, which is what the shader and the interior fog read.
    *
    * ⭐ The field beside it supplies the far-field SIGN only. Reconstructing the
    * boundary from a raster cannot reproduce a polyline, so it is carried instead of
@@ -2290,7 +2284,7 @@ export function fenceBlockTrace(
  *
  * @group Geometries
  */
-export function fenceRunOn(
+function fenceRunOn(
   span: FenceBlockSpan,
   samples: FenceSamples,
   length: number,
@@ -2354,7 +2348,7 @@ export function fenceCoreTrace(
  *
  * @group Geometries
  */
-export function fenceRunOnTrace(trace: Vec2[], longer: Vec2[]): Vec2[] {
+function fenceRunOnTrace(trace: Vec2[], longer: Vec2[]): Vec2[] {
   const end = trace[trace.length - 1];
   const hit = end ? nearestOnPolyline(longer, end[0], end[1]) : null;
   if (!hit) return trace;
@@ -2365,8 +2359,6 @@ export function fenceRunOnTrace(trace: Vec2[], longer: Vec2[]): Vec2[] {
   }
   return dedupePolyline2D(out, 1e-9);
 }
-
-export { trimFenceCore };
 
 /** What both cores of a fence are offset from — see {@link fenceCoreInputs}. @group Geometries */
 export type FenceCoreInputs = {
@@ -3063,7 +3055,7 @@ export type FenceBurial = {
  *
  * @group Geometries
  */
-export function fenceBurial(
+function fenceBurial(
   cutCurve: Vec2[],
   well: Vec2[],
   keptSide: (x: number, z: number) => boolean,

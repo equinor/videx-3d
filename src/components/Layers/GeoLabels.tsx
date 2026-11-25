@@ -44,7 +44,7 @@ const EARTH_RADIUS = 6371000;
  *
  * @group Layers
  */
-export function geoFeatureLabelPoint(
+function geoFeatureLabelPoint(
   feature: GeoFeature<unknown>,
 ): { at: Vec2; room: number } | null {
   const { geometry } = feature;
@@ -84,7 +84,7 @@ export function geoFeatureLabelPoint(
 }
 
 /** The share of a polygon's room its label may fill, each way: so it keeps clear of its edge. */
-export const GEO_LABEL_PADDING = 0.85;
+const GEO_LABEL_PADDING = 0.85;
 
 // How much larger a polygon's label must be broken into more lines for `size` 'fit' to
 // break it: text reads best in few lines.
@@ -127,7 +127,7 @@ export type GeoLabelPlace = {
  *
  * @group Layers
  */
-export function geoPolygonLabelPlaces(
+function geoPolygonLabelPlaces(
   feature: GeoFeature<unknown>,
   text: string,
   style: LabelTextStyle,

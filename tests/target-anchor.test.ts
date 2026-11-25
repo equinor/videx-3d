@@ -19,7 +19,7 @@ import {
 } from '../src/sdk/projection/target-anchor';
 import type { Vec3 } from '../src/sdk/types/common';
 
-// Three fields as the WorldFields story has them: Volve a circle 18 km across; Trench 123 km
+// Three fields as the World story's `Fields` has them: Volve a circle 18 km across; Trench 123 km
 // east, in the next zone, a box turned 30°; Overlap 10 km east and 4 km north of Volve.
 const UTM31 = getProjectionDefFromUtmZone('31N');
 const UTM32 = getProjectionDefFromUtmZone('32N');

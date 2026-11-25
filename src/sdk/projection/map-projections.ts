@@ -31,7 +31,7 @@ export type MapProjection = {
 };
 
 /** The sphere Web Mercator is drawn on: the WGS84 equatorial radius, metres. */
-export const WEB_MERCATOR_RADIUS = 6378137;
+const WEB_MERCATOR_RADIUS = 6378137;
 /** The latitude Web Mercator ends at, north and south: where it is square. */
 export const WEB_MERCATOR_MAX_LATITUDE = 85.0511287798066;
 

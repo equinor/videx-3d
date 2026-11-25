@@ -81,7 +81,7 @@ export const LABEL_MARGIN = 1;
 export const LABEL_PLACE_BUDGET = 1;
 
 /** The most frames a group's placement waits (see {@link LABEL_PLACE_BUDGET}). */
-export const LABEL_PLACE_MAX_WAIT = 3;
+const LABEL_PLACE_MAX_WAIT = 3;
 
 /**
  * Texels a layer's style takes in its group's styles' texture (a row each): its colour and

@@ -24,7 +24,7 @@ import {
   mapViewToPixel,
   mapViewUp,
   niceScaleLength,
-  rayAtSeaLevel,
+  rayAtMeanSeaLevel,
   stepMapZoom,
   type MapView,
 } from '../src/sdk/projection/map-view';
@@ -400,30 +400,30 @@ describe('scale bar', () => {
   });
 });
 
-describe('rayAtSeaLevel', () => {
+describe('rayAtMeanSeaLevel', () => {
   it('meets the sea where the ray does', () => {
     // 100 m up, looking 45° down toward +X: 100 m east.
-    const [x, z] = rayAtSeaLevel([10, 100, 20], [1, -1, 0], 0);
+    const [x, z] = rayAtMeanSeaLevel([10, 100, 20], [1, -1, 0], 0);
     expect(x).toBeCloseTo(110);
     expect(z).toBeCloseTo(20);
   });
 
   it('measures from the level, not from Y = 0', () => {
-    const [x] = rayAtSeaLevel([0, 150, 0], [0, -1, 1], 50);
+    const [x] = rayAtMeanSeaLevel([0, 150, 0], [0, -1, 1], 50);
     expect(x).toBeCloseTo(0);
-    expect(rayAtSeaLevel([0, 150, 0], [0, -1, 1], 50)[1]).toBeCloseTo(100);
+    expect(rayAtMeanSeaLevel([0, 150, 0], [0, -1, 1], 50)[1]).toBeCloseTo(100);
   });
 
   it('stays at the camera for a ray straight down, level or up', () => {
-    expect(rayAtSeaLevel([5, 100, 7], [0, -1, 0], 0)).toEqual([5, 7]);
-    expect(rayAtSeaLevel([5, 100, 7], [1, 0, 0], 0)).toEqual([5, 7]);
-    expect(rayAtSeaLevel([5, 100, 7], [1, 1, 0], 0)).toEqual([5, 7]);
+    expect(rayAtMeanSeaLevel([5, 100, 7], [0, -1, 0], 0)).toEqual([5, 7]);
+    expect(rayAtMeanSeaLevel([5, 100, 7], [1, 0, 0], 0)).toEqual([5, 7]);
+    expect(rayAtMeanSeaLevel([5, 100, 7], [1, 1, 0], 0)).toEqual([5, 7]);
     // Under the sea, too.
-    expect(rayAtSeaLevel([5, -100, 7], [1, -1, 0], 0)).toEqual([5, 7]);
+    expect(rayAtMeanSeaLevel([5, -100, 7], [1, -1, 0], 0)).toEqual([5, 7]);
   });
 
   it('goes no farther than the cap along a grazing ray', () => {
-    const [x, z] = rayAtSeaLevel([0, 100, 0], [1, -0.0001, 0], 0, 50000);
+    const [x, z] = rayAtMeanSeaLevel([0, 100, 0], [1, -0.0001, 0], 0, 50000);
     expect(x).toBeCloseTo(50000);
     expect(z).toBeCloseTo(0);
   });

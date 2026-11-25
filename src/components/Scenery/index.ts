@@ -3,11 +3,12 @@ export * from './SceneryVoid';
 export * from './SceneryAnchor';
 export * from './SceneryClouds';
 export * from './SceneryCutaway';
-export * from './SceneryOcean';
+export * from './ScenerySea';
 export * from './SceneryStage';
 export * from './useLevelHorizon';
-export { useScenery, useSceneryOcean } from './scenery-context';
-export type { SceneryOceanState, SceneryState } from './scenery-context';
+export * from './VoidBackground';
+export { useScenery, useScenerySea } from './scenery-context';
+export type { ScenerySeaState, SceneryState } from './scenery-context';
 export { CLOUDS_LEVELS, CLOUDS_LOOKS, CLOUDS_QUALITY } from './scenery-clouds';
 export type { CloudsLook, CloudsQualityLevel } from './scenery-clouds';
 export { sceneryReliefTile } from './scenery-defs';
@@ -25,19 +26,19 @@ export type {
   SceneryCloudsTemporal,
   SceneryHollow,
   SceneryHollowStyle,
-  SceneryOceanProps,
-  SceneryOceanWater,
+  ScenerySeaProps,
+  ScenerySeaWater,
   ScenerySeabed,
   ScenerySubsurface,
   ScenerySubsurfaceColors,
   ScenerySubsurfaceLight,
   ScenerySubsurfacePanel,
-  SkyAir,
-  SkyColors,
-  SkyMoon,
-  SkyObserver,
-  SkyStars,
-  SkySun,
+  SceneryAir,
+  SceneryColors,
+  SceneryMoon,
+  SceneryObserver,
+  SceneryStars,
+  ScenerySun,
 } from './scenery-model';
 export {
   RELIEF_PROGRESS_LABELS,

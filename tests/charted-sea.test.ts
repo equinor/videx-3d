@@ -1,14 +1,14 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
-import { chartedSeaHeights } from '../src/components/Ocean/ocean-sampler';
+import { chartedSeaHeights } from '../src/components/Water/water-sampler';
 import { getProjectionDefFromUtmZone } from '../src/sdk/projection/crs';
 import type { GeoFrame } from '../src/sdk/projection/geo-frame';
 import { Globe } from '../src/sdk/projection/globe';
 import {
-  OCEAN_FIELD_CHART_REACH,
-  OceanCharts,
-} from '../src/sdk/projection/ocean-charts';
-import { SEA_QUALITY, SeaState } from '../src/sdk/weather/sea-state';
+  WATER_FIELD_CHART_REACH,
+  WaterCharts,
+} from '../src/sdk/projection/water-charts';
+import { WATER_QUALITY, SeaState } from '../src/sdk/weather/sea-state';
 
 // The demo field's frame (UTM 31N), the stage's disc 16 km across about its origin.
 const FRAME: GeoFrame = {
@@ -21,10 +21,10 @@ const sea = () => {
   const globe = new Globe();
   globe.setDisc([-8000, -8000, 8000, 8000]);
   globe.setFrame(FRAME);
-  const charts = new OceanCharts(globe);
+  const charts = new WaterCharts(globe);
   // The wave plane's X and Z the world's: east and south at the field.
   charts.setPlane(new Vector3(1, 0, 0), new Vector3(0, 0, 1));
-  const spec = SEA_QUALITY.medium;
+  const spec = WATER_QUALITY.medium;
   const state = new SeaState(
     { windSpeed: 12, windDirection: [1, 0.3] },
     { layers: spec.layers, detail: spec.detail },
@@ -87,7 +87,7 @@ describe('chartedSeaHeights', () => {
   it('is calm where the field’s chart meets the fixed ones', () => {
     const { globe, charts, heights } = sea();
     // Due south of the field, across the field chart's reach.
-    const degrees = OCEAN_FIELD_CHART_REACH / 111200;
+    const degrees = WATER_FIELD_CHART_REACH / 111200;
     let calmest = Infinity;
     let height = NaN;
     for (let d = degrees - 0.2; d < degrees + 0.2; d += 0.001) {

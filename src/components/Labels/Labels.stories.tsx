@@ -399,7 +399,7 @@ const LabelsStory = ({
 };
 
 const meta = {
-  title: 'Components/Misc/Labels',
+  title: 'Components/Labels/Labels',
   component: LabelsStory,
   argTypes: {
     color: { control: 'color' },

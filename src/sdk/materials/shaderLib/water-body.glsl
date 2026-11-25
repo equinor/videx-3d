@@ -1,7 +1,7 @@
 // A body of water (WaterBody), as its surface, its walls and what lies in it read it. One model
 // with every sea's (water-fog.glsl): seen from the air, the water a sight line crosses is drawn
 // by what it enters the water by, the surface (waterBodySurfaceWater: the water down to the
-// seabed under it) or a wall (the Ocean's walls, ocean-volume-material.ts); what lies in the
+// seabed under it) or a wall (the Water's walls, water-volume-material.ts); what lies in the
 // water is only dimmed by the daylight its depth leaves it. From in the water, all of it fades
 // by its own path through the water (waterBodyFog). Needs depth-map.glsl included before it,
 // once: an include repeated is inlined again (vite-plugin-glsl), and warned of.

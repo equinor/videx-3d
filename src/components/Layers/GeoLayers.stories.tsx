@@ -23,7 +23,7 @@ import { Minimap } from '../Html/Minimap/Minimap';
 import { Overlay } from '../Html/Overlay/Overlay';
 import type { LabelSizePreset, LabelSizing } from '../Labels/types';
 import { Scenery } from '../Scenery/Scenery';
-import { SceneryOcean } from '../Scenery/SceneryOcean';
+import { ScenerySea } from '../Scenery/ScenerySea';
 import { SceneryStage } from '../Scenery/SceneryStage';
 import { World } from '../World/World';
 import { GeoLabels } from './GeoLabels';
@@ -162,7 +162,7 @@ const DiscoveriesStory = ({
       <SceneryGenerators>
         {scenery && (
           <Scenery>
-            <SceneryOcean level={LEVEL} depth={DEPTH} />
+            <ScenerySea level={LEVEL} depth={DEPTH} />
             <SceneryStage boundary={STAGE_BOUNDS} />
           </Scenery>
         )}
@@ -211,7 +211,7 @@ const DiscoveriesStory = ({
 };
 
 const meta = {
-  title: 'Components/Layers/GeoLayers',
+  title: 'Components/Geo layers/GeoLayers',
   component: DiscoveriesStory,
   decorators: [
     Canvas3dDecorator,

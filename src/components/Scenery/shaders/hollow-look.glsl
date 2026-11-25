@@ -1,7 +1,8 @@
 // The hollow's look (scenery-hollow.ts): its rock, its light and its crust's top layer, shared
 // by its walls and floor (hollow-fragment.glsl) and by the void's lid everywhere while it is on
-// (sky.glsl's skyAbyssCeilingOver), so the lid is the underside of the layer the walls' top is
-// cut in. Needs globe.glsl and hollow.glsl.
+// (scenery.glsl's sceneryVoidCeilingOver), so the lid is the underside of the layer the walls' top is
+// cut in; the simple style's even lid (hollowPlainLid) is the plain void's too. Needs globe.glsl
+// and hollow.glsl.
 
 // The rock (createRockTexture): slope along u and v, shade, fissures; and the slope r and g span.
 uniform sampler2D uHollowRock;
@@ -65,7 +66,7 @@ uniform vec3 uHollowPulse;
 // The light from above at `alt` under the seabed (≤ 0): falling with depth; under a closed
 // lid a fifth of it, the void lit by its floor.
 float hollowAbove(float alt) {
-  return exp(min(alt, 0.0) / uHollowShape.w) * mix(0.2, 1.0, uSkyHollow.y);
+  return exp(min(alt, 0.0) / uHollowShape.w) * mix(0.2, 1.0, uSceneryHollow.y);
 }
 
 // The floor's warmth at `alt`, falling from the floor up.
@@ -157,6 +158,19 @@ float hollowRockLevel(float size, float pixel) {
   return log2(max(pixel * float(textureSize(uHollowRock, 0).x) / size, 1.0));
 }
 
+// How near a lid seen `reach` away is, for how far it has receded (HOLLOW_LID_FADE): 1
+// overhead, toward 0 far off.
+float hollowLidNear(float reach) {
+  return exp(-reach / HOLLOW_LID_FADE.x);
+}
+
+// An even underside in `color` seen `reach` away, receding far off into `far`: the simple
+// style's lid (hollowLid), and the plain void's (scenery.glsl's sceneryVoidCeilingOver). No
+// texture: it is drawn with the hollow off too.
+vec3 hollowPlainLid(vec3 color, vec3 far, float reach) {
+  return mix(far, color, hollowLidNear(reach));
+}
+
 // The lid seen from below at `hit`, `reach` away, `inside` the hollow's rim (hollowInside),
 // where a pixel spans `pixel` world units: the underside of the sediments the walls' top is cut
 // in, matte, faintly mottled, lit by what the hollow keeps and faintly warmed by its floor,
@@ -164,19 +178,18 @@ float hollowRockLevel(float size, float pixel) {
 // as it is at the rim, without the floor's warmth: the same lid everywhere. The way it faces
 // at large is its caller's to shade. No derivatives.
 vec3 hollowLid(vec3 hit, float reach, float inside, float pixel) {
-  float near = exp(-reach / HOLLOW_LID_FADE.x);
-  float fade = mix(HOLLOW_LID_FADE.y, 1.0, near);
+  float fade = mix(HOLLOW_LID_FADE.y, 1.0, hollowLidNear(reach));
   // From the middle out, falling fastest near it, all of it by the rim.
   float s = clamp(inside / (HOLLOW_LID_EDGE.x * uHollowShape.y), 0.0, 1.0);
-  // The simple style's: a plain even underside in its own colour, its corner with the walls
-  // shaded softly, no rock, no warmth. One return: the D3D compiler takes an early one for an
-  // uninitialised value.
+  // The simple style's: a plain even underside in its own colour (hollowPlainLid), its corner
+  // with the walls shaded softly, a faint grain, no rock, no warmth. One return: the D3D
+  // compiler takes an early one for an uninitialised value.
   vec3 lid;
   if(hollowStyleSimple()) {
     vec3 v = hit - uGlobeDisc.xyz;
     vec2 plane = vec2(dot(v, uGlobeEast), dot(v, uGlobeNorth));
     float grain = hollowRockLod(plane / 20000.0 + vec2(0.31, 0.77), vec2(0.8, 0.6), hollowRockLevel(20000.0, pixel)).z;
-    lid = uHollowLidColor * fade * mix(HOLLOW_SIMPLE_LID_EDGE, 1.0, s) * (1.0 + 1.33 * HOLLOW_SIMPLE_GRAIN * (grain - 0.5));
+    lid = hollowPlainLid(uHollowLidColor, uHollowLidColor * HOLLOW_LID_FADE.y, reach) * mix(HOLLOW_SIMPLE_LID_EDGE, 1.0, s) * (1.0 + 1.33 * HOLLOW_SIMPLE_GRAIN * (grain - 0.5));
   } else {
     vec3 v = hit - uGlobeDisc.xyz;
     vec2 plane = vec2(dot(v, uGlobeEast), dot(v, uGlobeNorth));

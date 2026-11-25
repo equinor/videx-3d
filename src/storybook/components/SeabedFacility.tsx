@@ -5,7 +5,7 @@ import {
   SurfaceFootprint,
   useSurfacePlacement,
 } from '../../components/Zones/surface-sampler';
-import { SubseaTemplate } from '../../components/SubseaTemplate';
+import { SubseaTemplate } from './SubseaTemplate';
 import { UtmAreaContext } from '../../components/UtmArea';
 import { PlanarPolygonGeometry, Vec2 } from '../../sdk';
 import {

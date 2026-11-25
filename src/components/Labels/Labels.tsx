@@ -48,11 +48,6 @@ export function useLabelGroup(): LabelGroup {
   return own ?? shared!.group;
 }
 
-/** The atlas the labels here draw their texts from: their label group's. */
-export function useLabelAtlas() {
-  return useLabelGroup().atlas;
-}
-
 /**
  * Labels props.
  * @expand

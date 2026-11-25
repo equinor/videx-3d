@@ -120,7 +120,7 @@ export type ErosionEncoding = 'mask' | 'clip';
  *
  * @group Geometries
  */
-export const DEFAULT_EROSION_ENCODING: ErosionEncoding = 'mask';
+const DEFAULT_EROSION_ENCODING: ErosionEncoding = 'mask';
 
 /**
  * Erosion: everything shallower than `surface` is gone. Deposition afterwards

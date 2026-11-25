@@ -17,7 +17,7 @@ import type { Globe } from '../../sdk/projection/globe';
 import { LabelLayer } from '../Labels/LabelLayer';
 import { labelReachEstimate } from '../Labels/label-geometry';
 import type { Label, LabelsProvider, LabelStyle } from '../Labels/types';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useScenerySea } from '../Scenery/scenery-context';
 import { useWorldRelief } from '../World/world-relief';
 import { GeoTileLayer, type GeoTileLayerSource } from './GeoTileLayer';
 import {
@@ -84,16 +84,16 @@ const CELL_PIXELS = 16;
  * than `maxPixels`, either: one near the camera while the lines' step is judged far away is
  * shrunk to it.
  */
-export const GRATICULE_LABEL_STYLE: Partial<LabelStyle> = {
+const GRATICULE_LABEL_STYLE: Partial<LabelStyle> = {
   minFacing: 0,
   maxPixels: 48,
 };
 
 /** Where labels meet, latitude and longitude's names give way to data labels (priority 0). */
-export const GRATICULE_LABEL_PRIORITY = -1;
+const GRATICULE_LABEL_PRIORITY = -1;
 
 /** Where labels meet, the zones' names give way to latitude and longitude's. */
-export const GRATICULE_ZONE_LABEL_PRIORITY = -2;
+const GRATICULE_ZONE_LABEL_PRIORITY = -2;
 
 // Centred on their places, whatever the options: the cells' middles.
 const CENTRED: Partial<LabelStyle> = {
@@ -150,10 +150,10 @@ export const GeoGraticule = ({
   const gl = useThree(state => state.gl);
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
-  const ocean = useSceneryOcean();
+  const scenerySea = useScenerySea();
   const relief = useWorldRelief();
   // A Scenery's sea, from inside it or anywhere in its World: lines lie on its surface.
-  const sea = ocean ?? relief?.sky ?? null;
+  const sea = scenerySea ?? relief?.scenery ?? null;
   const onSea = !!sea?.water;
 
   const key = JSON.stringify({ latLon, utm, timeZones, labels: named });

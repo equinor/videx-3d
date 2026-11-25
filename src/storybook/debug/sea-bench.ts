@@ -17,10 +17,10 @@ import { getStoryArgs, registerVidex3d, setStoryArgs } from './videx3d';
 
 /**
  * Timing the sea on the GPU, from the browser console: `window.videx3d.seaBench` in a story
- * that renders `<SeaBenchBridge />` (the `debug/Ocean/Sea Bench` story). Storybook only.
+ * that renders `<SeaBenchBridge />` (the `debug/Water/Sea Bench` story). Storybook only.
  *
  * Each draw of the sea is timed apart, in the frame as it runs (`profileFrames`' groups):
- * the stand-alone `Ocean`'s surface, water body and bed; a `SceneryStage`'s surface and
+ * the stand-alone `Water`'s surface, water body and bed; a `SceneryStage`'s surface and
  * seabed; the `Scenery` background's layers. Their sum is `sea`.
  *
  * - {@link SeaBench.frames}: the frame and each sea draw, from the pose as it is.
@@ -29,7 +29,7 @@ import { getStoryArgs, registerVidex3d, setStoryArgs } from './videx3d';
  *
  * Every result carries the {@link SeaBenchConditions} it was measured under: compare only
  * results whose conditions match. ⚠️ One GPU timer at a time: no other profiler open
- * meanwhile. documents/ocean.md, "Measuring".
+ * meanwhile. documents/water.md, "Measuring".
  */
 export type SeaBench = {
   conditions: () => SeaBenchConditions;
@@ -166,9 +166,9 @@ const named = (object: Object3D, name: string) =>
  * background's sky and void, kept to tell the GPU's clock by) are the sea's.
  */
 const SEA_GROUPS = {
-  ocean: (o: Object3D) => flagged(o, 'isOceanMaterial'),
-  oceanBody: (o: Object3D) => flagged(o, 'isOceanVolumeMaterial'),
-  oceanBed: (o: Object3D) => flagged(o, 'isOceanBedMaterial'),
+  water: (o: Object3D) => flagged(o, 'isWaterMaterial'),
+  waterBody: (o: Object3D) => flagged(o, 'isWaterVolumeMaterial'),
+  bed: (o: Object3D) => flagged(o, 'isBedMaterial'),
   stageSurface: (o: Object3D) => defined(o, 'STAGE_SURFACE'),
   stageBed: (o: Object3D) => defined(o, 'STAGE_BED'),
   bgSurface: (o: Object3D) => named(o, 'scenery-surface'),
@@ -176,7 +176,7 @@ const SEA_GROUPS = {
   bgWater: (o: Object3D) => named(o, 'scenery-water'),
   sky: (o: Object3D) =>
     named(o, 'scenery-sky') ||
-    named(o, 'scenery-abyss') ||
+    named(o, 'scenery-void') ||
     (materialOf(o)?.name ?? '').startsWith('scenery-hollow'),
 };
 

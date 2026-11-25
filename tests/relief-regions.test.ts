@@ -9,7 +9,7 @@ import {
 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
-  SKY_RELIEF_MAX_REGIONS,
+  SCENERY_RELIEF_MAX_REGIONS,
   SceneryReliefRegion,
   SceneryReliefRegions,
   setReliefRegions,
@@ -26,13 +26,13 @@ function uniforms(): Record<string, IUniform> {
   return {
     uReliefRegionCount: new Uniform(0),
     uReliefRegions: new Uniform(
-      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Matrix4()),
+      Array.from({ length: SCENERY_RELIEF_MAX_REGIONS }, () => new Matrix4()),
     ),
     uReliefRegionKinds: new Uniform(
-      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => 0),
+      Array.from({ length: SCENERY_RELIEF_MAX_REGIONS }, () => 0),
     ),
     uReliefRegionShapes: new Uniform(
-      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Vector4()),
+      Array.from({ length: SCENERY_RELIEF_MAX_REGIONS }, () => new Vector4()),
     ),
     uReliefRegionFields: new Uniform<DataArrayTexture | null>(null),
   };
@@ -180,17 +180,17 @@ describe('setReliefRegions', () => {
     const u = uniforms();
     const boxes: [number, number, number, number][] = [];
     const regions = Array.from(
-      { length: SKY_RELIEF_MAX_REGIONS + 3 },
+      { length: SCENERY_RELIEF_MAX_REGIONS + 3 },
       (_, i): SceneryReliefRegion => ({
         boundary: [i * 1000, 0, i * 1000 + 500, 500],
       }),
     );
     const count = set(u, regions, [100000, 0], boxes);
-    expect(count).toBe(SKY_RELIEF_MAX_REGIONS);
+    expect(count).toBe(SCENERY_RELIEF_MAX_REGIONS);
     // The farthest from the eye, at the start, are the ones left out.
     expect(boxes.some(([minX]) => minX === 0)).toBe(false);
     expect(
-      boxes.some(([minX]) => minX === (SKY_RELIEF_MAX_REGIONS + 2) * 1000),
+      boxes.some(([minX]) => minX === (SCENERY_RELIEF_MAX_REGIONS + 2) * 1000),
     ).toBe(true);
   });
 

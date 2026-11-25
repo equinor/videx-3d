@@ -3,17 +3,16 @@ import { useArgs, useEffect } from 'storybook/preview-api';
 import { builtInColorRamps } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
 import {
-  DEFAULT_OCEAN_WATER_OPACITY,
-  type OceanFoamTuning,
-  type OceanWaveTuning,
-} from '../../components/Ocean/ocean-material';
-import type { SeaQuality } from '../../sdk/weather/sea-state';
+  DEFAULT_WATER_OPACITY,
+  type WaterFoamTuning,
+  type WaterWaveTuning,
+} from '../../components/Water/water-material';
+import type { WaterQuality } from '../../sdk/weather/sea-state';
 import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
 import {
   SKY_PRESETS,
   weatherSeaSwells,
   type SkyPreset,
-  type WeatherState,
   type WeatherSwell,
 } from '../../sdk/weather/weather';
 import type { Vec2 } from '../../sdk/types/common';
@@ -31,17 +30,19 @@ import type {
   SceneryProps,
 } from '../../components/Scenery/Scenery';
 import type { SceneryStageLayer } from '../../components/Scenery/SceneryStage';
+import type { VoidBackgroundProps } from '../../components/Scenery/VoidBackground';
 import {
   sceneryDefaults,
   type SceneryVoidProps,
   type SceneryCloudsProps,
   type SceneryCloudsQuality,
   type SceneryHollowStyle,
-  type SceneryOceanProps,
-  type SkyMoon,
-  type SkyObserver,
-  type SkyStars,
-  type SkySun,
+  type ScenerySeaProps,
+  type ScenerySeaWater,
+  type SceneryMoon,
+  type SceneryObserver,
+  type SceneryStars,
+  type ScenerySun,
 } from '../../components/Scenery/scenery-model';
 import type { ReliefLayer } from '../../sdk/geometries/relief-tiles';
 import {
@@ -52,7 +53,6 @@ import {
 import { solarPosition } from '../../sdk/utils/solar-position';
 import { bakedReliefId } from '../data/baked-reliefs';
 import { demoFrame } from '../data/demo-crs';
-import { SYNTHETIC_SEABED_ID } from '../data/synthetic-surfaces';
 import {
   progressArgs,
   ProgressArgs,
@@ -63,7 +63,7 @@ import {
   SceneryCutawayArgs,
   sceneryCutawayArgTypes,
   sceneryCutawayDecorator,
-  skyCutawayArgs,
+  sceneryCutawayArgs,
 } from './scenery-cutaway-controls';
 import {
   toneMappingArgs,
@@ -118,18 +118,20 @@ export type SceneryArgs = {
   graticuleTimeZonesLabels: boolean;
   graticuleOpacity: number;
   // Scenery
-  backgroundMode: 'sky' | 'void' | 'none';
+  background: boolean;
   // Clouds (sceneryCloudsFromArgs)
   clouds: SkyPreset;
   cloudsQuality: SceneryCloudsQuality;
-  air: boolean;
+  sky: boolean;
+  /** with the sky off, the void's gradient behind the scene (`VoidBackground`) */
+  voidBackground: boolean;
   airHaze: number;
   airHazeHeight: number;
   skyZenith: string;
   skyHorizon: string;
   skyGround: string;
   skyNadir: string;
-  skyIntensity: number;
+  sceneryIntensity: number;
   skyHorizonBlend: number;
   moon: boolean;
   moonIntensity: number;
@@ -138,14 +140,14 @@ export type SceneryArgs = {
   /** the sun's and the moon's discs, this many times their real size */
   discScale: number;
   // Sea
-  skyWater: boolean;
-  skySeabed: boolean;
-  waterOpacity: number;
-  skySeabedOpacity: number;
+  scenerySea: boolean;
+  scenerySeabed: boolean;
+  scenerySeaOpacity: number;
+  scenerySeabedOpacity: number;
   windSpeed: number;
   foamAmount: number;
   /** surf where the waves break on a coast of the scene's ground (`shoreFoam`) */
-  seaShoreFoam: number;
+  scenerySeaShoreFoam: number;
   /** compass bearing the wind blows toward */
   windDirection: number;
   /** a swell's significant height, metres: 0 none */
@@ -154,27 +156,27 @@ export type SceneryArgs = {
   swellPeriod: number;
   /** compass bearing it comes from */
   swellFrom: number;
-  seaSteepness: number;
+  scenerySeaSteepness: number;
   /** ⚠️ Tuning, to be settled: the wave model's open choices (the sea bench sets them) */
-  seaWaveTuning?: OceanWaveTuning;
+  scenerySeaWaveTuning?: WaterWaveTuning;
   /** ⚠️ Tuning, to be settled: the foam's shaping (the sea bench sets it) */
-  seaFoamTuning?: OceanFoamTuning;
-  /** the sea's `quality` (`SEA_QUALITY`); default medium */
-  seaQuality?: SeaQuality;
+  scenerySeaFoamTuning?: WaterFoamTuning;
+  /** the sea's `quality` (`WATER_QUALITY`); default medium */
+  scenerySeaQuality?: WaterQuality;
   /** the sea's look by name (`WATER_OPTICS_PRESETS`): realistic (the North Sea's), or clear */
-  seaOptics: WaterOpticsPreset;
-  skySeabedColor: string;
-  seaDetailScale: number;
+  scenerySeaOptics: WaterOpticsPreset;
+  scenerySeabedColor: string;
+  scenerySeaDetailScale: number;
   /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
-  seaFresnelPower: number;
+  scenerySeaFresnelPower: number;
   /** how much of the sun's glitter is drawn (`sparkle`): 0 none */
-  seaSparkle: number;
+  scenerySeaSparkle: number;
   /** how much light through the crests is drawn (`crestLight`): 0 none, 1 as modelled */
-  seaCrestLight: number;
+  scenerySeaCrestLight: number;
   /** the whitecaps' life (`foamLife`): by the quality, or on or off */
-  seaFoamLife: 'auto' | 'on' | 'off';
-  seaDetailFadeStart: number;
-  seaDetailFadeEnd: number;
+  scenerySeaFoamLife: 'auto' | 'on' | 'off';
+  scenerySeaDetailFadeStart: number;
+  scenerySeaDetailFadeEnd: number;
   // Subsurface
   subsurfaceFollowSun: boolean;
   subsurfaceLightAzimuth: number;
@@ -190,17 +192,14 @@ export type SceneryArgs = {
   subsurfaceBelow: boolean;
   subsurfaceBelowColor: string;
   subsurfaceBelowIntensity: number;
-  abyssCeiling: string;
-  abyssHorizon: string;
-  abyssDepth: string;
-  abyssFadeDistance: number;
-  abyssTransition: number;
-  abyssDarkening: number;
-  abyssDetail: number;
-  abyssDetailScale: number;
-  abyssDepthDetail: number;
-  abyssDepthDetailScale: number;
-  abyssFalloff: number;
+  voidCeiling: string;
+  voidHorizon: string;
+  voidDepth: string;
+  voidTransition: number;
+  voidDarkening: number;
+  voidDetail: number;
+  voidDetailScale: number;
+  voidFalloff: number;
   /** the void as a hollow under the field (`SceneryVoid`'s `hollow`) */
   hollow: boolean;
   hollowStyle: SceneryHollowStyle;
@@ -240,6 +239,9 @@ const demoPlace = geoFrameLocation(demoFrame);
 
 // 10 September, 13:00 solar time over Volve: about the Scenery's default sun (200°, 35°).
 export const sceneryArgs: SceneryArgs = {
+  background: true,
+  globe: sceneryDefaults.globe,
+  sceneryIntensity: sceneryDefaults.intensity,
   sunFromTime: false,
   sunAzimuth: sceneryDefaults.sun.azimuth,
   sunElevation: sceneryDefaults.sun.elevation,
@@ -255,6 +257,80 @@ export const sceneryArgs: SceneryArgs = {
   sunRays: sceneryDefaults.sun.rays,
   sunShimmer: sceneryDefaults.sun.shimmer,
   sunTwilight: sceneryDefaults.sun.twilight,
+  sky: true,
+  voidBackground: true,
+  airHaze: sceneryDefaults.air.haze,
+  airHazeHeight: sceneryDefaults.air.hazeHeight,
+  moon: true,
+  moonIntensity: sceneryDefaults.moon.intensity,
+  stars: true,
+  starBrightness: sceneryDefaults.stars.brightness,
+  discScale: sceneryDefaults.discScale,
+  skyZenith: sceneryDefaults.colors.zenith,
+  skyHorizon: sceneryDefaults.colors.horizon,
+  skyGround: sceneryDefaults.colors.ground,
+  skyNadir: sceneryDefaults.colors.nadir,
+  skyHorizonBlend: sceneryDefaults.horizonBlend,
+  clouds: 'clear',
+  cloudsQuality: sceneryDefaults.clouds.quality,
+  scenerySea: true,
+  scenerySeaOpacity: DEFAULT_WATER_OPACITY,
+  // As `WaterMaterial`'s own defaults.
+  windSpeed: 10,
+  foamAmount: 0.5,
+  scenerySeaShoreFoam: 0,
+  windDirection: 90,
+  swellHeight: 0,
+  swellPeriod: 12,
+  swellFrom: 270,
+  scenerySeaSteepness: 1,
+  scenerySeaOptics: 'realistic',
+  scenerySeaDetailScale: 0.05,
+  scenerySeaFresnelPower: 0,
+  scenerySeaSparkle: 0,
+  scenerySeaCrestLight: 1,
+  scenerySeaFoamLife: 'auto',
+  scenerySeaDetailFadeStart: 15000,
+  scenerySeaDetailFadeEnd: 60000,
+  scenerySeabed: true,
+  scenerySeabedOpacity: sceneryDefaults.sea.seabedOpacity,
+  scenerySeabedColor: sceneryDefaults.sea.seabed.color,
+  hollow: true,
+  hollowStyle: sceneryDefaults.void.hollow.style,
+  hollowRadius: sceneryDefaults.void.hollow.radius,
+  hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
+  hollowLightFalloff: sceneryDefaults.void.hollow.lightFalloff,
+  hollowMurk: sceneryDefaults.void.hollow.murk,
+  hollowHandle: false,
+  voidCeiling: sceneryDefaults.void.colors.ceiling,
+  voidHorizon: sceneryDefaults.void.colors.horizon,
+  voidDepth: sceneryDefaults.void.colors.depth,
+  voidTransition: sceneryDefaults.void.transition,
+  voidDarkening: sceneryDefaults.void.darkening,
+  voidDetail: sceneryDefaults.void.detail,
+  voidDetailScale: sceneryDefaults.void.detailScale,
+  voidFalloff: sceneryDefaults.void.falloff,
+  subsurfaceFollowSun: sceneryDefaults.subsurface.light.followSun,
+  subsurfaceLightAzimuth: sceneryDefaults.subsurface.light.azimuth,
+  subsurfaceLightElevation: sceneryDefaults.subsurface.light.elevation,
+  subsurfaceLightLowest: sceneryDefaults.subsurface.light.elevationRange[0],
+  subsurfaceLightHighest: sceneryDefaults.subsurface.light.elevationRange[1],
+  subsurfaceLightColor: sceneryDefaults.subsurface.light.color,
+  subsurfaceLightIntensity: sceneryDefaults.sun.intensity,
+  subsurfaceLightTransition: sceneryDefaults.subsurface.light.transition,
+  subsurfaceIntensity: sceneryDefaults.subsurface.intensity,
+  subsurfacePanelColor: sceneryDefaults.subsurface.panels.color,
+  subsurfacePanelIntensity: sceneryDefaults.subsurface.panels.intensity,
+  subsurfaceBelow: false,
+  subsurfaceBelowColor: '#9fb4d0',
+  subsurfaceBelowIntensity: 1,
+  environment: true,
+  environmentIntensity: 1,
+  environmentResolution: 64,
+  lightProbe: true,
+  lightProbeIntensity: 1,
+  captureInterval: 250,
+  captureMaxWait: 1000,
   graticuleLatLon: false,
   graticuleLatLonColor: GRATICULE_DEFAULTS.lines.color,
   graticuleLatLonThickness: GRATICULE_DEFAULTS.lines.thickness,
@@ -273,95 +349,16 @@ export const sceneryArgs: SceneryArgs = {
   graticuleTimeZonesThickness: GRATICULE_DEFAULTS.lines.thickness,
   graticuleTimeZonesLabels: false,
   graticuleOpacity: GRATICULE_DEFAULTS.lines.opacity,
-  backgroundMode: 'sky',
-  clouds: 'clear',
-  cloudsQuality: sceneryDefaults.clouds.quality,
-  air: true,
-  airHaze: sceneryDefaults.air.haze,
-  airHazeHeight: sceneryDefaults.air.hazeHeight,
-  skyZenith: sceneryDefaults.colors.zenith,
-  skyHorizon: sceneryDefaults.colors.horizon,
-  skyGround: sceneryDefaults.colors.ground,
-  skyNadir: sceneryDefaults.colors.nadir,
-  skyIntensity: sceneryDefaults.intensity,
-  skyHorizonBlend: sceneryDefaults.horizonBlend,
-  moon: true,
-  moonIntensity: sceneryDefaults.moon.intensity,
-  stars: true,
-  starBrightness: sceneryDefaults.stars.brightness,
-  discScale: sceneryDefaults.discScale,
-  skyWater: true,
-  skySeabed: true,
-  waterOpacity: DEFAULT_OCEAN_WATER_OPACITY,
-  skySeabedOpacity: sceneryDefaults.ocean.seabedOpacity,
-  // As `OceanMaterial`'s own defaults.
-  windSpeed: 10,
-  foamAmount: 0.5,
-  seaShoreFoam: 0,
-  windDirection: 90,
-  swellHeight: 0,
-  swellPeriod: 12,
-  swellFrom: 270,
-  seaSteepness: 1,
-  seaOptics: 'realistic',
-  skySeabedColor: sceneryDefaults.ocean.seabed.color,
-  seaDetailScale: 0.05,
-  seaFresnelPower: 0,
-  seaSparkle: 0,
-  seaCrestLight: 1,
-  seaFoamLife: 'auto',
-  seaDetailFadeStart: 15000,
-  seaDetailFadeEnd: 60000,
-  subsurfaceFollowSun: sceneryDefaults.subsurface.light.followSun,
-  subsurfaceLightAzimuth: sceneryDefaults.subsurface.light.azimuth,
-  subsurfaceLightElevation: sceneryDefaults.subsurface.light.elevation,
-  subsurfaceLightLowest: sceneryDefaults.subsurface.light.elevationRange[0],
-  subsurfaceLightHighest: sceneryDefaults.subsurface.light.elevationRange[1],
-  subsurfaceLightColor: sceneryDefaults.subsurface.light.color,
-  subsurfaceLightIntensity: sceneryDefaults.sun.intensity,
-  subsurfaceLightTransition: sceneryDefaults.subsurface.light.transition,
-  subsurfaceIntensity: sceneryDefaults.subsurface.intensity,
-  subsurfacePanelColor: sceneryDefaults.subsurface.panels.color,
-  subsurfacePanelIntensity: sceneryDefaults.subsurface.panels.intensity,
-  subsurfaceBelow: false,
-  subsurfaceBelowColor: '#9fb4d0',
-  subsurfaceBelowIntensity: 1,
-  abyssCeiling: sceneryDefaults.void.colors.ceiling,
-  abyssHorizon: sceneryDefaults.void.colors.horizon,
-  abyssDepth: sceneryDefaults.void.colors.depth,
-  abyssFadeDistance: sceneryDefaults.void.fadeDistance,
-  abyssTransition: sceneryDefaults.void.transition,
-  abyssDarkening: sceneryDefaults.void.darkening,
-  abyssDetail: sceneryDefaults.void.detail,
-  abyssDetailScale: sceneryDefaults.void.detailScale,
-  abyssDepthDetail: sceneryDefaults.void.depthDetail,
-  abyssDepthDetailScale: sceneryDefaults.void.depthDetailScale,
-  abyssFalloff: sceneryDefaults.void.falloff,
-  hollow: true,
-  hollowStyle: sceneryDefaults.void.hollow.style,
-  hollowRadius: sceneryDefaults.void.hollow.radius,
-  hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
-  hollowLightFalloff: sceneryDefaults.void.hollow.lightFalloff,
-  hollowMurk: sceneryDefaults.void.hollow.murk,
-  hollowHandle: false,
-  globe: sceneryDefaults.globe,
-  environment: true,
-  lightProbe: true,
-  environmentIntensity: 1,
-  environmentResolution: 64,
-  lightProbeIntensity: 1,
-  captureInterval: 250,
-  captureMaxWait: 1000,
   pipeline: 'default',
   stats: false,
   tint: false,
   showEnvironment: false,
-  ...skyCutawayArgs,
+  ...sceneryCutawayArgs,
   ...toneMappingArgs,
 };
 
 /** The moment {@link SceneryArgs} set, or null: local solar time is UTC shifted by the longitude, 15° an hour. */
-function skySunDate(args: SceneryArgs) {
+function scenerySunDate(args: SceneryArgs) {
   const [year, month, day] = args.sunDate.split('-').map(Number);
   const utc =
     Date.UTC(year, month - 1, day) +
@@ -373,7 +370,7 @@ function skySunDate(args: SceneryArgs) {
  * `date` (`YYYY-MM-DD`) moved on by a whole number of `days` (back, if negative), as
  * `YYYY-MM-DD`: for a clock that runs past midnight. As it is if it is no date.
  */
-export function skyDateAfter(date: string, days: number): string {
+export function sceneryDateAfter(date: string, days: number): string {
   if (days === 0) return date;
   const [year, month, day] = date.split('-').map(Number);
   const time = Date.UTC(year, month - 1, day + days);
@@ -383,16 +380,16 @@ export function skyDateAfter(date: string, days: number): string {
 }
 
 /** The sun's azimuth and elevation from {@link SceneryArgs}: as set, or from the time and place. */
-export function skySunPosition(args: SceneryArgs) {
+export function scenerySunPosition(args: SceneryArgs) {
   const manual = { azimuth: args.sunAzimuth, elevation: args.sunElevation };
-  const date = args.sunFromTime ? skySunDate(args) : null;
+  const date = args.sunFromTime ? scenerySunDate(args) : null;
   if (!date) return manual;
   return solarPosition(date, args.sunLatitude, args.sunLongitude);
 }
 
 /** A Scenery's `observer` from {@link SceneryArgs}: the time and place, when the sun is set from them. */
-function skyObserverFromArgs(args: SceneryArgs): SkyObserver | null {
-  const date = args.sunFromTime ? skySunDate(args) : null;
+function sceneryObserverFromArgs(args: SceneryArgs): SceneryObserver | null {
+  const date = args.sunFromTime ? scenerySunDate(args) : null;
   return (
     date && {
       date,
@@ -403,7 +400,7 @@ function skyObserverFromArgs(args: SceneryArgs): SkyObserver | null {
 }
 
 /** {@link SceneryArgs} for `date` at a place: its local solar date and hour. */
-function skySunArgsAt(
+function scenerySunArgsAt(
   date: Date,
   latitude: number,
   longitude: number,
@@ -435,14 +432,14 @@ const sceneryHollowDecorator: Decorator = (Story, context) => {
 };
 
 /** Ticking `observerNow` sets the time to now and the place to the browser's (if it may tell), then clears it. */
-const skyObserverNowDecorator: Decorator = Story => {
+const sceneryObserverNowDecorator: Decorator = Story => {
   const [args, updateArgs] = useArgs<SceneryArgs>();
   const now = !!args.observerNow;
   useEffect(() => {
     if (!now) return;
     const set = (latitude: number, longitude: number) =>
       updateArgs({
-        ...skySunArgsAt(new Date(), latitude, longitude),
+        ...scenerySunArgsAt(new Date(), latitude, longitude),
         observerNow: false,
       });
     const stay = () => set(args.sunLatitude, args.sunLongitude);
@@ -461,18 +458,18 @@ const skyObserverNowDecorator: Decorator = Story => {
 
 /**
  * The decorators the {@link SceneryArgs} need: the cutaway's grip writing its offset back,
- * `observerNow`, and the progress display the sky reports to (`storyProgress`). Add them
+ * `observerNow`, and the progress display the Scenery reports to (`storyProgress`). Add them
  * last (outermost): `useArgs` is valid only in a decorator.
  */
 export const sceneryDecorators: Decorator[] = [
   sceneryCutawayDecorator,
   sceneryHollowDecorator,
-  skyObserverNowDecorator,
+  sceneryObserverNowDecorator,
   progressDecorator,
 ];
 
 /**
- * The progress controls for a sky story: a popup along the top that waits half a second,
+ * The progress controls for a Scenery story: a popup along the top that waits half a second,
  * so the few relief tiles a camera move loads do not flash it.
  */
 export const sceneryProgressArgs: ProgressArgs = {
@@ -481,10 +478,20 @@ export const sceneryProgressArgs: ProgressArgs = {
   progressDelay: 500,
 };
 
-// Where a story's sky reports its progress.
-const reportSkyProgress = storyProgress.source('sky', {
+/**
+ * Controls for every arg of `args`, hidden: a focused story passes them on (to
+ * {@link sceneryPropsFromArgs}, to the progress display) without showing them. Spread it
+ * before the story's own controls.
+ */
+export const sceneryHiddenArgTypes = <T extends object>(args: T): ArgTypes<T> =>
+  Object.fromEntries(
+    Object.keys(args).map(key => [key, { table: { disable: true } }]),
+  ) as ArgTypes<T>;
+
+/** Where a story's `Scenery` (its `onProgress`) reports its shaders compiling. */
+export const reportSceneryProgress = storyProgress.source('scenery', {
   name: 'Scenery',
-  title: 'Preparing the sky',
+  title: 'Preparing the scenery',
 });
 
 /** Where a story's relief (a `GeoRelief`) reports how its tiles load. */
@@ -494,8 +501,8 @@ export const reportReliefProgress = storyProgress.source('relief', {
 });
 
 /** A Scenery's `sun` from {@link SceneryArgs}. */
-const skySunFromArgs = (args: SceneryArgs): SkySun => ({
-  ...skySunPosition(args),
+const scenerySunFromArgs = (args: SceneryArgs): ScenerySun => ({
+  ...scenerySunPosition(args),
   intensity: args.sunIntensity,
   size: args.sunSize,
   glow: args.sunGlow,
@@ -542,19 +549,19 @@ export const sceneryGraticuleFromArgs = (
 };
 
 /** A Scenery's `moon` from {@link SceneryArgs}. */
-const skyMoonFromArgs = (args: SceneryArgs): SkyMoon | false =>
+const sceneryMoonFromArgs = (args: SceneryArgs): SceneryMoon | false =>
   args.moon && { intensity: args.moonIntensity };
 
 /** A Scenery's `stars` from {@link SceneryArgs}. */
-const skyStarsFromArgs = (args: SceneryArgs): SkyStars | false =>
+const sceneryStarsFromArgs = (args: SceneryArgs): SceneryStars | false =>
   args.stars && { brightness: args.starBrightness, latitude: args.sunLatitude };
 
-/** The swell of {@link SceneryArgs}, as a weather has it: none at no height. */
 /** A story's `foamLife` choice as the prop: `auto` leaves it to the quality. */
 export const foamLifeOf = (
   choice: 'auto' | 'on' | 'off',
 ): boolean | undefined => (choice === 'auto' ? undefined : choice === 'on');
 
+/** The swell of {@link SceneryArgs}, as a weather has it: none at no height. */
 const swellFromArgs = (args: SceneryArgs): WeatherSwell[] =>
   args.swellHeight > 0
     ? [
@@ -567,44 +574,27 @@ const swellFromArgs = (args: SceneryArgs): WeatherSwell[] =>
     : [];
 
 /**
- * A story's `Weather` from {@link SceneryArgs}: its wind and swell, and its air's haze (with
- * `air` on). For a story with a `<Weather>` around its Scenery, whose sea and air then take
- * them from it (`weather` in {@link sceneryOceanFromArgs} and {@link sceneryPropsFromArgs}).
- */
-export const sceneryWeatherFromArgs = (
-  args: SceneryArgs,
-): Pick<WeatherState, 'wind' | 'swell' | 'air'> => ({
-  wind: { speed: args.windSpeed, from: (args.windDirection + 180) % 360 },
-  swell: swellFromArgs(args),
-  ...(args.air
-    ? { air: { haze: args.airHaze, hazeHeight: args.airHazeHeight } }
-    : {}),
-});
-
-/**
  * A `SceneryClouds`' props from {@link SceneryArgs}: a sky preset's layers at the quality
- * chosen; null for `clear`. With a `Weather` around the Scenery they take its wind and gusts.
+ * chosen; null for `clear`, or with no preset (its control hidden with the sky off).
+ * With a `Weather` around the Scenery they take its wind and gusts.
  */
 export const sceneryCloudsFromArgs = (
   args: Pick<SceneryArgs, 'clouds' | 'cloudsQuality'>,
 ): SceneryCloudsProps | null =>
-  args.clouds === 'clear'
+  !args.clouds || args.clouds === 'clear'
     ? null
     : { layers: args.clouds, quality: args.cloudsQuality };
 
 /**
- * A `SceneryOcean`'s props from {@link SceneryArgs}, but for its level and depth, which are the
- * story's. With `weather`, no wind or swell of its own: it draws the enclosing `Weather`'s sea
- * ({@link sceneryWeatherFromArgs}).
+ * The water of {@link SceneryArgs} as any sea takes it: a `ScenerySea`'s, and a
+ * `ZoneStack`'s `water` under the same Scenery, so the two look alike. With `weather`, no wind
+ * or swell of its own: the enclosing `Weather`'s ({@link sceneryWeatherFromArgs}).
  */
-export const sceneryOceanFromArgs = (
+export const scenerySeaWaterFromArgs = (
   args: SceneryArgs,
   weather = false,
-): SceneryOceanProps => ({
-  water: args.skyWater,
-  seabed: args.skySeabed && { color: args.skySeabedColor },
-  seabedOpacity: args.skySeabedOpacity,
-  waterOpacity: args.waterOpacity,
+): ScenerySeaWater => ({
+  waterOpacity: args.scenerySeaOpacity,
   ...(weather
     ? {}
     : {
@@ -616,36 +606,52 @@ export const sceneryOceanFromArgs = (
         ] as Vec2,
         swells: weatherSeaSwells(swellFromArgs(args)),
       }),
-  steepness: args.seaSteepness,
-  waveTuning: args.seaWaveTuning,
-  foamTuning: args.seaFoamTuning,
-  quality: args.seaQuality,
+  steepness: args.scenerySeaSteepness,
+  waveTuning: args.scenerySeaWaveTuning,
+  foamTuning: args.scenerySeaFoamTuning,
   foamAmount: args.foamAmount,
-  shoreFoam: args.seaShoreFoam,
-  optics: args.seaOptics,
-  detailScale: args.seaDetailScale,
-  fresnelPower: args.seaFresnelPower > 0 ? args.seaFresnelPower : undefined,
-  sparkle: args.seaSparkle,
-  crestLight: args.seaCrestLight,
-  foamLife: foamLifeOf(args.seaFoamLife),
-  detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
+  shoreFoam: args.scenerySeaShoreFoam,
+  optics: args.scenerySeaOptics,
+});
+
+/**
+ * A `ScenerySea`'s props from {@link SceneryArgs}, but for its level and depth, which are the
+ * story's. With `weather`, no wind or swell of its own: it draws the enclosing `Weather`'s sea
+ * ({@link sceneryWeatherFromArgs}).
+ */
+export const scenerySeaFromArgs = (
+  args: SceneryArgs,
+  weather = false,
+): ScenerySeaProps => ({
+  water: args.scenerySea,
+  seabed: args.scenerySeabed && { color: args.scenerySeabedColor },
+  seabedOpacity: args.scenerySeabedOpacity,
+  ...scenerySeaWaterFromArgs(args, weather),
+  quality: args.scenerySeaQuality,
+  detailScale: args.scenerySeaDetailScale,
+  fresnelPower:
+    args.scenerySeaFresnelPower > 0 ? args.scenerySeaFresnelPower : undefined,
+  sparkle: args.scenerySeaSparkle,
+  crestLight: args.scenerySeaCrestLight,
+  foamLife: foamLifeOf(args.scenerySeaFoamLife),
+  detailFadeDistance: [
+    args.scenerySeaDetailFadeStart,
+    args.scenerySeaDetailFadeEnd,
+  ],
 });
 
 /** A `SceneryVoid`' props from {@link SceneryArgs}, but for its level, which is the story's. */
 export const sceneryVoidFromArgs = (args: SceneryArgs): SceneryVoidProps => ({
   colors: {
-    ceiling: args.abyssCeiling,
-    horizon: args.abyssHorizon,
-    depth: args.abyssDepth,
+    ceiling: args.voidCeiling,
+    horizon: args.voidHorizon,
+    depth: args.voidDepth,
   },
-  fadeDistance: args.abyssFadeDistance,
-  transition: args.abyssTransition,
-  darkening: args.abyssDarkening,
-  detail: args.abyssDetail,
-  detailScale: args.abyssDetailScale,
-  depthDetail: args.abyssDepthDetail,
-  depthDetailScale: args.abyssDepthDetailScale,
-  falloff: args.abyssFalloff,
+  transition: args.voidTransition,
+  darkening: args.voidDarkening,
+  detail: args.voidDetail,
+  detailScale: args.voidDetailScale,
+  falloff: args.voidFalloff,
   hollow: args.hollow && {
     style: args.hollowStyle,
     radius: args.hollowRadius,
@@ -667,35 +673,46 @@ export const sceneryVoidFromArgs = (args: SceneryArgs): SceneryVoidProps => ({
 });
 
 /**
+ * The `VoidBackground` behind a {@link SceneryArgs} story with the sky off (`voidBackground`),
+ * in the void's colours, so it matches the light the scene then takes; null otherwise.
+ */
+export const sceneryVoidBackgroundFromArgs = (
+  args: SceneryArgs,
+): VoidBackgroundProps | null =>
+  !args.sky && args.voidBackground
+    ? {
+        ceiling: args.voidCeiling,
+        horizon: args.voidHorizon,
+        depth: args.voidDepth,
+        falloff: args.voidFalloff,
+        intensity: args.sceneryIntensity,
+      }
+    : null;
+
+/**
  * Every `<Scenery>` prop {@link SceneryArgs} set. Its features (graticule, sea, void, cutaway)
  * are components of their own under it: see `SceneryArgsFeatures`. With `weather`, its air
  * without a haze of its own: the enclosing `Weather`'s ({@link sceneryWeatherFromArgs}).
  */
 export const sceneryPropsFromArgs = (args: SceneryArgs, weather = false) =>
   ({
-    sun: skySunFromArgs(args),
-    observer: skyObserverFromArgs(args),
-    moon: skyMoonFromArgs(args),
-    stars: skyStarsFromArgs(args),
+    sun: scenerySunFromArgs(args),
+    observer: sceneryObserverFromArgs(args),
+    moon: sceneryMoonFromArgs(args),
+    stars: sceneryStarsFromArgs(args),
     discScale: args.discScale,
-    air:
-      args.air &&
-      (weather ? {} : { haze: args.airHaze, hazeHeight: args.airHazeHeight }),
+    sky: args.sky,
+    air: weather ? {} : { haze: args.airHaze, hazeHeight: args.airHazeHeight },
     colors: {
       zenith: args.skyZenith,
       horizon: args.skyHorizon,
       ground: args.skyGround,
       nadir: args.skyNadir,
     },
-    intensity: args.skyIntensity,
+    intensity: args.sceneryIntensity,
     horizonBlend: args.skyHorizonBlend,
     globe: args.globe,
-    background:
-      args.backgroundMode === 'none'
-        ? false
-        : args.backgroundMode === 'void'
-          ? 'void'
-          : true,
+    background: args.background,
     subsurface: {
       intensity: args.subsurfaceIntensity,
       panels: {
@@ -728,7 +745,7 @@ export const sceneryPropsFromArgs = (args: SceneryArgs, weather = false) =>
     lightProbe: args.lightProbe && { intensity: args.lightProbeIntensity },
     capture: { interval: args.captureInterval, maxWait: args.captureMaxWait },
     debug: { tint: args.tint, environment: args.showEnvironment },
-    onProgress: reportSkyProgress,
+    onProgress: reportSceneryProgress,
   }) satisfies Partial<SceneryProps>;
 
 const range = (
@@ -767,31 +784,28 @@ const ADVANCED = new Set<string>([
   'skyHorizon',
   'skyGround',
   'skyNadir',
-  'skyIntensity',
+  'sceneryIntensity',
   'skyHorizonBlend',
   'windDirection',
   'swellPeriod',
   'swellFrom',
-  'seaSteepness',
-  'skySeabedColor',
-  'seaDetailScale',
-  'seaFresnelPower',
-  'seaSparkle',
-  'seaCrestLight',
-  'seaFoamLife',
-  'seaDetailFadeStart',
-  'seaDetailFadeEnd',
-  'abyssCeiling',
-  'abyssHorizon',
-  'abyssDepth',
-  'abyssFadeDistance',
-  'abyssTransition',
-  'abyssDarkening',
-  'abyssDetail',
-  'abyssDetailScale',
-  'abyssDepthDetail',
-  'abyssDepthDetailScale',
-  'abyssFalloff',
+  'scenerySeaSteepness',
+  'scenerySeabedColor',
+  'scenerySeaDetailScale',
+  'scenerySeaFresnelPower',
+  'scenerySeaSparkle',
+  'scenerySeaCrestLight',
+  'scenerySeaFoamLife',
+  'scenerySeaDetailFadeStart',
+  'scenerySeaDetailFadeEnd',
+  'voidCeiling',
+  'voidHorizon',
+  'voidDepth',
+  'voidTransition',
+  'voidDarkening',
+  'voidDetail',
+  'voidDetailScale',
+  'voidFalloff',
   'hollowWalls',
   'hollowFloor',
   'hollowEmberColor',
@@ -830,16 +844,35 @@ const ADVANCED = new Set<string>([
   'showEnvironment',
 ]);
 
+// The groups, in the order they show: each feature's switch first in its own. The Controls
+// panel follows the order of the args, so `sceneryArgs` lists them in this order too.
+const SCENERY = 'Scenery';
 const SUN = 'Sun';
-const GRATICULE = 'Graticule';
-const SKY = 'Scenery';
+const SKY = 'Sky';
 const CLOUDS = 'Clouds';
 const SEA = 'Sea';
+const VOID = 'Void';
 const SUBSURFACE = 'Subsurface';
 const ENVIRONMENT = 'Environment';
+const GRATICULE = 'Graticule';
 const DEBUG = 'Debug';
 
-const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
+const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
+  background: toggle(
+    SCENERY,
+    'Draw the background behind the scene (`background`): the sky, the sea, the void and the stage. Off, nothing; switched instantly, with nothing rebuilt or baked, the scene still lit by the sky.',
+  ),
+  globe: toggle(
+    SCENERY,
+    'The Earth is a fixed globe: the sea, the sky and the clouds follow its curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene. Off, a flat sea everywhere: only right near one field.',
+  ),
+  sceneryIntensity: range(
+    0,
+    3,
+    0.05,
+    SCENERY,
+    'Scales the whole Scenery: its background, environment and light probe.',
+  ),
   sunFromTime: toggle(
     SUN,
     'Set the sky from a date, an hour and a place (the Scenery\u2019s `observer`): the real sun, moon and its phase, stars and planets. Off, the sun is set by hand, the moon is a full one opposite it and the stars are procedural.',
@@ -919,6 +952,511 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     0.05,
     SUN,
     'Strength of the warm glow along the horizon at sunrise and sunset, and the pink belt opposite it; 0 for none.',
+  ),
+  sky: toggle(
+    SKY,
+    'Draw the sky (`sky`): the air, the sun\u2019s disc, the moon, the stars and the clouds. Off, whatever is behind the scene shows instead, the sun\u2019s and the moon\u2019s light stay as set, and the void\u2019s gradient lights the scene and is what the sea reflects. Switched without recompiling.',
+  ),
+  voidBackground: {
+    ...toggle(
+      SKY,
+      'With the sky off, the void\u2019s gradient behind the scene (`<VoidBackground>`), in the void\u2019s colours, so it matches the light. Off, the canvas\u2019 own background.',
+    ),
+    if: { arg: 'sky', truthy: false },
+  },
+  airHaze: {
+    ...range(
+      0,
+      1,
+      0.01,
+      SKY,
+      'How much of the haze at sea level lies in a low layer rather than in the clear air: from above it, the sea below is clearer and the layer shows as a bright band along the horizon.',
+    ),
+    if: { arg: 'sky' },
+  },
+  airHazeHeight: {
+    ...range(
+      200,
+      5000,
+      50,
+      SKY,
+      'Height over which the low haze thins by e, in metres: a hazier or a warmer day lifts it.',
+    ),
+    if: { arg: 'sky' },
+  },
+  // Not behind `sky`: a hidden arg is left out of the story's, and the moon lights the night
+  // with the sky off too.
+  moon: toggle(
+    SKY,
+    'The moon: its disc and glow, and the sky\u2019s light once the sun is well down (with the sky off, its light alone). From a time and place it is the real one, with its phase, up by day too; else a full moon opposite the sun.',
+  ),
+  moonIntensity: {
+    ...range(0, 1, 0.01, SKY, 'Intensity of the moonlight, at full night.'),
+    if: { arg: 'moon' },
+  },
+  stars: {
+    ...toggle(
+      SKY,
+      'Stars, out once it is dark. From a time and place, the real ones to magnitude 5 and the planets, each out as the sky darkens enough for it, over faint procedural ones; else procedural.',
+    ),
+    if: { arg: 'sky' },
+  },
+  starBrightness: {
+    ...range(0, 2, 0.05, SKY, 'Brightness of the stars.'),
+    if: { arg: 'stars' },
+  },
+  discScale: range(
+    1,
+    5,
+    0.1,
+    SKY,
+    'The sun\u2019s and the moon\u2019s discs, glare and all, this many times their real size, as games do. 1 is real: half a degree across, small in a wide view.',
+  ),
+  skyZenith: { ...color(SKY, 'Straight up.'), if: { arg: 'sky' } },
+  skyHorizon: { ...color(SKY, 'Just above the horizon.'), if: { arg: 'sky' } },
+  skyGround: { ...color(SKY, 'Just below the horizon.'), if: { arg: 'sky' } },
+  skyNadir: { ...color(SKY, 'Straight down.'), if: { arg: 'sky' } },
+  skyHorizonBlend: range(
+    0.001,
+    0.3,
+    0.001,
+    SKY,
+    'Width of the horizon to ground transition.',
+  ),
+  clouds: {
+    control: { type: 'select' },
+    options: Object.keys(SKY_PRESETS),
+    description:
+      'A sky of 3D clouds about the field (`SceneryClouds` `layers`, a `SKY_PRESETS` name), lit by the sun and the moon: `clear` for none. Without a `Weather` around the Scenery they have no wind: they hold still, and no gusts work on them.',
+    if: { arg: 'sky' },
+    table: { category: CLOUDS },
+  },
+  cloudsQuality: {
+    control: { type: 'inline-radio' },
+    options: ['low', 'medium', 'high', 'ultra'],
+    description:
+      'How much the clouds spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen\u2019s resolution, how finely they are marched, how often they read the shape (once at LOW and MEDIUM: a march program each, compiled as the quality switches, the clouds drawn as they were meanwhile), how much of it a frame (`temporal`), and their shadows\u2019 map (512\u00b2 at LOW and MEDIUM, 1024\u00b2 at HIGH and ULTRA: as sharp from some 6.5 km up as 512\u00b2 from 2 km).',
+    if: { arg: 'sky' },
+    table: { category: CLOUDS },
+  },
+  scenerySea: toggle(
+    SEA,
+    'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',
+  ),
+  scenerySeaOpacity: {
+    ...range(0, 1, 0.01, SEA, 'The water\u2019s own opacity.'),
+    if: { arg: 'scenerySea' },
+  },
+  windSpeed: {
+    ...range(0, 25, 0.5, SEA, 'Drives the waves, in m/s.'),
+    if: { arg: 'scenerySea' },
+  },
+  foamAmount: {
+    ...range(0, 1, 0.01, SEA, 'Whitecaps on the waves.'),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaShoreFoam: {
+    ...range(
+      0,
+      1,
+      0.01,
+      SEA,
+      'Surf where the waves break on a coast (`shoreFoam`): where the depth of the scene\u2019s ground under the sea falls to 1.3 times their height. The waves shoal and die out toward the shore by the same depth, whatever this is.',
+    ),
+    if: { arg: 'scenerySea' },
+  },
+  windDirection: {
+    ...range(0, 360, 1, SEA, 'Compass bearing the wind blows toward.'),
+    if: { arg: 'scenerySea' },
+  },
+  swellHeight: {
+    ...range(
+      0,
+      6,
+      0.1,
+      SEA,
+      'A swell from weather far away: its significant height in metres, running on whatever the wind here does. 0 none.',
+    ),
+    if: { arg: 'scenerySea' },
+  },
+  swellPeriod: {
+    ...range(4, 20, 0.5, SEA, 'The swell\u2019s peak period, in seconds.'),
+    if: { arg: 'swellHeight', truthy: true },
+  },
+  swellFrom: {
+    ...range(0, 360, 1, SEA, 'Compass bearing the swell comes from.'),
+    if: { arg: 'swellHeight', truthy: true },
+  },
+  scenerySeaSteepness: {
+    ...range(
+      0,
+      2,
+      0.05,
+      SEA,
+      'The waves\u2019 slopes scaled for show: 1 as the spectrum gives them.',
+    ),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaOptics: {
+    control: { type: 'inline-radio' },
+    options: ['realistic', 'clear'],
+    description:
+      'The water\u2019s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea\u2019s (15 m visibility); CLEAR to see the seabed and what lies under the sea (750 m).',
+    table: { category: SEA },
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaDetailScale: {
+    ...range(0.005, 0.5, 0.005, SEA, 'The foam\u2019s feature frequency.'),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaFresnelPower: {
+    ...range(
+      0,
+      8,
+      0.1,
+      SEA,
+      '0: the reflection water has (Fresnel, IOR 1.333). Above: the old look, Schlick’s curve with this exponent (4 was the default; higher keeps the reflections nearer the horizon). Recompiles as it turns on or off.',
+    ),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaSparkle: {
+    ...range(
+      0,
+      2,
+      0.05,
+      SEA,
+      'The sun’s glitter (`sparkle`): the glint broken into the glints of ripples too small to draw, where a pixel holds few of them, the same mean. 0 none (compiled out; the component’s default on low and medium), 1 as modelled (its default on high and ultra), more for more. About 5 % of the sea. Recompiles as it turns on or off.',
+    ),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaCrestLight: {
+    ...range(
+      0,
+      3,
+      0.05,
+      SEA,
+      'The sun’s light through the waves’ crests (`crestLight`), with the sun behind them: a turquoise glow high on the waves, from the water’s own colour and clarity. 0 none, 1 as modelled (the default), more for more.',
+    ),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaFoamLife: {
+    control: { type: 'inline-radio' },
+    options: ['auto', 'on', 'off'],
+    table: { category: SEA },
+    description:
+      'The whitecaps’ life (`foamLife`): the foam a breaking crest leaves trails behind it, drifts downwind, fades, and is gathered by the wind into streaks, about the camera. AUTO: as the quality (high and ultra). Recompiles as it turns on or off.',
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaDetailFadeStart: {
+    ...range(
+      0,
+      200000,
+      1000,
+      SEA,
+      'Distance at which the waves, foam and patches start fading to a flat mirror.',
+    ),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeaDetailFadeEnd: {
+    ...range(1000, 400000, 1000, SEA, 'Distance at which they are gone.'),
+    if: { arg: 'scenerySea' },
+  },
+  scenerySeabed: toggle(
+    SEA,
+    'The sea\u2019s seabed, everywhere, an occupant\u2019s included. Off, it is peeled: with the void a hollow (`hollow`), the relief and the seabed are cut away over the hollow and stay around it; without, the void lies below the water. From below its lid is still a roof, and the cutaway cuts the water alone.',
+  ),
+  scenerySeabedOpacity: {
+    ...range(
+      0,
+      1,
+      0.01,
+      SEA,
+      'How much of what lies under the seabed it hides. Crossing 1 rebuilds the seabed\u2019s materials, which compile again.',
+    ),
+    if: { arg: 'scenerySeabed' },
+  },
+  scenerySeabedColor: {
+    ...color(SEA, 'The seabed\u2019s colour.'),
+    if: { arg: 'scenerySeabed' },
+  },
+  hollow: toggle(
+    VOID,
+    'The void as a hollow in the crust under the field (`SceneryVoid`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',
+  ),
+  hollowStyle: {
+    control: { type: 'inline-radio' },
+    options: ['calm', 'molten', 'simple'],
+    description:
+      'How the hollow looks (`hollow.style`): `calm`, grey rock and dark cracks, a sober backdrop; `molten`, a warm floor, its cracks glowing and pulsing; `simple`, a diagram, an even slope with depth lines, floor rings and a ring along the rim. Its colours, embers, pulse and air follow it unless set.',
+    if: { arg: 'hollow' },
+    table: { category: VOID },
+  },
+  hollowRadius: {
+    ...range(
+      50000,
+      1500000,
+      10000,
+      VOID,
+      'The hollow\u2019s rim, along the sea from the field, in metres: at 500 km its walls stand at the horizon seen from the sea.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowFloorDepth: {
+    ...range(
+      5000,
+      100000,
+      1000,
+      VOID,
+      'Depth of the hollow\u2019s floor under the seabed, in metres: about where the mantle begins.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowWalls: {
+    ...color(
+      VOID,
+      'The hollow\u2019s walls\u2019 rock; unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowFloor: {
+    ...color(
+      VOID,
+      'The hollow\u2019s floor\u2019s rock; unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowEmberColor: {
+    ...color(
+      VOID,
+      'The glow in the floor\u2019s cracks; unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowLidColor: {
+    ...color(
+      VOID,
+      'The simple style\u2019s lid, seen from inside; unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowEmbers: {
+    ...range(
+      0,
+      3,
+      0.05,
+      VOID,
+      'How much the floor\u2019s cracks glow; 0 for none. Unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowLightFalloff: {
+    ...range(
+      1000,
+      50000,
+      500,
+      VOID,
+      'Depth under the seabed over which the light from the opening falls by e, in metres.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowMurk: {
+    ...range(
+      0,
+      4,
+      0.05,
+      VOID,
+      'How much the void\u2019s air darkens with depth; 0 for none.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowPulse: {
+    ...range(
+      0,
+      1,
+      0.05,
+      VOID,
+      'How far the embers\u2019 glow dims as it slowly pulses (a share of it); 0 holds it steady. Unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowAir: {
+    ...range(
+      0,
+      1,
+      0.05,
+      VOID,
+      'How much of the air is left over the open hollow; the rest drains into it, darkening the sky over it. Unset, the style\u2019s.',
+    ),
+    if: { arg: 'hollow' },
+  },
+  hollowHandle: {
+    ...toggle(
+      VOID,
+      'A grip on the rim that drags the radius (`hollow.handle`), in the simple style only: a ghost ring follows, and the hollow takes the radius on release. A double click puts it back.',
+    ),
+    if: { arg: 'hollowStyle', eq: 'simple' },
+  },
+  voidCeiling: color(
+    VOID,
+    'The void\u2019s gradient straight up, and the plain void\u2019s lid (hollow off).',
+  ),
+  voidHorizon: color(
+    VOID,
+    'The void\u2019s gradient at the horizon, where the plain void\u2019s lid recedes to.',
+  ),
+  voidDepth: color(VOID, 'The void\u2019s gradient straight down.'),
+  voidTransition: range(
+    1,
+    2000,
+    1,
+    VOID,
+    'Depth below the level over which the void fades in, in metres. Without a sea only: under one, it begins at the seabed.',
+  ),
+  voidDarkening: range(
+    0,
+    20000,
+    100,
+    VOID,
+    'Depth of the camera below the level over which the whole void dims toward black, in metres; 0 for none.',
+  ),
+  voidDetail: range(
+    0,
+    1,
+    0.01,
+    VOID,
+    'Noise ripples on the void\u2019s lid (not the simple hollow\u2019s); 0 for none.',
+  ),
+  voidDetailScale: range(
+    50,
+    10000,
+    50,
+    VOID,
+    'Size of those ripples, in metres.',
+  ),
+  voidFalloff: range(
+    0.1,
+    3,
+    0.05,
+    VOID,
+    'How the void\u2019s gradient darkens below the horizon, its exponent. Smaller reaches the depth colour sooner.',
+  ),
+  subsurfaceFollowSun: toggle(
+    SUBSURFACE,
+    'The directional light below the seabed turns with the sun\u2019s compass bearing, its elevation held between the lowest and the highest. Off, it is fixed.',
+  ),
+  subsurfaceLightAzimuth: {
+    ...range(
+      0,
+      360,
+      1,
+      SUBSURFACE,
+      'Compass bearing of the fixed light, in degrees.',
+    ),
+    if: { arg: 'subsurfaceFollowSun', truthy: false },
+  },
+  subsurfaceLightElevation: {
+    ...range(0, 90, 1, SUBSURFACE, 'Elevation of the fixed light, in degrees.'),
+    if: { arg: 'subsurfaceFollowSun', truthy: false },
+  },
+  subsurfaceLightLowest: {
+    ...range(
+      0,
+      90,
+      1,
+      SUBSURFACE,
+      'Lowest the light following the sun goes, in degrees.',
+    ),
+    if: { arg: 'subsurfaceFollowSun' },
+  },
+  subsurfaceLightHighest: {
+    ...range(
+      0,
+      90,
+      1,
+      SUBSURFACE,
+      'Highest the light following the sun goes, in degrees.',
+    ),
+    if: { arg: 'subsurfaceFollowSun' },
+  },
+  subsurfaceLightColor: color(SUBSURFACE, 'Colour of the light below.'),
+  subsurfaceLightIntensity: range(
+    0,
+    5,
+    0.05,
+    SUBSURFACE,
+    'Intensity of the light below.',
+  ),
+  subsurfaceLightTransition: range(
+    0,
+    3,
+    0.05,
+    SUBSURFACE,
+    'Seconds the light eases over between the sun\u2019s and its own as the camera crosses the seabed; 0 for at once.',
+  ),
+  subsurfaceIntensity: range(
+    0,
+    4,
+    0.05,
+    SUBSURFACE,
+    'Scales the backdrop and the panels.',
+  ),
+  subsurfacePanelColor: color(SUBSURFACE, 'Colour of every light panel.'),
+  subsurfacePanelIntensity: range(
+    0,
+    20,
+    0.1,
+    SUBSURFACE,
+    'Radiance of every light panel.',
+  ),
+  subsurfaceBelow: toggle(
+    SUBSURFACE,
+    'Light the panels below the horizon apart.',
+  ),
+  subsurfaceBelowColor: {
+    ...color(SUBSURFACE),
+    if: { arg: 'subsurfaceBelow' },
+  },
+  subsurfaceBelowIntensity: {
+    ...range(0, 20, 0.1, SUBSURFACE),
+    if: { arg: 'subsurfaceBelow' },
+  },
+  environment: toggle(
+    ENVIRONMENT,
+    'Bake the Scenery into `scene.environment`, which lights MeshStandard/MeshPhysical materials.',
+  ),
+  environmentIntensity: {
+    ...range(0, 3, 0.05, ENVIRONMENT),
+    if: { arg: 'environment' },
+  },
+  environmentResolution: {
+    control: { type: 'select' },
+    options: [64, 128, 256, 512, 1024],
+    description:
+      'Cube face size of the environment\u2019s bake (`environment.resolution`, default 64). Only smooth, glossy materials lit by the environment show the difference: 128 or more for sharper reflections, at 1.6 ms more a bake (RTX A1000). A change recompiles every material it lights.',
+    if: { arg: 'environment' },
+    table: { category: ENVIRONMENT },
+  },
+  lightProbe: toggle(
+    ENVIRONMENT,
+    'Bake the Scenery into a light probe, which lights every `lights: true` material.',
+  ),
+  lightProbeIntensity: {
+    ...range(0, 3, 0.05, ENVIRONMENT),
+    if: { arg: 'lightProbe' },
+  },
+  captureInterval: range(
+    0,
+    2000,
+    50,
+    ENVIRONMENT,
+    'How long the Scenery must be still before it is baked again, in milliseconds.',
+  ),
+  captureMaxWait: range(
+    0,
+    2000,
+    50,
+    ENVIRONMENT,
+    'Longest the environment and the light probe go without a bake while the Scenery keeps changing, in milliseconds.',
   ),
   graticuleLatLon: toggle(
     GRATICULE,
@@ -1026,523 +1564,6 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     if: { arg: 'graticuleTimeZones' },
   },
   graticuleOpacity: range(0, 1, 0.05, GRATICULE, 'Every line\u2019s opacity.'),
-  backgroundMode: {
-    control: { type: 'inline-radio' },
-    options: ['sky', 'void', 'none'],
-    description:
-      "What is drawn behind the scene (`background`): `sky` the sky and its stage; `void` the void\u2019s grey gradient in the sky\u2019s place (`'void'`), as the stand-in draws it while the sky compiles: no air, sun, moon, stars or clouds, and the scene lit by the subsurface everywhere, the void and a sea drawn as ever (recompiles); `none` nothing (`false`), switched instantly with nothing rebuilt or baked, the scene still lit by the sky, by the subsurface.",
-    table: { category: SKY },
-  },
-  clouds: {
-    control: { type: 'select' },
-    options: Object.keys(SKY_PRESETS),
-    description:
-      'A sky of 3D clouds about the field (`SceneryClouds` `layers`, a `SKY_PRESETS` name), lit by the sun and the moon: `clear` for none. Without a `Weather` around the Scenery they have no wind: they hold still, and no gusts work on them.',
-    table: { category: CLOUDS },
-  },
-  cloudsQuality: {
-    control: { type: 'inline-radio' },
-    options: ['low', 'medium', 'high', 'ultra'],
-    description:
-      'How much the clouds spend for how they look (`quality`, `CLOUDS_QUALITY`): the share of the screen\u2019s resolution, how finely they are marched, how often they read the shape (once at LOW and MEDIUM: a march program each, compiled as the quality switches, the clouds drawn as they were meanwhile), how much of it a frame (`temporal`), and their shadows\u2019 map (512\u00b2 at LOW and MEDIUM, 1024\u00b2 at HIGH and ULTRA: as sharp from some 6.5 km up as 512\u00b2 from 2 km).',
-    table: { category: CLOUDS },
-  },
-  air: toggle(
-    SKY,
-    'The air thins with height: climbing, the sky deepens and its haze closes onto the horizon. Seen from low down, the far sea fades into the horizon.',
-  ),
-  airHaze: {
-    ...range(
-      0,
-      1,
-      0.01,
-      SKY,
-      'How much of the haze at sea level lies in a low layer rather than in the clear air: from above it, the sea below is clearer and the layer shows as a bright band along the horizon.',
-    ),
-    if: { arg: 'air' },
-  },
-  airHazeHeight: {
-    ...range(
-      200,
-      5000,
-      50,
-      SKY,
-      'Height over which the low haze thins by e, in metres: a hazier or a warmer day lifts it.',
-    ),
-    if: { arg: 'air' },
-  },
-  skyZenith: color(SKY, 'Straight up.'),
-  skyHorizon: color(SKY, 'Just above the horizon.'),
-  skyGround: color(SKY, 'Just below the horizon.'),
-  skyNadir: color(SKY, 'Straight down.'),
-  skyIntensity: range(
-    0,
-    3,
-    0.05,
-    SKY,
-    'Scales the whole sky: background, environment and light probe.',
-  ),
-  skyHorizonBlend: range(
-    0.001,
-    0.3,
-    0.001,
-    SKY,
-    'Width of the horizon to ground transition.',
-  ),
-  moon: toggle(
-    SKY,
-    'The moon: its disc and glow, and the sky\u2019s light once the sun is well down. From a time and place it is the real one, with its phase, up by day too; else a full moon opposite the sun.',
-  ),
-  moonIntensity: {
-    ...range(0, 1, 0.01, SKY, 'Intensity of the moonlight, at full night.'),
-    if: { arg: 'moon' },
-  },
-  stars: toggle(
-    SKY,
-    'Stars, out once it is dark. From a time and place, the real ones to magnitude 5 and the planets, each out as the sky darkens enough for it, over faint procedural ones; else procedural.',
-  ),
-  starBrightness: {
-    ...range(0, 2, 0.05, SKY, 'Brightness of the stars.'),
-    if: { arg: 'stars' },
-  },
-  discScale: range(
-    1,
-    5,
-    0.1,
-    SKY,
-    'The sun\u2019s and the moon\u2019s discs, glare and all, this many times their real size, as games do. 1 is real: half a degree across, small in a wide view.',
-  ),
-  skyWater: toggle(
-    SEA,
-    'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',
-  ),
-  skySeabed: toggle(
-    SEA,
-    'The sea\u2019s seabed, everywhere, an occupant\u2019s included. Off, it is peeled: with the void a hollow (`hollow`), the relief and the seabed are cut away over the hollow and stay around it; without, the void lies below the water. From below its lid is still a roof, and the cutaway cuts the water alone.',
-  ),
-  waterOpacity: range(0, 1, 0.01, SEA, 'The water\u2019s own opacity.'),
-  skySeabedOpacity: range(
-    0,
-    1,
-    0.01,
-    SEA,
-    'How much of what lies under the seabed it hides. Crossing 1 rebuilds the seabed\u2019s materials, which compile again.',
-  ),
-  windSpeed: range(0, 25, 0.5, SEA, 'Drives the waves, in m/s.'),
-  foamAmount: range(0, 1, 0.01, SEA, 'Whitecaps on the waves.'),
-  seaShoreFoam: range(
-    0,
-    1,
-    0.01,
-    SEA,
-    'Surf where the waves break on a coast (`shoreFoam`): where the depth of the scene\u2019s ground under the sea falls to 1.3 times their height. The waves shoal and die out toward the shore by the same depth, whatever this is.',
-  ),
-  windDirection: range(
-    0,
-    360,
-    1,
-    SEA,
-    'Compass bearing the wind blows toward.',
-  ),
-  swellHeight: range(
-    0,
-    6,
-    0.1,
-    SEA,
-    'A swell from weather far away: its significant height in metres, running on whatever the wind here does. 0 none.',
-  ),
-  swellPeriod: {
-    ...range(4, 20, 0.5, SEA, 'The swell\u2019s peak period, in seconds.'),
-    if: { arg: 'swellHeight', truthy: true },
-  },
-  swellFrom: {
-    ...range(0, 360, 1, SEA, 'Compass bearing the swell comes from.'),
-    if: { arg: 'swellHeight', truthy: true },
-  },
-  seaSteepness: range(
-    0,
-    2,
-    0.05,
-    SEA,
-    'The waves\u2019 slopes scaled for show: 1 as the spectrum gives them.',
-  ),
-  seaOptics: {
-    control: { type: 'inline-radio' },
-    options: ['realistic', 'clear'],
-    description:
-      'The water\u2019s look (`optics`, `WATER_OPTICS_PRESETS`): REALISTIC about the North Sea\u2019s (15 m visibility); CLEAR to see the seabed and what lies under the sea (750 m).',
-    table: { category: SEA },
-  },
-  skySeabedColor: color(SEA, 'The seabed\u2019s colour.'),
-  seaDetailScale: range(
-    0.005,
-    0.5,
-    0.005,
-    SEA,
-    'The foam\u2019s feature frequency.',
-  ),
-  seaFresnelPower: range(
-    0,
-    8,
-    0.1,
-    SEA,
-    '0: the reflection water has (Fresnel, IOR 1.333). Above: the old look, Schlick’s curve with this exponent (4 was the default; higher keeps the reflections nearer the horizon). Recompiles as it turns on or off.',
-  ),
-  seaSparkle: range(
-    0,
-    2,
-    0.05,
-    SEA,
-    'The sun’s glitter (`sparkle`): the glint broken into the glints of ripples too small to draw, where a pixel holds few of them, the same mean. 0 none (compiled out; the component’s default on low and medium), 1 as modelled (its default on high and ultra), more for more. About 5 % of the sea. Recompiles as it turns on or off.',
-  ),
-  seaCrestLight: range(
-    0,
-    3,
-    0.05,
-    SEA,
-    'The sun’s light through the waves’ crests (`crestLight`), with the sun behind them: a turquoise glow high on the waves, from the water’s own colour and clarity. 0 none, 1 as modelled (the default), more for more.',
-  ),
-  seaFoamLife: {
-    control: { type: 'inline-radio' },
-    options: ['auto', 'on', 'off'],
-    table: { category: SEA },
-    description:
-      'The whitecaps’ life (`foamLife`): the foam a breaking crest leaves trails behind it, drifts downwind, fades, and is gathered by the wind into streaks, about the camera. AUTO: as the quality (high and ultra). Recompiles as it turns on or off.',
-  },
-  seaDetailFadeStart: range(
-    0,
-    200000,
-    1000,
-    SEA,
-    'Distance at which the waves, foam and patches start fading to a flat mirror.',
-  ),
-  seaDetailFadeEnd: range(
-    1000,
-    400000,
-    1000,
-    SEA,
-    'Distance at which they are gone.',
-  ),
-  subsurfaceFollowSun: toggle(
-    SUBSURFACE,
-    'The directional light below the seabed turns with the sun\u2019s compass bearing, its elevation held between the lowest and the highest. Off, it is fixed.',
-  ),
-  subsurfaceLightAzimuth: {
-    ...range(
-      0,
-      360,
-      1,
-      SUBSURFACE,
-      'Compass bearing of the fixed light, in degrees.',
-    ),
-    if: { arg: 'subsurfaceFollowSun', truthy: false },
-  },
-  subsurfaceLightElevation: {
-    ...range(0, 90, 1, SUBSURFACE, 'Elevation of the fixed light, in degrees.'),
-    if: { arg: 'subsurfaceFollowSun', truthy: false },
-  },
-  subsurfaceLightLowest: {
-    ...range(
-      0,
-      90,
-      1,
-      SUBSURFACE,
-      'Lowest the light following the sun goes, in degrees.',
-    ),
-    if: { arg: 'subsurfaceFollowSun' },
-  },
-  subsurfaceLightHighest: {
-    ...range(
-      0,
-      90,
-      1,
-      SUBSURFACE,
-      'Highest the light following the sun goes, in degrees.',
-    ),
-    if: { arg: 'subsurfaceFollowSun' },
-  },
-  subsurfaceLightColor: color(SUBSURFACE, 'Colour of the light below.'),
-  subsurfaceLightIntensity: range(
-    0,
-    5,
-    0.05,
-    SUBSURFACE,
-    'Intensity of the light below.',
-  ),
-  subsurfaceLightTransition: range(
-    0,
-    3,
-    0.05,
-    SUBSURFACE,
-    'Seconds the light eases over between the sun\u2019s and its own as the camera crosses the seabed; 0 for at once.',
-  ),
-  subsurfaceIntensity: range(
-    0,
-    4,
-    0.05,
-    SUBSURFACE,
-    'Scales the backdrop and the panels.',
-  ),
-  subsurfacePanelColor: color(SUBSURFACE, 'Colour of every light panel.'),
-  subsurfacePanelIntensity: range(
-    0,
-    20,
-    0.1,
-    SUBSURFACE,
-    'Radiance of every light panel.',
-  ),
-  subsurfaceBelow: toggle(
-    SUBSURFACE,
-    'Light the panels below the horizon apart.',
-  ),
-  subsurfaceBelowColor: {
-    ...color(SUBSURFACE),
-    if: { arg: 'subsurfaceBelow' },
-  },
-  subsurfaceBelowIntensity: {
-    ...range(0, 20, 0.1, SUBSURFACE),
-    if: { arg: 'subsurfaceBelow' },
-  },
-  abyssCeiling: color(SUBSURFACE, 'The void\u2019s lid overhead.'),
-  // The plain void's own: with the hollow on, the void past it is black.
-  abyssHorizon: {
-    ...color(
-      SUBSURFACE,
-      'The plain void (hollow off): where its lid and depths meet, far away.',
-    ),
-    if: { arg: 'hollow', truthy: false },
-  },
-  abyssDepth: {
-    ...color(
-      SUBSURFACE,
-      'The plain void (hollow off): straight down, deep in it.',
-    ),
-    if: { arg: 'hollow', truthy: false },
-  },
-  abyssFadeDistance: range(
-    0,
-    100000,
-    500,
-    SUBSURFACE,
-    'Distance over which the void\u2019s lid recedes into its horizon colour, in metres; 0 for never.',
-  ),
-  abyssTransition: range(
-    1,
-    2000,
-    1,
-    SUBSURFACE,
-    'Depth below the level over which the void fades in, in metres. Without a sea only: under one, it begins at the seabed.',
-  ),
-  abyssDarkening: range(
-    0,
-    20000,
-    100,
-    SUBSURFACE,
-    'Depth of the camera below the level over which the whole void dims toward black, in metres; 0 for none.',
-  ),
-  abyssDetail: range(
-    0,
-    1,
-    0.01,
-    SUBSURFACE,
-    'Noise ripples on the void\u2019s lid; 0 for none.',
-  ),
-  abyssDetailScale: range(
-    50,
-    10000,
-    50,
-    SUBSURFACE,
-    'Size of those ripples, in metres.',
-  ),
-  abyssDepthDetail: {
-    ...range(
-      0,
-      0.5,
-      0.01,
-      SUBSURFACE,
-      'The plain void (hollow off): faint distant rock in its depths, wavy strata broken by crags; 0 for none.',
-    ),
-    if: { arg: 'hollow', truthy: false },
-  },
-  abyssDepthDetailScale: {
-    ...range(
-      0.25,
-      4,
-      0.05,
-      SUBSURFACE,
-      'The plain void (hollow off): size of the rock\u2019s features.',
-    ),
-    if: { arg: 'hollow', truthy: false },
-  },
-  abyssFalloff: {
-    ...range(
-      0.1,
-      3,
-      0.05,
-      SUBSURFACE,
-      'The plain void (hollow off): how its depths darken below the horizon, the gradient\u2019s exponent. Smaller reaches the depth colour sooner.',
-    ),
-    if: { arg: 'hollow', truthy: false },
-  },
-  hollow: toggle(
-    SUBSURFACE,
-    'The void as a hollow in the crust under the field (`SceneryVoid`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',
-  ),
-  hollowStyle: {
-    control: { type: 'inline-radio' },
-    options: ['calm', 'molten', 'simple'],
-    description:
-      'How the hollow looks (`hollow.style`): `calm`, grey rock and dark cracks, a sober backdrop; `molten`, a warm floor, its cracks glowing and pulsing; `simple`, a diagram, an even slope with depth lines, floor rings and a ring along the rim. Its colours, embers, pulse and air follow it unless set.',
-    if: { arg: 'hollow' },
-    table: { category: SUBSURFACE },
-  },
-  hollowRadius: {
-    ...range(
-      50000,
-      1500000,
-      10000,
-      SUBSURFACE,
-      'The hollow\u2019s rim, along the sea from the field, in metres: at 500 km its walls stand at the horizon seen from the sea.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowFloorDepth: {
-    ...range(
-      5000,
-      100000,
-      1000,
-      SUBSURFACE,
-      'Depth of the hollow\u2019s floor under the seabed, in metres: about where the mantle begins.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowWalls: {
-    ...color(
-      SUBSURFACE,
-      'The hollow\u2019s walls\u2019 rock; unset, the style\u2019s.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowFloor: {
-    ...color(
-      SUBSURFACE,
-      'The hollow\u2019s floor\u2019s rock; unset, the style\u2019s.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowEmberColor: {
-    ...color(
-      SUBSURFACE,
-      'The glow in the floor\u2019s cracks; unset, the style\u2019s.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowLidColor: {
-    ...color(
-      SUBSURFACE,
-      'The simple style\u2019s lid, seen from inside; unset, the style\u2019s.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowEmbers: {
-    ...range(
-      0,
-      3,
-      0.05,
-      SUBSURFACE,
-      'How much the floor\u2019s cracks glow; 0 for none. Unset, the style\u2019s.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowLightFalloff: {
-    ...range(
-      1000,
-      50000,
-      500,
-      SUBSURFACE,
-      'Depth under the seabed over which the light from the opening falls by e, in metres.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowMurk: {
-    ...range(
-      0,
-      4,
-      0.05,
-      SUBSURFACE,
-      'How much the void\u2019s air darkens with depth; 0 for none.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowPulse: {
-    ...range(
-      0,
-      1,
-      0.05,
-      SUBSURFACE,
-      'How far the embers\u2019 glow dims as it slowly pulses (a share of it); 0 holds it steady. Unset, the style\u2019s.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowAir: {
-    ...range(
-      0,
-      1,
-      0.05,
-      SUBSURFACE,
-      'How much of the air is left over the open hollow; the rest drains into it, darkening the sky over it. Unset, the style\u2019s.',
-    ),
-    if: { arg: 'hollow' },
-  },
-  hollowHandle: {
-    ...toggle(
-      SUBSURFACE,
-      'A grip on the rim that drags the radius (`hollow.handle`), in the simple style only: a ghost ring follows, and the hollow takes the radius on release. A double click puts it back.',
-    ),
-    if: { arg: 'hollowStyle', eq: 'simple' },
-  },
-  globe: toggle(
-    ENVIRONMENT,
-    'The Earth is a fixed globe: the sea, the sky and the clouds follow its curve, so the horizon drops as the camera climbs: about 1\u00b0 at 1 km, 4\u00b0 at 15 km. The sea stays flat over the scene. Off, a flat sea everywhere: only right near one field.',
-  ),
-  environment: toggle(
-    ENVIRONMENT,
-    'Bake the sky into `scene.environment`, which lights MeshStandard/MeshPhysical materials.',
-  ),
-  lightProbe: toggle(
-    ENVIRONMENT,
-    'Bake the sky into a light probe, which lights every `lights: true` material.',
-  ),
-  environmentIntensity: {
-    ...range(0, 3, 0.05, ENVIRONMENT),
-    if: { arg: 'environment' },
-  },
-  environmentResolution: {
-    control: { type: 'select' },
-    options: [64, 128, 256, 512, 1024],
-    description:
-      'Cube face size of the environment\u2019s bake (`environment.resolution`, default 64). Only smooth, glossy materials lit by the environment show the difference: 128 or more for sharper reflections, at 1.6 ms more a bake (RTX A1000). A change recompiles every material it lights.',
-    if: { arg: 'environment' },
-    table: { category: ENVIRONMENT },
-  },
-  lightProbeIntensity: {
-    ...range(0, 3, 0.05, ENVIRONMENT),
-    if: { arg: 'lightProbe' },
-  },
-  captureInterval: range(
-    0,
-    2000,
-    50,
-    ENVIRONMENT,
-    'How long the sky must be still before it is baked again, in milliseconds.',
-  ),
-  captureMaxWait: range(
-    0,
-    2000,
-    50,
-    ENVIRONMENT,
-    'Longest the environment and the light probe go without a bake while the sky keeps changing, in milliseconds.',
-  ),
   pipeline: {
     control: { type: 'inline-radio' },
     options: ['default', 'oit'],
@@ -1554,7 +1575,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
     DEBUG,
     'GPU time, frame time and FPS, draw calls, triangles and resident geometries, textures and programs.',
   ),
-  tint: toggle(DEBUG, 'Tint each part of the sky by what draws it.'),
+  tint: toggle(DEBUG, 'Tint each part of the Scenery by what draws it.'),
   showEnvironment: toggle(
     DEBUG,
     'The environment\u2019s bake for the zone in view as its six faces, lower right: `+Y` over `-X -Z +X +Z`, `-Y` under.',
@@ -1563,7 +1584,7 @@ const allSkyArgTypes = (): ArgTypes<SceneryArgs> => ({
   ...toneMappingArgTypes(),
 });
 
-// The renderer's tone mapping, applied with a sky or without: never behind `shownIf`.
+// The renderer's tone mapping, applied with a Scenery or without: never behind `shownIf`.
 const UNGATED = new Set(Object.keys(toneMappingArgs));
 
 /**
@@ -1576,7 +1597,7 @@ export function sceneryArgTypes({
   debug = false,
   shownIf,
 }: { debug?: boolean; shownIf?: string } = {}): ArgTypes<SceneryArgs> {
-  const argTypes = allSkyArgTypes();
+  const argTypes = allSceneryArgTypes();
   for (const [key, argType] of Object.entries(argTypes)) {
     if (!argType) continue;
     if (!debug && ADVANCED.has(key)) {
@@ -1622,7 +1643,7 @@ export type SceneryReliefLookArgs = {
   reliefLocalLook: boolean;
 };
 
-export const sceneryReliefLookArgs: SceneryReliefLookArgs = {
+const sceneryReliefLookArgs: SceneryReliefLookArgs = {
   reliefColor: 'flat',
   reliefLandColor: '#34433b',
   reliefRamp: 'terrain',
@@ -1651,7 +1672,7 @@ const RELIEF = 'Relief';
  * Controls for {@link SceneryReliefLookArgs}; with `shownIf`, its two switches (the colour and
  * the contours) show only while that arg is on.
  */
-export function sceneryReliefLookArgTypes(
+function sceneryReliefLookArgTypes(
   shownIf?: string,
 ): ArgTypes<SceneryReliefLookArgs> {
   const shown = shownIf ? { if: { arg: shownIf } } : {};
@@ -1811,7 +1832,7 @@ const contourLabelsOf = (a: SceneryReliefLookArgs) => ({
  * A relief's `color`, `contours` and `layerLooks` from {@link SceneryReliefLookArgs}, for a
  * relief of `layers` (the last, the finest, takes `reliefLocalLook`).
  */
-export function sceneryReliefLookFromArgs(
+function sceneryReliefLookFromArgs(
   args: Partial<SceneryReliefLookArgs>,
   layers: ReliefLayer[],
 ): Pick<GeoReliefProps, 'color' | 'contours' | 'layerLooks'> {
@@ -1872,21 +1893,14 @@ export const SCENERY_DEMO_RELIEF_LAYERS: ReliefLayer[] = [
   { id: 'emodnet-2020-volve', feather: 500 },
 ];
 
-// What each demo relief is, for the `reliefLayers` control.
-const SCENERY_DEMO_RELIEF_LABELS: Record<string, string> = {
+/** What each demo relief is, by id: the labels of a control of them. */
+export const SCENERY_DEMO_RELIEF_LABELS: Record<string, string> = {
   'etopo-2022-world': 'ETOPO 2022, 10\u2032, the world',
   'etopo-2022-nordic': 'ETOPO 2022, 2\u2032, Norway to the British Isles',
   'etopo-2022-15s-sw-norway': 'ETOPO 2022, 15\u2033, Volve to the coast',
   'emodnet-2020-sw-norway': 'EMODnet, 1/8\u2032, Volve to the coast (sea only)',
   'emodnet-2020-volve': 'EMODnet, 1/16\u2032, around Volve (sea only)',
 };
-
-/**
- * The synthetic column's sea bed baked into a relief (`surfaceToRelief`): a coast and an
- * island over the field, made up, to see a local layer merge. ⚠️ Served only to a story
- * whose `parameters.store` holds it (`syntheticScenarios: [SYNTHETIC_SEABED_KEY]`).
- */
-export const SCENERY_DEMO_BAKED_SEABED = bakedReliefId(SYNTHETIC_SEABED_ID);
 
 /**
  * A store surface baked into a relief layer by the demo store, as a story's own finest
@@ -1897,21 +1911,21 @@ export const sceneryBakedReliefLayer = (
   feather = 500,
 ): ReliefLayer => ({ id: bakedReliefId(surfaceId), feather });
 
-// The layers a `hide` control offers: the sky's own, by label, and a stage's.
+// The layers a `hide` control offers: the Scenery's own, by label, and a stage's.
 const SCENERY_HIDE_LAYERS: Record<string, SceneryLayer> = {
-  'sky background': 'background',
-  'sky sky': 'sky',
-  'sky clouds': 'clouds',
-  'sky void': 'void',
-  'sky sea': 'sea',
-  'sky water': 'water',
-  'sky surface': 'surface',
+  'scenery background': 'background',
+  'scenery sky': 'sky',
+  'scenery clouds': 'clouds',
+  'scenery void': 'void',
+  'scenery sea': 'sea',
+  'scenery water': 'water',
+  'scenery surface': 'surface',
 };
 const STAGE_HIDE_LAYERS: SceneryStageLayer[] = ['surface', 'bed'];
 // And the relief, a `GeoRelief`'s `visible`.
 const RELIEF_HIDE_LAYER = 'relief';
 
-/** A `hide` control for a sky story: layers of the sky, of its stage and the relief not to draw (see {@link sceneryHideFromArgs}). */
+/** A `hide` control for a Scenery story: layers of the Scenery, of its stage and the relief not to draw (see {@link sceneryHideFromArgs}). */
 export const sceneryHideArgType = {
   control: { type: 'check' },
   options: [
@@ -1930,7 +1944,7 @@ export const sceneryHideArgType = {
  */
 export function sceneryHideFromArgs(hide: string[] = []) {
   return {
-    sky: hide
+    scenery: hide
       .filter(l => l in SCENERY_HIDE_LAYERS)
       .map(l => SCENERY_HIDE_LAYERS[l]),
     stage: STAGE_HIDE_LAYERS.filter(l => hide.includes(l)),
@@ -1945,10 +1959,11 @@ export const sceneryOutlineArgType = {
   table: { category: 'Debug' },
 } as const;
 
+// The switch and the layers first: the Controls panel follows the args' order.
 export const sceneryReliefArgs: SceneryReliefArgs = {
-  ...sceneryReliefLookArgs,
   relief: false,
   reliefLayers: SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
+  ...sceneryReliefLookArgs,
 };
 
 /** Controls for {@link SceneryReliefArgs}; with `shownIf`, the toggle shows only while that arg is on. */
@@ -1958,7 +1973,7 @@ export function sceneryReliefArgTypes(
   return {
     relief: {
       ...toggle(
-        SKY,
+        RELIEF,
         'Land and seabed from the store, drawn from tiles over everything, the stage included: the demo reliefs ticked in `reliefLayers`, merged coarse to fine. Made on demand: `npm run generate-relief`.',
       ),
       ...(shownIf ? { if: { arg: shownIf } } : {}),
@@ -1968,7 +1983,7 @@ export function sceneryReliefArgTypes(
       options: SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
       description:
         'The demo reliefs merged, coarse to fine whatever the order ticked: a later one wins where it has data, faded in over 3, 1.5 and 0.5 km from where its data ends. A story may add layers of its own over them. Changing them builds every tile again.',
-      table: { category: SKY },
+      table: { category: RELIEF },
       if: { arg: 'relief' },
     },
     ...sceneryReliefLookArgTypes('relief'),

@@ -58,7 +58,7 @@ const centuries = (date: Date) => (julianDay(date) - J2000) / 36525;
 const obliquity = (t: number) => 23.439291 - 0.0130042 * t;
 
 /** The Julian day of a moment (UTC taken as the dynamical time: a minute off at most). */
-export function julianDay(date: Date): number {
+function julianDay(date: Date): number {
   return date.getTime() / 86400000 + 2440587.5;
 }
 

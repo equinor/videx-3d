@@ -25,8 +25,8 @@ import {
 import { renderAside } from '../../sdk/utils/render-aside';
 import { precompile, PrecompileOptions } from '../../rendering/precompile';
 import { SphericalHarmonicsProjector } from '../../sdk/utils/spherical-harmonics';
-import { oceanWhitecapCover } from '../Ocean/ocean-material';
-import skyVertexShader from './shaders/sky-vertex.glsl';
+import { waterWhitecapCover } from '../Water/water-material';
+import sceneryVertexShader from './shaders/scenery-vertex.glsl';
 import bakeFragmentShader from './shaders/scenery-bake-fragment.glsl';
 import { createSceneryGeometry, SceneryMaterial } from './scenery-material';
 import {
@@ -50,13 +50,13 @@ const OVERLAY_ORDER = 2;
 
 const overlayFragmentShader = /* glsl */ `
 uniform samplerCube uOverlay;
-uniform float uSkyIntensity;
-varying vec3 vSkyDirection;
+uniform float uSceneryIntensity;
+varying vec3 vSceneryDirection;
 void main() {
-  vec4 overlay = textureCube(uOverlay, normalize(vSkyDirection));
+  vec4 overlay = textureCube(uOverlay, normalize(vSceneryDirection));
   if(overlay.a <= 0.0)
     discard;
-  gl_FragColor = vec4(overlay.rgb * uSkyIntensity, overlay.a);
+  gl_FragColor = vec4(overlay.rgb * uSceneryIntensity, overlay.a);
 }`;
 
 /**
@@ -70,10 +70,10 @@ function sceneryBakePosition(
   target: Vector3,
 ): Vector3 {
   if (zone === 'subsurface') return target.set(0, 0, 0);
-  const level = source.ocean
-    ? source.oceanLevel
-    : source.abyss
-      ? source.abyssLevel
+  const level = source.sea
+    ? source.seaLevel
+    : source.void
+      ? source.voidLevel
       : 0;
   const height =
     zone === 'water'
@@ -124,7 +124,7 @@ export class SceneryBaker {
   // visible sky's is where the camera is (SceneryMaterial.fieldLight). Filled in before each
   // film.
   private readonly overrides = {
-    uSkyCurvature: new Uniform(0),
+    uSceneryCurvature: new Uniform(0),
     // ⚠️ Its w is the switch, and a Vector4's default w is 1: with it, the globe was on with
     // no radius, and the half of the bake's sea away from the sun lay in night (until
     // 2026-11-05).
@@ -167,11 +167,11 @@ export class SceneryBaker {
   // What draws itself in the sky, drawn over the air's bakes (setOverlay).
   private overlay: ScenerySkyOverlay | null = null;
   private readonly overlayMaterial = new ShaderMaterial({
-    vertexShader: skyVertexShader,
+    vertexShader: sceneryVertexShader,
     fragmentShader: overlayFragmentShader,
     uniforms: {
       uOverlay: new Uniform<Texture | null>(null),
-      uSkyIntensity: new Uniform(1),
+      uSceneryIntensity: new Uniform(1),
     },
     depthTest: false,
     depthWrite: false,
@@ -188,7 +188,7 @@ export class SceneryBaker {
     // The sky's uniform objects, so its setters drive the bakes too, but for the overrides.
     this.material = new ShaderMaterial({
       name: 'scenery-bake',
-      vertexShader: skyVertexShader,
+      vertexShader: sceneryVertexShader,
       fragmentShader: bakeFragmentShader,
       uniforms: {
         ...(source.uniforms as Record<string, IUniform>),
@@ -200,7 +200,8 @@ export class SceneryBaker {
     });
     this.mesh = new Mesh(this.geometry, this.material);
     this.mesh.frustumCulled = false;
-    this.overlayMaterial.uniforms.uSkyIntensity = source.uniforms.uSkyIntensity;
+    this.overlayMaterial.uniforms.uSceneryIntensity =
+      source.uniforms.uSceneryIntensity;
     this.overlayMesh.frustumCulled = false;
     this.overlayMesh.renderOrder = OVERLAY_ORDER;
     this.overlayMesh.visible = false;
@@ -384,16 +385,16 @@ export class SceneryBaker {
     overrides.uSkyTwilight.value.set(source.sunTwilight, field.twilight);
     overrides.uSkyMoonlight.value = field.moonlight;
     own.uBakeZone.value = BAKE_ZONE[zone];
-    // The sea's, as its water has them (linkOcean): none until linked.
+    // The sea's, as its water has them (linkWater): none until linked.
     const sea = source.uniforms as Record<string, IUniform | undefined>;
     own.uBakeSea.value.set(
-      source.ocean ? 1 : 0,
+      source.sea ? 1 : 0,
       sea.uReflectionIntensity?.value ?? 1,
-      oceanWhitecapCover(
+      waterWhitecapCover(
         sea.uWindSpeed?.value ?? 0,
         sea.uFoamAmount?.value ?? 0,
       ) * (sea.uFoamLook?.value?.y ?? 1),
-      source.oceanWater ? 1 : 0,
+      source.seaWater ? 1 : 0,
     );
     if (sea.uFoamColor) own.uBakeFoamColor.value.copy(sea.uFoamColor.value);
     const map = zone === 'subsurface' ? this.subsurfaceMap : null;

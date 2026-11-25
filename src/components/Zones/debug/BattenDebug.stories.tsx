@@ -1536,7 +1536,7 @@ const BattenDebug = (props: Props) => {
 };
 
 const meta: Meta<Props> = {
-  title: 'debug/Zones/Batten (prototype)',
+  title: 'Debug/Zones/Batten',
   component: BattenDebug,
   // `useArgs` is a preview hook — only valid in a decorator, not inside the React component.
   decorators: [

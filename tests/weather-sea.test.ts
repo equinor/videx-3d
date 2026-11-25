@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { OceanMaterial } from '../src/components/Ocean/ocean-material';
+import { WaterMaterial } from '../src/components/Water/water-material';
 import { WeatherSea } from '../src/components/Weather/weather-sea';
 import { WeatherClock } from '../src/sdk/weather/weather-clock';
 import type { WeatherState } from '../src/sdk/weather/weather';
@@ -67,13 +67,13 @@ describe('WeatherSea', () => {
   });
 });
 
-describe("OceanMaterial on the weather's sea", () => {
+describe("WaterMaterial on the weather's sea", () => {
   it("draws the weather's sea state while given one, and its own again after", () => {
     const clock = clockAt(42);
     const sea = new WeatherSea(clock);
     sea.setWeather(WEATHER);
-    const a = new OceanMaterial();
-    const b = new OceanMaterial();
+    const a = new WaterMaterial();
+    const b = new WaterMaterial();
     const own = a.seaState;
 
     a.sea = sea;
@@ -98,7 +98,7 @@ describe("OceanMaterial on the weather's sea", () => {
   it('keeps its own sea state under a weather without a wind', () => {
     const sea = new WeatherSea(clockAt());
     sea.setWeather({});
-    const m = new OceanMaterial();
+    const m = new WaterMaterial();
     const own = m.seaState;
     m.sea = sea;
     expect(m.seaState).toBe(own);

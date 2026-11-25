@@ -95,7 +95,7 @@ export function mapViewPlaneAt(
 export type MapOrientation = 'north-up' | 'heading-up';
 
 /** Scene X east, Z south: north, the way up a north-up map, is -Z. */
-export const MAP_NORTH: Vec2 = [0, -1];
+const MAP_NORTH: Vec2 = [0, -1];
 
 /**
  * The way up the screen of a map view: north, or the camera's heading.
@@ -447,7 +447,7 @@ export function niceScaleLength(
 }
 
 /** The share of a map's width its scale bar aims for, and the fewest pixels it takes. */
-export const MAP_SCALE_BAR = { share: 0.25, minPixels: 72 };
+const MAP_SCALE_BAR = { share: 0.25, minPixels: 72 };
 
 /**
  * The scale bar of `view`: a round length ({@link niceScaleLength}) about a quarter of its
@@ -662,7 +662,7 @@ export function moveAltitude(
  *
  * @group Utils
  */
-export function rayAtSeaLevel(
+export function rayAtMeanSeaLevel(
   origin: Vec3,
   direction: Vec3,
   level: number,

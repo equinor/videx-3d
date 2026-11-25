@@ -1,9 +1,9 @@
 import type { WebGLRenderer } from 'three';
 import type { SeaSpectrumInput } from '../../sdk/weather/sea-spectrum';
 import {
-  SEA_QUALITY,
+  WATER_QUALITY,
   SeaState,
-  type SeaQuality,
+  type WaterQuality,
 } from '../../sdk/weather/sea-state';
 import type { WeatherClock } from '../../sdk/weather/weather-clock';
 import {
@@ -11,7 +11,7 @@ import {
   windToward,
   type WeatherState,
 } from '../../sdk/weather/weather';
-import { SeaWaveBake } from '../Ocean/sea-wave-bake';
+import { SeaWaveBake } from '../Water/sea-wave-bake';
 
 type Sea = {
   state: SeaState;
@@ -28,14 +28,14 @@ type Sea = {
  * The sea under a `Weather`: one `SeaState` for each quality asked for, the weather's
  * wind and swells its input, on the weather's clock, and its layers' tiles (`SeaWaveBake`).
  * Every sea under the weather that takes its wind and swells from it draws these, so all of
- * them are one sea, moved and baked once a frame however many draw it (`OceanMaterial.sea`).
+ * them are one sea, moved and baked once a frame however many draw it (`WaterMaterial.sea`).
  * In the default compass frame, as the weather's wind (`windToward`): X east, Z south.
  *
  * Its input is the weather's alone: a sea with a wind or swells of its own keeps a sea state
  * of its own.
  */
 export class WeatherSea {
-  private readonly seas = new Map<SeaQuality, Sea>();
+  private readonly seas = new Map<WaterQuality, Sea>();
   private input: SeaSpectrumInput | null = null;
   private inputKey = '';
   // Counts input changes, so a tile baked before one is baked again.
@@ -82,17 +82,17 @@ export class WeatherSea {
   }
 
   /** The sea state of `quality` (made as it is first asked for); null without a wind. */
-  state(quality: SeaQuality): SeaState | null {
+  state(quality: WaterQuality): SeaState | null {
     return this.seaOf(quality)?.state ?? null;
   }
 
   /** The tiles of `quality`'s layers (made as they are first asked for); null without a wind. */
-  bakeOf(quality: SeaQuality): SeaWaveBake | null {
+  bakeOf(quality: WaterQuality): SeaWaveBake | null {
     const sea = this.seaOf(quality);
     if (!sea) return null;
     sea.bake ??= new SeaWaveBake(
       sea.state.layers,
-      SEA_QUALITY[quality].anisotropy,
+      WATER_QUALITY[quality].anisotropy,
     );
     return sea.bake;
   }
@@ -119,7 +119,7 @@ export class WeatherSea {
    */
   bake(
     renderer: WebGLRenderer,
-    quality: SeaQuality,
+    quality: WaterQuality,
     drawn?: (index: number) => boolean,
   ): void {
     const sea = this.seaOf(quality);
@@ -152,12 +152,12 @@ export class WeatherSea {
     }
   }
 
-  private seaOf(quality: SeaQuality): Sea | null {
+  private seaOf(quality: WaterQuality): Sea | null {
     if (!this.input) return null;
     let sea = this.seas.get(quality);
     if (!sea) {
-      const spec = SEA_QUALITY[quality] ?? SEA_QUALITY.medium;
-      // The seed an `OceanMaterial`'s own sea state has.
+      const spec = WATER_QUALITY[quality] ?? WATER_QUALITY.medium;
+      // The seed an `WaterMaterial`'s own sea state has.
       const state = new SeaState(this.input, {
         layers: spec.layers,
         detail: spec.detail,

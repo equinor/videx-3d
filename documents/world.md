@@ -188,7 +188,7 @@ Nothing above is needed for one field. What keeps it cheap to add later:
 | 1 | **One place for where:** sdk helpers that derive the relief's frame and the sky's observer place from the CRS a `UtmArea` is given; the sky stories take all three from one CRS (`demoCrs`) | ✅ built (2026-10-25); the helpers became `geoFrameFromCrs` and `geoFrameLocation` in step 3 |
 | 2 | **The sky on a fixed globe** ([in detail](#9-step-2-in-detail-the-sky-on-a-fixed-globe)): the sea, the horizon, the air and the clouds on a sphere fixed below the chosen field, flat over its disc; the relief and anchored content placed on it with no camera in the sum; `followFlatSea` and `followAway` go | ✅ built (2026-10-26): the same pictures at one field, nothing moving anywhere, at 0–1 ms a frame over the sea (2e) |
 | 3 | **Fields placed on the Earth** ([in detail](#10-step-3-in-detail-fields-placed-on-the-earth)): `GeoFrame` (was `ReliefFrame`); a `World` holding the scene's; a `UtmArea` in another frame placed in it, on the globe with a sky; the observer's place and the relief's frame from the `World` | ✅ built (2026-10-26): a second field in UTM 32N, 123 km out, placed to about 10 cm 5 km around (ReliefTiles' `facility: 'field'`), with the sky and without |
-| 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on fixed charts on the Earth (`OceanCharts`). A host levels its horizon with `useLevelHorizon` | ✅ built (2026-10-27); the cloud deck far off is left for step 8 |
+| 4 | **The sky anywhere on the globe** ([in detail](#12-step-4-in-detail-the-sky-anywhere-on-the-globe)), was the view's origin. Its precision came free in step 3: three.js composes each draw's model-view matrix in 64 bits, so a placed field is as precise 300 km out as at home. Left: the sky seen from far off. The world stays fixed and the sky's look frame follows the camera: its up, horizon and light where the camera is; the waves on fixed charts on the Earth (`WaterCharts`). A host levels its horizon with `useLevelHorizon` | ✅ built (2026-10-27); the cloud deck far off is left for step 8 |
 | 5 | **The relief in its own frame** — folded into step 6. In a frame of its own the relief would part from the chosen field's UTM by the two maps' scale (UTM's 0.9996 against 1: 3 m at 8 km), right where its column meets it; laid in the chosen field's frame it meets it exactly, and a placed field's to its placement's precision | → step 6 |
 | 6 | **Tiles on the globe** ([in detail](#11-step-6-in-detail-tiles-on-the-globe)): tile keys by latitude and longitude, the relief contract unchanged (a tile asks each layer for a window of its own grid, as now); the overlays' tiles move with them, sharing the core. Everything placed by latitude and longitude on one sphere, the ellipsoid's conformal sphere matched at the chosen field; each field's column samples the relief through its transform | ✅ built (2026-10-26) in five parts: 6a the geographic globe, 6b geographic tiles, 6c the relief drawn from them, 6d the whole globe — the Earth from 20 000 km, the far side included; 6e a clean-up |
 | 7 | **More than one field** ([in detail](#13-step-7-in-detail-more-than-one-field)): the `World` holds where things are — its frame (the anchor), the disc and the globe — whatever the scenery, and draws nothing; the relief Earth data of its own; switching the anchor a controlled switch, timed and covered by the host; every loaded field drawn in its own group; the void the seabed's underside everywhere; the seabed see-through over each loaded field | ✅ built: designed (2026-10-30), designed again (2026-11-02); 7a–7f built, 7g judged not needed (2026-11-02); step 3 placed the second field. Then stages and fields of any shape, and a `World` anchored where the camera looks (2026-11-03) |
@@ -394,15 +394,15 @@ them with one return.
 
 | Part | Today | After step 2 |
 |--|--|--|
-| `sky-curve.glsl` (`skyCurveDrop`) | the drop at X/Z as the camera sees it | `globe.glsl` (sdk): the altitude, up and ground of a point, a ray's reach and the horizon, as above |
+| `sky-curve.glsl` (`sceneryCurveDrop`) | the drop at X/Z as the camera sees it | `globe.glsl` (sdk): the altitude, up and ground of a point, a ray's reach and the horizon, as above |
 | `Globe` (sdk, new) | — | the disc and the centre; `altitude`, `up`, `place`, `reach`, the CPU twins of `globe.glsl`; its uniforms |
 | `SceneryMaterial` | `setFlatSea`; `followFlatSea` moves the disc each frame (`followAway`, `FLAT_SEA_FOLLOW`, `FLAT_SEA_AWAY`); `curveDrop(point, eye)` | owns a `Globe` (`globe`): `setFlatSea` sets its disc, once; the rest goes; its shaders bind the globe's uniforms |
-| `sky-gradient.glsl` | `skyFlatRun`; the horizon and the lowest height a view passes from `½ κ d²` along the view | the horizon from the camera's altitude and up; the lowest height from the ray's closest approach to the centre; the air's heights over the globe |
-| `sky-ocean.glsl` | `skyOceanReach` (flat, then `½ κ (c t − run)²`); `skyOceanTilt` tips the normal by the fall | the reach on the globe; the waves' normal turned onto up at the hit, and `skyOceanTilt` goes |
-| `sky.glsl` | the clouds' deck on a sphere centred under the camera; the band's sink and squash from `½ κ d²`; the stage's sky over the curved horizon | the deck about `C`; the band from the camera's altitude; the horizon from the globe |
+| `sky-gradient.glsl` | `sceneryFlatRun`; the horizon and the lowest height a view passes from `½ κ d²` along the view | the horizon from the camera's altitude and up; the lowest height from the ray's closest approach to the centre; the air's heights over the globe |
+| `scenery-sea.glsl` | `scenerySeaReach` (flat, then `½ κ (c t − run)²`); `sceneryOceanTilt` tips the normal by the fall | the reach on the globe; the waves' normal turned onto up at the hit, and `sceneryOceanTilt` goes |
+| `scenery.glsl` | the clouds' deck on a sphere centred under the camera; the band's sink and squash from `½ κ d²`; the stage's sky over the curved horizon | the deck about `C`; the band from the camera's altitude; the horizon from the globe |
 | Stage (`stage-fragment.glsl`) | the reach and the water's path below the surface beyond the disc | the same, through the globe's reach; the seabed facing up there; the planes sunk under a camera far off ([below](#the-stage-far-off)) |
-| Relief tiles (`relief-tiles-vertex.glsl`) | each vertex lowered by `skyCurveDrop`, its height along the scene's up | placed by the ground at its X/Z, its height and skirt along up there; `vReliefFlat` (the occupant's cut) stays flat |
-| Relief fragment, overview | the sea through `skyOceanReach` | the same, through the globe's reach |
+| Relief tiles (`relief-tiles-vertex.glsl`) | each vertex lowered by `sceneryCurveDrop`, its height along the scene's up | placed by the ground at its X/Z, its height and skirt along up there; `vReliefFlat` (the occupant's cut) stays flat |
+| Relief fragment, overview | the sea through `scenerySeaReach` | the same, through the globe's reach |
 | `applySkyCurve` | per vertex, the drop as the camera sees it, from a `SceneryMaterial` | per vertex, the ground at its X/Z and its height along up: the same from every camera. Takes a `Globe`; renamed `applyGlobe`, as nothing in it is the sky's |
 | `SceneryAnchor`, the stage's `anchor` (`placeOnSkyCurve`) | lowered and tilted each frame, from the camera, while `followAway` | placed on the globe at `at`, when the globe or `at` changes: nothing over the disc, so the chosen field is never moved. `SceneryAnchor` takes the enclosing sky's globe, or a `globe` of its own |
 | `SceneryStage` | sets `followAway` while tiled | does not |
@@ -503,7 +503,7 @@ converted into the field's frame. The globe is a way of drawing, applied on top.
 
 | # | Step | Ends with |
 |--|--|--|
-| 2a | **The globe on the CPU:** `Globe` in the sdk (the centre from its disc; `altitude`, `up`, `place`, `reach`); the `Scenery` owns one, `setFlatSea` setting its disc; tests | ✅ built (2026-10-26); nothing drawn changes. `SceneryMaterial.globe`, kept in step by `setFlatSea`, `oceanLevel`, `globeEnabled` and `setFrame`; `tests/globe.test.ts` |
+| 2a | **The globe on the CPU:** `Globe` in the sdk (the centre from its disc; `altitude`, `up`, `place`, `reach`); the `Scenery` owns one, `setFlatSea` setting its disc; tests | ✅ built (2026-10-26); nothing drawn changes. `SceneryMaterial.globe`, kept in step by `setFlatSea`, `seaLevel`, `globeEnabled` and `setFrame`; `tests/globe.test.ts` |
 | 2b | **Everything drawn, at once,** so the ground and the sea always agree: `globe.glsl` for `sky-curve.glsl`; the sea, horizon, air and clouds; the stage; the relief's tiles and overview; `applyGlobe`; the anchors placed once; `followFlatSea`, `followAway` and their constants gone | ✅ built (2026-10-26), with 2c. Against step 2a, clouds off, rows averaged: at the field and out to the coast within 4 levels, the waves' own noise (30 levels at 2 m); the horizon from 100 km 10 levels apart, the sphere now exact. Low on the horizon the clouds' band is brighter, its flat-sea sink gone. Far off the stage's planes sink under the camera ([The stage far off](#the-stage-far-off)) |
 | 2c | **Far off:** the tiles' selection and culling on the globe, the farthest seen, the ground under the camera | ✅ built with 2b: the ground under the camera at its foot (`Globe.foot`), the farthest seen from its altitude, boxes from corners placed on the globe. By eye at the coast and Lysefjord; the orbit and the timings in 2d |
 | 2d | **For a host:** `globe.place` in the stories and `videx3d.globe`, their far poses; scenery.md (the curve, `SceneryAnchor`, the globe), tiles.md's curve section, relief.md; the timings | ✅ built (2026-10-26): `videx3d.globe` (`place`, `foot`, `altitude`, `up`, `orbit` about a point on the globe), shared with the debug panel; ReliefTiles' `facility`, a stand-in 123 km out, anchored or flat; `UtmPosition` and `Wgs84Position` documented ([For a host](#for-a-host)); the documents. Nothing moving: orbiting the coast 215 km out at 20 and 40 km, the globe's uniforms are the same from every pose and the coast holds. ⚠️ **Timed** A/B/A against 2a in ReliefTiles (GPU ms, frame and the background's draws): 40 m over Volve 12.1 → 14.9–16.7 (2.6 → 3.9–6.4), 100 km 14.5 → 17.3 (2.9 → 5.5), the coast 12.9 → 17.3–22.9 (2.5 → 4.1–5.2), Lysefjord 10.7 → 14.6 (3.8 → 6.0); the relief +0.5–2 ms, the stage +0.6–1.2; in the water and below the seabed the same or less. With the globe off the two match within noise, so it is the globe's own arithmetic per pixel: the camera's altitude and horizon about 20 times a pixel in the sky, each with a square root, and the relief's up and map point per pixel. Not within noise, as expected: taken back in 2e |
@@ -520,7 +520,7 @@ converted into the field's frame. The globe is a way of drawing, applied on top.
 ```tsx
 <World frame={geoFrameFromCrs(crs)}>
   <Scenery observer={{ date }}>
-    <SceneryOcean />
+    <ScenerySea />
     <SceneryStage boundary={boundary} />
   </Scenery>
   <GeoRelief layers={layers} />
@@ -714,7 +714,7 @@ as much. So the relief, `place`, `tangent`, `foot` and the placed fields switch 
   gone in 7d-1):** the `Scenery`'s
   default `north` is true north at the origin of the frame the globe lies on
   (`placeGeoFrame`), so the sun stands where it does on the Earth. Without a `World` the
-  stage hands its relief `frame` to the `Scenery` (`SceneryOceanState.frame`), which sets
+  stage hands its relief `frame` to the `Scenery` (`ScenerySeaState.frame`), which sets
   the globe's frame from it as from a `World`'s. Before, the stage set the globe's frame
   itself and the `Scenery` could not see it: its north stayed grid north, and the whole sky
   stood turned by the map's convergence (0.94° at Volve, up to about 3° at a UTM zone's edge
@@ -809,7 +809,7 @@ night side dark, the sea lit where it lies), a physical atmosphere left for the 
 - **The light probe's NaN, found:** the sea's Fresnel raised 1 − cos θ to a power. Looking
   straight down on a flat sea, cos θ rounds a hair over 1, and `pow` of a negative number
   is NaN on D3D (ANGLE), so a bake from straight above came out NaN. Both Fresnels are
-  clamped now (`oceanFresnel` in ocean-surface.glsl, the underside's in sky-ocean.glsl).
+  clamped now (`waterFresnel` in water-surface.glsl, the underside's in scenery-sea.glsl).
   The probe's guard (6d) stays: a probe lights every later bake.
 - **The `glGetProgramiv` warnings** come only right after a shader is edited under Vite's
   hot reload: none on a clean load, a reload or a story switch.
@@ -855,7 +855,7 @@ know which way is up where the camera is.
 
 ### Two frames
 
-- **Place:** the field's up, north and east (`uSkyUp`, `uSkyNorth`, `uSkyEast`). They hold
+- **Place:** the field's up, north and east (`uSceneryUp`, `uSceneryNorth`, `uSceneryEast`). They hold
   where things lie: the stage, the void and its walls, the cutaway, the sea's and the
   void's levels, the wave plane over the field, and the cloud deck's pattern.
 - **Look:** the camera's up. It is the scene's over the disc and eases to the globe's
@@ -874,12 +874,12 @@ About 30 uses switch to the look frame; about 70 stay with the place.
 | Where | Look | Place |
 |--|--|--|
 | `globe.glsl` | `globeHorizonFrom`'s sine, for the camera (`globeCameraHorizon`): from the look up; outside the flat cap the horizon is then the dip all round | `globeHorizon(origin, …)` for other origins, the cap, `globeUpAt`, the reach |
-| `sky-gradient.glsl` | `skySurfaceSeen` (elevation, twilight's bearing), `skyHorizonColor`, `skyAirHeightFrom`, `skyOverSeaHorizon`, `skyLight`'s sun elevation | — |
-| `sky.glsl` | `skyAir`'s elevation, blend and the sun over the horizon; `skySunGlare`'s side; `skyCloudBand` (elevation, bearing, level); `skyClouds`' elevation and hinge | the deck's pattern (its hit along east and north, the slope, toward the light); `skyOceanPlane`; the void (lid, rock, walls, haze); the buried camera's origin |
-| `sky-ocean.glsl` | `skyOceanThroughAir` (bearing, the sky overhead); `skyOceanSurfaceLayer`'s over-horizon test; the flat `skyOceanReach` (globe off, so the same) | the cutaway (5 uses); the waves' chart (`oceanChartAt`, see 4d) and their up; `skyOceanInWater` and `skyOcean`'s seabed (in the water or dry, which is at the field); `skyOceanThroughCutaway` |
+| `sky-gradient.glsl` | `scenerySurfaceSeen` (elevation, twilight's bearing), `skyHorizonColor`, `skyAirHeightFrom`, `skyOverSeaHorizon`, `skyLight`'s sun elevation | — |
+| `scenery.glsl` | `skyAir`'s elevation, blend and the sun over the horizon; `skySunGlare`'s side; `skyCloudBand` (elevation, bearing, level); `skyClouds`' elevation and hinge | the deck's pattern (its hit along east and north, the slope, toward the light); `scenerySeaPlane`; the void (lid, rock, walls, haze); the buried camera's origin |
+| `scenery-sea.glsl` | `scenerySeaThroughAir` (bearing, the sky overhead); `scenerySeaSurfaceLayer`'s over-horizon test; the flat `scenerySeaReach` (globe off, so the same) | the cutaway (5 uses); the waves' chart (`waterChartAt`, see 4d) and their up; `sceneryOceanInWater` and `sceneryOcean`'s seabed (in the water or dry, which is at the field); `scenerySeaThroughCutaway` |
 | `relief-fragment.glsl` | the air's colour over the relief, the blend | the void through the cutaway |
 | `stage-fragment.glsl` | the blend, the elevation | the stage's own offset |
-| `sky-stand-in-fragment.glsl` | the elevation | — |
+| `scenery-stand-in-fragment.glsl` | the elevation | — |
 | the hollow (`hollow-*.glsl`, `scenery-hollow.ts`, see [void.md](./void.md); in place of the abyss walls), `subsurface-fragment.glsl` | — | all (under the field) |
 | `sky-material.ts`, `sky-baker.ts` | — | the frame's uniforms; the bake keeps the field's |
 
@@ -898,7 +898,7 @@ About 30 uses switch to the look frame; about 70 stay with the place.
 
 - The `Globe` gets the look up for the camera, eased as above, as a uniform.
 - `globeCameraHorizon` returns the horizon's sine from the look up.
-- The look uses above take the look up instead of `uSkyUp`.
+- The look uses above take the look up instead of `uSceneryUp`.
 - 6d's special cases for space fold into it: `skyOverSeaHorizon`, the surface layer's
   over-test and the clouds' elevation then need no mix toward the camera's up. This
   also fixes the disc over Fiji (6e).
@@ -915,16 +915,16 @@ Decided (2026-10-26): **fixed charts on the Earth**, so the sea is a function of
 and the time alone, ready for waves driven by data (wind at points or on a grid). A chart
 that followed the camera would have made the sea depend on the camera's path.
 
-- **`OceanCharts`** (sdk, `projection/ocean-charts.ts`, and `ocean-charts.glsl`):
+- **`WaterCharts`** (sdk, `projection/water-charts.ts`, and `water-charts.glsl`):
   - **the field's chart** out to 1000 km from the disc's centre
-    (`OCEAN_FIELD_CHART_REACH`): stereographic about it, the wave plane over the disc
+    (`WATER_FIELD_CHART_REACH`): stereographic about it, the wave plane over the disc
     (world X/Z there, within a centimetre 100 km out), so the field is drawn as before;
   - **fixed charts** about the 162 points of a geodesic sphere (an icosahedron, each face
     split 4 times), about 2000 km apart, fixed on the Earth by the globe's frame. Each point
     takes the nearest. Stereographic, so conformal, and within a chart stretched by under 1%;
   - **the wind:** each fixed chart's X has the compass bearing at its centre that the wave
     plane's X has at the field, so the waves keep the wind's bearing;
-  - **where two meet:** the waves calm over a strip 8 km wide (`OCEAN_CHART_CALM`), down to
+  - **where two meet:** the waves calm over a strip 8 km wide (`WATER_CHART_CALM`), down to
     the glint their slopes give, and the charts switch on its middle, where there are none
     to seam. Cross-faded instead, the waves are summed twice; the second sum cost the stage
     1.4–2 ms at the field, even where no pixel ran it (D3D), so the strip it is;
@@ -934,9 +934,9 @@ that followed the camera would have made the sea depend on the camera's path.
     at the antipode lands within 0.15 m of its exact place;
   - **one chart for the frame:** while no line where two charts meet lies within the waves'
     fade (`detailFadeDistance`, 60 km) of the camera, every pixel takes the camera's chart
-    (`uOceanChartOnly`) and none looks for its own. That is always so at the field.
+    (`uWaterChartOnly`) and none looks for its own. That is always so at the field.
 - **The sky's sea** takes it everywhere the waves are drawn: its surface layer, a stage's
-  surface, and the view from in the water (`skyOceanWave(delta, up, …)`, the normal turned
+  surface, and the view from in the water (`scenerySeaWave(delta, up, …)`, the normal turned
   from its chart onto the globe there). The stage's rectangle, the cutaway and the floating
   objects' contact foam keep the field's plane. With the globe off (and in the bakes), the
   field's plane.
@@ -951,8 +951,8 @@ that followed the camera would have made the sea depend on the camera's path.
   longitude, read where each pixel's waves are drawn, scaling the wave set's amplitudes
   (and their slope variance for the glint); the wave set itself stays the same everywhere,
   so the waves never tear where the wind turns. The floating objects far off ride the waves
-  drawn there: the `Scenery`'s sampler reads `OceanCharts` the same way (built 2026-11-16,
-  [ocean.md](./ocean.md#floating-objects-buoyancy)).
+  drawn there: the `Scenery`'s sampler reads `WaterCharts` the same way (built 2026-11-16,
+  [water.md](./water.md#floating-objects-buoyancy)).
 - **The clouds:** the still clouds' deck, its pattern laid on the field's plane, streaked far
   off; it is gone, for the 3D clouds (`SceneryClouds`, [clouds.md](./clouds.md)), which need
   no charts: their pattern is read in a frame fixed to the Earth, one field from sea level to
@@ -1038,7 +1038,7 @@ Two designs came before this one:
   the coordinates and the disc changed together. The camera's move was affine (a field's
   placement carries its map's scale and `Globe.tangent`'s squeeze: 0.1–0.3%, so 5–15 m off
   5 km from its target); the morph moved the ground beyond the discs by `r² / 2R` (10–30 m);
-  the waves re-phased out to 1000 km (`OceanCharts`,
+  the waves re-phased out to 1000 km (`WaterCharts`,
   [4d](#4d-the-waves-far-off-built-2026-10-27)); and some caches would miss the switch.
 - **A seamless switch on a fixed Earth** (2026-11-02, morning): the Earth in true metres,
   fitted once per `World`, a cut per stage that every field always lies on, cuts switched by
@@ -1216,7 +1216,7 @@ with the square of the distance from its pivot: measured 10 cm at 5 km and 40 cm
 The relief — seabed and land from tiles — is Earth data, as the geographic layers are, not a
 part of the sky: a host shows it with the scenery off, bathymetry and topography under its
 data. Until 7d-1 `SceneryStage` drew it (`SceneryStageReliefTiles`), with the sky's material
-and shading: its sea, air and void (`sky.glsl`). Decided (2026-11-02): a component of its own,
+and shading: its sea, air and void (`scenery.glsl`). Decided (2026-11-02): a component of its own,
 `GeoRelief`, inside the `World`, drawn once whatever the stage (built in two parts:
 [7d-1](#7d-1-built-2026-11-02), the sky's shading kept, and [7d-2](#7d-2-built-2026-11-02),
 without a sky):
@@ -1242,11 +1242,11 @@ already, wherever its tiles are drawn, whatever the stage. What still belonged t
 was its shading and its levels:
 
 - **Shading:** the void's gradient, its darkening with depth and the lid's shading were laid
-  out in the field's place frame (`uSkyUp`, `uSkyNorth`, `uSkyEast`), so far from it the void
+  out in the field's place frame (`uSceneryUp`, `uSceneryNorth`, `uSceneryEast`), so far from it the void
   was black ([relief.md](./relief.md)). They move to the camera's own up, which the sky already
   has (the look frame, step 4).
-- **Levels:** the background's lid and the depths it darkens by were planes along `uSkyUp`
-  (`skyAbyssLidStart`, `uSkyAbyssLevel`): 100 km off, that plane lies 785 m over the curved
+- **Levels:** the background's lid and the depths it darkens by were planes along `uSceneryUp`
+  (`sceneryVoidLidStart`, `uSceneryVoidLevel`): 100 km off, that plane lies 785 m over the curved
   seabed. Far from the stage they go to the globe — the lid at the seabed's altitude, the
   darkening by depth under it, as the relief's underside already takes the camera's
   altitude — or are left to the relief's underside where its tiles are drawn.
@@ -1443,8 +1443,8 @@ The relief moved out of `SceneryStage` into a component of its own, the sky's sh
   `Scenery`'s reports its shaders only. One per `World` (a second warns).
 - **What meets through the `World`** (`WorldReliefState`, `useWorldRelief`): the relief's
   tiles (`SceneryReliefHub`, which the geographic layers and the `Scenery` drape on), the
-  ground under the camera (the `Scenery`'s `oceanGround`, the void's lid), the sky
-  (`provideSky`, from the `Scenery`) and the stage's part (`provideStage`: its area,
+  ground under the camera (the `Scenery`'s `seaGround`, the void's lid), the sky
+  (`provideScenery`, from the `Scenery`) and the stage's part (`provideStage`: its area,
   see-through, occupants and their `onGround`). `SceneryStage` lost `relief`,
   `debug.relief` and the `'relief'` layer; the `Scenery` no longer takes its frame from a
   stage's relief.
@@ -1486,7 +1486,7 @@ The relief without a sky, its tiles kept as the scenery comes and goes:
   own, a land tile's skirt dropping below the sea showed as a line of seabed). Without a
   `Scenery` only: with one, the sky decides. No custom material for now (decided
   2026-11-02): the plain one stays Blinn-Phong.
-- **Mounted whatever the sky:** `SceneryStageReliefTiles` takes `sky` or null and the `World`'s
+- **Mounted whatever the sky:** `SceneryStageReliefTiles` takes `scenery` or null and the `World`'s
   `globe`, and keys nothing on the sky but its materials, so its streamer, its view and its
   sampler carry on. With a sky whose sea has no seabed it stays mounted, hidden, the ground
   under the camera not handed to the sky. The sea's depth, the tiles' base, is the last a
@@ -1536,7 +1536,7 @@ The seabed see-through over each loaded field, and the void the same under any f
 - **A region per field** (`setReliefRegions`, `reliefTileInRegion` in `relief-tiles.glsl`): the
   anchored stage's box, then each field's bounds in its own frame — world to the area's own
   through its group's whole placement (a `Matrix4`: turned by its grid convergence, tilted on
-  the globe), each frame. At most eight (`SKY_RELIEF_MAX_REGIONS`, `RELIEF_MAX_REGIONS`), the
+  the globe), each frame. At most eight (`SCENERY_RELIEF_MAX_REGIONS`, `RELIEF_MAX_REGIONS`), the
   eight nearest the camera past that; a pixel in any is counted once, overlaps included, the
   loop with one break on the count. `uReliefRegionCount`, `uReliefRegions` and
   `uReliefRegionBounds` replace `uReliefStage`. The see-through draw takes the tiles over every
@@ -1548,7 +1548,7 @@ The seabed see-through over each loaded field, and the void the same under any f
   laid out by the camera's look up (`globeCameraLook`), so over the disc nothing changes and
   far off the lid lies level over the camera, as deep as it is under the seabed on the globe.
   The walls stay with the anchored stage: how much of them the camera sees
-  (`uSkyAbyssWallNear`, `skyAbyssWallNear`, each frame with their cut) is all of it in their
+  (`uSceneryVoidWallNear`, `sceneryVoidWallNear`, each frame with their cut) is all of it in their
   hollow and near it, none three `rimFade`s beyond their rim (where their light is gone), eased
   between: their fill, lid and faces are mixed into the plain void's, and with none left their
   mesh is hidden and nothing leaves pixels to their fill.

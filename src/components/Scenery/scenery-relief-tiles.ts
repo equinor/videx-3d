@@ -62,16 +62,16 @@ import plainFragmentShader from './shaders/relief-plain-fragment.glsl';
 import vertexShader from './shaders/relief-tiles-vertex.glsl';
 import type { SceneryMaterial } from './scenery-material';
 import { sceneryDefaults } from './scenery-model';
-import { sceneryOceanDefines } from './scenery-stage';
+import { scenerySeaDefines } from './scenery-stage';
 
 /** The most relief tiles drawn at once. */
-export const SKY_RELIEF_MAX_TILES = 2048;
+export const SCENERY_RELIEF_MAX_TILES = 2048;
 
 /**
  * The most see-through regions a relief tells apart at once, the anchored stage and loaded
  * fields: `RELIEF_MAX_REGIONS` in `relief-tiles.glsl`, the same.
  */
-export const SKY_RELIEF_MAX_REGIONS = 8;
+export const SCENERY_RELIEF_MAX_REGIONS = 8;
 
 // SceneryReliefTileGround.heightAt's warped point.
 const warped: [number, number] = [0, 0];
@@ -94,7 +94,7 @@ const warped: [number, number] = [0, 0];
  */
 export function createSceneryReliefTilePatch(
   cells: number,
-  maxTiles = SKY_RELIEF_MAX_TILES,
+  maxTiles = SCENERY_RELIEF_MAX_TILES,
 ): InstancedBufferGeometry {
   const n = cells + 1;
   // The grid, then each side's nodes again as its skirt's lower edge.
@@ -374,7 +374,7 @@ export class SceneryReliefTileGround implements HeightFieldClip {
 export type SceneryReliefTileDebug = 'tiles' | 'layers';
 
 /** The most occupants a relief drawn from tiles knows the outlines of. */
-export const SKY_RELIEF_MAX_OCCUPANTS = 4;
+export const SCENERY_RELIEF_MAX_OCCUPANTS = 4;
 
 /**
  * A stage's occupants' outlines for a relief drawn from tiles: their
@@ -441,17 +441,17 @@ export type SceneryReliefTileOccupants = {
  * @param occupants the stage's occupants' outlines, and the cut of one of them
  */
 export function createSceneryReliefTileMaterial(
-  sky: SceneryMaterial,
+  scenery: SceneryMaterial,
   textures: SceneryReliefTileTextures,
   looks: Texture,
   stage?: 'around',
   debug?: SceneryReliefTileDebug,
   occupants?: SceneryReliefTileOccupants,
 ) {
-  const defines = sceneryOceanDefines(sky);
+  const defines = scenerySeaDefines(scenery);
   reliefTileDefines(defines, stage, debug);
   const uniforms = Object.assign(
-    Object.create(sky.uniforms) as Record<string, IUniform>,
+    Object.create(scenery.uniforms) as Record<string, IUniform>,
     reliefTileUniforms(textures, looks),
   );
   if (occupants && occupants.fields.count > 0) {
@@ -516,7 +516,7 @@ export function createReliefTilePlainMaterial(
   reliefTileDefines(defines, stage, debug);
   if (!land) defines.RELIEF_NO_LAND = '';
   if (!seabed) defines.RELIEF_NO_SEABED = '';
-  const { seabed: bed, depth } = sceneryDefaults.ocean;
+  const { seabed: bed, depth } = sceneryDefaults.sea;
   const uniforms: Record<string, IUniform> = {
     ...UniformsUtils.clone(UniformsLib.lights),
     ...globe.uniforms,
@@ -569,13 +569,13 @@ function reliefTileUniforms(
     uReliefReach: new Uniform(1e30),
     uReliefRegionCount: new Uniform(0),
     uReliefRegions: new Uniform(
-      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Matrix4()),
+      Array.from({ length: SCENERY_RELIEF_MAX_REGIONS }, () => new Matrix4()),
     ),
     uReliefRegionKinds: new Uniform(
-      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => REGION_BOX),
+      Array.from({ length: SCENERY_RELIEF_MAX_REGIONS }, () => REGION_BOX),
     ),
     uReliefRegionShapes: new Uniform(
-      Array.from({ length: SKY_RELIEF_MAX_REGIONS }, () => new Vector4()),
+      Array.from({ length: SCENERY_RELIEF_MAX_REGIONS }, () => new Vector4()),
     ),
     uReliefRegionFields: new Uniform<DataArrayTexture | null>(null),
     uReliefLook: new Uniform(looks),
@@ -731,7 +731,7 @@ const regionCorner = new Vector3();
  * Set a relief material's see-through regions (`uReliefRegionCount`, `uReliefRegions`: world
  * to the area's own frame, through its object's whole placement, tilted on the globe as it
  * is, and a turned box's turn undone; `uReliefRegionKinds`, `uReliefRegionShapes`,
- * `uReliefRegionFields`), at most {@link SKY_RELIEF_MAX_REGIONS}, the nearest `eye` (world
+ * `uReliefRegionFields`), at most {@link SCENERY_RELIEF_MAX_REGIONS}, the nearest `eye` (world
  * X/Z) kept past that. Writes the box in world X/Z that holds each one into `boxes`, for the
  * tiles over them, and returns how many.
  */
@@ -765,10 +765,10 @@ export function setReliefRegions(
       Math.max(b0 - eye[1], 0, eye[1] - b1),
     );
   const kept =
-    placed.length > SKY_RELIEF_MAX_REGIONS
+    placed.length > SCENERY_RELIEF_MAX_REGIONS
       ? [...placed]
           .sort((a, b) => distance(a.box) - distance(b.box))
-          .slice(0, SKY_RELIEF_MAX_REGIONS)
+          .slice(0, SCENERY_RELIEF_MAX_REGIONS)
       : placed;
   const matrices = uniforms.uReliefRegions.value as Matrix4[];
   const kinds = uniforms.uReliefRegionKinds.value as number[];
@@ -814,7 +814,7 @@ export function createSceneryReliefTileFromBelowMaterial(
 
 /**
  * The see-through area of a relief drawn from tiles: with a sky at the sea's seabed opacity
- * (`SceneryMaterial.oceanSeabedOpacity`), as the stage's own see-through seabed is; without
+ * (`SceneryMaterial.seabedOpacity`), as the stage's own see-through seabed is; without
  * one (a plain `opaque`, {@link createReliefTilePlainMaterial}) at its `uReliefOpacity`. With
  * `'all'` (plain only), every tile, see-through everywhere, drawn instead of `opaque`. A
  * transparent part wired for the `OITRenderPass`, its skirts left out. It shares `opaque`'s
@@ -851,7 +851,7 @@ export function createSceneryReliefTileSeeThroughMaterial(
  */
 export function createSceneryReliefTileSubset(
   patch: InstancedBufferGeometry,
-  maxTiles = SKY_RELIEF_MAX_TILES,
+  maxTiles = SCENERY_RELIEF_MAX_TILES,
 ): InstancedBufferGeometry {
   const geometry = new InstancedBufferGeometry();
   geometry.setAttribute('position', patch.getAttribute('position'));
@@ -887,7 +887,7 @@ function addTileAttributes(
 }
 
 /** A relief tile's attributes for one draw (see `createSceneryReliefTilePatch`). */
-export const SKY_RELIEF_TILE_ATTRIBUTES = [
+export const SCENERY_RELIEF_TILE_ATTRIBUTES = [
   'reliefTile',
   'reliefTileChi',
   'reliefTileSkirt',

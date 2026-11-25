@@ -5,11 +5,11 @@ waves. They work from sea level to space, about one field or over the whole Eart
 measured; their look is a first pass.
 
 ```tsx
-import { Scenery, SceneryClouds, SceneryOcean, Weather, weatherPresetOf } from '@equinor/videx-3d'
+import { Scenery, SceneryClouds, ScenerySea, Weather, weatherPresetOf } from '@equinor/videx-3d'
 
 <Weather weather={weatherPresetOf('scattered')}>
   <Scenery>
-    <SceneryOcean />
+    <ScenerySea />
     <SceneryClouds />
   </Scenery>
 </Weather>
@@ -123,21 +123,21 @@ and `'scattered cumulus'` the cumulus alone.
 
 `<Weather weather={…}>` hands it down; `useWeather()` reads it (`null` without one).
 
-- **The waves:** `<Ocean>`, `<SceneryOcean>` and a `ZoneStack`'s water take the weather's wind
+- **The waves:** `<Water>`, `<ScenerySea>` and a `ZoneStack`'s water take the weather's wind
   and swells for whichever of `windSpeed`, `windDirection`, `gusts` and `swells` they leave out
-  (`weatherOceanWind`, `useWeatherOceanWind`; `weatherSeaSwells`). The direction is the way the
+  (`weatherWind`, `useWeatherWind`; `weatherSeaSwells`). The direction is the way the
   wind blows toward, and a swell runs, in the default compass frame (`windToward`): world X/Z,
   and a `Scenery`'s wave plane, east and south. A value once applied stays on the material
   when the weather goes away, as a removed prop's does. Those that leave their waves to the
   weather altogether draw one sea, the weather's (`WeatherSea`; see
-  [ocean.md](./ocean.md)).
+  [water.md](./water.md)).
 - **The air:** a `<Scenery>` takes the weather's `visibility`, `haze` and `hazeHeight` for
   whichever its `air` leaves out (`air={false}` still has none).
 - **The wind near the surface:** `WeatherWind.gusts` (`WeatherGusts`) is the weather's gust and
   slick field, one field for whatever reads it: `weatherWindAt` (`sdk/weather/wind-field.ts`)
   on the CPU and its twin `weather-wind.glsl` give the local wind over the mean and where a
   slick lies, at a point of the plane, as the wind has run (`speed × time`). The sea roughens
-  with it ([ocean-waves.md](./ocean-waves.md#gusts-and-slicks)). The clouds do not read it
+  with it ([water-waves.md](./water-waves.md#gusts-and-slicks)). The clouds do not read it
   yet: they drift with the wind aloft.
 - **The clouds:** `<SceneryClouds>` draws the weather as it is: a local one's layers (or
   `layers` of its own, by name too, `CloudLayersPreset`: given, the weather is local about the
@@ -866,11 +866,11 @@ the zone, `background`, `debug.hide`).
   from takes its focal length's magnitude, or each texel was marched as kilometres wide and
   the clouds came out as a faint, even veil.
 - **In the sea's reflection:** the same cube map, over the sky the sea reflects
-  (`SceneryMaterial.oceanClouds`), read by the reflection's direction alone: it shows the
+  (`SceneryMaterial.seaClouds`), read by the reflection's direction alone: it shows the
   clouds as from the scene, so from high over a sea point it blew them up by the camera's
   height over the point against their base (some 200 times from 400 km: one cloud across half
   the sea). The bake has its mipmaps, and the sea reads it as blurred as that
-  (`skyOceanReflectedClouds`, from `ScenerySkyReflection`): over the field from near the sea,
+  (`scenerySeaReflectedClouds`, from `ScenerySkyReflection`): over the field from near the sea,
   as baked. Far from the field (100 to 400 km off), in a global weather, it reflects the cloud
   map's cover at the sea point instead (low, middle and high, as much as 0.9, 0.6 and 0.25 of
   the sky each), coloured as the baked clouds overhead are on average, with none a grey as

@@ -340,67 +340,67 @@ describe('Globe, the camera', () => {
   });
 
   it('SceneryMaterial.syncCamera takes the camera from its world matrix', () => {
-    const sky = new SceneryMaterial();
-    sky.setFlatSea(BOUNDS);
+    const scenery = new SceneryMaterial();
+    scenery.setFlatSea(BOUNDS);
     const camera = new PerspectiveCamera();
     camera.position.set(1000, 250, -2000);
     camera.updateMatrixWorld();
-    sky.syncCamera(camera);
-    expect(sky.globe.uniforms.uGlobeCamera.value.x).toBeCloseTo(250, 9);
-    sky.dispose();
+    scenery.syncCamera(camera);
+    expect(scenery.globe.uniforms.uGlobeCamera.value.x).toBeCloseTo(250, 9);
+    scenery.dispose();
   });
 });
 
 describe('SceneryMaterial.globe', () => {
   it('follows the sky: its stage, its sea level, its curve and its up', () => {
-    const sky = new SceneryMaterial();
-    expect(sky.globe.enabled).toBe(sky.globeEnabled);
-    expect(sky.globe.level).toBe(sky.oceanLevel);
-    sky.setFlatSea(BOUNDS);
-    expect(sky.globe.discRadius).toBe(5000);
-    expect(sky.globe.discCentre.x).toBe(1000);
-    expect(sky.globe.discCentre.z).toBe(-2000);
-    sky.oceanLevel = 7;
-    expect(sky.globe.level).toBe(7);
-    expect(sky.globe.discCentre.y).toBe(7);
-    sky.globeEnabled = false;
-    expect(sky.globe.enabled).toBe(false);
-    sky.globeEnabled = true;
-    expect(sky.globe.enabled).toBe(true);
-    sky.setFrame({ up: [0, 3, 0] });
-    expect(sky.globe.up.toArray()).toEqual([0, 1, 0]);
-    sky.setFlatSea(null);
-    expect(sky.globe.discRadius).toBe(0);
-    sky.dispose();
+    const scenery = new SceneryMaterial();
+    expect(scenery.globe.enabled).toBe(scenery.globeEnabled);
+    expect(scenery.globe.level).toBe(scenery.seaLevel);
+    scenery.setFlatSea(BOUNDS);
+    expect(scenery.globe.discRadius).toBe(5000);
+    expect(scenery.globe.discCentre.x).toBe(1000);
+    expect(scenery.globe.discCentre.z).toBe(-2000);
+    scenery.seaLevel = 7;
+    expect(scenery.globe.level).toBe(7);
+    expect(scenery.globe.discCentre.y).toBe(7);
+    scenery.globeEnabled = false;
+    expect(scenery.globe.enabled).toBe(false);
+    scenery.globeEnabled = true;
+    expect(scenery.globe.enabled).toBe(true);
+    scenery.setFrame({ up: [0, 3, 0] });
+    expect(scenery.globe.up.toArray()).toEqual([0, 1, 0]);
+    scenery.setFlatSea(null);
+    expect(scenery.globe.discRadius).toBe(0);
+    scenery.dispose();
   });
 
   it("on a World's globe: leaves its disc and its curve to the World, and follows the curve", () => {
     const earth = new Globe();
     earth.enabled = false;
     earth.setDisc([-3000, -4000, 3000, 4000]);
-    const sky = new SceneryMaterial({}, earth);
-    expect(sky.globe).toBe(earth);
+    const scenery = new SceneryMaterial({}, earth);
+    expect(scenery.globe).toBe(earth);
     // Made on it, the sky does not curve it.
     expect(earth.enabled).toBe(false);
-    expect(sky.globeEnabled).toBe(false);
-    expect(sky.uniforms.uSkyCurvature.value).toBe(0);
+    expect(scenery.globeEnabled).toBe(false);
+    expect(scenery.uniforms.uSceneryCurvature.value).toBe(0);
     // The stage's own uniforms, not the World's disc.
-    sky.setFlatSea(BOUNDS);
+    scenery.setFlatSea(BOUNDS);
     expect(earth.discRadius).toBe(5000);
     expect(earth.discCentre.x).toBe(0);
-    expect(sky.uniforms.uSkyStageFlat.value.toArray()).toEqual([
+    expect(scenery.uniforms.uSceneryStageFlat.value.toArray()).toEqual([
       1000, 0, -2000, 5000,
     ]);
     // Curved by the World: the shaders take it as the sky is drawn.
     earth.enabled = true;
     const camera = new PerspectiveCamera();
     camera.updateMatrixWorld();
-    sky.syncCamera(camera);
-    expect(sky.globeEnabled).toBe(true);
-    expect(sky.uniforms.uSkyCurvature.value).toBeGreaterThan(0);
-    sky.setFlatSea(null);
+    scenery.syncCamera(camera);
+    expect(scenery.globeEnabled).toBe(true);
+    expect(scenery.uniforms.uSceneryCurvature.value).toBeGreaterThan(0);
+    scenery.setFlatSea(null);
     expect(earth.discRadius).toBe(5000);
-    sky.dispose();
+    scenery.dispose();
   });
 });
 

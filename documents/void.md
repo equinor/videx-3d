@@ -9,13 +9,13 @@ dark, dull rock that gives scale and depth.
 
 ```tsx
 <Scenery>
-  <SceneryOcean seabed={false} />
+  <ScenerySea seabed={false} />
   <SceneryVoid hollow={{ radius: 400000, pulse: 0.1 }} />
 </Scenery>
 ```
 
 `hollow={false}` keeps the plain void: the endless lid and the bottomless gradient
-([scenery.md](./scenery.md#the-void-sceneryabyss)).
+([scenery.md](./scenery.md#the-void-sceneryvoid)).
 
 ## Design (decided)
 
@@ -24,7 +24,7 @@ dark, dull rock that gives scale and depth.
   cooled top. From the sea over the field its rim lies at the horizon. Its size never follows
   the camera.
 - **The seabed is its lid.** With the seabed on, the hollow is shut and nothing changes from
-  above. Peeling it (`SceneryOcean`'s `seabed={false}`) opens it: the relief and the sea's
+  above. Peeling it (`ScenerySea`'s `seabed={false}`) opens it: the relief and the sea's
   seabed are cut away inside the rim and kept whole around it, so the opening is a hole in the
   ground, not a missing ground.
 - **Real geometry with baked textures**, no ray marching: walls and floor are meshes, shaded
@@ -151,9 +151,9 @@ click puts the default radius back. The radius is kept between the walls' reach 
 
 While the hollow is on, the lid is the same everywhere: the seabed's underside, the sediments'
 underside, mottled at three sizes and rippled as the plain lid is, with faint relief lit from the
-hollow's middle (`hollowLid`, used by `skyAbyssCeilingOver` for the sky, the relief's underside
+hollow's middle (`hollowLid`, used by `sceneryVoidCeilingOver` for the sky, the relief's underside
 and the stage alike). Inside the rim it curves down with the globe to meet the walls
-(`skyAbyssLidCurved`); past the rim it lies level over the camera. Crossing the rim under the
+(`sceneryVoidLidCurved`); past the rim it lies level over the camera. Crossing the rim under the
 seabed changes nothing overhead. The relief draws it near the field, the background beyond.
 
 - It darkens with distance from the camera, to 45% over 60 km (`HOLLOW_LID_FADE`), and toward
@@ -199,7 +199,7 @@ interleaved before/after (the per-group profiler swung up to 2×):
 | Floor, vertices | about 0.13 ms (20.6k triangles, was 80k) |
 | Walls | 0.3–0.6 ms, 4–6 of 16 sectors drawn from the field |
 | Relief | about 2.9 ms saved at the field view by not drawing the tiles inside the opening (173 → 1) |
-| Sky | cheaper than the plain void with the seabed peeled: the hollow covers the background (1.5 against 9.6 ms at a regional view) |
+| Background | cheaper than the plain void with the seabed peeled: the hollow covers the background (1.5 against 9.6 ms at a regional view) |
 
 ## Open
 

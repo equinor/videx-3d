@@ -482,7 +482,7 @@ const Example = (args: ExampleProps) => {
 };
 
 const meta = {
-  title: 'examples/Wells',
+  title: 'Examples/Wells',
   loaders: [
     async () => {
       useOutputPanelState.setState({ groups: {} });

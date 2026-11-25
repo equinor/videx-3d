@@ -20,12 +20,12 @@ import { findSceneGlobe } from '../debug/globe';
 import {
   SceneryArgs,
   sceneryArgs,
-  skyDateAfter,
-  skySunPosition,
+  sceneryDateAfter,
+  scenerySunPosition,
 } from './scenery-controls';
 
 /** `hour` of the day as `hh:mm`. */
-export const formatSkyHour = (hour: number) => {
+export const formatSunHour = (hour: number) => {
   const minutes = Math.floor(hour * 60) % (24 * 60);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
@@ -34,7 +34,7 @@ export const formatSkyHour = (hour: number) => {
 /**
  * A clock from `start`, in local solar hours, running `speed` hours a second while
  * `playing`: the `hour` of the day, and the whole `days` since it started, so the date moves
- * on at midnight ({@link skyDateAfter}). Wrapped to the same date instead, the sky went back a
+ * on at midnight ({@link sceneryDateAfter}). Wrapped to the same date instead, the sky went back a
  * day at midnight and the moon jumped some 12° (2026-11-19). A new `start` sets it, and so does
  * `reset`.
  */
@@ -79,7 +79,7 @@ export function useSceneryTimelapse<T extends SceneryArgs>(args: T) {
       ? {
           ...args,
           sunFromTime: true,
-          sunDate: skyDateAfter(
+          sunDate: sceneryDateAfter(
             args.sunDate ?? sceneryArgs.sunDate,
             clock.days,
           ),
@@ -105,16 +105,6 @@ const ALTITUDES: [string, number][] = [
   ['20 km', 20000],
   ['45 km', 45000],
   ['100 km', 100000],
-];
-/**
- * {@link SceneryDebugPanelProps.altitudes} on from 100 km to where weather systems are seen
- * whole.
- */
-export const SCENERY_DEBUG_HIGH_ALTITUDES: [string, number][] = [
-  ...ALTITUDES,
-  ['400 km', 400000],
-  ['1000 km', 1000000],
-  ['4000 km', 4000000],
 ];
 const SPEEDS = [0.25, 1, 3];
 // The whole Earth's view: this high over the point under the camera.
@@ -392,7 +382,7 @@ export const SceneryDebugPanel = ({
   const since = useRef(0);
   const [showReadout, setShowReadout] = useState(true);
 
-  const sun = skySunPosition(args);
+  const sun = scenerySunPosition(args);
 
   // The sky's globe, found again whenever there is none yet.
   const globe = useRef<Globe | null>(null);
@@ -752,7 +742,7 @@ export const SceneryDebugPanel = ({
     if (!element || since.current < 0.1) return;
     since.current = 0;
     const height = where().height;
-    const clock = args.sunFromTime ? `  ${formatSkyHour(args.sunHour)}` : '';
+    const clock = args.sunFromTime ? `  ${formatSunHour(args.sunHour)}` : '';
     element.textContent =
       `height ${formatHeight(height)}  dip ${(dip(height) / RAD).toFixed(2)}°` +
       `  sun ${sun.elevation.toFixed(1)}°${clock}` +

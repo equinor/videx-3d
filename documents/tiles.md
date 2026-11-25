@@ -559,7 +559,7 @@ start-up only).
 ```tsx
 <World frame={frame} boundary={boundary}>           {/* where the scene lies on the map */}
   <Scenery>
-    <SceneryOcean />
+    <ScenerySea />
     <SceneryStage occupants={[{ outline, cut, onStage, onGround }]} />
   </Scenery>
   <GeoRelief
@@ -738,7 +738,7 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
     cutting occupant's says where its cut applies.
   - **The cut is tested where the ground lies flat** (`vReliefFlat`: the height without the
     curve's drop), the frame the occupant's cut and the column are in. While it opens, the
-    void shows through it from above, as for the occupant's seabed (`abyssOpenings`).
+    void shows through it from above, as for the occupant's seabed (`voidOpenings`).
   - **Seen in `FieldColumn`** (`reliefCut`): a section opens the relief inside the outline
     on its side only, down to the column's cut face, whose top meets the relief's cut edge
     on one line at 700 m. With `keepBed` on, the relief stays whole over the same cut. With
@@ -747,24 +747,24 @@ see [world.md, 7d](./world.md#7d-1-built-2026-11-02).)
 - **The ground under the camera (built 2026-10-25):** read on the CPU each frame from the
   finest tile in under the camera (`geoReliefTileHeightAt`, the tile found with
   `geoTileKeyAt` at the camera's latitude and longitude), drawn or not. Below the sea it
-  is the sky's `oceanGround` wherever no
+  is the sky's `seaGround` wherever no
   occupant's seabed is under the camera, at whatever depth (since 2026-10-28; it was held
   no deeper than the sea's own seabed, which put a camera in a trench in the void); so the
   sky knows the camera is under the ground anywhere the relief has data, and the
   lighting, the water and the void follow. Over the ground in a trench, below the sea's
-  own seabed, the camera is in the water (`SceneryMaterial.oceanTrench`): the background's
+  own seabed, the camera is in the water (`SceneryMaterial.seaTrench`): the background's
   layers see as from just above that seabed, as they see from just below it in rock
-  (`oceanBuried`). There the water's light is the camera's own depth's (`skyOceanViewDepth`),
+  (`seaBuried`). There the water's light is the camera's own depth's (`scenerySeaViewDepth`),
   the sea's own seabed (over the camera) is not drawn — below lies water down to the relief's
   ground — and the surface above is seen through all the water up to it. However deep, the
   water's light and the dimming of what lies in it stop at an optical depth of 1.6
-  (`SKY_OCEAN_DARKEST`, some 400 m in the default water): a trench's floor at 4 km was black,
+  (`SCENERY_OCEAN_DARKEST`, some 400 m in the default water): a trench's floor at 4 km was black,
   now a dark blue (2026-11-05).
 - **The relief from below (built 2026-10-28; it replaced the skirts' test below):** under
   the ground the relief is the void's lid. The same tiles are drawn with a second
   material instead (`createSceneryReliefTileFromBelowMaterial`, `RELIEF_FROM_BELOW`): their
-  back faces alone, shaded as the lid the background draws (`skyAbyssCeiling`), raked by a
-  level light by the way they face (`skyAbyssLidRake`), so the ground's shape shows, and
+  back faces alone, shaded as the lid the background draws (`sceneryVoidCeiling`), raked by a
+  level light by the way they face (`sceneryVoidLidRake`), so the ground's shape shows, and
   level, the two lids meet in one colour. Nothing above the lid is drawn from there — not the
   water, the land, nor a trench's floor deeper than the camera — and a skirt is shaded as
   the lid it hangs from, so the cracks show none. Both materials are compiled with the
@@ -927,7 +927,7 @@ const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
 
 <World frame={frame} boundary={boundary}>
   <Scenery>
-    <SceneryOcean {...ocean} />
+    <ScenerySea {...ocean} />
     <SceneryStage
       occupants={[
         { outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround },
@@ -941,7 +941,7 @@ const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
     relief={source}
     clip={ground ?? undefined}
     onCut={setCut}
-    drawWater={!stage.water}
+    drawSea={!stage.water}
   >
     <Zone layers={...} />
   </ZoneStack>
@@ -963,7 +963,7 @@ type ReliefSource = ReliefTileSource & {
 Built (2026-10-25): `ReliefSource` in the sdk (`geometries/relief-tiles.ts`), the tiles'
 source (`frame`, `layers`, and `base`, the flat seabed's height where no layer has data)
 plus the sea's level, the margin and the key. `reliefSource(relief, ocean, margin?)` in
-`components/Scenery` derives it from the stage's `relief` and the `<SceneryOcean>`'s props with the
+`components/Scenery` derives it from the stage's `relief` and the `<ScenerySea>`'s props with the
 sky's own defaults, keyed by its content, so it may be built inline. It is `undefined`
 for a relief drawn from one texture. `margin` defaults, in `ZoneStack`, to its
 `maxError` (5 m by default; see Seams).
@@ -1009,8 +1009,8 @@ Built (2026-10-25), with these differences from the above:
   the drawn tiles' (64–128 m cells over Volve's flat seabed) against the column's finer
   grid; the clip is what closes it (Seams).
 - **The bed tint (built, 2026-10-26).** A stack drawing its own water tints its bed from
-  the column's bed CHANNEL, which the `stackWater` generator now hands back with the sea
-  (`StackWaterResponse.bed`, packed by `buildChannelDepthMap`): on a relief column that
+  the column's bed CHANNEL, which the `stackSea` generator now hands back with the sea
+  (`StackSeaResponse.bed`, packed by `buildChannelDepthMap`): on a relief column that
   is the relief plus the margin, the bed the sea and the zones are built on.
   `useStackBathymetry`, which read the raw bed surface, is gone. Measured in `FieldColumn`
   (sky on, `drawSky` off): the cap's vertices land on texel centres (10 325 of 10 586),
@@ -1132,7 +1132,7 @@ Built (2026-10-25), with these changes:
   (`reliefSampler`). The stack's own context then answers its sea bed from the relief
   wherever the column holds it (`createReliefTopSampler`): the column's cap lies hidden
   `margin` above the ground, and what stood on it would float. Without the relief's
-  sampler the cap answers, less the margin. The stack's immersion fog reads the same.
+  sampler the cap answers, less the margin. The stack's interior fog reads the same.
 - **As the triangles draw it.** Heights come from `heightFieldPatchAt`, as the clip's do,
   over the finest tile in at the point (`streamer.get`, from the deepest down): the CPU
   copy of the heights, whatever the GPU holds. Normals are the triangle's
@@ -1145,7 +1145,7 @@ Built (2026-10-25), with these changes:
 - **The globe's chunk** is the sdk's `materials/shaderLib/globe.glsl` (`globePlace`; the
   geographic tiles' `globeGeodetic` since 2026-10-26),
   which both relief vertex shaders include (until 2026-10-26 the sky's own
-  `sky-curve.glsl`, `skyCurveDrop`). `applyGlobe(material, globe)` puts it into any stock
+  `sky-curve.glsl`, `sceneryCurveDrop`). `applyGlobe(material, globe)` puts it into any stock
   material: each vertex is placed after three's `project_vertex`, so log depth, the view
   position lit materials read, and OIT's all see the globe. It is for content outside any
   anchor; under one it would be placed twice. GPU picking still picks the flat position.
@@ -1235,10 +1235,10 @@ None of this has been released. Gone (2026-10-25), with step 5:
 
 - `SceneryStageOccupant.seabed`, `SceneryStageProps.seabedFalloff`, the single `occupant`
   (now `occupants`), the stage's `falloff`, `occupant-bed` and flat-bed-around-an-outline
-  parts and the helpers that build them (`skyStageRim`, `skyStageNearBounds`,
+  parts and the helpers that build them (`sceneryStageRim`, `sceneryStageNearBounds`,
   `createSkyStageRings`, `createSkyStageFalloff`, `createSkyStageBed`,
   `createSkyStageSeabed`);
-- the `skySeabed` generator and its defs, `createSeabedMesh` and `SeabedMesh`;
+- the `scenerySeabed` generator and its defs, `createSeabedMesh` and `SeabedMesh`;
 - `ZoneStack.onSeabed` and `stackCapSeabed`;
 - the relief's single texture and its level of detail: `resampleRelief`'s place in the
   stage, `selectTerrainNodes` and `terrain-lod.ts`, `relief.id` and `relief.falloff`.
@@ -1260,11 +1260,11 @@ What is left of them, and what changed with them:
   `STAGE_OCCUPANT`, `STAGE_SECTION` and `STAGE_FENCE`. Its debug outline draws every
   occupant's outline (at the sea's seabed and surface), and its layers are `surface`,
   `bed` and `relief`.
-- **`oceanBuried`** stays: the camera under the relief's ground, above the sea's seabed,
+- **`seaBuried`** stays: the camera under the relief's ground, above the sea's seabed,
   is in the rock, as it was inside an occupant's seabed.
 - **Stories.** FieldColumn's `relief` now means tiles (`reliefTiles` and `seabedFalloff`
   are gone); the sky's flat seabed takes its depth from the column's top along its outline,
-  sampled from the stack (it was the `skySeabed` generator's rim). StageDebug's occupant is
+  sampled from the stack (it was the `scenerySeabed` generator's rim). StageDebug's occupant is
   its lobed outline alone. Baseline lost its "any surface as the seabed" path, which comes
   back as a baked layer (step 6). ReliefTiles lost its `single` relief.
 

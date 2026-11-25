@@ -22,7 +22,7 @@ import {
 } from '../../sdk/geometries/surface-zone';
 import { StackTiling } from '../../sdk/geometries/surface-stack';
 import type { HeightFieldClipUniforms } from '../../sdk/materials/height-field-clip';
-import { DEFAULT_OCEAN_DEEP_COLOR } from '../Ocean/ocean-material';
+import { DEFAULT_WATER_DEEP_COLOR } from '../Water/water-material';
 import {
   capCullingBlocked,
   capCut,
@@ -53,7 +53,7 @@ import {
   DEFAULT_BED_TINT_DEPTH,
   DEFAULT_PALETTE,
   resolvePeel,
-  ZoneStackWater,
+  ZoneStackSea,
 } from './zone-defs';
 import {
   ZoneInferenceStyle,
@@ -109,7 +109,7 @@ export type ZoneMeshesProps = {
    * The sea the enclosing `ZoneStack` declares, if any. Only its TINT is used
    * here: the sea's own geometry belongs to the stack.
    */
-  water?: ZoneStackWater | null;
+  sea?: ZoneStackSea | null;
   /** 1 while the stack draws its sea, 0 while not: the bed tint follows it */
   waterTintShown?: IUniform<number>;
   /** the stack's own water, which its sea bed's cap is seen through (`ZoneStackContextValue.waterBody`) */
@@ -123,13 +123,13 @@ export type ZoneMeshesProps = {
   /**
    * Whether layer 0 is the stack's sea BED. A sea a cut leaves whole keeps its bed
    * cap whole with it, the way a kept unit keeps the cap that floors it — and so
-   * does a cut sea under `ZoneStackWater.keepBed`.
+   * does a cut sea under `ZoneStackSea.keepBed`.
    */
-  seaBed?: boolean;
-  /** whether the section takes the sea with it (see `ZoneSection.water`) */
-  sectionWater?: boolean;
-  /** whether the fence takes the sea with it (see `ZoneFence.water`) */
-  fenceWater?: boolean;
+  seabed?: boolean;
+  /** whether the section takes the sea with it (see `ZoneSection.sea`) */
+  sectionSea?: boolean;
+  /** whether the fence takes the sea with it (see `ZoneFence.sea`) */
+  fenceSea?: boolean;
   /**
    * Cap colour for the column's floor, when this zone closes the block (see
    * `ZoneStackProps.carrier`). The floor is INFERRED from a fill on the last
@@ -260,14 +260,14 @@ function buildInferenceOverlays(
   surfaceOpacity: number,
   wallOpacity: number,
   wireframe: boolean,
-  seaBedBySection: boolean,
-  seaBedByFence: boolean,
+  seabedBySection: boolean,
+  seabedByFence: boolean,
   sectionUniform?: IUniform<Vector4>,
   fenceUniforms?: ZoneFenceUniforms,
   heightClip?: HeightFieldClipUniforms,
 ) {
-  const cutSection = (i: number) => capCut(layers, i, seaBedBySection);
-  const cutFence = (i: number) => capCut(layers, i, seaBedByFence);
+  const cutSection = (i: number) => capCut(layers, i, seabedBySection);
+  const cutFence = (i: number) => capCut(layers, i, seabedByFence);
   const built = new Map<string, Material | null>();
   const at = (opacity: number, section: boolean, fence: boolean) => {
     if (wireframe) return null;
@@ -316,13 +316,13 @@ export const ZoneMeshes = ({
   inferredStyle = 'hatched',
   showSurfaces = true,
   showWalls = true,
-  water = null,
+  sea = null,
   waterTintShown,
   bathymetry = null,
-  seaBed = false,
-  sectionWater = false,
+  seabed = false,
+  sectionSea = false,
   waterBody,
-  fenceWater = false,
+  fenceSea = false,
   carrierMaterial,
   carrierDetail,
   contacts = null,
@@ -377,9 +377,9 @@ export const ZoneMeshes = ({
   useEffect(() => () => tileUniforms?.values.value.dispose(), [tileUniforms]);
 
   // Whether each cut leaves the sea bed's cap whole: the sea is kept, or `keepBed`.
-  const keepBed = water?.keepBed === true;
-  const seaBedBySection = seaBed && (!sectionWater || keepBed);
-  const seaBedByFence = seaBed && (!fenceWater || keepBed);
+  const keepBed = sea?.keepBed === true;
+  const seabedBySection = seabed && (!sectionSea || keepBed);
+  const seabedByFence = seabed && (!fenceSea || keepBed);
 
   // Its materials are let go through the renderer's compile queue (`releaseMaterial`): not
   // while their programs link, and kept a while for the next build's, made once it comes in,
@@ -441,8 +441,8 @@ export const ZoneMeshes = ({
         waterCut:
           waterTint && waterBody
             ? {
-                section: sectionWater ? sectionUniform : undefined,
-                fence: fenceWater ? fenceUniforms : undefined,
+                section: sectionSea ? sectionUniform : undefined,
+                fence: fenceSea ? fenceUniforms : undefined,
               }
             : undefined,
       });
@@ -468,21 +468,21 @@ export const ZoneMeshes = ({
     // the cap between them, once. A sea left whole by a cut keeps its bed the same way.
     const keptUnit = (i: number) => layers[i]?.section === false;
     const cutWall = (i: number) => !keptUnit(i);
-    const cutCapBySection = (i: number) => capCut(layers, i, seaBedBySection);
-    const cutCapByFence = (i: number) => capCut(layers, i, seaBedByFence);
+    const cutCapBySection = (i: number) => capCut(layers, i, seabedBySection);
+    const cutCapByFence = (i: number) => capCut(layers, i, seabedByFence);
 
     // The sea's water over the SHALLOWEST cap: its wet band at the shoreline. The water
     // column over it fades it, as everything in the water, by the scene's water (water-body.glsl).
     const waterTint = ((): ZoneWaterTintParameters | undefined => {
-      if (!water) return undefined;
+      if (!sea) return undefined;
       return {
-        color: water.deepColor ?? DEFAULT_OCEAN_DEEP_COLOR,
-        level: -(water.depth ?? 0),
+        color: sea.deepColor ?? DEFAULT_WATER_DEEP_COLOR,
+        level: -(sea.depth ?? 0),
         strength: 1,
         depth: DEFAULT_BED_TINT_DEPTH,
         map: bathymetry ?? undefined,
-        wetBand: water.wetBand,
-        wetStrength: water.wetStrength,
+        wetBand: sea.wetBand,
+        wetStrength: sea.wetStrength,
         shown: waterTintShown,
       };
     })();
@@ -687,11 +687,11 @@ export const ZoneMeshes = ({
     surfaceOpacity,
     wallOpacity,
     wireframe,
-    water,
+    sea,
     waterTintShown,
     bathymetry,
-    seaBedBySection,
-    seaBedByFence,
+    seabedBySection,
+    seabedByFence,
     carrierMaterial,
     carrierDetail,
     contacts,
@@ -710,8 +710,8 @@ export const ZoneMeshes = ({
     debugTiles,
     hasLevels,
     waterBody,
-    sectionWater,
-    fenceWater,
+    sectionSea,
+    fenceSea,
   ]);
 
   useEffect(() => {
@@ -736,8 +736,8 @@ export const ZoneMeshes = ({
         surfaceOpacity,
         wallOpacity,
         wireframe,
-        seaBedBySection,
-        seaBedByFence,
+        seabedBySection,
+        seabedByFence,
         sectionUniform,
         fenceUniforms,
         heightClip,
@@ -748,8 +748,8 @@ export const ZoneMeshes = ({
       surfaceOpacity,
       wallOpacity,
       wireframe,
-      seaBedBySection,
-      seaBedByFence,
+      seabedBySection,
+      seabedByFence,
       sectionUniform,
       fenceUniforms,
       heightClip,
@@ -978,10 +978,10 @@ export const ZoneMeshes = ({
     if (!open) return null;
     const cuts: CapCutRule[] = [];
     if (section || sectionUniform) {
-      cuts.push({ carrier: sectionCarrier, seaKept: seaBedBySection });
+      cuts.push({ carrier: sectionCarrier, seaKept: seabedBySection });
     }
     if (fence) {
-      cuts.push({ carrier: fenceCarrier, seaKept: seaBedByFence });
+      cuts.push({ carrier: fenceCarrier, seaKept: seabedByFence });
     }
     return zone.surfaces.map(surface =>
       surface.above
@@ -1002,10 +1002,10 @@ export const ZoneMeshes = ({
     section,
     sectionUniform,
     sectionCarrier,
-    seaBedBySection,
+    seabedBySection,
     fence,
     fenceCarrier,
-    seaBedByFence,
+    seabedByFence,
   ]);
   // A cap not drawn yet gets no table, so its culled view is built when it is.
   const revealedTables = useMemo(

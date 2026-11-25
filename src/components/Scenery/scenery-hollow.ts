@@ -761,14 +761,14 @@ export class SceneryHollowParts {
   private clock = 0;
   private pulseDepth = 0;
 
-  constructor(private readonly sky: SceneryMaterial) {
+  constructor(private readonly scenery: SceneryMaterial) {
     // The sky's uniform objects, its hollow's look among them (hollow-look.glsl), which the
     // void's lid over it reads too.
     const material = (part: 'floor' | 'walls') => {
       const shader = new ShaderMaterial({
         vertexShader,
         fragmentShader,
-        uniforms: Object.create(sky.uniforms),
+        uniforms: Object.create(scenery.uniforms),
         defines: part === 'floor' ? { HOLLOW_FLOOR: '' } : {},
         side: FrontSide,
         dithering: true,
@@ -783,7 +783,7 @@ export class SceneryHollowParts {
       object.frustumCulled = false;
       object.matrixAutoUpdate = false;
       object.userData.sceneryLayer = 'void';
-      object.onBeforeRender = sky.onBeforeDraw;
+      object.onBeforeRender = scenery.onBeforeDraw;
       return object;
     };
     this.floor = mesh('floor');
@@ -814,7 +814,7 @@ export class SceneryHollowParts {
     if (this.baking) return this.baking;
     this.rock = createRockTexture(renderer, { onProgress });
     this.cliff = createCliffTexture(renderer, { onProgress });
-    const u = this.sky.uniforms;
+    const u = this.scenery.uniforms;
     u.uHollowRock.value = this.rock.texture;
     u.uHollowRockSlope.value = this.rock.slopeScale;
     u.uHollowCliff.value = this.cliff.texture;
@@ -831,7 +831,7 @@ export class SceneryHollowParts {
 
   /** Its look; a uniform upload. */
   setLook(look: SceneryHollowLook) {
-    const u = this.sky.uniforms;
+    const u = this.scenery.uniforms;
     (u.uHollowShape.value as Vector4).set(
       look.floorDepth,
       look.radius,
@@ -867,7 +867,7 @@ export class SceneryHollowParts {
     below: number,
     delta: number,
   ) {
-    const view = this.sky.uniforms.uHollowView.value as Vector4;
+    const view = this.scenery.uniforms.uHollowView.value as Vector4;
     view.x = inside ? 1 : 0;
     view.y +=
       ((shut ? 1 : 0) - view.y) *
@@ -878,13 +878,13 @@ export class SceneryHollowParts {
     sceneryHollowPulse(
       this.clock,
       this.pulseDepth,
-      this.sky.uniforms.uHollowPulse.value as Vector3,
+      this.scenery.uniforms.uHollowPulse.value as Vector3,
     );
   }
 
   /** Its geometry for `shape` on the sky's globe: built again only when either changed. */
   update(shape: SceneryHollowShape) {
-    const globe = this.sky.globe;
+    const globe = this.scenery.globe;
     const key = [
       globe.version,
       shape.radius,
@@ -935,7 +935,7 @@ export class SceneryHollowParts {
     cullFrustum.setFromProjectionMatrix(cullMatrix);
     cullFrustum.planes[4].constant = Infinity;
     cullFrustum.planes[5].constant = Infinity;
-    const centre = this.sky.globe.discCentre;
+    const centre = this.scenery.globe.discCentre;
     this.sectors.forEach((sector, i) => {
       const sphere = this.spheres[i];
       if (!sphere) return;
@@ -957,8 +957,8 @@ export class SceneryHollowParts {
     this.cliff?.dispose();
     this.cliff = null;
     this.baking = null;
-    this.sky.uniforms.uHollowRock.value = null;
-    this.sky.uniforms.uHollowCliff.value = null;
+    this.scenery.uniforms.uHollowRock.value = null;
+    this.scenery.uniforms.uHollowCliff.value = null;
   }
 }
 

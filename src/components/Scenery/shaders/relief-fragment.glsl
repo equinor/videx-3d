@@ -22,7 +22,7 @@
 #include <logdepthbuf_pars_fragment>
 #endif
 #include <dithering_pars_fragment>
-#include ./sky.glsl
+#include ./scenery.glsl
 #ifdef RELIEF_FAR
 #include ./relief-atlas.glsl
 #else
@@ -50,7 +50,7 @@ uniform float uReliefLowest;
 // The nearest it hands over, as a share of the tiles' reach along the sea: where its tiles
 // start (SceneryReliefOverviewState.handover).
 uniform float uReliefHandoverMin;
-varying vec3 vSkyDirection;
+varying vec3 vSceneryDirection;
 #else
 varying vec3 vReliefWorld;
 varying vec2 vReliefPlane;
@@ -61,9 +61,9 @@ varying vec3 vReliefUp;
 // much of the relief, against the stage's own seabed, it gets. The seabed darkens from the
 // stage's own seabed down, so the two meet in one colour.
 vec3 reliefAlbedo(float height, float weight, int look) {
-  vec3 color = reliefLookAlbedo(height, look, uSkyOceanBedColor, uSkyOceanDepth);
+  vec3 color = reliefLookAlbedo(height, look, uScenerySeabedColor, uScenerySeaDepth);
   // Into the stage's own seabed where the relief eases into it; land keeps its colour.
-  return mix(uSkyOceanBedColor, color, max(weight, smoothstep(-1.0, 1.0, height)));
+  return mix(uScenerySeabedColor, color, max(weight, smoothstep(-1.0, 1.0, height)));
 }
 
 // How much nearer land that only just clears the sea is drawn than the sea, as a share of the
@@ -88,7 +88,7 @@ float reliefDepthAt(vec3 dir, float t) {
 // `color` seen through the air from the camera, `dist` along `dir`, channel by channel:
 // into the sky's blue over short paths and the horizon's colour over long ones. Looking
 // down, into the sky overhead as seen from the sea, as the sea's haze does
-// (skyOceanThroughAir), so the sun's side cannot show as a wedge below. The colours from the
+// (scenerySeaThroughAir), so the sun's side cannot show as a wedge below. The colours from the
 // air's lookup (sky-air-colors.glsl). As much of the air as is left there (`air`,
 // hollowAirAt): toward the open hollow's rim it drains into it, and the ground loses the
 // sky's light, and its haze.
@@ -100,7 +100,7 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float air) {
   vec3 look = globeCameraLook();
   vec3 level = dir - look * dot(dir, look);
   float n2 = dot(level, level);
-  vec3 way = n2 > 1e-8 ? level * inversesqrt(n2) : uSkyEast;
+  vec3 way = n2 > 1e-8 ? level * inversesqrt(n2) : uSceneryEast;
   // The sky some 25 degrees up along the view's bearing.
   vec3 blue = skyAirBlue(way);
   vec3 horizon = skyAirHorizon(way);
@@ -118,17 +118,17 @@ vec3 reliefThroughAir(vec3 color, vec3 dir, float dist, float air) {
 }
 
 #ifdef RELIEF_FROM_BELOW
-// The plain void's lid (skyAbyssCeilingOver) as the underside facing `surface` shows it,
-// `dist` along `dir` at `world`: its shape in the raking light about the ground's own `up`,
-// as much as the lid has not faded into the horizon. Below the horizon (a trench's floor
-// deeper than the camera) it fades into the depths the background draws there, not into the
-// lid's horizon colour, so far off it is gone. By the camera's look up, as the background's,
-// so it is the same under any field. No derivatives: the lid's `footprint` is given.
-vec3 reliefAbyssPlain(vec3 world, float dist, vec3 dir, float footprint, vec3 surface, vec3 up) {
-  float near = uSkyAbyssFadeDistance > 0.0 ? exp(-dist / uSkyAbyssFadeDistance) : 1.0;
-  vec3 color = skyAbyssCeilingOver(world, dist, footprint) * mix(1.0, skyAbyssLidRake(surface, up), near);
-  if(dot(dir, globeCameraLook()) < 0.0)
-    color += (skyAbyssDepths(dir) - uSkyAbyssHorizonColor) * (1.0 - near);
+// The void's lid (sceneryVoidCeilingOver) as the underside facing `surface` shows it, `dist`
+// along `dir` at `world`: its shape in the raking light about the ground's own `up`, as much
+// as the lid has not receded (hollowLidNear). Below the horizon (a trench's floor deeper than
+// the camera) the plain lid fades into the depths the background draws there, not into its
+// horizon colour, so far off it is gone. By the camera's look up, as the background's, so it
+// is the same under any field. No derivatives: the lid's `footprint` is given.
+vec3 reliefVoidPlain(vec3 world, float dist, vec3 dir, float footprint, vec3 surface, vec3 up) {
+  float near = hollowLidNear(dist);
+  vec3 color = sceneryVoidCeilingOver(world, dist, footprint) * mix(1.0, sceneryVoidLidRake(surface, up), near);
+  if(uSceneryHollow.x < 0.5 && dot(dir, globeCameraLook()) < 0.0)
+    color += (sceneryVoidDepths(dir) - uSceneryVoidHorizonColor) * (1.0 - near);
   return color;
 }
 
@@ -152,9 +152,9 @@ void main() {
   vec3 east = normalize(vReliefEast - up * dot(vReliefEast, up));
   vec3 surface = -normalize(east * tileNormal.x + up * tileNormal.y + cross(east, up) * tileNormal.z);
   // Before any pixel leaves: the lid's derivatives.
-  float lidFootprint = skyAbyssLidFootprint(world);
+  float lidFootprint = sceneryVoidLidFootprint(world);
   // The cutaway bites the seabed from below too, as it does a stage's; not over an occupant.
-  float seabed = height < 0.0 ? skyOceanCutawaySeabed(skyOceanCutawayAlong(cameraPosition, world)) : 1.0;
+  float seabed = height < 0.0 ? scenerySeaCutawaySeabed(scenerySeaCutawayAlong(cameraPosition, world)) : 1.0;
   #ifdef RELIEF_OCCUPANTS
   if(reliefOnOccupant(vReliefPlane))
     seabed = 1.0;
@@ -163,26 +163,26 @@ void main() {
   // deeper than the camera: a trench's walls seen across the void. Ground higher than the
   // camera is met below its level only as the globe curves it away, past where the
   // background's flat lid ends at the horizon: left to the depths, as the lid leaves it.
-  bool curvedAway = dot(dir, globeCameraUp()) <= 0.0 && height > skyOceanCameraAltitude();
+  bool curvedAway = dot(dir, globeCameraUp()) <= 0.0 && height > scenerySeaCameraAltitude();
   if(seabed < 1e-3 || curvedAway || reliefTileLeftToOther(vReliefWorld) || reliefCutAway())
     discard;
-  vec3 color = reliefAbyssPlain(world, dist, dir, lidFootprint, surface, up);
-  if(uSkyAbyssDarkening > 0.0)
-    color *= exp(min(skyOceanCameraAltitude() + uSkyOceanDepth, 0.0) / uSkyAbyssDarkening);
+  vec3 color = reliefVoidPlain(world, dist, dir, lidFootprint, surface, up);
+  if(uSceneryVoidDarkening > 0.0)
+    color *= exp(min(scenerySeaCameraAltitude() + uScenerySeaDepth, 0.0) / uSceneryVoidDarkening);
   #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
   color = reliefTileDebug(color);
   #endif
 
   gl_FragColor = vec4(color, 1.0);
-  gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));
-  gl_FragColor.rgb *= uSkyIntensity;
+  gl_FragColor.rgb = sceneryDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));
+  gl_FragColor.rgb *= uSceneryIntensity;
 
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <dithering_fragment>
 
   #ifdef RELIEF_SEE_THROUGH
-  gl_FragColor.a = seabed * uSkyOceanSeabedOpacity;
+  gl_FragColor.a = seabed * uScenerySeabedOpacity;
   #endif
   #ifdef USE_OIT
   gl_FragColor = oitProcess(gl_FragColor);
@@ -190,10 +190,10 @@ void main() {
 }
 #else
 void main() {
-  float altitude = skyOceanCameraAltitude();
+  float altitude = scenerySeaCameraAltitude();
   #ifdef RELIEF_FAR
-  vec3 dir = normalize(vSkyDirection);
-  vec3 hit = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3));
+  vec3 dir = normalize(vSceneryDirection);
+  vec3 hit = scenerySeaReach(cameraPosition, dir, max(altitude, 1e-3));
   float dist = hit.x;
   vec3 world = cameraPosition + dir * dist;
   // Where it lies on the Earth: its longitude and latitude, in degrees.
@@ -214,7 +214,7 @@ void main() {
   // Well inside the hollow's open opening the ground is peeled away: there a whole quad
   // leaves at once, before any shading, so no pixel left takes a derivative across the gap.
   // Near the rim each pixel is cut exactly, at the end. How far inside, once for all of it.
-  float hollowIn = uSkyHollow.y > 0.5 ? hollowInside(world) : -1e30;
+  float hollowIn = uSceneryHollow.y > 0.5 ? hollowInside(world) : -1e30;
   // How far a pixel spans here, for the cut's edge; and how far the cut's distance changes
   // across one, for the simple style's ring along it.
   float hollowPixel = length(fwidth(world));
@@ -242,7 +242,7 @@ void main() {
   // view meets the sea's level, by up to its depth, so the view's meeting with the deepest
   // ground in view (`uReliefLowest`) decides: past the reach, drawn. Where the tiles draw as well
   // they lie nearer, and win by depth; the sea's level alone left a ring to the background.
-  vec3 deepest = skyOceanReach(cameraPosition, dir, max(altitude, 1e-3) - min(uReliefLowest, 0.0));
+  vec3 deepest = scenerySeaReach(cameraPosition, dir, max(altitude, 1e-3) - min(uReliefLowest, 0.0));
   // No nearer than uReliefHandoverMin of the reach along the sea, where its tiles start.
   float handover = min(deepest.z > 0.5 ? 1e30 : deepest.x, dist / uReliefHandoverMin);
   // Only where the sea is met past the tiles, and a tile is in, outside the hollow's open
@@ -267,11 +267,11 @@ void main() {
   float gHeight = mix(0.5 * length(vec2(east - west, north - south)) * min(pixel / footprint, 1.0), gExact, fine);
   #else
   // The sea along the view, from above the water: both for the stage's test below and for
-  // which of the sea and the ground shows; z 1 where the view only grazes it (skyOceanReach).
-  vec3 seaHit = uSkyOceanWater > 0.5 && altitude > 0.0 ? skyOceanReach(cameraPosition, dir, altitude) : vec3(0.0, 0.0, 1.0);
+  // which of the sea and the ground shows; z 1 where the view only grazes it (scenerySeaReach).
+  vec3 seaHit = uScenerySeaWater > 0.5 && altitude > 0.0 ? scenerySeaReach(cameraPosition, dir, altitude) : vec3(0.0, 0.0, 1.0);
   float sea = seaHit.x;
   // Only taken from above the water, with water: where the stage's test reaches the sea.
-  bool staged = skyOceanStagedAlong(dir, cameraPosition, sea, 1.0, false);
+  bool staged = scenerySeaStagedAlong(dir, cameraPosition, sea, 1.0, false);
   // The tile's normal, along true east, up and true south where it lies on the globe.
   vec3 tileNormal = reliefTileNormal();
   vec3 up = normalize(vReliefUp);
@@ -281,7 +281,7 @@ void main() {
   #endif
   float height = ground.x;
   bool under = height < 0.0;
-  bool water = uSkyOceanWater > 0.5;
+  bool water = uScenerySeaWater > 0.5;
   #ifndef RELIEF_FAR
   // Seen through the water: the seabed, and from in the water everything, land included.
   bool seenInWater = water && (under || altitude <= 0.0);
@@ -306,10 +306,10 @@ void main() {
   // The sun's light as much as the clouds let through here (skyCloudShadow): on land, read over
   // the pixel's footprint.
   float shade = under ? 1.0 : skyCloudShadow(world, hollowPixel);
-  vec3 color = sceneBlinnPhongShaded(albedo, under ? uSkyOceanBedSpecular : RELIEF_LAND_SPECULAR, under ? uSkyOceanBedShininess : RELIEF_LAND_SHININESS, uSkyOceanBedAmbient, position, normalize(mat3(viewMatrix) * normal), shade);
+  vec3 color = sceneBlinnPhongShaded(albedo, under ? uScenerySeabedSpecular : RELIEF_LAND_SPECULAR, under ? uScenerySeabedShininess : RELIEF_LAND_SHININESS, uScenerySeabedAmbient, position, normalize(mat3(viewMatrix) * normal), shade);
   // The scene's lights are the field's: far round the Earth, where the sun has set, the
   // ground is dark as by night (skyDayFrom).
-  color *= skyDayFrom(uSkyUp, up);
+  color *= skyDayFrom(uSceneryUp, up);
   // From high up, as the sun lights it where it lies (skyFromSpaceOver): the same for every
   // pixel, so the branch is uniform.
   bool fromSpace = skyFromSpace() > 0.0;
@@ -318,8 +318,8 @@ void main() {
   color = reliefContours(color, height, gHeight, look);
   lit = fromSpace ? reliefContours(lit, height, gHeight, look) : color;
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
-  color /= max(uSkyIntensity, 1e-4);
-  lit /= max(uSkyIntensity, 1e-4);
+  color /= max(uSceneryIntensity, 1e-4);
+  lit /= max(uSceneryIntensity, 1e-4);
 
   #ifdef RELIEF_FAR
   // From high up, as lit where it lies (skyFromSpaceOver): dark over the Earth's night side.
@@ -331,8 +331,8 @@ void main() {
   // comes in front of it (`sea`, above).
   // The cutaway takes the seabed in front of the view, and the water over it, as over the
   // stage's own; the land stands.
-  float cutaway = skyOceanCutawayAlong(cameraPosition, world);
-  float seabed = under ? skyOceanCutawaySeabed(cutaway) : 1.0;
+  float cutaway = scenerySeaCutawayAlong(cameraPosition, world);
+  float seabed = under ? scenerySeaCutawaySeabed(cutaway) : 1.0;
   #ifdef RELIEF_OCCUPANTS
   // Over an occupant the cutaway takes the water, not the ground, as over its own seabed.
   if(reliefOnOccupant(xz))
@@ -344,12 +344,12 @@ void main() {
   bool beyond = false;
   if(seenInWater) {
     // Dimmed by the daylight its depth leaves it. From the air the sea's surface carries the
-    // water in front of it (skyOceanWaterUnder); from in the water, through the water between,
+    // water in front of it (scenerySeaWaterUnder); from in the water, through the water between,
     // and land through the water the view crosses before it leaves the sea.
-    color *= skyOceanDim(-height);
+    color *= scenerySeaDim(-height);
     if(altitude <= 0.0) {
-      float path = skyOceanCutawayPath(skyOceanPathBelowSurface(cameraPosition, world), skyOceanCutawayWall(cameraPosition, dir), skyOceanCutawayWater(cutaway));
-      color = skyOceanFog(color, path, skyOceanLightAlong(-altitude, max(-height, 0.0), path), dir);
+      float path = scenerySeaCutawayPath(scenerySeaPathBelowSurface(cameraPosition, world), scenerySeaCutawayWall(cameraPosition, dir), scenerySeaCutawayWater(cutaway));
+      color = scenerySeaFog(color, path, scenerySeaLightAlong(-altitude, max(-height, 0.0), path), dir);
     }
     // Seabed met in front of the sea, or behind it by less than 1e-4 of the distance (shallow
     // water at the coast), writes the depth of the point 1e-4 behind where the view meets the
@@ -384,22 +384,22 @@ void main() {
   }
   // Bitten through: the void, as the background draws it through the gap.
   if(seabed < 1.0)
-    color = mix(skyOceanThroughCutaway(skyAbyssGradient(dot(dir, globeCameraLook())), dir, cameraPosition), color, seabed);
+    color = mix(scenerySeaThroughCutaway(sceneryVoidDepths(dir), dir, cameraPosition), color, seabed);
   #endif
   // The simple style's ring along the open hollow's rim, a few pixels wide, as the cutaway's:
   // by how far outside the rim the pixel is, in pixels (the cut's distance's own change).
   if(hollowStyleSimple() && hollowIn > -1e29) {
     float outside = -hollowIn / max(hollowInPixel, 1e-3);
     float ring = 1.0 - smoothstep(HOLLOW_SIMPLE_RIM, HOLLOW_SIMPLE_RIM + 1.0, abs(outside - HOLLOW_SIMPLE_RIM));
-    color = mix(color, HOLLOW_SIMPLE_RIM_COLOR / max(uSkyIntensity, 1e-4), ring);
+    color = mix(color, HOLLOW_SIMPLE_RIM_COLOR / max(uSceneryIntensity, 1e-4), ring);
   }
 
   #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
   color = reliefTileDebug(color);
   #endif
   gl_FragColor = vec4(color, 1.0);
-  gl_FragColor.rgb = skyDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));
-  gl_FragColor.rgb *= uSkyIntensity;
+  gl_FragColor.rgb = sceneryDebugTint(gl_FragColor.rgb, vec3(0.95, 0.6, 0.1));
+  gl_FragColor.rgb *= uSceneryIntensity;
 
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -417,7 +417,7 @@ void main() {
 
   #ifdef RELIEF_SEE_THROUGH
   // As the stage's see-through seabed is: at the sea's seabed opacity, bitten by the cutaway.
-  gl_FragColor.a = seabed * uSkyOceanSeabedOpacity;
+  gl_FragColor.a = seabed * uScenerySeabedOpacity;
   #endif
   #ifdef USE_OIT
   gl_FragColor = oitProcess(gl_FragColor);

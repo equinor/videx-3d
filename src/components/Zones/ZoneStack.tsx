@@ -45,8 +45,8 @@ import { ReliefSource } from '../../sdk/geometries/relief-tiles';
 import { StackSectionSource } from '../../sdk/geometries/surface-section';
 import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 import { WellboreFence } from '../../sdk/geometries/wellbore-fence';
-import { OceanContactContext } from '../Ocean/ocean-contact';
-import { OceanSamplerContext } from '../Ocean/ocean-sampler';
+import { WaterContactContext } from '../Water/water-contact';
+import { WaterSamplerContext } from '../Water/water-sampler';
 import { UtmAreaContext } from '../UtmArea';
 import {
   ZoneMarginEntry,
@@ -57,7 +57,7 @@ import {
   ZoneSurfaceClaim,
 } from './ZoneContext';
 import { ZoneSectionDebug } from './ZoneSectionDebug';
-import { StackImmersionFog } from './StackImmersionFog';
+import { StackInteriorFog } from './StackInteriorFog';
 import { ZoneContact } from './zone-contacts';
 import { zoneDetailKey } from './zone-detail';
 import {
@@ -74,10 +74,10 @@ import {
   DEFAULT_SECTION_OFFSET,
   FenceSideInfo,
   StackBedGrid,
-  ZoneStackImmersion,
-  stackWater,
-  ZoneStackWater,
-  StackWaterResponse,
+  ZoneStackInteriorFog,
+  stackSea,
+  ZoneStackSea,
+  StackSeaResponse,
   wellboreOutline,
   WellboreOutlineResponse,
 } from './zone-defs';
@@ -90,7 +90,7 @@ import {
   setClaims,
 } from './zone-boundary-registry';
 import { aggregateZoneProgress, ZoneProgressInput } from './zone-progress';
-import { buildStackWaterSpec } from './zone-spec';
+import { buildStackSeaSpec } from './zone-spec';
 import { CutoutSource } from './cutout';
 import { resolveWellboreOutline } from './resolveWellboreOutline';
 import {
@@ -112,7 +112,7 @@ import {
 } from './zone-depth-map';
 import { useStackFence } from './useStackFence';
 import { useStackFenceOverlay } from './useStackFenceOverlay';
-import { useStackWater } from './useStackWater';
+import { useStackSea } from './useStackSea';
 
 // Scratch for the camera-locked plane, which is rebuilt every frame.
 const sectionForward = new Vector3();
@@ -171,7 +171,7 @@ export type ZoneStackProps = {
   carrier?: ZoneCarrier;
   /**
    * Open water over the whole column: the sea state, its appearance, and how it
-   * tints the bed beneath it. See {@link ZoneStackWater}.
+   * tints the bed beneath it. See {@link ZoneStackSea}.
    *
    * ⭐ Declared HERE rather than on a zone, for the same reason as `carrier`, and
    * for one more: a sea covers its whole footprint by design, so two zones each
@@ -180,11 +180,11 @@ export type ZoneStackProps = {
    *
    * It also provides the wave sampler and the contact-foam registry to everything
    * inside it, so a floating child (a vessel, a buoy) heaves with the swell and
-   * spreads foam exactly as it would inside an `<Ocean>`. Needs a `boundary` — a
+   * spreads foam exactly as it would inside a `<Water>`. Needs a `boundary` — a
    * `cutSource` alone gives nothing to draw the sea over — and a `seabed` the column
    * holds: without one there is no sea (and a warning).
    */
-  water?: ZoneStackWater;
+  sea?: ZoneStackSea;
   /**
    * The id of the surface in `surfaces` that is the sea bed. Declared, never
    * inferred: the column holds a sea bed only while a zone draws this surface, and
@@ -224,21 +224,21 @@ export type ZoneStackProps = {
   reliefSampler?: SurfaceSampler | null;
   /**
    * Draw the `water`. Default true. `false` keeps the sea built but hides it, the bed
-   * tint and the immersion fog in it with it — while a `SceneryStage` owns the water over
+   * tint and the interior fog in it with it — while a `SceneryStage` owns the water over
    * the column, say (see its occupant's `onStage`). A hidden sea keeps no bed whole: a
    * cut takes the sea bed's cap like any other. Switching it rebuilds no geometry.
    */
-  drawWater?: boolean;
+  drawSea?: boolean;
   /**
    * Fog the view while the camera is INSIDE the sea or the block. See
-   * {@link ZoneStackImmersion}.
+   * {@link ZoneStackInteriorFog}.
    *
    * ⚠️ Absent by default, and the absence is what makes it free: installing
    * `scene.fog` at all changes every material's program cache key, so there is no
    * zero-cost "disabled" state. Declared, it also fogs HOST geometry — vessels,
    * facilities, pipelines — which no material of this library could reach.
    */
-  immersion?: ZoneStackImmersion;
+  interiorFog?: ZoneStackInteriorFog;
   /**
    * Fluid contacts to draw as LINES through the whole column — an oil/water
    * contact, a gas cap, or any other border-like level given as a depth grid.
@@ -382,13 +382,13 @@ export const ZoneStack = ({
   cutSource,
   surfaces,
   carrier,
-  water,
+  sea,
   seabed,
   relief,
   clip,
   reliefSampler,
-  drawWater = true,
-  immersion,
+  drawSea = true,
+  interiorFog,
   contacts,
   prepareCuts = true,
   section,
@@ -427,9 +427,9 @@ export const ZoneStack = ({
 
   // Same again for the sea, which every zone's MATERIALS depend on (the bed
   // tint) — a fresh object each render would rebuild all of them.
-  const waterKey = water ? JSON.stringify(water) : '';
+  const waterKey = sea ? JSON.stringify(sea) : '';
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content above
-  const stableWater = useMemo(() => water, [waterKey]);
+  const stableWater = useMemo(() => sea, [waterKey]);
 
   // And again for the build options, which decide the identity of the CACHED
   // column: everything cut from it has to ask for it with the same ones.
@@ -465,8 +465,8 @@ export const ZoneStack = ({
   // Shared like the plane: hiding the sea hides its bed tint with one write.
   const [waterTintShown] = useState(() => ({ value: 1 }));
   useEffect(() => {
-    waterTintShown.value = drawWater ? 1 : 0;
-  }, [waterTintShown, drawWater]);
+    waterTintShown.value = drawSea ? 1 : 0;
+  }, [waterTintShown, drawSea]);
   // ⭐ The exact COMPLEMENT of the above, for geometry that must appear only where
   // the section took something away — the fragments a cap's collapse dropped
   // because a layer above covered them. Negating the plane makes the patch and the
@@ -480,7 +480,7 @@ export const ZoneStack = ({
     [],
   );
   // The stack's own frame. Everything driven from the CAMERA — the locked section
-  // plane, the immersion test, the fence's auto side — has to be brought out of
+  // plane, the interior fog's test, the fence's auto side — has to be brought out of
   // world space into this, and it is the one case where the two differ.
   const stackFrame = useRef<Group>(null);
 
@@ -895,7 +895,7 @@ export const ZoneStack = ({
     },
     [],
   );
-  const fenceWater = fence?.water === true;
+  const fenceSea = fence?.sea === true;
   const fenceRange = useMemo(() => {
     if (!cutRange) return null;
     let { top, bottom } = cutRange;
@@ -908,9 +908,9 @@ export const ZoneStack = ({
       );
     }
     // A fence that cuts the sea follows the well up through it.
-    if (fenceWater && seaWater) top = Math.min(top, seaWater.depth ?? 0);
+    if (fenceSea && seaWater) top = Math.min(top, seaWater.depth ?? 0);
     return { low: -bottom, high: -top };
-  }, [cutRange, stableCarrier, column, fenceWater, seaWater]);
+  }, [cutRange, stableCarrier, column, fenceSea, seaWater]);
 
   const {
     state: fenceState,
@@ -1033,30 +1033,30 @@ export const ZoneStack = ({
   // toggle would rebuild the sea and every zone each time a cut is switched.
   const hasCut = prepareCuts || !!section || !!fence;
 
-  const sea = useStackWater(
+  const seaMaterials = useStackSea(
     seaWater,
     false,
-    section && section.water === true ? sectionUniform : undefined,
+    section && section.sea === true ? sectionUniform : undefined,
     bathymetry,
-    fence && fence.water === true ? fenceUniforms : undefined,
+    fence && fence.sea === true ? fenceUniforms : undefined,
     hasCut,
   );
 
   // ⭐ The sea and the block are made of SURFACES, so from inside either one
   // nothing stands between the camera and what it sees and the view is impossibly
-  // clear. See `StackImmersionFog` — rendered only when asked for, because
+  // clear. See `StackInteriorFog` — rendered only when asked for, because
   // installing `scene.fog` at all changes every material's program cache key.
   // ⚠️ The block's base is derived rather than sampled: a carrier floor is
   // deliberately not sampleable (§5.3).
   const blockBase = useMemo(() => {
-    if (!immersion) return null;
+    if (!interiorFog) return null;
     let bottom = 0;
     for (const meta of column ?? []) bottom = Math.min(bottom, -meta.max);
     if (stableCarrier?.depth !== undefined)
       bottom = Math.min(bottom, -stableCarrier.depth);
     else if (stableCarrier?.below !== undefined) bottom -= stableCarrier.below;
     return bottom;
-  }, [immersion, column, stableCarrier]);
+  }, [interiorFog, column, stableCarrier]);
 
   // --- Margin ramp: ordered shallow→deep by the COLUMN, not by child order — a
   //     caller may declare zones in any order and the ramp is a property of
@@ -1111,26 +1111,26 @@ export const ZoneStack = ({
       carrierMaterial: carrier?.material,
       carrierDetail,
       contacts: contactTextures,
-      water: seaWater ?? null,
+      sea: seaWater ?? null,
       seabed: seabedId ?? null,
       columnRelief,
       heightClip: clipBinding?.uniforms,
-      drawWater,
+      drawSea,
       waterTintShown,
-      waterBody: sea?.surface.water ?? null,
+      waterBody: seaMaterials?.surface.water ?? null,
       bathymetry,
       prepareCuts: hasCut,
       section: sectionState,
       sectionUniform,
       sectionUniformInverse,
       sectionCarrier: section?.carrier === true,
-      sectionWater: section?.water === true,
+      sectionSea: section?.sea === true,
       fence: fenceState,
       fenceUniforms,
       fenceUniformsInverse,
       fenceOverlayUniforms,
       fenceCarrier: fence?.carrier === true,
-      fenceWater: fence?.water === true,
+      fenceSea: fence?.sea === true,
       resolve: stableResolve,
       envelope,
       rimSpacing,
@@ -1166,22 +1166,22 @@ export const ZoneStack = ({
     seabedId,
     columnRelief,
     clipBinding,
-    drawWater,
+    drawSea,
     waterTintShown,
-    sea,
+    seaMaterials,
     bathymetry,
     hasCut,
     sectionState,
     sectionUniform,
     sectionUniformInverse,
     section?.carrier,
-    section?.water,
+    section?.sea,
     fenceState,
     fenceUniforms,
     fenceUniformsInverse,
     fenceOverlayUniforms,
     fence?.carrier,
-    fence?.water,
+    fence?.sea,
     stableResolve,
     wellboreEnvelope,
     rimSpacing,
@@ -1208,7 +1208,7 @@ export const ZoneStack = ({
   // --- The sea (rendered here, not by a zone): a lid covers its whole footprint
   //     by design, so two zones each drawing part of it would leave two coplanar
   //     lids wherever their footprints overlap. -------------------------------
-  const waterGenerator = useGenerator<StackWaterResponse>(stackWater);
+  const waterGenerator = useGenerator<StackSeaResponse>(stackSea);
 
   const waterSpec = useMemo(() => {
     // Needs a footprint to be drawn over, and a bed in the column to end against.
@@ -1216,7 +1216,7 @@ export const ZoneStack = ({
     if (!column || column.length === 0) return null;
     const envelope = value.envelope;
     if (!envelope) return null;
-    return buildStackWaterSpec(seaWater, utm.utmToArea, boundary, {
+    return buildStackSeaSpec(seaWater, utm.utmToArea, boundary, {
       surfaces: column,
       bed: seabedId,
       envelope,
@@ -1294,21 +1294,21 @@ export const ZoneStack = ({
     };
   }, [seaGeometry]);
 
-  // Compiled even while hidden (`drawWater={false}`, a sky drawing it), so showing it
+  // Compiled even while hidden (`drawSea={false}`, a sky drawing it), so showing it
   // again does not stall a frame on its programs.
   const gl = useThree(state => state.gl);
   const camera = useThree(state => state.camera);
   const scene = useThree(state => state.scene);
   const seaRoot = useRef<Group>(null);
-  const seaSurface = sea?.surface;
-  const seaVolume = sea?.volume;
+  const seaSurface = seaMaterials?.surface;
+  const seaVolume = seaMaterials?.volume;
   useLayoutEffect(() => {
     if (seaRoot.current && seaSurface)
       void precompile(gl, seaRoot.current, camera, scene);
   }, [gl, camera, scene, seaSurface, seaVolume, seaGeometry]);
 
   // The stack's water ends at its seabed: how far down, its deepest under its level (the
-  // body's bottom under the lid's), where the bed's map does not say (its edges). As `Ocean`.
+  // body's bottom under the lid's), where the bed's map does not say (its edges). As `Water`.
   useLayoutEffect(() => {
     if (!seaSurface) return;
     const lid = seaGeometry?.lid;
@@ -1324,11 +1324,11 @@ export const ZoneStack = ({
   }, [seaSurface, seaGeometry]);
 
   // Where the camera is at the stack's water (the camera site's), and the water synced to it
-  // before the frame, so its walls and what lies in it have this frame's (as `Ocean`). Where a
-  // cut takes the water, none stands: the camera there is in air (`OceanMaterial.cameraCut`).
+  // before the frame, so its walls and what lies in it have this frame's (as `Water`). Where a
+  // cut takes the water, none stands: the camera there is in air (`WaterMaterial.cameraCut`).
   const seaLid = useRef<Mesh>(null);
-  const sectionTakesWater = section?.water === true;
-  const fenceTakesWater = fence?.water === true;
+  const sectionTakesSea = section?.sea === true;
+  const fenceTakesSea = fence?.sea === true;
   const [seaScratch] = useState(() => ({
     eye: new Vector3(),
     toStack: new Matrix4(),
@@ -1343,12 +1343,12 @@ export const ZoneStack = ({
         root.updateWorldMatrix(true, false);
         eye.applyMatrix4(seaScratch.toStack.copy(root.matrixWorld).invert());
       }
-      if (sectionTakesWater && sectionState?.enabled) {
+      if (sectionTakesSea && sectionState?.enabled) {
         const plane = sectionState.plane;
         if (plane.normal.dot(eye) > -plane.constant) return true;
       }
       return (
-        fenceTakesWater &&
+        fenceTakesSea &&
         !!fenceState?.enabled &&
         !!fenceState.index &&
         !!fenceState.field &&
@@ -1361,8 +1361,8 @@ export const ZoneStack = ({
   }, [
     seaSurface,
     seaScratch,
-    sectionTakesWater,
-    fenceTakesWater,
+    sectionTakesSea,
+    fenceTakesSea,
     sectionState,
     fenceState,
   ]);
@@ -1392,8 +1392,8 @@ export const ZoneStack = ({
   const waterFace = fenceState?.enabled ? waterFenceFace : waterPlaneFace;
   // A sea the live cut leaves whole is closed by its bed cap instead (see `ZoneMeshes`).
   const seaCut = fenceState?.enabled
-    ? fence?.water === true
-    : section?.water === true;
+    ? fence?.sea === true
+    : section?.sea === true;
 
   // The stack's extent in its OWN frame, for the section debug view: XZ from the
   // footprint everything is cut from, Y from the column's depth range and the
@@ -1433,49 +1433,51 @@ export const ZoneStack = ({
     <ZoneStackContext.Provider value={value}>
       <SurfaceSamplerRegistryContext.Provider value={samplerRegistry}>
         <SurfaceSamplerContext.Provider value={stackSampler}>
-          <OceanSamplerContext.Provider value={sea?.sampler ?? null}>
-            <OceanContactContext.Provider value={sea?.contacts ?? null}>
+          <WaterSamplerContext.Provider value={seaMaterials?.sampler ?? null}>
+            <WaterContactContext.Provider
+              value={seaMaterials?.contacts ?? null}
+            >
               {/* Identity transform, present so a camera-locked section has a
                   frame to be brought into (see the `useFrame` above). */}
               <group ref={stackFrame}>
-                {immersion && (
-                  <StackImmersionFog
-                    immersion={immersion}
-                    water={drawWater ? (seaWater ?? null) : null}
+                {interiorFog && (
+                  <StackInteriorFog
+                    interiorFog={interiorFog}
+                    sea={drawSea ? (seaWater ?? null) : null}
                     sampler={stackSampler}
                     base={blockBase}
                     section={sectionState}
-                    sectionWater={section?.water === true}
+                    sectionSea={section?.sea === true}
                     fence={fenceState}
-                    fenceWater={fence?.water === true}
+                    fenceSea={fence?.sea === true}
                     frame={stackFrame}
                   />
                 )}
                 <group ref={seaRoot}>
-                  {sea && seaGeometry?.lid && (
+                  {seaMaterials && seaGeometry?.lid && (
                     <mesh
                       ref={seaLid}
                       geometry={seaGeometry.lid}
-                      material={sea.surface}
-                      visible={drawWater}
+                      material={seaMaterials.surface}
+                      visible={drawSea}
                     />
                   )}
-                  {sea && seaGeometry?.body && (
+                  {seaMaterials && seaGeometry?.body && (
                     <mesh
                       geometry={seaGeometry.body}
-                      material={sea.volume}
-                      visible={drawWater}
+                      material={seaMaterials.volume}
+                      visible={drawSea}
                     />
                   )}
                 </group>
-                {sea?.face &&
+                {seaMaterials?.face &&
                   seaCut &&
                   waterFace?.map(face => (
                     <mesh
                       key={`${face.interval}-${face.wall}`}
                       geometry={face.geometry}
-                      material={sea.face!}
-                      visible={drawWater}
+                      material={seaMaterials.face!}
+                      visible={drawSea}
                     />
                   ))}
                 {sectionBounds && (
@@ -1487,8 +1489,8 @@ export const ZoneStack = ({
                 )}
                 {children}
               </group>
-            </OceanContactContext.Provider>
-          </OceanSamplerContext.Provider>
+            </WaterContactContext.Provider>
+          </WaterSamplerContext.Provider>
         </SurfaceSamplerContext.Provider>
       </SurfaceSamplerRegistryContext.Provider>
     </ZoneStackContext.Provider>

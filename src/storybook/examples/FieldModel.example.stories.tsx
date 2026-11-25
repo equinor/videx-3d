@@ -1,0 +1,2706 @@
+import {
+  SceneryArgsFeatures,
+  SceneryArgsMinimap,
+} from '../../storybook/components/scenery-features';
+import { useFrame, useThree } from '@react-three/fiber';
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { CurveInterpolator } from 'curve-interpolator';
+import { scaleOrdinal } from 'd3-scale';
+import {
+  RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Group, Plane, Vector3 } from 'three';
+import {
+  CameraFlyToEvent,
+  CameraFocusAtPointEvent,
+} from '../../events/camera-events';
+import {
+  WellboreSelectedEvent,
+  wellboreSelectedEventType,
+} from '../../events/wellbore-events';
+import { useData } from '../../hooks/useData';
+import { DEFAULT_OIT_FRONT_TOLERANCE, OITRenderPass, Pass } from '../../main';
+import { OutputPass } from '../../rendering/passes/OutputPass';
+import { RenderingPipeline } from '../../rendering/RenderingPipeline';
+import {
+  PlanarPolygonCoordinates,
+  PlanarPolygonGeometry,
+  pointInPolygon,
+  PositionLog,
+  readCameraTarget,
+  surfaceGridToWorld,
+  SurfaceMeta,
+  Vec2,
+  Vec3,
+} from '../../sdk';
+import { CutUniforms } from '../../sdk/materials/fence-field';
+import { HeightFieldClip } from '../../sdk/materials/height-field-clip';
+import { FenceSideName } from '../../sdk/utils/one-sided-offset';
+import { fenceViewPose } from '../../sdk/geometries/fence-view';
+import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
+import { WellboreFence } from '../../sdk/geometries/wellbore-fence';
+import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
+import { SeabedFacility } from '../../storybook/components/SeabedFacility';
+import {
+  sceneryArgs,
+  SceneryArgs,
+  sceneryArgTypes,
+  sceneryDecorators,
+  sceneryMinimapArgs,
+  SceneryMinimapArgs,
+  sceneryMinimapArgTypes,
+  sceneryPropsFromArgs,
+  sceneryReliefArgs,
+  SceneryReliefArgs,
+  sceneryReliefArgTypes,
+  sceneryBakedReliefLayer,
+  sceneryReliefFromArgs,
+  scenerySeaWaterFromArgs,
+} from '../../storybook/components/scenery-controls';
+import { orderControls } from '../../storybook/components/order-controls';
+import type { ScenerySeaWater } from '../../components/Scenery/scenery-model';
+import { RendererToneMapping } from '../../storybook/components/tone-mapping-controls';
+import { zoneTimings } from '../../storybook/data/zone-timings';
+import { demoCrs, demoFrame } from '../../storybook/data/demo-crs';
+import type { SubseaSite } from '../../storybook/data/subsea-facilities';
+import {
+  EXTRA_WELLBORE_IDS,
+  isExtraWellbore,
+} from '../../storybook/data/extra-wellbores';
+import { sortByStratAge } from '../../storybook/data/strat-ages';
+import {
+  stratLayerColors,
+  stratLayerGroup,
+  stratLayerUnitName,
+} from '../../storybook/data/strat-units';
+import {
+  SYNTHETIC_SEABED_ID,
+  SYNTHETIC_SEABED_KEY,
+} from '../../storybook/data/synthetic-surfaces';
+import { useVidex3dLocate } from '../../storybook/debug/useVidex3dLocate';
+import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import {
+  progressArgs,
+  ProgressArgs,
+  progressArgTypes,
+  storyProgress,
+} from '../../storybook/decorators/progress-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { EventEmitterDecorator } from '../../storybook/decorators/event-emitter-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
+import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
+import { createOutputPanelDecorator } from '../../storybook/decorators/output-panel-decorator';
+import { WellMapDecorator } from '../../storybook/decorators/well-map-decorator';
+import { useZoneProgressPanel } from '../../storybook/hooks/useZoneProgressPanel';
+import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
+import { useStoreRecord } from '../../storybook/hooks/useStoreRecord';
+import { useSurfaceMetaDict } from '../../storybook/hooks/useSurfaceMeta';
+import { useWellboreHeaders } from '../../storybook/hooks/useWellboreHeaders';
+import storyArgs from '../../storybook/story-args.json';
+import { EventEmitterCallbackEvent } from '../../components/EventEmitter';
+import { useHighlighter } from '../../components/Highlighter/highlight-state';
+import { Highlighter } from '../../components/Highlighter/Highlighter';
+import { RenderStats } from '../../components/Html/RenderStats/RenderStats';
+import { Scenery } from '../../components/Scenery/Scenery';
+import {
+  SceneryStage,
+  SceneryStageOccupantState,
+} from '../../components/Scenery/SceneryStage';
+import { GeoRelief, GeoReliefProps } from '../../components/Layers/GeoRelief';
+import type { ReliefSampler } from '../../components/Scenery/scenery-relief-sampler';
+import { reliefSource } from '../../components/Scenery/scenery-relief-source';
+import { UtmArea } from '../../components/UtmArea';
+import { World } from '../../components/World/World';
+import { UtmPosition } from '../../components/UtmArea/UtmPosition';
+import { Trajectory } from '../../components/Wellbores/Trajectory/Trajectory';
+import { TrajectoryColorInterval } from '../../components/Wellbores/Trajectory/trajectory-defs';
+import { Wellbore } from '../../components/Wellbores/Wellbore/Wellbore';
+import { WellboreBounds } from '../../components/Wellbores/WellboreBounds/WellboreBounds';
+import { Wells } from '../../components/Wellbores/Wells/Wells';
+import { Zone } from '../../components/Zones/Zone';
+import {
+  ZoneFence,
+  ZoneFenceOverlayShading,
+  ZoneLayer,
+  ZoneResolveOptions,
+  ZoneSection,
+  ZoneStackProgress,
+  FenceSideInfo,
+  ZoneStackInteriorFog,
+  ZoneStackSea,
+} from '../../components/Zones/zone-defs';
+import {
+  ZONE_DETAIL_PRESET_NAMES,
+  ZoneDetailPreset,
+} from '../../components/Zones/zone-detail';
+import { zoneProgressReport } from '../../components/Zones/zone-progress';
+import { ZoneStack } from '../../components/Zones/ZoneStack';
+import { ZoneBoundary } from '../../components/Zones/cutout';
+import { ZoneInferenceStyle } from '../../components/Zones/inference-material';
+import {
+  SurfaceSampler,
+  SurfaceSamplerContext,
+  useSurfaceSampler,
+} from '../../components/Zones/surface-sampler';
+import { useFenceSeismicOverlay } from '../../components/Zones/useFenceSeismicOverlay';
+
+const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
+
+// Where the field lies, for its UtmArea, the relief's frame and the Scenery's place alike.
+const crs = demoCrs;
+// Where the relief lies around the field: the UtmArea's map.
+const reliefFrame = demoFrame;
+// Where no layer of the relief drawn from tiles has data, metres below the sea: the demo
+// reliefs cover the region, so it seldom shows.
+const RELIEF_BASE_DEPTH = 100;
+
+/**
+ * Where `reliefMarkers` puts its facilities, given as a host gives them, in UTM: two
+ * inside the boundary, on the column's top, and two past it, on the relief alone. Of
+ * each pair the first stands on a levelled base, the second on the slope itself.
+ */
+function reliefMarkerSites(boundary: PlanarPolygonGeometry): {
+  inside: SubseaSite[];
+  outside: SubseaSite[];
+} {
+  const { max, size } = boundary.getBounds();
+  const [cx, cz] = boundary.center;
+  const site = (
+    name: string,
+    x: number,
+    z: number,
+    heading: number,
+  ): SubseaSite => {
+    const utm = crs.worldToUtm(x, 0, z);
+    return {
+      name,
+      easting: utm.easting,
+      northing: utm.northing,
+      heading,
+      slots: 4,
+    };
+  };
+  const polygon = boundary.coordinates as PlanarPolygonCoordinates;
+  const dx = size[0] * 0.2;
+  const dz = size[1] * 0.2;
+  const inside = (
+    [
+      [cx, cz],
+      [cx + dx, cz + dz],
+      [cx - dx, cz - dz],
+      [cx + dx, cz - dz],
+      [cx - dx, cz + dz],
+    ] as Vec2[]
+  )
+    .filter(([x, z]) => pointInPolygon(x, z, polygon))
+    .slice(0, 2)
+    .map(([x, z], i) => site(`Column ${i + 1}`, x, z, 20 + 40 * i));
+  return {
+    inside,
+    outside: [
+      site('Relief east', max[0] + 800, cz, -30),
+      site('Relief south', cx, max[1] + 800, 45),
+    ],
+  };
+}
+
+// Where the stack reports its build, read OUTSIDE the canvas by the progress decorator
+// (`sceneryDecorators`), next to the Scenery's: what a host would hold.
+const reportModel = storyProgress.source('model', {
+  name: 'Model',
+  title: 'Building model',
+});
+
+/** Branch colours, shared with the well map through `parameters.colorScale`. */
+const colorScale = scaleOrdinal([
+  'tomato',
+  '#4e79a7',
+  '#f28e2c',
+  '#76b7b2',
+  '#59a14f',
+  '#edc949',
+  '#af7aa1',
+  '#ff9da7',
+  '#9c755f',
+  '#bab0ab',
+  'darkgreen',
+  'purple',
+  '#24ca85',
+]);
+
+/**
+ * The dataset's own sea bed, if it maps one — most fields do not, since a sea bed
+ * is bathymetry rather than stratigraphy. Volve's shallowest horizon is `Utsira
+ * Fm. Top` at ~820 m, so without a bed the sea would stand on THAT, and the whole
+ * overburden above it would be drawn as water.
+ */
+const SEABED_ID = (storyArgs.seabedSurface as string | null) ?? null;
+
+/**
+ * ⚠️ `undefined` rather than 0 when nothing is peeled: with the stack's `prepareCuts`
+ * off, the PRESENCE of `peel` is a build input (it makes every layer carry a second
+ * index — hundreds of MB at field scale), so passing 0 would pay for peeling that
+ * never happens.
+ */
+// Without a stage, the column draws its own sea bed and water.
+const OFF_STAGE: SceneryStageOccupantState = {
+  seabed: false,
+  seabedOpacity: 1,
+  water: false,
+};
+
+const peelOf = (peel: number, layers: number) =>
+  peel > 0 ? Math.min(Math.round(peel), layers) : undefined;
+
+/** ctrl+click flies to the point picked on the column, its cut faces included. */
+const focusOnCtrlClick = (event: EventEmitterCallbackEvent) => {
+  if (!event.position || !event.keys.ctrlKey) return;
+  dispatchEvent(
+    new CameraFocusAtPointEvent({ point: event.position, distance: 1000 }),
+  );
+};
+
+// Always-on OIT pipeline (SMAA), matching the other zone spikes.
+const ZonePipeline = ({
+  frontPeelTolerance,
+  skipFrontPeeling,
+  mergeFront,
+  tailSlices,
+  tailSliceSpacing,
+}: {
+  frontPeelTolerance: number;
+  skipFrontPeeling: boolean;
+  mergeFront: boolean;
+  tailSlices: number;
+  tailSliceSpacing: 'linear' | 'log';
+}) => {
+  const scene = useThree(s => s.scene);
+  const camera = useThree(s => s.camera);
+  const passes = useMemo<Pass[]>(() => {
+    const base = new OITRenderPass(scene, camera);
+    base.antialias = 'smaa';
+    return [base, new OutputPass()];
+  }, [scene, camera]);
+  const oitPass = passes[0] as OITRenderPass;
+  useEffect(() => {
+    oitPass.frontPeelTolerance = frontPeelTolerance;
+    oitPass.skipFront = skipFrontPeeling;
+    oitPass.mergeFront = mergeFront;
+    oitPass.tailSlices = tailSlices;
+    oitPass.tailSliceSpacing = tailSliceSpacing;
+  }, [
+    oitPass,
+    frontPeelTolerance,
+    skipFrontPeeling,
+    mergeFront,
+    tailSlices,
+    tailSliceSpacing,
+  ]);
+  useFrame(() => {}, 2);
+  return <RenderingPipeline passes={passes} />;
+};
+
+/**
+ * Point the section plane, in the stack's own frame. `azimuth` swings the normal
+ * in XZ and `dip` tilts it out of horizontal, so dip 0 is the vertical cut a
+ * geological section is normally drawn on.
+ */
+function setSectionPlane(
+  plane: Plane,
+  azimuth: number,
+  dip: number,
+  distance: number,
+  flip: boolean,
+) {
+  const a = (azimuth * Math.PI) / 180;
+  const d = (dip * Math.PI) / 180;
+  plane.normal.set(
+    Math.sin(a) * Math.cos(d),
+    Math.sin(d),
+    Math.cos(a) * Math.cos(d),
+  );
+  plane.constant = -distance;
+  if (flip) plane.negate();
+}
+
+/**
+ * Drives the section plane every frame.
+ *
+ * ⚠️ Rendered INSIDE the `ZoneStack`, deliberately: a child's `useFrame`
+ * subscribes before its parent's, so the stack reads the plane in the same frame
+ * this wrote it rather than one behind.
+ */
+const SectionDriver = ({
+  plane,
+  azimuth,
+  dip,
+  distance,
+  flip,
+  animate,
+  speed,
+}: {
+  plane: Plane;
+  azimuth: number;
+  dip: number;
+  distance: number;
+  flip: boolean;
+  animate: boolean;
+  speed: number;
+}) => {
+  const clock = useRef(0);
+  useFrame((_, delta) => {
+    if (!animate) {
+      setSectionPlane(plane, azimuth, dip, distance, flip);
+      return;
+    }
+    clock.current += delta * speed;
+    const t = clock.current;
+    setSectionPlane(
+      plane,
+      azimuth + 40 * Math.sin(t * 0.31),
+      dip + 20 * Math.sin(t * 0.17),
+      distance + 2500 * Math.sin(t * 0.11),
+      flip,
+    );
+  });
+  return null;
+};
+
+/**
+ * Every wellbore the dataset carries, drawn through the block and selectable.
+ *
+ * Kept out of `FieldColumnStory` so hovering and selecting never re-renders the
+ * zone's build memos.
+ */
+const FieldWells = ({
+  selected,
+  color,
+  selectedColor,
+  radius,
+  lodPixelError,
+  fenceWindow,
+}: {
+  selected?: string;
+  color: string;
+  selectedColor: string;
+  radius: number;
+  lodPixelError: number;
+  fenceWindow: FenceWindow | null;
+}) => {
+  const wellbores = useWellboreHeaders();
+  const highlighter = useHighlighter();
+  const store = useData();
+  const [fenceIntervals, setFenceIntervals] = useState<{
+    wellbore: string;
+    intervals: TrajectoryColorInterval[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!store || !fenceWindow) return setFenceIntervals(null);
+    let cancelled = false;
+    store
+      .get<PositionLog>('position-logs', fenceWindow.wellbore)
+      .then(poslog => {
+        if (cancelled) return;
+        setFenceIntervals(
+          poslog && poslog.length >= 8
+            ? {
+                wellbore: fenceWindow.wellbore,
+                intervals: verticalRangeIntervals(poslog, fenceWindow.range),
+              }
+            : null,
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, fenceWindow]);
+  // an extra wellbore is drawn only while it is the selected one
+  const shown = useMemo(
+    () => wellbores.filter(w => !isExtraWellbore(w.id) || w.id === selected),
+    [wellbores, selected],
+  );
+
+  useEffect(() => () => highlighter.removeAll(), [highlighter]);
+
+  return (
+    <Wells
+      wellbores={shown}
+      selected={selected}
+      renderWellbore={(wellbore, fromMsl, isSelected) => (
+        <UtmPosition easting={wellbore.easting} northing={wellbore.northing}>
+          <Wellbore
+            id={wellbore.id}
+            fromMsl={fromMsl}
+            onPointerClick={(event: EventEmitterCallbackEvent) => {
+              dispatchEvent(
+                new WellboreSelectedEvent({
+                  id: event.ref,
+                  position: event.position,
+                  flyTo: !event.keys.ctrlKey,
+                }),
+              );
+            }}
+            onPointerEnter={(event: EventEmitterCallbackEvent) => {
+              if (!isSelected) highlighter.highlight(event.target);
+              event.domElement.style.cursor = 'pointer';
+            }}
+            onPointerLeave={(event: EventEmitterCallbackEvent) => {
+              event.domElement.style.cursor = '';
+              highlighter.removeAll();
+            }}
+          >
+            <WellboreBounds id={wellbore.id} fromMsl={fromMsl}>
+              <Trajectory
+                radius={radius}
+                color={isSelected ? selectedColor : color}
+                priority={8}
+                radialSegments={12}
+                lodPixelError={lodPixelError}
+                colorIntervals={
+                  fenceIntervals?.wellbore === wellbore.id
+                    ? fenceIntervals.intervals
+                    : undefined
+                }
+              />
+            </WellboreBounds>
+          </Wellbore>
+        </UtmPosition>
+      )}
+    />
+  );
+};
+
+type FieldColumnStoryProps = {
+  boundary: 'grid' | 'field' | 'crop' | 'nested';
+  cropSize: number;
+  footprintRadius: number;
+  zoning: 'single' | 'groups';
+  groupGaps: boolean;
+  seabed: boolean;
+  surfaceFrom: number;
+  surfaceCount: number;
+  rimSpacing: number;
+  maxError: number;
+  maxNodes: number;
+  preview: boolean;
+  previewSaturation: number;
+  seal: boolean;
+  sealMode: 'proportional' | 'void';
+  minThickness: number;
+  maxFill: number;
+  collapseThreshold: number;
+  constrainCoverage: boolean;
+  constrainTerminations: boolean;
+  section: boolean;
+  sectionMode: 'fixed' | 'camera' | 'target';
+  sectionCameraDistance: number;
+  sectionVertical: boolean;
+  sectionAzimuth: number;
+  sectionDip: number;
+  sectionDistance: number;
+  sectionFlip: boolean;
+  sectionAnimate: boolean;
+  sectionAnimateSpeed: number;
+  sectionSea: boolean;
+  keepBed: boolean;
+  sectionCarrier: boolean;
+  sectionKeep: string;
+  sectionDebug: boolean;
+  seaLevel: number;
+  seaLayerOpacity: number;
+  seabedOpacity: number;
+  bodyShimmer: number;
+  interiorFog: boolean;
+  interiorFogRockColor: string;
+  interiorFogVisibility: number;
+  interiorFogTransition: number;
+  interiorFogSettle: number;
+  interiorFogBackground: boolean;
+  floor: boolean;
+  floorClearance: number;
+  floorColor: string;
+  floorDetail: ZoneDetailPreset | 'none';
+  floorDetailScale: number;
+  surfaceOpacity: number;
+  wallOpacity: number;
+  frontPeelTolerance: number;
+  skipFrontPeeling: boolean;
+  mergeFront: boolean;
+  tailSlices: 0 | 2 | 3;
+  tailSliceSpacing: 'linear' | 'log';
+  wireframe: boolean;
+  peel: number;
+  cullHiddenCaps: boolean;
+  cullOffscreen: boolean;
+  inferredStyle: ZoneInferenceStyle;
+  detail: ZoneDetailPreset | 'none';
+  detailStrength: number;
+  zonePicking: boolean;
+  buildDiagnostics: boolean;
+  tileCells: number;
+  debugTiles: boolean;
+  lodLevels: number;
+  lodFactor: number;
+  lodLevel: number;
+  lodPixelError: number;
+  resources: boolean;
+  resourceInterval: number;
+  wellbores: boolean;
+  wellboreColor: string;
+  wellboreSelectedColor: string;
+  wellboreRadius: number;
+  wellboreLodPixelError: number;
+  wellbore: string;
+  fence: boolean;
+  fenceSide: FenceSideName | 'auto';
+  fenceAutoDeadband: number;
+  fenceAutoSettle: number;
+  fenceOffset: number;
+  fenceTolerance: number;
+  fenceMaxSpacing: number;
+  fenceHeadBearing: 'opposite-td' | 'free';
+  fenceHeadMinTdAngle: number;
+  fenceScope: 'stack' | 'touched';
+  fenceDebug: boolean;
+  fenceColorTvd: boolean;
+  fenceFlyTo: boolean;
+  fenceFlyPadding: number;
+  fenceFlyPolar: number;
+  fenceFlyGuard: number;
+  fenceFlyRetreat: number;
+  fenceFlyDuration: number;
+  seismic: boolean;
+  seismicMix: number;
+  seismicStep: number;
+  seismicDelay: number;
+  seismicColorRamp: number;
+  seismicRangeOffset: number;
+  seismicShading: ZoneFenceOverlayShading;
+  seismicGaps: boolean;
+  seismicVoids: boolean;
+  scenery: boolean;
+  stageMatchBed: boolean;
+  stageBed: 'top' | 'median' | 'bottom';
+  stageMargin: number;
+  bakeSeabed: boolean;
+  reliefCut: boolean;
+  reliefMarkers: boolean;
+} & ProgressArgs &
+  SceneryArgs &
+  SceneryReliefArgs &
+  SceneryMinimapArgs;
+
+// Between the rim's samples along the boundary, and how far to either side one is tried
+// again where the boundary's own edge misses the cap.
+const RIM_STEP = 100;
+const RIM_NUDGE = 5;
+
+/** The heights of `sampler`'s highest drawn surface along `boundary`, ascending. */
+function sampleRim(
+  sampler: SurfaceSampler,
+  boundary: PlanarPolygonGeometry,
+): number[] {
+  const [ox, oz] = boundary.offset;
+  const heights: number[] = [];
+  for (const component of boundary.coordinates as PlanarPolygonCoordinates) {
+    for (const ring of component) {
+      for (let k = 0; k + 1 < ring.length; k++) {
+        const [x0, z0] = ring[k];
+        const [x1, z1] = ring[k + 1];
+        const length = Math.hypot(x1 - x0, z1 - z0);
+        if (length === 0) continue;
+        const nx = (z0 - z1) / length;
+        const nz = (x1 - x0) / length;
+        const steps = Math.max(1, Math.ceil(length / RIM_STEP));
+        for (let t = 0; t < steps; t++) {
+          const x = ox + x0 + ((x1 - x0) * t) / steps;
+          const z = oz + z0 + ((z1 - z0) * t) / steps;
+          const y =
+            sampler.getHeightAt(x, z) ??
+            sampler.getHeightAt(x + RIM_NUDGE * nx, z + RIM_NUDGE * nz) ??
+            sampler.getHeightAt(x - RIM_NUDGE * nx, z - RIM_NUDGE * nz);
+          if (y !== null) heights.push(y);
+        }
+      }
+    }
+  }
+  return heights.sort((a, b) => a - b);
+}
+
+/**
+ * Tells the column's top along its boundary (`sampleRim`) whenever the stack's sampler
+ * changes: sampled from the caps it built, so the grid never comes to this thread. Must
+ * sit inside `ZoneStack`.
+ */
+const ColumnRim = ({
+  boundary,
+  onRim,
+}: {
+  boundary: PlanarPolygonGeometry;
+  onRim: (rim: number[]) => void;
+}) => {
+  const sampler = useSurfaceSampler();
+  useEffect(() => {
+    if (!sampler) return;
+    const rim = sampleRim(sampler, boundary);
+    if (rim.length > 0) onRim(rim);
+  }, [sampler, boundary, onRim]);
+  return null;
+};
+
+/** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
+const Videx3dLocate = () => {
+  useVidex3dLocate();
+  return null;
+};
+
+/**
+ * Keeps the camera's horizontal offset from its pivot in a ref.
+ *
+ * ⭐ Which way the view is coming FROM is what breaks the tie between a fence's two
+ * equally readable sides — taking the nearer one turns a fly-to into a short swing
+ * rather than a trip round the back.
+ */
+const ViewOffset = ({ into }: { into: RefObject<Vec2 | null> }) => {
+  const eye = useMemo(() => new Vector3(), []);
+  const pivot = useMemo(() => new Vector3(), []);
+  useFrame(({ camera, controls }) => {
+    camera.getWorldPosition(eye);
+    if (!readCameraTarget(controls, pivot)) pivot.set(0, 0, 0);
+    into.current = [eye.x - pivot.x, eye.z - pivot.z];
+  });
+  return null;
+};
+
+/** How long a fly-to waits for the fence it is flying to, in ms. */
+const FENCE_WAIT = 20000;
+
+const FENCE_TVD_COLOR = 'orange';
+
+/** The vertical window a fence was cut for, in scene Y (= −TVD). */
+type FenceWindow = { wellbore: string; range: [number, number] };
+
+/**
+ * MD (MSL) intervals where a position log lies inside a scene-Y window.
+ *
+ * ⚠️ The spline is built exactly as `getTrajectory` builds it, so the crossings are the curve
+ * positions the `Trajectory` shader turns into MD.
+ */
+function verticalRangeIntervals(
+  poslog: PositionLog,
+  [low, high]: [number, number],
+): TrajectoryColorInterval[] {
+  const [origEast, , origNorth] = poslog;
+  const points: Vec3[] = [];
+  for (let j = 0; j + 3 < poslog.length; j += 4) {
+    points.push([
+      poslog[j] - origEast,
+      -poslog[j + 1],
+      origNorth - poslog[j + 2],
+    ]);
+  }
+  const spline = new CurveInterpolator(points, { alpha: 1, tension: 0 });
+  const cuts = [
+    0,
+    1,
+    ...spline.getIntersectsAsPositions(low, 1),
+    ...spline.getIntersectsAsPositions(high, 1),
+  ].sort((a, b) => a - b);
+  const top = poslog[3];
+  const length = poslog[poslog.length - 1] - top;
+
+  const intervals: TrajectoryColorInterval[] = [];
+  for (let i = 1; i < cuts.length; i++) {
+    const a = cuts[i - 1];
+    const b = cuts[i];
+    if (b <= a) continue;
+    const y = spline.getPointAt((a + b) / 2)[1];
+    if (y < low || y > high) continue;
+    const from = top + a * length;
+    const to = top + b * length;
+    const last = intervals[intervals.length - 1];
+    if (last?.to === from) last.to = to;
+    else intervals.push({ from, to, color: FENCE_TVD_COLOR });
+  }
+  return intervals;
+}
+
+const FieldColumnStory = (props: FieldColumnStoryProps) => {
+  const surfaceMetaDict = useSurfaceMetaDict();
+  // Generated where the field maps no sea bed of its own: the story's store holds it.
+  const generatedSeabed = useStoreRecord<SurfaceMeta>(
+    'surface-meta',
+    SEABED_ID ? null : SYNTHETIC_SEABED_ID,
+  );
+  const wellboreHeaders = useWellboreHeaders();
+
+  // Held HERE rather than in `FieldWells` because the wellbore fence reads it at
+  // this level, alongside the stack. ⭐ Two channels, not one: the 3D view and the
+  // well map both select by EVENT, and the `wellbore` control selects directly —
+  // which is what makes a specific well reachable for an A/B without hunting for
+  // it in the scene.
+  const [selectedWellbore, setSelectedWellbore] = useState<string | undefined>(
+    props.wellbore,
+  );
+  // ⭐⭐ The FENCE's well lags the selection. A fly-to drops it as the camera pulls
+  // back and picks the new one up out there, so the block is never rebuilt in front
+  // of the lens.
+  const [fenceWellbore, setFenceWellbore] = useState<string | undefined>(
+    props.wellbore,
+  );
+  // The side the flight decided on, pinned for its duration: `auto` would otherwise
+  // flip every time the swing crossed the cut.
+  const [flightSide, setFlightSide] = useState<FenceSideName | null>(null);
+
+  useEffect(() => {
+    setSelectedWellbore(props.wellbore);
+    setFenceWellbore(props.wellbore);
+  }, [props.wellbore]);
+
+  // An extra wellbore joins the field only while it is selected, so the field's own
+  // footprint — and every fence cut from it — is unchanged by the others.
+  const shownExtra = isExtraWellbore(selectedWellbore)
+    ? selectedWellbore
+    : null;
+  const fieldIds = useMemo(
+    () =>
+      EXTRA_WELLBORE_IDS.length > 0
+        ? wellboreHeaders
+            .filter(w => !isExtraWellbore(w.id) || w.id === shownExtra)
+            .map(w => w.id)
+        : undefined,
+    [wellboreHeaders, shownExtra],
+  );
+  const fieldOutline = useFieldOutline({ wellboreIds: fieldIds });
+
+  const viewOffset = useRef<Vec2 | null>(null);
+  const builtFence = useRef<WellboreFence | null>(null);
+  // The field, placed on the Scenery's globe by the stage: over its flat disc, so it stays put.
+  const fieldAnchor = useRef<Group>(null);
+  const [fenceWindow, setFenceWindow] = useState<FenceWindow | null>(null);
+  const awaiting = useRef<{
+    id: string;
+    resolve: (fence: WellboreFence | null) => void;
+  } | null>(null);
+
+  const onFence = useCallback((fence: WellboreFence | null) => {
+    builtFence.current = fence;
+    const wellbore = fence?.report.wellbore;
+    const range = fence?.report.verticalRange;
+    if (fence) {
+      // tvdFrom/tvdTo as the batten debug story takes them
+      const tvd = range
+        ? ` · tvdFrom ${(-range[1]).toFixed(0)} tvdTo ${(-range[0]).toFixed(0)}`
+        : '';
+      console.info(`fence ${wellbore}${tvd}`, fence.report);
+    }
+    setFenceWindow(previous =>
+      !wellbore || !range
+        ? null
+        : previous?.wellbore === wellbore &&
+            previous.range[0] === range[0] &&
+            previous.range[1] === range[1]
+          ? previous
+          : { wellbore, range },
+    );
+    const waiting = awaiting.current;
+    if (waiting && fence && fence.report.wellbore === waiting.id) {
+      awaiting.current = null;
+      waiting.resolve(fence);
+    }
+  }, []);
+
+  const awaitFence = useCallback(
+    (id: string) =>
+      new Promise<WellboreFence | null>(resolve => {
+        if (builtFence.current?.report.wellbore === id)
+          return resolve(builtFence.current);
+        const timer = setTimeout(() => {
+          if (awaiting.current?.id === id) {
+            awaiting.current = null;
+            resolve(null);
+          }
+        }, FENCE_WAIT);
+        awaiting.current = {
+          id,
+          resolve: fence => {
+            clearTimeout(timer);
+            resolve(fence);
+          },
+        };
+      }),
+    [],
+  );
+
+  // Every mapped surface the dataset carries, in stratigraphic order. Age is the
+  // only key that is right by construction — see `sortByStratAge`, which excludes
+  // (loudly) any surface the strat column has no horizon for.
+  //
+  // ⭐ The sea BED comes first, and is generated when the field maps none: the sea
+  // is built as [level, the column's shallowest surface], so without one it would
+  // stand on the shallowest HORIZON and turn the entire overburden into water.
+  const column = useMemo<SurfaceMeta[]>(() => {
+    const all = sortByStratAge(
+      Object.keys(surfaceOptions)
+        .map(id => surfaceMetaDict[id])
+        .filter((m): m is SurfaceMeta => !!m),
+    );
+    if (!props.seabed) return all;
+    if (SEABED_ID) {
+      const from = all.findIndex(m => m.id === SEABED_ID);
+      return from >= 0 ? all.slice(from) : all;
+    }
+    return generatedSeabed ? [generatedSeabed, ...all] : all;
+  }, [surfaceMetaDict, props.seabed, generatedSeabed]);
+
+  // The whole survey rectangle of the widest surface in the column.
+  // ⚠️ Built through `surfaceGridToWorld` over the grid CORNERS, not from the
+  // header's xmax/ymax: those are the origin plus the span in the GRID's own
+  // frame, and this survey is rotated 220°, so reading them as UTM bounds puts
+  // the footprint somewhere else entirely.
+  const gridBoundary = useMemo<PlanarPolygonGeometry | null>(() => {
+    const widest = column.reduce<SurfaceMeta | null>(
+      (best, m) =>
+        !best ||
+        m.header.nx * m.header.xinc * (m.header.ny * m.header.yinc) >
+          best.header.nx *
+            best.header.xinc *
+            (best.header.ny * best.header.yinc)
+          ? m
+          : best,
+      null,
+    );
+    if (!widest) return null;
+    const { nx, ny, xinc, yinc, rot, xori, yori } = widest.header;
+    const p = crs.utmToWorld(xori, yori, 0);
+    const toWorld = surfaceGridToWorld({ nx, ny, xinc, yinc, rot }, [p.x, p.z]);
+    const ring = [
+      toWorld(0, 0),
+      toWorld(nx - 1, 0),
+      toWorld(nx - 1, ny - 1),
+      toWorld(0, ny - 1),
+    ];
+    return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
+  }, [column]);
+
+  // A square crop about the scene origin, for a like-for-like comparison with the
+  // generated column (whose grid is centred there and 7 km across by default).
+  // ⚠️ Axis-aligned in the SCENE, while the surveys are rotated 220°, so a crop
+  // approaching the survey's own size will poke past its corners.
+  const cropBoundary = useMemo<PlanarPolygonGeometry>(() => {
+    const h = (props.cropSize * 1000) / 2;
+    const ring: Vec2[] = [
+      [-h, -h],
+      [h, -h],
+      [h, h],
+      [-h, h],
+    ];
+    return new PlanarPolygonGeometry([[[...ring, ring[0]]]], [0, 0]);
+  }, [props.cropSize]);
+
+  // ⚠️ `nested` takes the GRID. The stack's boundary is what the shared column is
+  // built over and what the fence is built from, and both have to contain every
+  // zone's own footprint — the wellbore outlines below are nested inside it.
+  const boundary =
+    props.boundary === 'grid' || props.boundary === 'nested'
+      ? gridBoundary
+      : props.boundary === 'crop'
+        ? cropBoundary
+        : fieldOutline;
+
+  const selected = useMemo(
+    () =>
+      column.slice(props.surfaceFrom, props.surfaceFrom + props.surfaceCount),
+    [column, props.surfaceFrom, props.surfaceCount],
+  );
+
+  // The dataset's sea bed, whether or not the column draws it: the Scenery's seabed lies
+  // at it. While the Scenery's stage draws it, as the sea's, the column hides its own cap.
+  const seabedMeta = SEABED_ID ? surfaceMetaDict[SEABED_ID] : generatedSeabed;
+  // Peeled, the column no longer has the sea bed on top.
+  const drawsSeabed =
+    !!seabedMeta && selected[0]?.id === seabedMeta.id && !(props.peel > 0);
+  // What the Scenery's stage does for the column: draws its sea bed, owns the water.
+  const [stage, setStage] = useState<SceneryStageOccupantState>(OFF_STAGE);
+  const bedOnStage = drawsSeabed && stage.seabed;
+  const [stackCut, setStackCut] = useState<CutUniforms | null>(null);
+  // The ground as the stage draws it, which the column's faces end at.
+  const [ground, setGround] = useState<HeightFieldClip | null>(null);
+  // The relief's own sampler, for what stands on it: the column's top included.
+  const [reliefSampler, setReliefSampler] = useState<ReliefSampler | null>(
+    null,
+  );
+  // The column's top along its boundary, ascending, where the Scenery's seabed lies: from the
+  // column first built, so the relief's sampler coming in later moves nothing. A new column
+  // marks it stale rather than dropping it, and the next column's replaces it: the Scenery,
+  // mounted only once there is a seabed height, stays up through a rebuild instead of being
+  // made again, every program of it compiled anew.
+  const [rim, setRim] = useState<{ heights: number[]; stale: boolean } | null>(
+    null,
+  );
+  const onRim = useCallback(
+    (next: number[]) =>
+      setRim(kept =>
+        kept && !kept.stale ? kept : { heights: next, stale: false },
+      ),
+    [],
+  );
+  const topId = selected[0]?.id;
+  useEffect(
+    () => setRim(kept => (kept ? { ...kept, stale: true } : kept)),
+    [boundary, topId, props.maxError],
+  );
+
+  // ⭐ COLOUR IS THE HOST'S JOB. The library takes array order as stratigraphic
+  // order and never assigns a colour; here the story maps each surface's name to
+  // the strat column's unit and takes the colour the column itself gives it —
+  // exactly the mapping a real host app would own.
+  const { layers, names } = useMemo(() => {
+    const names = selected.map(m => m.name);
+    const colors = stratLayerColors(names);
+    const detail =
+      props.detail === 'none'
+        ? undefined
+        : { preset: props.detail, strength: props.detailStrength };
+    const kept = new Set(
+      props.sectionKeep
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s !== '')
+        .map(Number),
+    );
+    // The last layer of a level-1 group, when gaps are asked for.
+    const groupEnd = (i: number) =>
+      props.groupGaps &&
+      i + 1 < selected.length &&
+      stratLayerGroup(names, i + 1) !== stratLayerGroup(names, i);
+    const layers: ZoneLayer[] = selected.map((surface, i) => ({
+      surface,
+      material: colors[i],
+      // The unit's colour serves as both the cap and the volume below it: they
+      // are the same rock seen from two sides.
+      fill:
+        (i < selected.length - 1 || props.floor) && !groupEnd(i)
+          ? colors[i]
+          : undefined,
+      detail,
+      // Listed layers opt out of the cut, so they stand whole over the section.
+      section: kept.has(i) ? false : undefined,
+      // The first drawn layer's cap is the sea bed; only the cap, not the rock under it.
+      // While the stage draws it, at the sea's seabed opacity, so culling allows for it.
+      capOpacity:
+        i !== 0
+          ? undefined
+          : bedOnStage
+            ? stage.seabedOpacity < 1
+              ? stage.seabedOpacity
+              : undefined
+            : props.seabedOpacity < 1
+              ? props.seabedOpacity
+              : undefined,
+      keepCap: i === 0 && props.keepBed ? true : undefined,
+      drawCap: i === 0 && bedOnStage ? false : undefined,
+    }));
+    return { layers, names };
+  }, [
+    selected,
+    props.floor,
+    props.groupGaps,
+    props.detail,
+    props.detailStrength,
+    props.sectionKeep,
+    props.seabedOpacity,
+    props.keepBed,
+    bedOnStage,
+    stage.seabedOpacity,
+  ]);
+
+  // --- `groups`: one zone per level-1 stratigraphic GROUP. On `nested` each group
+  //     also gets its own footprint, so the stack is drawn from several; the fence
+  //     is a stack-level cut, so that is what tells us whether it still agrees with
+  //     a block it did not shape.
+  const grouped = props.zoning === 'groups' || props.boundary === 'nested';
+  const groupedLayers = useMemo(() => {
+    if (!grouped || layers.length < 3) return null;
+    const starts = [0];
+    for (let i = 1; i < layers.length; i++) {
+      if (stratLayerGroup(names, i) !== stratLayerGroup(names, i - 1)) {
+        starts.push(i);
+      }
+    }
+    return starts.map((start, k) => {
+      const next = k + 1 < starts.length ? starts[k + 1] : layers.length;
+      // Consecutive zones SHARE the horizon between them — it is the base of one
+      // and the top of the next, and declaring it twice is what closes the column.
+      // The stack settles which of the two actually draws it. With gaps it is kept
+      // too: the zone above then HOLDS the gap as an unfilled interval, which is
+      // what a fence overlay needs to be drawn across it.
+      const slice = layers.slice(start, Math.min(next + 1, layers.length));
+      return {
+        name: stratLayerGroup(names, start) ?? undefined,
+        layers: slice.map((layer, j) =>
+          j === slice.length - 1 && next < layers.length
+            ? { ...layer, fill: undefined }
+            : layer,
+        ),
+      };
+    });
+  }, [grouped, layers, names]);
+
+  const wellboreIds = useMemo(
+    () => fieldIds ?? wellboreHeaders.map(w => w.id),
+    [fieldIds, wellboreHeaders],
+  );
+
+  // ⚠️ Declared per ZONE rather than as the stack's `cutSource`: a stack-level
+  // wellbore source makes the wellbore envelope the footprint the shared column is
+  // built over, and the full-grid zones below would then reach past it. Any other
+  // boundary leaves every group on the stack's own (`inherit`).
+  const groupBoundaries = useMemo<ZoneBoundary[] | null>(() => {
+    if (props.boundary !== 'nested' || !groupedLayers || !gridBoundary)
+      return null;
+    const last = groupedLayers.length - 1;
+    return groupedLayers.map((_, i) =>
+      i === 0 || i === last || wellboreIds.length === 0
+        ? gridBoundary
+        : {
+            kind: 'wellbores' as const,
+            wellbores: wellboreIds,
+            // `above` accumulates trajectory with depth, so each zone's footprint
+            // contains the one above it and the whole set stays nested.
+            options: { mode: 'above' as const, radius: props.footprintRadius },
+          },
+    );
+  }, [
+    props.boundary,
+    groupedLayers,
+    gridBoundary,
+    wellboreIds,
+    props.footprintRadius,
+  ]);
+
+  const resolve = useMemo<ZoneResolveOptions>(
+    () => ({
+      seal: props.seal,
+      sealMode: props.sealMode,
+      minThickness: props.minThickness,
+      maxFill: props.maxFill,
+      collapseThreshold: props.collapseThreshold,
+      constrainCoverage: props.constrainCoverage,
+      constrainTerminations: props.constrainTerminations,
+      maxNodes: props.maxNodes,
+      tileCells: props.tileCells || undefined,
+      lod:
+        props.lodLevels > 0
+          ? { levels: props.lodLevels, factor: props.lodFactor }
+          : undefined,
+    }),
+    [
+      props.seal,
+      props.sealMode,
+      props.minThickness,
+      props.maxFill,
+      props.collapseThreshold,
+      props.constrainCoverage,
+      props.constrainTerminations,
+      props.maxNodes,
+      props.tileCells,
+      props.lodLevels,
+      props.lodFactor,
+    ],
+  );
+
+  // The sea belongs to the COLUMN, not to a zone: one lid over the whole stack. Its water is
+  // the Scenery's sea's (the shared `sea*` args), so the two look alike as they hand over.
+  const seaKey = JSON.stringify(scenerySeaWaterFromArgs(props));
+  const sea = useMemo<ZoneStackSea | undefined>(
+    () =>
+      props.scenerySea
+        ? {
+            ...(JSON.parse(seaKey) as ScenerySeaWater),
+            depth: props.seaLevel,
+            opacity: props.seaLayerOpacity,
+            bodyShimmer: props.bodyShimmer,
+            keepBed: props.keepBed,
+          }
+        : undefined,
+    [
+      props.scenerySea,
+      seaKey,
+      props.seaLevel,
+      props.seaLayerOpacity,
+      props.bodyShimmer,
+      props.keepBed,
+    ],
+  );
+
+  // Absent unless asked for — its presence is what installs `scene.fog`, and that
+  // is not free even when it would fog nothing.
+  const interiorFog = useMemo<ZoneStackInteriorFog | undefined>(
+    () =>
+      props.interiorFog
+        ? {
+            rockColor: props.interiorFogRockColor,
+            visibility: props.interiorFogVisibility,
+            transition: props.interiorFogTransition,
+            settle: props.interiorFogSettle,
+            background: props.interiorFogBackground,
+          }
+        : undefined,
+    [
+      props.interiorFog,
+      props.interiorFogRockColor,
+      props.interiorFogVisibility,
+      props.interiorFogTransition,
+      props.interiorFogSettle,
+      props.interiorFogBackground,
+    ],
+  );
+
+  // ⭐ Created once and MUTATED — the supported way to animate a section: the
+  // stack reads it every frame, so it costs no React render.
+  const sectionPlane = useMemo(() => new Plane(new Vector3(0, 0, 1), 0), []);
+  const section = useMemo<ZoneSection>(
+    () => ({
+      plane: sectionPlane,
+      // ⚠️ The two cuts are mutually exclusive, so the fence disables the section
+      // rather than removing the prop.
+      enabled: props.section && !props.fence,
+      // In camera mode the stack computes the plane itself and `plane` is ignored.
+      cameraDistance:
+        props.sectionMode === 'camera'
+          ? props.sectionCameraDistance
+          : undefined,
+      lockToTarget: props.sectionMode === 'target',
+      vertical: props.sectionVertical,
+      sea: props.sectionSea,
+      carrier: props.sectionCarrier,
+      debug: props.sectionDebug,
+    }),
+    [
+      sectionPlane,
+      props.section,
+      props.fence,
+      props.sectionMode,
+      props.sectionCameraDistance,
+      props.sectionVertical,
+      props.sectionSea,
+      props.sectionCarrier,
+      props.sectionDebug,
+    ],
+  );
+
+  // The fence follows whichever wellbore is selected — pick another in the 3D view
+  // or the well map and the cut moves with it, with no rebuild.
+  const [fenceSideInfo, setFenceSideInfo] = useState<FenceSideInfo | null>(
+    null,
+  );
+  const seismicOverlay = useFenceSeismicOverlay(
+    props.fence && props.seismic ? fenceSideInfo : null,
+    {
+      step: props.seismicStep,
+      delay: props.seismicDelay,
+      colorRampIndex: props.seismicColorRamp,
+      rangeOffset: props.seismicRangeOffset,
+    },
+  );
+  const fence = useMemo<ZoneFence | undefined>(
+    () =>
+      props.fence
+        ? {
+            wellbore: fenceWellbore,
+            side:
+              props.fenceSide === 'auto'
+                ? (flightSide ?? 'auto')
+                : props.fenceSide,
+            autoDeadband: props.fenceAutoDeadband,
+            autoSettle: props.fenceAutoSettle,
+            // ⭐ The clearance exists to keep the cut off what is DRAWN in the hole, so it is
+            // the wellbore's own tube radius — not a knob of its own to be kept in sync.
+            margin: props.wellboreRadius,
+            offset: props.fenceOffset,
+            tolerance: props.fenceTolerance,
+            maxSpacing: props.fenceMaxSpacing,
+            headBearing: props.fenceHeadBearing,
+            headMinTdAngle: props.fenceHeadMinTdAngle,
+            scope: props.fenceScope,
+            // The two cuts are mutually exclusive, so one pair of toggles drives
+            // whichever is live.
+            sea: props.sectionSea,
+            carrier: props.sectionCarrier,
+            debug: props.fenceDebug,
+            overlay: props.seismic
+              ? {
+                  ...seismicOverlay,
+                  mix: props.seismicMix,
+                  shading: props.seismicShading,
+                  gaps: props.seismicGaps,
+                  voids: props.seismicVoids,
+                }
+              : undefined,
+          }
+        : undefined,
+    [
+      props.fence,
+      fenceWellbore,
+      props.fenceSide,
+      flightSide,
+      props.fenceAutoDeadband,
+      props.fenceAutoSettle,
+      props.wellboreRadius,
+      props.fenceOffset,
+      props.fenceTolerance,
+      props.fenceMaxSpacing,
+      props.fenceHeadBearing,
+      props.fenceHeadMinTdAngle,
+      props.fenceScope,
+      props.sectionSea,
+      props.sectionCarrier,
+      props.fenceDebug,
+      props.seismic,
+      seismicOverlay,
+      props.seismicMix,
+      props.seismicShading,
+      props.seismicGaps,
+      props.seismicVoids,
+    ],
+  );
+
+  // What a fly-to has to frame: the drawn column's own depth range, in scene Y.
+  // ⚠️ A surface's meta is a positive DEPTH and scene Y is up, so they invert.
+  const blockRange = useMemo(() => {
+    let top = props.scenerySea ? -props.seaLevel : 0;
+    let bottom = 0;
+    for (const meta of selected) {
+      top = Math.max(top, -meta.min);
+      bottom = Math.min(bottom, -meta.max);
+    }
+    if (props.floor) bottom -= props.floorClearance;
+    return { top, bottom: Math.min(bottom, top - 1) };
+  }, [
+    selected,
+    props.scenerySea,
+    props.seaLevel,
+    props.floor,
+    props.floorClearance,
+  ]);
+
+  // ⭐ The ceiling on the pull-back: "far enough to see the whole block". Without a
+  // bound tied to the SCENE, a retreat factor compounds — every click zooms out
+  // from wherever the last one left off and the field recedes for good.
+  const blockBox = useMemo(() => {
+    if (!boundary) return undefined;
+    const [ox, oz] = boundary.offset;
+    const min = boundary.min;
+    const max = boundary.max;
+    return {
+      min: [min[0] + ox, blockRange.bottom, min[1] + oz] as Vec3,
+      max: [max[0] + ox, blockRange.top, max[1] + oz] as Vec3,
+    };
+  }, [boundary, blockRange]);
+
+  // Read by the selection listener below, which stays registered once — re-binding
+  // it per render would drop a flight already in progress.
+  const flight = useRef({
+    enabled: false,
+    side: 'auto' as FenceSideName | 'auto',
+    padding: 1.6,
+    polar: 78,
+    guard: 25,
+    retreat: 3,
+    duration: 1.6,
+    range: blockRange,
+    box: blockBox,
+  });
+  flight.current = {
+    enabled: props.fence && props.fenceFlyTo,
+    side: props.fenceSide,
+    padding: props.fenceFlyPadding,
+    polar: props.fenceFlyPolar,
+    guard: props.fenceFlyGuard,
+    retreat: props.fenceFlyRetreat,
+    duration: props.fenceFlyDuration,
+    range: blockRange,
+    box: blockBox,
+  };
+  const showing = useRef<string | undefined>(fenceWellbore);
+  showing.current = fenceWellbore;
+
+  useEffect(() => {
+    const onSelect = (event: WellboreSelectedEvent) => {
+      const next = event.detail.id;
+      setSelectedWellbore(next);
+      const plan = flight.current;
+
+      // ctrl+click, or no fence to fly to: swap in place and leave the camera be.
+      if (!plan.enabled || event.detail.flyTo === false) {
+        setFenceWellbore(next);
+        if (plan.enabled || !event.detail.flyTo || !event.detail.position)
+          return;
+        // Without the fence this story still flies the old way — to the point that
+        // was clicked — because the well map decorator no longer does it for us.
+        dispatchEvent(
+          new CameraFocusAtPointEvent({ point: event.detail.position }),
+        );
+        return;
+      }
+
+      // ⭐ The old cut goes NOW, so it has gone by the time the camera is out.
+      const departing = showing.current;
+      setFenceWellbore(undefined);
+      setFlightSide(null);
+      dispatchEvent(
+        new CameraFlyToEvent({
+          // Nothing to back away from on the first selection.
+          retreat: departing
+            ? { factor: plan.retreat, box: plan.box }
+            : undefined,
+          duration: plan.duration,
+          destination: async () => {
+            setFenceWellbore(next);
+            const built = await awaitFence(next);
+            if (!built) return null;
+            const pose = fenceViewPose(built, {
+              top: plan.range.top,
+              bottom: plan.range.bottom,
+              from: viewOffset.current ?? undefined,
+              side: plan.side === 'auto' ? undefined : plan.side,
+              polar: plan.polar,
+              guard: plan.guard,
+            });
+            setFlightSide(pose.side);
+            return {
+              box: pose.box,
+              azimuth: pose.azimuth,
+              polar: pose.polar,
+              padding: plan.padding,
+            };
+          },
+          // Hand the side back to `auto`, which now agrees: the camera is standing
+          // in the half the flight chose to remove.
+          callback: () => setFlightSide(null),
+        }),
+      );
+    };
+    addEventListener(wellboreSelectedEventType, onSelect);
+    return () => removeEventListener(wellboreSelectedEventType, onSelect);
+  }, [awaitFence]);
+
+  // Per-layer build report. `coverage` is what the surface has data of its own
+  // for inside the footprint; `unit` is what the strat column called it; `kept` is
+  // its share of the SHARED tessellation, which every layer pays for in full
+  // whatever it ends up drawing.
+  const report = useMemo(
+    () =>
+      (
+        metrics: SurfaceZoneMetrics,
+        // A zone reports its OWN layer indices, so it has to be named with its own
+        // surfaces or every zone but the first is labelled with the wrong rock.
+        zoneNames: (string | undefined)[] = names,
+      ) => {
+        const d = metrics.diagnostics;
+        const shared = d?.sharedTriangles ?? 0;
+        const rows = (d?.layers ?? []).map(l => ({
+          index: l.index,
+          surface: zoneNames[l.index] ?? '(synthetic)',
+          unit: stratLayerUnitName(zoneNames, l.index) ?? '-',
+          coverage: +l.coverage.toFixed(3),
+          inferred: +l.inferred.toFixed(3),
+          triangles: l.triangles,
+          kept: shared > 0 ? +(l.triangles / shared).toFixed(3) : null,
+          droppedAbsent: l.droppedAbsent,
+          droppedCollapsed: l.droppedCollapsed,
+        }));
+        console.log(
+          `ZONEREPORT ${JSON.stringify({
+            top: zoneNames[0] ?? null,
+            surfaces: metrics.layers,
+            triangles: metrics.triangles,
+            wallTriangles: metrics.wallTriangles,
+            // ⭐ The size every phase after the tessellation scales with: each layer
+            // carries a full copy of the shared TIN.
+            vertices: d?.vertices ?? null,
+            sharedTriangles: shared,
+            crossings: d?.crossings ?? null,
+            constraintFailures: d?.constraintFailures ?? null,
+            terminationRingPoints: d?.terminationRingPoints ?? null,
+            terminationLinesTiny: d?.terminationLinesTiny ?? null,
+            terminationLinesDiscarded: d?.terminationLinesDiscarded ?? null,
+            maxInteriorWall: d?.maxInteriorWall ?? null,
+            referenceNodes: d?.referenceNodes ?? null,
+            referenceStep: d?.referenceStep ?? null,
+            ...zoneTimings(metrics),
+            layers: rows,
+          })}`,
+        );
+        console.table(rows);
+      },
+    [names],
+  );
+
+  const panelProgress = useZoneProgressPanel();
+  const onProgress = useCallback(
+    (progress: ZoneStackProgress) => {
+      panelProgress(progress);
+      reportModel(zoneProgressReport(progress));
+    },
+    [panelProgress],
+  );
+
+  const sceneryLevel = -props.seaLevel;
+  // The Scenery's relief, which the column builds its sea bed on too, the column's own sea bed
+  // baked in as its finest layer: the ground over the field is then the column's top, and
+  // no unit is cut away where the bathymetry lies deeper. Its flat base is given here
+  // rather than taken from the sea's depth, which waits for the column's rim: the column
+  // would be built twice.
+  const demoRelief = sceneryReliefFromArgs(
+    props,
+    props.relief && props.bakeSeabed && seabedMeta
+      ? [sceneryBakedReliefLayer(seabedMeta.id)]
+      : [],
+  );
+  const stageRelief: GeoReliefProps | undefined = demoRelief && {
+    ...demoRelief,
+    depth: RELIEF_BASE_DEPTH,
+    onSampler: setReliefSampler,
+  };
+  const columnRelief =
+    props.scenery && stageRelief
+      ? reliefSource(
+          { ...stageRelief, frame: reliefFrame },
+          { level: sceneryLevel },
+        )
+      : undefined;
+  // The Scenery's seabed lies at the column's top along the boundary: shallowest, median or
+  // deepest.
+  const bedHeight = rim
+    ? props.stageBed === 'top'
+      ? rim.heights[rim.heights.length - 1]
+      : props.stageBed === 'bottom'
+        ? rim.heights[0]
+        : rim.heights[rim.heights.length >> 1]
+    : null;
+  // The sea bed's unit, as the whole column colours it: the column may start below it.
+  const bedColor = drawsSeabed
+    ? layers[0]?.material
+    : seabedMeta
+      ? stratLayerColors([
+          seabedMeta.name,
+          column.find(m => m.id !== seabedMeta.id)?.name,
+        ])[0]
+      : undefined;
+
+  if (!boundary || layers.length === 0) return null;
+  const { min: boundaryMin, max: boundaryMax } = boundary.getBounds();
+  const margin = props.stageMargin;
+  const markers =
+    props.scenery && props.relief && props.reliefMarkers
+      ? reliefMarkerSites(boundary)
+      : null;
+
+  return (
+    <World frame={reliefFrame} globe={props.globe}>
+      <group ref={fieldAnchor}>
+        <UtmArea crsInstance={crs} origin={crs.originUtm}>
+          <Videx3dLocate />
+          <ViewOffset into={viewOffset} />
+          <ZoneStack
+            diagnostics={props.buildDiagnostics}
+            preview={props.preview}
+            previewSaturation={props.previewSaturation}
+            debugTiles={props.debugTiles}
+            lodLevel={props.lodLevel}
+            lodPixelError={props.lodPixelError}
+            boundary={boundary}
+            surfaces={column}
+            sea={sea}
+            seabed={seabedMeta?.id}
+            relief={columnRelief}
+            clip={ground}
+            reliefSampler={reliefSampler}
+            drawSea={!stage.water}
+            interiorFog={interiorFog}
+            section={section}
+            fence={fence}
+            onFence={onFence}
+            onFenceSide={setFenceSideInfo}
+            onCut={setStackCut}
+            onProgress={onProgress}
+            resolve={resolve}
+            rimSpacing={props.rimSpacing}
+            maxError={props.maxError}
+            carrier={
+              props.floor
+                ? {
+                    below: props.floorClearance,
+                    material: props.floorColor,
+                    detail:
+                      props.floorDetail === 'none'
+                        ? undefined
+                        : {
+                            preset: props.floorDetail,
+                            strength: props.detailStrength,
+                            scale: props.floorDetailScale,
+                          },
+                  }
+                : undefined
+            }
+          >
+            {props.sectionMode === 'fixed' && (
+              <SectionDriver
+                plane={sectionPlane}
+                azimuth={props.sectionAzimuth}
+                dip={props.sectionDip}
+                distance={props.sectionDistance}
+                flip={props.sectionFlip}
+                animate={props.sectionAnimate}
+                speed={props.sectionAnimateSpeed}
+              />
+            )}
+            {groupedLayers ? (
+              groupedLayers.map(({ name, layers: zoneLayers }, i) => (
+                <Zone
+                  key={i}
+                  name={name}
+                  boundary={groupBoundaries?.[i]}
+                  layers={zoneLayers}
+                  surfaceOpacity={props.surfaceOpacity}
+                  wallOpacity={props.wallOpacity}
+                  wireframe={props.wireframe}
+                  inferredStyle={props.inferredStyle}
+                  peel={peelOf(props.peel, zoneLayers.length)}
+                  cullHiddenCaps={props.cullHiddenCaps}
+                  cullOffscreen={props.cullOffscreen}
+                  onPointerClick={
+                    props.zonePicking ? focusOnCtrlClick : undefined
+                  }
+                  onBuild={m =>
+                    report(
+                      m,
+                      zoneLayers.map(l => l.surface?.name),
+                    )
+                  }
+                />
+              ))
+            ) : (
+              <Zone
+                layers={layers}
+                surfaceOpacity={props.surfaceOpacity}
+                wallOpacity={props.wallOpacity}
+                wireframe={props.wireframe}
+                inferredStyle={props.inferredStyle}
+                peel={peelOf(props.peel, layers.length)}
+                cullHiddenCaps={props.cullHiddenCaps}
+                cullOffscreen={props.cullOffscreen}
+                onPointerClick={
+                  props.zonePicking ? focusOnCtrlClick : undefined
+                }
+                onBuild={report}
+              />
+            )}
+            {props.scenery && <ColumnRim boundary={boundary} onRim={onRim} />}
+            {markers?.inside.map((site, i) => (
+              <SeabedFacility key={site.name} site={site} base={i === 0} />
+            ))}
+          </ZoneStack>
+          {markers && (
+            <SurfaceSamplerContext.Provider value={reliefSampler}>
+              {markers.outside.map((site, i) => (
+                <SeabedFacility key={site.name} site={site} base={i === 0} />
+              ))}
+            </SurfaceSamplerContext.Provider>
+          )}
+          {props.wellbores && (
+            <FieldWells
+              selected={selectedWellbore}
+              color={props.wellboreColor}
+              selectedColor={props.wellboreSelectedColor}
+              radius={props.wellboreRadius}
+              lodPixelError={props.wellboreLodPixelError}
+              fenceWindow={
+                props.fence && props.fenceColorTvd ? fenceWindow : null
+              }
+            />
+          )}
+        </UtmArea>
+      </group>
+      {props.wellbores && <Highlighter />}
+      {props.scenery && bedHeight !== null && (
+        <SceneryGenerators>
+          <Scenery {...sceneryPropsFromArgs(props)}>
+            <SceneryArgsFeatures
+              args={props}
+              sea={{
+                seabed:
+                  props.scenerySeabed &&
+                  (props.stageMatchBed
+                    ? {
+                        color: bedColor,
+                        detail: layers[0]?.detail ?? false,
+                      }
+                    : { color: props.scenerySeabedColor }),
+                level: sceneryLevel,
+                depth: Math.max(sceneryLevel - bedHeight, 1),
+              }}
+              void={{}}
+            />
+            <SceneryStage
+              boundary={[
+                boundaryMin[0] - margin,
+                boundaryMin[1] - margin,
+                boundaryMax[0] + margin,
+                boundaryMax[1] + margin,
+              ]}
+              occupants={[
+                {
+                  outline: boundary,
+                  // Cut with the column, unless the column keeps its sea bed whole.
+                  cut:
+                    layers[0]?.keepCap || layers[0]?.section === false
+                      ? undefined
+                      : (stackCut ?? undefined),
+                  // The relief over it, kept whole unless asked to open.
+                  keepBed: !props.reliefCut,
+                  onStage: setStage,
+                  onGround: setGround,
+                  anchor: fieldAnchor,
+                },
+              ]}
+            />
+          </Scenery>
+          {/* The Scenery's ground: the relief, which the column is built on. */}
+          {stageRelief && <GeoRelief {...stageRelief} />}
+        </SceneryGenerators>
+      )}
+      {props.minimap && (
+        // On the Scenery's worker, with or without the Scenery: not the column's.
+        <SceneryGenerators>
+          <SceneryArgsMinimap
+            frame={reliefFrame}
+            reliefLayers={props.reliefLayers}
+            level={sceneryLevel}
+          />
+        </SceneryGenerators>
+      )}
+      {props.resources && <ResourceMonitor interval={props.resourceInterval} />}
+      {props.stats && <RenderStats origin="bottom-left" />}
+      <RendererToneMapping
+        toneMapping={props.toneMapping}
+        exposure={props.exposure}
+      />
+      <ZonePipeline
+        frontPeelTolerance={props.frontPeelTolerance}
+        skipFrontPeeling={props.skipFrontPeeling}
+        mergeFront={props.mergeFront}
+        tailSlices={props.tailSlices}
+        tailSliceSpacing={props.tailSliceSpacing}
+      />
+    </World>
+  );
+};
+
+const meta = {
+  title: 'Examples/Field model',
+  component: FieldColumnStory,
+  parameters: {
+    // The generated sea bed, where the field maps none (`storyStoreLoader`).
+    store: SEABED_ID
+      ? undefined
+      : { syntheticScenarios: [SYNTHETIC_SEABED_KEY] },
+    // Framed for the DEFAULT `field` boundary — the footprint buffered from the
+    // wells. ⚠️ `grid` is an order of magnitude wider (~25 x 42 km here), so it
+    // needs dollying out.
+    scale: 5000,
+    cameraPosition: [9000, 4000, 9000],
+    cameraTarget: [0, -1500, 0],
+    colorScale,
+    // ⚠️ This story flies its OWN way when the fence is on (retreat, swing, come
+    // in), and a second mover reaching for the camera partway through hijacks it.
+    wellMapCamera: false,
+    // Under the Scenery, it lights the scene.
+    ownLighting: (args: FieldColumnStoryProps) => args.scenery,
+    // `interiorFogBackground` is a switch, not a colour.
+    controls: { matchers: { color: /color$/i } },
+    docs: {
+      description: {
+        component:
+          'The whole demo field as ONE zone: every mapped surface the dataset carries, in stratigraphic order, coloured from the field’s own stratigraphic column.\n\n' +
+          '⭐ This is `SyntheticColumn` run on REAL data. The generated column is exact by construction — every unit is a known function of the one above it — which makes it the right place to prove the pipeline. This story is the opposite check: real surveys, with everything the generated column does not have. Surfaces mapped over different extents and interior holes (see `coverage` per layer), horizons that are coincident over most of the field, and pairs whose stratigraphic order and depth order disagree.\n\n' +
+          '⭐⭐ **Order and colour both come from the strat column, and both are the HOST’s job.** The library takes the array order as the stratigraphic order and never assigns a colour. Here the story matches each surface NAME to the column’s `top`/`base` horizons: the age gives the order (`sortByStratAge`), and the unit’s own colour gives the layer its material. A colour belongs to the INTERVAL rather than to the horizon — what you see is the top of the unit underneath — so the same colour serves as the cap and as the wall below it.\n\n' +
+          '⚠️ Surfaces the column has no horizon for are EXCLUDED, not guessed at, and the exclusion is reported as an error: placing them by depth is exactly the mistake the age ordering exists to avoid. On this dataset two surfaces (an intra-formation top and an unconformity) drop out that way.\n\n' +
+          '⭐ **`maxNodes` is the quality/speed dial.** Every layer is resampled onto one common grid; almost all of the build cost is linear in that grid’s node count, so halving the budget quarters the work. What it costs is resolution of the coverage MASKS — data edges, holes and pinch-out contours — rather than of the heights, which stay bounded by `maxError`. Watch `referenceNodes` and `referenceStep` in the report: a step above 1 means the trade is active. The `boundary` control is the other end of the same lever — the survey rectangle is roughly ten times the area the wells occupy.\n\n' +
+          '⭐ The **section** cuts the block with a plane and closes it with a real face, and in `camera` mode the plane rides in front of the camera — so orbiting picks the angle and dollying drives the cut through the field, with nothing to grab. **Peel** is the non-destructive alternative: it lifts the layers apart instead of removing anything. **Interior fog** fogs the view while the camera is inside the sea or the block.\n\n' +
+          '⭐ **Wellbores** draws every wellbore the dataset carries, straight through the block. Click one to select it — plain click flies the camera to the hit point, ctrl+click selects without moving. Once a well is selected the **well map** on the left comes alive: dragging its depth handle drives the camera along the trajectory.\n\n' +
+          '⭐⭐ The **fence** opens the block along that selected well, instead of with a plane. It is the wellbore counterpart of the section: `split` halves the block so the well lies in the cut face, `slot` opens a corridor with the well in the gap, and the cut runs out past the wellhead and past TD so it reaches clear of the block at both ends. ⭐ A fence is VERTICAL, so what it removes depends on the map position alone — one number per vertex, which the shader reads as a varying and the CPU contours to build the cut face. That is why switching wells costs a resample rather than a build, and why the width is free to sweep.\n\n' +
+          'No ships and no facilities here: the import sets carry no such data, and inventing it would say something about the field that is not in it.',
+      },
+    },
+  },
+} satisfies Meta<typeof FieldColumnStory>;
+
+export default meta;
+type Story = StoryObj<typeof FieldColumnStory>;
+
+// The field's own groups first, then its sea and the Scenery's, then the tools.
+export const Default: Story = {
+  ...orderControls<FieldColumnStoryProps>(
+    {
+      args: {
+        ...sceneryArgs,
+        ...sceneryReliefArgs,
+        ...sceneryMinimapArgs,
+        // Surfaces
+        boundary: 'field',
+        cropSize: 7,
+        footprintRadius: 600,
+        zoning: 'single',
+        groupGaps: false,
+        seabed: true,
+        surfaceFrom: 0,
+        surfaceCount: 12,
+        rimSpacing: 250,
+        maxError: 5,
+        maxNodes: 4000000,
+        preview: true,
+        previewSaturation: 0.5,
+        // Wellbores
+        wellbores: true,
+        wellboreColor: '#9aa0a6',
+        wellboreSelectedColor: 'tomato',
+        wellboreRadius: 4,
+        wellboreLodPixelError: 0.5,
+        wellbore: storyArgs.defaultWellbore,
+        // Fence
+        fence: false,
+        fenceSide: 'auto',
+        fenceAutoDeadband: 50,
+        fenceAutoSettle: 0.2,
+        fenceOffset: 0,
+        fenceTolerance: 0.1,
+        fenceMaxSpacing: 25,
+        fenceHeadBearing: 'opposite-td',
+        fenceHeadMinTdAngle: 90,
+        fenceScope: 'stack',
+        fenceDebug: false,
+        fenceColorTvd: false,
+        fenceFlyTo: true,
+        fenceFlyPadding: 1.6,
+        fenceFlyPolar: 78,
+        fenceFlyGuard: 25,
+        fenceFlyRetreat: 2,
+        fenceFlyDuration: 1.6,
+        // Seismic
+        seismic: false,
+        seismicMix: 1,
+        seismicStep: 5,
+        seismicDelay: 250,
+        seismicColorRamp: 6,
+        seismicRangeOffset: 0,
+        seismicShading: 'lit',
+        seismicGaps: false,
+        seismicVoids: false,
+        // Resolve
+        seal: true,
+        sealMode: 'proportional',
+        minThickness: 1,
+        maxFill: 250,
+        collapseThreshold: 0.5,
+        constrainCoverage: false,
+        constrainTerminations: true,
+        // Section
+        section: false,
+        sectionMode: 'camera',
+        sectionCameraDistance: 6000,
+        sectionVertical: true,
+        sectionAzimuth: 0,
+        sectionDip: 0,
+        sectionDistance: 0,
+        sectionFlip: false,
+        sectionAnimate: false,
+        sectionAnimateSpeed: 1,
+        sectionSea: false,
+        keepBed: false,
+        sectionCarrier: false,
+        sectionKeep: '',
+        sectionDebug: false,
+        // Sea: the column's, and the Scenery's (the shared `sea*` args)
+        seaLevel: 0,
+        seaLayerOpacity: 1,
+        seabedOpacity: 1,
+        bodyShimmer: 0.5,
+        // Interior fog
+        interiorFog: true,
+        // ⚠️ This fogs INSIDE THE BLOCK, so it is a near-black brown, not a water
+        // colour; and `transition` is METRES of boundary fade while `settle` is
+        // SECONDS of catch-up. Both match the documented defaults.
+        interiorFogRockColor: '#0b0a08',
+        interiorFogVisibility: 400,
+        interiorFogTransition: 5,
+        interiorFogSettle: 0.12,
+        interiorFogBackground: true,
+        // Floor
+        floor: true,
+        floorClearance: 400,
+        floorColor: '#6b6b6b',
+        floorDetail: 'basement',
+        floorDetailScale: 4,
+        // Appearance
+        surfaceOpacity: 1,
+        wallOpacity: 1,
+        frontPeelTolerance: DEFAULT_OIT_FRONT_TOLERANCE,
+        skipFrontPeeling: false,
+        mergeFront: true,
+        tailSlices: 3,
+        tailSliceSpacing: 'log',
+        wireframe: false,
+        peel: 0,
+        cullHiddenCaps: true,
+        cullOffscreen: true,
+        inferredStyle: 'none',
+        detail: 'none',
+        detailStrength: 1,
+        // Interaction
+        zonePicking: false,
+        // Diagnostics
+        buildDiagnostics: true,
+        tileCells: 0,
+        debugTiles: false,
+        lodLevels: 0,
+        lodFactor: 4,
+        lodLevel: 0,
+        lodPixelError: 2,
+        resources: false,
+        resourceInterval: 1000,
+        ...progressArgs,
+        // Scenery: it lights the column, and draws nothing behind it (`background`; see `WithScenery`).
+        scenery: true,
+        background: false,
+        stageMatchBed: true,
+        stageBed: 'median',
+        sunElevation: 30,
+        stageMargin: 4000,
+        bakeSeabed: true,
+        reliefCut: false,
+        reliefMarkers: false,
+      },
+      argTypes: {
+        // Behind `scenery`; the story draws through its own OIT pipeline always.
+        ...sceneryArgTypes({ shownIf: 'scenery' }),
+        ...sceneryReliefArgTypes('scenery'),
+        ...sceneryMinimapArgTypes,
+        relief: {
+          ...sceneryReliefArgTypes('scenery').relief,
+          description:
+            'The relief drawn from tiles \u2014 the demo reliefs merged, Volve\u2019s survey finest \u2014 and the column\u2019s sea bed built on it (`ZoneStack.relief`), so its top is the ground the stage draws, and the stage draws it as the sea\u2019s. Off, the stage\u2019s seabed is flat, and the column draws its own. Rebuilds the column. Made on demand: `npm run generate-relief`.',
+        },
+        pipeline: { table: { disable: true } },
+        scenery: {
+          description:
+            'Put the field under the videx `<Scenery>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The Scenery owns the water then: the column\u2019s own is hidden while its stage draws the sea (`ZoneStack.drawSea`).',
+          table: { category: 'Scenery' },
+        },
+        background: {
+          control: { type: 'boolean' },
+          description:
+            'Draw the Scenery\u2019s background behind the scene (`Scenery.background`): its sky, sea, void and stage. Off, nothing, switched instantly with nothing rebuilt or baked: the Scenery still lights the scene, and the column draws its own water and sea bed again.',
+          if: { arg: 'scenery' },
+          table: { category: 'Scenery' },
+        },
+        scenerySea: {
+          description:
+            'The sea\u2019s water: the column\u2019s (`ZoneStack.sea`), and with the Scenery its sea\u2019s everywhere, the two alike. Off, there is none, and the sea bed lies dry. With the cutaway, it cuts the seabed.',
+          table: { category: 'Sea' },
+        },
+        // Never hidden: the Scenery's level (its dry seabed, the void) takes it with the water
+        // off too, and Storybook leaves a hidden arg out of the story's args.
+        seaLevel: {
+          control: { type: 'select' },
+          options: [-200, -100, -50, 0, 50, 100, 200],
+          description: 'Depth of the sea surface, positive DOWN.',
+          table: { category: 'Sea' },
+        },
+        seaLayerOpacity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          description:
+            'The column\u2019s sea as a layer of the stack (`ZoneStackSea.opacity`): multiplies the water\u2019s own `scenerySeaOpacity`, and fades the lid, the walls and the body together.',
+          if: { arg: 'scenerySea' },
+          table: { category: 'Sea' },
+        },
+        bodyShimmer: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          description:
+            'Animated caustic light play in the column\u2019s water body, concentrated just under the surface. Fades out at field scale rather than shimmering.',
+          if: { arg: 'scenerySea' },
+          table: { category: 'Sea' },
+        },
+        scenerySeabed: {
+          description:
+            'The Scenery\u2019s seabed, everywhere: off, the void lies below the water, and the column draws its own sea bed again. With the cutaway, it cuts the water alone.',
+          if: { arg: 'scenery' },
+          table: { category: 'Sea' },
+        },
+        scenerySeabedOpacity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.01 },
+          description:
+            'How much of what lies under the seabed it hides, the column\u2019s sea bed included. Below 1 the column stops culling under it (`capOpacity`), and both rebuild their materials once.',
+          if: { arg: 'scenerySeabed' },
+          table: { category: 'Sea' },
+        },
+        seabedOpacity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          description:
+            'Opacity of the column\u2019s first drawn layer\u2019s CAP alone (`ZoneLayer.capOpacity`) \u2014 the sea bed, while the column draws it; the rock below stays solid. Pair with `keepBed` to leave a see-through bed over a cut. \u26a0\ufe0f Below 1 it switches hidden-cap culling off, as any transparent cap does.',
+          table: { category: 'Sea' },
+        },
+        stageMatchBed: {
+          description:
+            'The Scenery\u2019s seabed takes the look of the column\u2019s sea bed: its unit\u2019s colour, even while the column starts below it, and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s.',
+          if: { arg: 'scenery' },
+          table: { category: 'Stage' },
+        },
+        stageBed: {
+          control: { type: 'inline-radio' },
+          options: ['top', 'median', 'bottom'],
+          description:
+            'Where the Scenery\u2019s flat seabed lies: at the shallowest, median or deepest point of the column\u2019s top surface along its boundary.',
+          if: { arg: 'scenery' },
+          table: { category: 'Stage' },
+        },
+        stageMargin: {
+          control: { type: 'range', min: 0, max: 20000, step: 100 },
+          description:
+            'How far past the boundary the stage\u2019s real geometry reaches, in metres.',
+          if: { arg: 'scenery' },
+          table: { category: 'Stage' },
+        },
+        bakeSeabed: {
+          description:
+            'The column\u2019s own sea bed baked into the relief as its finest layer (the demo store\u2019s `surface:<id>`, `surfaceToRelief`), faded in over 0.5 km from the survey\u2019s edge. The ground over the field is then the column\u2019s top, and no unit is cut away where the demo bathymetry lies deeper than the column\u2019s horizons. Rebuilds the column.',
+          if: { arg: 'relief' },
+          table: { category: 'Relief' },
+        },
+        reliefCut: {
+          description:
+            'The column\u2019s section or fence cuts the relief over it too, inside the boundary (the occupant\u2019s `keepBed` off), so the opening goes down from the ground. Off (the default), the relief stays whole over the column as its floor.',
+          if: { arg: 'relief' },
+          table: { category: 'Relief' },
+        },
+        reliefMarkers: {
+          description:
+            'Subsea facilities placed from UTM positions by sampling. Two inside the boundary, through the stack\u2019s sampler (`ZoneStack.reliefSampler`), which answers the column\u2019s top from the relief; two past it, through the relief\u2019s own (`GeoRelief.onSampler`). Of each pair, one stands on a levelled base, one on the slope. Their footprints pin the finest tiles under them, so they settle on the ground as it is drawn close up.',
+          if: { arg: 'relief' },
+          table: { category: 'Relief' },
+        },
+        boundary: {
+          control: { type: 'inline-radio' },
+          options: ['grid', 'field', 'crop', 'nested'],
+          description:
+            '`grid` crops nothing — the whole survey rectangle of the widest surface (~1050 km² here). `field` uses the footprint buffered from the WELLS, which is where the field actually is (~10× smaller) and is the default. `crop` is a square about the scene origin, sized to match the generated column so the two can be compared like for like. ⚠️ A footprint reaching past a survey buys INFERENCE — watch `coverage` per layer. ⭐ It is also the control that makes `maxNodes` matter: watch `referenceNodes`.\n\n' +
+            '⭐⭐ `nested` gives every stratigraphic group its OWN footprint, buffered around the wells, with the sea bed and the basement left on the full `grid` — the case where the block is made of several footprints. Implies `zoning: groups`. ⚠️ Built on `grid`, so it is the slow one — the survey rectangle is what the shared column has to cover.',
+          table: { category: 'Surfaces' },
+        },
+        cropSize: {
+          control: { type: 'select' },
+          options: [3, 5, 7, 9, 12, 15, 20, 25],
+          description:
+            'Side of the `crop` boundary, in km. 7 is the generated column’s own size.',
+          table: { category: 'Surfaces' },
+        },
+        footprintRadius: {
+          control: { type: 'range', min: 200, max: 3000, step: 100 },
+          if: { arg: 'boundary', eq: 'nested' },
+          description:
+            'Metres buffered around the wells for a `nested` group’s footprint. ⭐ Resolved in `above` mode, so each zone accumulates the trajectory down to its own base and the footprints stay NESTED — which is what keeps them all inside the stack boundary the fence is built from.',
+          table: { category: 'Surfaces' },
+        },
+        zoning: {
+          control: { type: 'inline-radio' },
+          options: ['single', 'groups'],
+          description:
+            '`single` draws the column as one zone. `groups` draws one zone per level-1 stratigraphic group, connected through the horizon consecutive groups share (the stack decides which of the two draws it). On a shared boundary the picture is the same, at one build per zone. ⚠️ `boundary: nested` always uses `groups`.',
+          table: { category: 'Surfaces' },
+        },
+        groupGaps: {
+          description:
+            'Leave the deepest unit of every group but the last unfilled, so open space separates the groups. With `zoning: groups` the gap belongs to the zone above it, which keeps the horizon it shares with the next — so `seismicGaps` can draw across it.',
+          table: { category: 'Surfaces' },
+        },
+        seabed: {
+          description:
+            'Put a sea BED under the sea. Most fields map none — bathymetry is not stratigraphy — so one is GENERATED when the dataset has no `seabedSurface`. ⚠️ Off, the sea stands on the shallowest HORIZON instead (Volve: `Utsira Fm. Top` at ~820 m), which draws the whole overburden as water.',
+          table: { category: 'Surfaces' },
+        },
+        surfaceFrom: {
+          control: { type: 'select' },
+          options: [0, 2, 4, 6, 8, 10, 12, 15, 18],
+          description: 'First surface of the column to draw (shallowest = 0).',
+          table: { category: 'Surfaces' },
+        },
+        surfaceCount: {
+          control: { type: 'select' },
+          options: [1, 2, 4, 6, 8, 12, 16, 20, 30, 40],
+          description:
+            'How many surfaces to draw, CLAMPED to what the dataset has (19 on Volve). ⚠️ The whole column over the whole field is a LOT of geometry — one shared tessellation, copied per layer — so the default draws the shallowest 12. Raising it is exactly where `maxNodes` earns its keep.',
+          table: { category: 'Surfaces' },
+        },
+        rimSpacing: {
+          control: { type: 'select' },
+          options: [50, 100, 250, 500, 1000],
+          table: { category: 'Surfaces' },
+        },
+        maxError: {
+          control: { type: 'select' },
+          options: [1, 2, 5, 10, 25, 50],
+          description:
+            'Greedy TIN simplification error, in metres of height. Bounds how far the drawn surface may sit from the grid.',
+          table: { category: 'Surfaces' },
+        },
+        maxNodes: {
+          control: { type: 'select' },
+          options: [250000, 500000, 1000000, 2000000, 4000000],
+          description:
+            '⭐ QUALITY vs SPEED. Node budget for the stack’s common grid; beyond it the grid is decimated by an integer step. Resample, seal, depth-order resolve and refinement are all linear in it, so halving the budget quarters the work — at the cost of resolving every layer’s data edges and holes on a coarser cell. Check `referenceStep` in the report.',
+          table: { category: 'Surfaces' },
+        },
+        preview: {
+          description:
+            'Show a coarse build of the zone as soon as the column is ready, replaced layer by layer as the real one arrives. Off: the real zone streams in as it builds.',
+          table: { category: 'Surfaces' },
+        },
+        previewSaturation: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          if: { arg: 'preview' },
+          description:
+            'Saturation of the preview, so what is still provisional reads as such: 0 grey, 1 as the real zone.',
+          table: { category: 'Surfaces' },
+        },
+        wellbores: {
+          description:
+            'Draw every wellbore the dataset carries (all 35 here — no count filter), straight through the block. Click one to select it and fly the camera to the hit point; ctrl+click selects without moving. The selected well drives the WELL MAP on the left, and is the input for the planned wellbore fence section.',
+          table: { category: 'Wellbores' },
+        },
+        wellboreColor: {
+          control: { type: 'color' },
+          table: { category: 'Wellbores' },
+        },
+        wellboreSelectedColor: {
+          control: { type: 'color' },
+          table: { category: 'Wellbores' },
+        },
+        wellboreRadius: {
+          control: { type: 'select' },
+          options: [1, 2, 4, 8, 16],
+          description:
+            'Tube radius in metres. ⚠️ A real 12¾" casing is well under a pixel across a 20 km field, so this is deliberately exaggerated. ⭐ ALSO the fence clearance: the cut is held this far off the trajectory so it does not slice the tube in half.',
+          table: { category: 'Wellbores' },
+        },
+        wellboreLodPixelError: {
+          control: { type: 'select' },
+          options: [0, 0.25, 0.5, 1, 2],
+          description:
+            'CSS pixels a trajectory may stray from full detail (sides and curve). `0` = no LOD — the reference to compare against.',
+          table: { category: 'Wellbores' },
+        },
+        wellbore: {
+          options: [
+            ...Object.keys(storyArgs.wellboreOptions),
+            ...EXTRA_WELLBORE_IDS,
+          ],
+          control: { type: 'select', labels: storyArgs.wellboreOptions },
+          description:
+            'Which wellbore the fence follows. ⭐ The 3D view and the well map still select by event and will override this; picking here is for reaching a NAMED well directly, which is what an A/B needs. Ones worth trying: `NO 15/9-F-12`, `NO 15/9-F-11 A/B`, `NO 15/9-F-15 D` all misbehave, `NO 15/9-19 S` is clean.',
+          table: { category: 'Wellbores' },
+        },
+        fence: {
+          description:
+            'Open the block along the SELECTED wellbore, instead of with a plane. ⚠️ Needs a wellbore selected (turn `wellbores` on and click one) — nothing is cut until then. ⭐ Changing which well is cut costs a resample and an upload, not a build, which is why it can happen inside a fly-to. Turning this on disables the plane section.',
+          table: { category: 'Fence' },
+        },
+        fenceSide: {
+          control: { type: 'inline-radio' },
+          options: ['left', 'right', 'auto'],
+          description:
+            'Which half is taken AWAY, named for where the cut curve lies walking the well from head to TD in a plan view from above. ⭐ Free to flip: both halves are built up front, so this swaps a texture and a curve rather than rebuilding. The two are flip sides of ONE cut — the run-outs are agreed between them, and only the repairs a particular side needs differ. ⭐⭐ `auto` keeps the CAMERA in the open half, which is the only half the cut face can be seen from: orbit past the fence and the block changes sides so the section stays readable.',
+          table: { category: 'Fence' },
+        },
+        fenceAutoDeadband: {
+          control: { type: 'range', min: 0, max: 500, step: 10 },
+          description:
+            'Metres the camera must clear the cut by before `auto` flips. ⭐ Anti-flicker only — an orbit crosses the fence exactly where the two halves are equally good, and a plan view looks straight down it, so a little slack stops a jitter there toggling the whole block. ⚠️ Measured against the CURVE, not the sign field: the field’s magnitude saturates a few cells out at a constant, so a deadband compared against that is either always or never satisfied. Never less than the fence clearance (`wellboreRadius`).',
+          table: { category: 'Fence' },
+        },
+        fenceAutoSettle: {
+          control: { type: 'range', min: 0, max: 2, step: 0.05 },
+          description:
+            'Seconds the camera must stay clear before `auto` acts on it. ⭐ Time as well as distance, because the deadband alone is crossed in a frame or two at speed — this is what keeps a fly-through from flipping the block twice on its way past.',
+          table: { category: 'Fence' },
+        },
+        fenceTolerance: {
+          control: { type: 'select' },
+          options: [0.01, 0.05, 0.1, 0.25, 1, 5],
+          description:
+            'Metres the drawn cut face may depart from the cut the shader tests — and that departure IS the seam gap, so this is the knob that decides whether the block meets the face. ⭐ A DEVIATION, not a spacing: the face is simplified to it, which spends vertices only where the cut actually turns. A fixed spacing put thousands of them along a kilometres-long straight run-out and was still too coarse through a margin-scale turn.',
+          table: { category: 'Fence' },
+        },
+        fenceMaxSpacing: {
+          control: { type: 'select' },
+          options: [10, 25, 50, 100],
+          description:
+            'Metres between face samples at most. ⚠️ Nothing to do with the plan shape — the ribbon reads each layer’s HEIGHT once per sample, so this is what stops a long straight run chording across the surfaces it has to meet.',
+          table: { category: 'Fence' },
+        },
+        fenceHeadBearing: {
+          control: { type: 'inline-radio' },
+          options: ['opposite-td', 'free'],
+          description:
+            'Which way the head arm leaves. `opposite-td`: exactly opposite the TD arm — one straight-through cut. `free`: through the head — from where the well enters the head frame through its hull’s centroid — turned only as far as it takes to stay `fenceHeadMinTdAngle` off the TD arm. ⚠️ Rebuilds the fence.',
+          table: { category: 'Fence' },
+        },
+        fenceHeadMinTdAngle: {
+          control: { type: 'range', min: 45, max: 180, step: 5 },
+          description:
+            'The least angle between a `free` head arm and the TD arm, degrees.',
+          table: { category: 'Fence' },
+          if: { arg: 'fenceHeadBearing', eq: 'free' },
+        },
+        fenceScope: {
+          control: { type: 'inline-radio' },
+          options: ['stack', 'touched'],
+          description:
+            'What the cut reaches. `stack`: the whole boundary, as one split. `touched`: only the boundary’s islands the well passes through — the rest stay whole. Only differs where the boundary has several islands (`boundary: field`). ⚠️ Rebuilds the fence.',
+          table: { category: 'Fence' },
+        },
+        fenceOffset: {
+          control: { type: 'range', min: -20, max: 20, step: 0.5 },
+          description:
+            'Metres to move the cut face toward the KEPT side. ⚠️ Normally 0 — the face is drawn with a material that is not itself cut, so it needs no nudge to escape its own test. A small NEGATIVE value pushes the face slightly proud instead, which is how to tell a SEAM apart from a geometry fault: if a seam closes at −2 it was never a geometry problem.',
+          table: { category: 'Fence' },
+        },
+        fenceDebug: {
+          description:
+            'Draw the cut face as a magenta wireframe instead of as rock — the ribbon the fence actually generated, on its own. ⭐ The face is built independently of the block, so this is the only way to tell a geometry fault from a clipping one.',
+          table: { category: 'Fence' },
+        },
+        fenceColorTvd: {
+          description:
+            'Colour the fenced well orange between the depths (TVD) the fence was cut for — every stretch inside that window, wherever the well leaves and re-enters it. Needs `wellbores` on.',
+          table: { category: 'Fence' },
+        },
+        fenceFlyTo: {
+          description:
+            'Fly to a newly selected well the long way: pull back as the old cut is removed, swing across at that distance, then come in on the new one. ⭐⭐ The straight line between two close-up views runs THROUGH the block, and the fence would be rebuilt right in front of the lens on the way. Off flies straight to the point that was clicked. ⚠️ ctrl+click always swaps the cut without moving the camera.',
+          table: { category: 'Fly to' },
+        },
+        fenceFlyPadding: {
+          control: { type: 'range', min: 1, max: 4, step: 0.1 },
+          description:
+            'Slack around the framed cut, as a multiple of the distance that just fits it. ⭐ This is the “how much of the fence do I want to see” dial: 1 fills the view with the well’s own trace, higher takes in its surroundings.',
+          table: { category: 'Fly to' },
+        },
+        fenceFlyPolar: {
+          control: { type: 'range', min: 0, max: 90, step: 1 },
+          description:
+            'Degrees from straight down to arrive at. 90 is dead level with the cut face; a little under looks slightly down on it, which keeps the block’s top surface in the frame for context.',
+          table: { category: 'Fly to' },
+        },
+        fenceFlyGuard: {
+          control: { type: 'range', min: 0, max: 60, step: 1 },
+          description:
+            'Degrees of heading to keep between the camera and the nearest one the cut closes at. ⭐⭐ A well angled across the field is only open near its RUN-OUTS, and those openings end exactly where `auto` flips the side — so arriving at the first heading that works parks the camera a nudge away from swapping the half it just removed. ⚠️ Spent only when it has to be: square-on is kept whenever the opening is wide enough for this much room either side of it.',
+          table: { category: 'Fly to' },
+        },
+        fenceFlyRetreat: {
+          control: { type: 'range', min: 1, max: 6, step: 0.5 },
+          description:
+            'How far to pull back before travelling, as a multiple of the distance the camera is at. ⚠️ 1 does not retreat at all, so the swing happens at close range — through the block. ⭐ Bounded by “far enough to see the whole block”, so an already-distant view does not pull back at all and repeated selections cannot compound the zoom-out.',
+          table: { category: 'Fly to' },
+        },
+        fenceFlyDuration: {
+          control: { type: 'range', min: 0.4, max: 4, step: 0.1 },
+          description:
+            'Seconds for the WHOLE flight, split 30/40/30 across pulling back, swinging across and coming in. ⭐⭐ A budget, not a hint: `CameraControls` eases exponentially and never quite arrives, so each leg also hands over on time — the next one simply eases on from wherever it got to.',
+          table: { category: 'Fly to' },
+        },
+        seismic: {
+          description:
+            'Draw seismic on the fence’s cut face, over the fence’s TVD window. ⚠️ Needs `fence` on and a wellbore selected. Queried from the store by the UTM positions along the cut — the demo store answers every well with the same slice. Each side loads the first time it is shown and is kept until the fence is rebuilt; until then the face shows the formations alone.',
+          table: { category: 'Seismic' },
+        },
+        seismicMix: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          if: { arg: 'seismic' },
+          description:
+            '0 shows the formations only, 1 the seismic only. Free to sweep.',
+          table: { category: 'Seismic' },
+        },
+        seismicStep: {
+          control: { type: 'select' },
+          options: [2, 5, 10, 25],
+          if: { arg: 'seismic' },
+          description:
+            'Metres between seismic columns along the cut. ⚠️ Reloads both sides.',
+          table: { category: 'Seismic' },
+        },
+        seismicDelay: {
+          control: { type: 'range', min: 0, max: 1000, step: 50 },
+          if: { arg: 'seismic' },
+          description:
+            'Milliseconds the fence and side must settle before seismic is queried. A newer request cancels a waiting one.',
+          table: { category: 'Seismic' },
+        },
+        seismicColorRamp: {
+          options: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+          control: {
+            type: 'select',
+            labels: {
+              '0': 'rainbow',
+              '1': 'jet',
+              '2': 'portland',
+              '3': 'earth',
+              '4': 'plasma',
+              '5': 'salinity',
+              '6': 'seismic',
+              '7': 'seismic2',
+              '8': 'spectrum',
+              '9': 'gray',
+            },
+          },
+          if: { arg: 'seismic' },
+          table: { category: 'Seismic' },
+        },
+        seismicRangeOffset: {
+          control: { type: 'range', min: -0.99, max: 2, step: 0.01 },
+          if: { arg: 'seismic' },
+          description:
+            'Widen (+) or narrow (−) the colour range, as a fraction of the largest amplitude.',
+          table: { category: 'Seismic' },
+        },
+        seismicShading: {
+          control: { type: 'inline-radio' },
+          options: ['lit', 'flat', 'facing'],
+          if: { arg: 'seismic' },
+          description:
+            '`lit`: lit by the scene like the rock. `flat`: the ramp colour as is. `facing`: the ramp colour darkened as the face turns from the view, as `WellboreSeismicSection` shades it. Free to switch.',
+          table: { category: 'Seismic' },
+        },
+        seismicGaps: {
+          if: { arg: 'seismic' },
+          description:
+            'Draw the seismic across unfilled intervals too — the gaps `groupGaps` opens — where the cut face otherwise stops. At full strength, and only where there is data. Free to switch.',
+          table: { category: 'Seismic' },
+        },
+        seismicVoids: {
+          if: { arg: 'seismic' },
+          description:
+            'The same inside the cavities `sealMode: void` opens. Free to switch.',
+          table: { category: 'Seismic' },
+        },
+        seal: {
+          description:
+            'Close the block where a surface is not mapped, by tapering it between its neighbours instead of leaving a hole.',
+          table: { category: 'Resolve' },
+        },
+        sealMode: {
+          control: { type: 'inline-radio' },
+          options: ['proportional', 'void'],
+          description:
+            '`proportional` carries the ratio between the surfaces above and below, so both units survive. `void` splits the surface in two and opens a lens-shaped cavity — the hole IS the statement that the units are not defined there.',
+          table: { category: 'Resolve' },
+        },
+        minThickness: {
+          control: { type: 'select' },
+          options: [0.5, 1, 2, 5, 10, 20],
+          description:
+            'How much of each neighbouring unit a taper leaves standing, in metres. ⚠️ Must stay above `collapseThreshold` or the sliver is dropped and the hole comes back.',
+          table: { category: 'Resolve' },
+        },
+        maxFill: {
+          control: { type: 'select' },
+          options: [0, 100, 250, 500, 1000, 2000],
+          description:
+            'How far a layer counts as covered past its own data, in metres. Behaves as an EROSION RADIUS: a hole of radius r vanishes at maxFill = r, and a larger one merely loses a rim of that width.',
+          table: { category: 'Resolve' },
+        },
+        collapseThreshold: {
+          control: { type: 'select' },
+          options: [0, 0.25, 0.5, 1, 2, 5],
+          description:
+            'Thickness below which a unit is treated as pinched out and its triangles dropped, in metres.',
+          table: { category: 'Resolve' },
+        },
+        constrainCoverage: {
+          description:
+            'Constrain each layer’s data boundary into the shared tessellation, so a triangle is either wholly inside a survey or wholly outside it. Costs vertices along every partly-mapped layer’s edge.',
+          table: { category: 'Resolve' },
+        },
+        constrainTerminations: {
+          description:
+            'Constrain the lines where a unit wedges out into the shared tessellation (simplified to half a cell) instead of refining the grid nodes either side of them. Watch `sharedTriangles`, `tessellateMs` and `terminationRingPoints` in the report.',
+          table: { category: 'Resolve' },
+        },
+        section: {
+          description:
+            'Cut the block with a plane. ⭐ Toggling is free — the stack is built ready for cuts (`prepareCuts`), so switching it off throws no geometry away.',
+          table: { category: 'Section' },
+        },
+        sectionMode: {
+          control: { type: 'inline-radio' },
+          options: ['fixed', 'camera', 'target'],
+          description:
+            '`camera` locks the plane in front of the camera, so orbiting chooses the angle and dollying drives the cut through the block — no gizmo to hit. `target` anchors it on the camera TARGET instead: orbiting still swings the cut, but zooming leaves it where it is, so you can come right up to the cut face to read it. `fixed` drives it from the azimuth/dip/distance controls below.',
+          table: { category: 'Section' },
+        },
+        sectionCameraDistance: {
+          control: { type: 'range', min: 0, max: 20000, step: 100 },
+          description:
+            'Metres in front of the camera to put the plane (`camera` mode only — `target` has no distance to set). With `sectionVertical` on this is measured in PLAN.',
+          table: { category: 'Section' },
+        },
+        sectionVertical: {
+          description:
+            'Keep a camera-locked plane VERTICAL — it takes the camera’s heading but never its dip. A cut that tilts as you orbit makes the block appear to shear, which is exactly what stops the geology being readable. Applies to `target` mode too, where the plane then stands vertically ON the pivot.',
+          table: { category: 'Section' },
+        },
+        sectionAzimuth: {
+          control: { type: 'range', min: 0, max: 360, step: 5 },
+          table: { category: 'Section' },
+        },
+        sectionDip: {
+          control: { type: 'range', min: -90, max: 90, step: 5 },
+          table: { category: 'Section' },
+        },
+        sectionDistance: {
+          control: { type: 'range', min: -20000, max: 20000, step: 250 },
+          table: { category: 'Section' },
+        },
+        sectionFlip: {
+          description: 'Keep the other half.',
+          table: { category: 'Section' },
+        },
+        sectionAnimate: {
+          description:
+            'Tumble the fixed plane, to see the cut face rebuild live.',
+          table: { category: 'Section' },
+        },
+        sectionAnimateSpeed: {
+          control: { type: 'range', min: 0.1, max: 4, step: 0.1 },
+          table: { category: 'Section' },
+        },
+        sectionSea: {
+          description:
+            'Cut the sea too — with the plane or the fence, whichever is live. ⭐ The water body is CLOSED by a face of its own, built over the sea’s level and bed the same way the block’s face is built over its layers, so the two meet on the same curve. Off (the default) keeps the sea whole over a sliced block, which frames it. The sea then acts as a KEPT unit: its bed cap stays whole as its floor, and no water face is drawn. The interior fog still reports water where the block has been opened.',
+          table: { category: 'Section' },
+        },
+        keepBed: {
+          description:
+            'Leave the sea bed CAP — the first layer’s — whole under the cut: the bed stays as a sheet over the removed half while the rock under it is cut (`ZoneLayer.keepCap`; for the column’s own sea also `ZoneStackSea.keepBed`, which only matters with `sectionSea` on — a sea kept whole keeps its bed anyway).',
+          table: { category: 'Section' },
+        },
+        sectionCarrier: {
+          description:
+            'Cut the floor too — with the plane or the fence, whichever is live. Off (the default) leaves the block standing on an intact base plate, which reads as a frame rather than as a hole.',
+          table: { category: 'Section' },
+        },
+        sectionKeep: {
+          control: { type: 'text' },
+          description:
+            'Comma-separated indices into the DRAWN layers to leave uncut, so they stand whole over the section (empty = cut everything). The fence also leaves out the trajectory above and below the layers it does cut.',
+          table: { category: 'Section' },
+        },
+        sectionDebug: {
+          description: 'Draw where the plane is.',
+          table: { category: 'Section' },
+        },
+        interiorFog: {
+          description:
+            'Fog the view when the camera goes inside a medium — the sea, or the block itself — so being inside it reads as being inside it. ⚠️ Absent unless enabled: its presence is what installs `scene.fog`.',
+          table: { category: 'Interior fog' },
+        },
+        interiorFogRockColor: {
+          control: { type: 'color' },
+          description:
+            'Colour INSIDE THE BLOCK (the sea has its own). A near-black brown, not a water colour.',
+          table: { category: 'Interior fog' },
+        },
+        interiorFogVisibility: {
+          control: { type: 'range', min: 10, max: 3000, step: 10 },
+          description:
+            'Roughly how far you can see inside the medium, in metres. ⚠️ `FogExp2` saturates quadratically: ~63% fogged at this distance, ~98% at twice it.',
+          table: { category: 'Interior fog' },
+        },
+        interiorFogTransition: {
+          control: { type: 'range', min: 0, max: 50, step: 1 },
+          description:
+            'Metres over which a medium fades in at its boundaries — what stops the edge of the sea, or of the block, reading as a hard line.',
+          table: { category: 'Interior fog' },
+        },
+        interiorFogSettle: {
+          control: { type: 'range', min: 0, max: 1, step: 0.02 },
+          description:
+            'Seconds for the fog to catch up with a step change. ⚠️ Keep it short — leaving a medium SIDEWAYS has no distance to ramp over, and a slow settle reads as a bug.',
+          table: { category: 'Interior fog' },
+        },
+        interiorFogBackground: {
+          control: { type: 'boolean' },
+          description: 'Tint the background to match, not just the geometry.',
+          table: { category: 'Interior fog' },
+        },
+        floor: {
+          description:
+            'Close the block with a flat plane below its deepest surface — the column’s carrier.',
+          table: { category: 'Floor' },
+        },
+        floorClearance: {
+          control: { type: 'select' },
+          options: [0, 100, 200, 400, 800, 1500, 2000],
+          description:
+            'Metres below the column’s deepest MAPPED sample to put the floor.',
+          table: { category: 'Floor' },
+        },
+        floorColor: {
+          control: { type: 'color' },
+          table: { category: 'Floor' },
+        },
+        floorDetail: {
+          control: { type: 'select' },
+          options: ['none', ...ZONE_DETAIL_PRESET_NAMES],
+          description:
+            'Procedural detail on the floor, so it reads as a surface from below rather than as a uniform veil. Scaled by `detailStrength`.',
+          table: { category: 'Floor' },
+        },
+        floorDetailScale: {
+          control: { type: 'range', min: 1, max: 16, step: 0.5 },
+          description:
+            'Multiplies the floor detail’s feature size. The presets’ coarsest cells are 5–20 m and are filtered out beyond a few km; the floor is mostly seen from further away than the layers.',
+          table: { category: 'Floor' },
+        },
+        surfaceOpacity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Appearance' },
+        },
+        wallOpacity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Appearance' },
+        },
+        frontPeelTolerance: {
+          control: { type: 'select' },
+          options: [1e-7, 1e-6, 1e-5, 1e-4, 1e-3],
+          description:
+            'OIT: how close to the nearest transparent fragment a fragment may be and still count as the FRONT layer, as a fraction of its view distance — so the slab is roughly `distance × tolerance` metres. ⭐ Only visible at `surfaceOpacity` < 1, and the thing to watch is where a horizon leaves the cut face: too large and the cap is composited exactly instead of averaged into the tail, which reads as a harder, more opaque band along every layer contact. ⚠️ Too small and the true front fragment fails its own test, so the pixel resolves entirely through the tail and shimmers.',
+          table: { category: 'Appearance' },
+        },
+        skipFrontPeeling: {
+          control: { type: 'boolean' },
+          description:
+            'OIT: drop the exact front layer and resolve every transparent fragment through the weighted-blended tail. ⭐ The A/B for any front-peel question — if an artefact survives this, the peel is not what made it.',
+          table: { category: 'Appearance' },
+        },
+        mergeFront: {
+          control: { type: 'boolean' },
+          description:
+            'OIT: render the exact front layer in the same geometry pass as the tail instead of a separate front pass.',
+          table: { category: 'Appearance' },
+        },
+        tailSlices: {
+          control: { type: 'inline-radio' },
+          options: [0, 2, 3],
+          description:
+            'OIT: split the weighted-blended tail into per-pixel depth slices (between the nearest and farthest transparent fragment), composited back to front.',
+          table: { category: 'Appearance' },
+        },
+        tailSliceSpacing: {
+          control: { type: 'inline-radio' },
+          options: ['linear', 'log'],
+          if: { arg: 'tailSlices', neq: 0 },
+          table: { category: 'Appearance' },
+        },
+        wireframe: { table: { category: 'Appearance' } },
+        peel: {
+          control: { type: 'number', min: 0, max: 40, step: 1 },
+          description:
+            'Hide the first N UNITS, exposing what is under them — a COUNT, so whole units only. Pure appearance: no rebuild, free to sweep. Clamped to what is drawn.',
+          table: { category: 'Appearance' },
+        },
+        cullHiddenCaps: {
+          description:
+            'Skip the cap triangles buried between two opaque units. ⭐ The A/B for the saving: compare `Tris` and `GPU` in `stats`. Switched off by itself at any opacity below 1, in wireframe, or with walls hidden.',
+          table: { category: 'Appearance' },
+        },
+        cullOffscreen: {
+          description:
+            'With `lodLevels`, skip each cap’s tiles that lie wholly outside the view. Saves vertex work only (off-screen triangles draw no pixels), so it pays with many triangles: close-ups and views inside the column. A/B with `GPU` in `stats`.',
+          table: { category: 'Appearance' },
+        },
+        inferredStyle: {
+          control: { type: 'inline-radio' },
+          options: ['none', 'hatched', 'checker', 'zigzag'],
+          description:
+            'Mark the regions the seal INFERRED — where a surface has no data of its own and its height was carried in from its neighbours.',
+          table: { category: 'Appearance' },
+        },
+        detail: {
+          control: { type: 'select' },
+          options: ['none', ...ZONE_DETAIL_PRESET_NAMES],
+          description:
+            'Procedural surface detail, applied uniformly. ⚠️ The strat column carries no lithology, so there is nothing to pick a per-unit preset from — that mapping would be the host’s, like the colour.',
+          table: { category: 'Appearance' },
+        },
+        detailStrength: {
+          control: { type: 'range', min: 0, max: 2, step: 0.05 },
+          table: { category: 'Appearance' },
+        },
+        zonePicking: {
+          description:
+            'Register the zones with the event emitter: ctrl+click flies to the picked point, on a cap, a wall or the cut face. Off by default because a registered block also hides what is behind it from picking — the wells inside it stop being clickable through it. ⭐ What the cut takes away is not picked.',
+          table: { category: 'Interaction' },
+        },
+        stats: {
+          control: { type: 'boolean' },
+          description:
+            'GPU time, frame time, draw calls and triangles summed over every pass of the frame.',
+          table: { category: 'Diagnostics' },
+        },
+        buildDiagnostics: {
+          description:
+            'Measure `metrics.diagnostics` — the per-layer table and the `ZONEREPORT` fields in the console. ⚠️ Costs ~0.9 s per build on this column, and the per-phase timings are part of it: off, the report keeps only the total.',
+          table: { category: 'Diagnostics' },
+        },
+        tileCells: {
+          control: { type: 'select' },
+          options: [0, 32, 64, 128, 256],
+          description:
+            'Triangulate in square tiles of this many reference-grid cells, joined along their seams (0 = one triangulation). The unit LOD will switch detail by. Rebuilds the zone, not the shared column.',
+          table: { category: 'Diagnostics' },
+        },
+        debugTiles: {
+          description:
+            'Tint every surface by tessellation tile and draw the seams (needs `tileCells`): by level of detail while LOD is on (green full detail → red coarsest), otherwise a checker. Appearance only: toggling it rebuilds no geometry.',
+          table: { category: 'Diagnostics' },
+        },
+        lodLevels: {
+          control: { type: 'select' },
+          options: [0, 1, 2, 3, 4],
+          description:
+            'Also build this many coarser levels of detail over the same vertices, level k simplified to `maxError × lodFactor^k`: the rim, cuts, data edges and tile seams are kept, the pinch-out lines thinned. Rebuilds the zone. See `lodTriangles` in the report.',
+          table: { category: 'Diagnostics' },
+        },
+        lodFactor: {
+          control: { type: 'select' },
+          options: [2, 4, 8],
+          description:
+            'How much coarser each level of detail is than the last.',
+          table: { category: 'Diagnostics' },
+        },
+        lodLevel: {
+          control: { type: 'select' },
+          options: [0, 1, 2, 3, 4],
+          description:
+            'Draw every cap at this level of detail (0 = full; needs `lodLevels`). Appearance only. Hidden-cap culling and peel patches are off while it is set.',
+          table: { category: 'Diagnostics' },
+        },
+        lodPixelError: {
+          control: { type: 'select' },
+          options: [0, 1, 2, 4, 8],
+          description:
+            "Pick a level of detail per tile so its height error stays under this many pixels on screen (0 = full detail; needs `lodLevels`). With `debugTiles` the tint shows each tile's level. Appearance only.",
+          table: { category: 'Diagnostics' },
+        },
+        resources: {
+          description:
+            'Report memory and GPU resources in the output panel. ⭐ Watch the DELTAS across rebuilds: `geo` and the heap should return to about the same level each time, and `column` is what the generator keeps between builds. A `scope` id that changes means the generator worker was recreated (the old one was orphaned).',
+          table: { category: 'Diagnostics' },
+        },
+        resourceInterval: {
+          control: { type: 'range', min: 250, max: 5000, step: 250 },
+          if: { arg: 'resources' },
+          description:
+            'Sampling period in ms. ⚠️ The generator row is answered by the worker, so it stops updating while the worker is inside a long synchronous build phase.',
+          table: { category: 'Diagnostics' },
+        },
+        ...progressArgTypes,
+      },
+    },
+    [
+      'Surfaces',
+      'Wellbores',
+      'Section',
+      'Fence',
+      'Fly to',
+      'Seismic',
+      'Resolve',
+      'Interior fog',
+      'Floor',
+      'Appearance',
+      'Interaction',
+      'Sea',
+      'Scenery',
+      'Sun',
+      'Sky',
+      'Clouds',
+      'Void',
+      'Subsurface',
+      'Environment',
+      'Relief',
+      'Stage',
+      'Graticule',
+      'Cutaway',
+      'Minimap',
+      'Progress',
+      'Tone mapping',
+      'Diagnostics',
+      'Debug',
+    ],
+    {
+      Sea: [
+        'scenerySea',
+        'seaLevel',
+        'scenerySeaOptics',
+        'scenerySeaOpacity',
+        'seaLayerOpacity',
+        'windSpeed',
+        'foamAmount',
+        'bodyShimmer',
+      ],
+      Scenery: ['scenery'],
+      Relief: [
+        'relief',
+        'reliefLayers',
+        'bakeSeabed',
+        'reliefCut',
+        'reliefMarkers',
+      ],
+    },
+  ),
+  decorators: [
+    EventEmitterDecorator,
+    GlyphsDecorator,
+    Canvas3dDecorator,
+    GeneratorsProviderDecorator,
+    WellMapDecorator,
+    DataProviderDecorator,
+    // LAST = outermost, so the panel is DOM outside the canvas. Right-hand side:
+    // the well map owns the left edge in this story.
+    createOutputPanelDecorator({
+      origin: 'top-right',
+      offset: [10, 10],
+      width: 190,
+      fontSize: 11,
+      opacity: 0.75,
+    }),
+    ...sceneryDecorators,
+  ],
+};
+
+// The field under the videx Scenery: its sea over the column, the column's sea bed drawn by
+// the Scenery's stage as the sea's, and the Scenery's seabed eased into it around the boundary.
+export const WithScenery: Story = {
+  ...Default,
+  args: { ...Default.args, scenery: true, background: true },
+};

@@ -17,7 +17,7 @@ import {
   SKY_PRESETS,
   WEATHER_SYSTEMS_DEFAULTS,
   WEATHER_SYSTEMS_PRESETS,
-  weatherOceanWind,
+  weatherWind,
   weatherPreset,
   weatherPresetOf,
   weatherSeaSwells,
@@ -258,23 +258,21 @@ describe('wind', () => {
 
   it("leaves a sea's own wind as it is and fills in the rest from the weather", () => {
     const weather = weatherPreset('few', 'cumulus', { speed: 14, from: 270 });
-    const own = weatherOceanWind(weather, {
+    const own = weatherWind(weather, {
       windSpeed: 5,
       windDirection: [0, 1],
     });
     expect(own).toEqual({ windSpeed: 5, windDirection: [0, 1] });
 
-    const filled = weatherOceanWind(weather, { windSpeed: 5 });
+    const filled = weatherWind(weather, { windSpeed: 5 });
     expect(filled.windSpeed).toBe(5);
     expect(filled.windDirection![0]).toBeCloseTo(1, 6);
 
-    expect(weatherOceanWind(null, {})).toEqual({
+    expect(weatherWind(null, {})).toEqual({
       windSpeed: undefined,
       windDirection: undefined,
     });
-    expect(weatherOceanWind(weatherPreset('few'), {}).windSpeed).toBe(
-      undefined,
-    );
+    expect(weatherWind(weatherPreset('few'), {}).windSpeed).toBe(undefined);
   });
 
   it("takes the weather's swells, each the way it travels, unless the sea has its own", () => {
@@ -291,12 +289,12 @@ describe('wind', () => {
     expect(swells[0].spread).toBeUndefined();
 
     const weather = { wind: { speed: 8, from: 90 }, swell };
-    expect(weatherOceanWind(weather, {}).swells).toEqual(swells);
+    expect(weatherWind(weather, {}).swells).toEqual(swells);
     const own = [
       { height: 3, period: 14, direction: [0, -1] as [number, number] },
     ];
-    expect(weatherOceanWind(weather, { swells: own }).swells).toBe(own);
-    expect(weatherOceanWind({ wind: weather.wind }, {}).swells).toBeUndefined();
+    expect(weatherWind(weather, { swells: own }).swells).toBe(own);
+    expect(weatherWind({ wind: weather.wind }, {}).swells).toBeUndefined();
   });
 });
 

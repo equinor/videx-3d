@@ -86,7 +86,7 @@ export function buildSurfaceDepthMap(
 }
 
 /**
- * Pack a column's sea bed channel (`StackBedGrid`, from the `stackWater` generator) the
+ * Pack a column's sea bed channel (`StackBedGrid`, from the `stackSea` generator) the
  * same way: the bed exactly as the sea and every zone are built on it, sealed and on the
  * common grid — the relief, where the column is built on one.
  */

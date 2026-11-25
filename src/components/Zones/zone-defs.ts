@@ -18,7 +18,7 @@ import { StackCarrier } from '../../sdk/geometries/surface-stack';
 import { StackSectionSource } from '../../sdk/geometries/surface-section';
 import { SurfaceZoneMetrics } from '../../sdk/geometries/surface-zone';
 import { SurfaceZonePhase } from '../../sdk/geometries/surface-zone-streaming';
-import { OceanBodyProps, OceanWaterProps } from '../Ocean/ocean-material-sync';
+import { WaterBodyProps, WaterSettings } from '../Water/water-settings';
 import { ZoneDetail } from './zone-detail';
 import type { WellboreCutoutOptions } from './cutout';
 
@@ -29,7 +29,7 @@ export const surfaceZone = 'surfaceZone';
 export const wellboreOutline = 'wellboreOutline';
 
 /** Generator key for the `ZoneStack` sea geometry generator. */
-export const stackWater = 'stackWater';
+export const stackSea = 'stackSea';
 
 /** Generator key for releasing the cached column (see `releaseStackResources`). */
 export const stackRelease = 'stackRelease';
@@ -50,10 +50,10 @@ export const generatorStatsKey = 'generatorStats';
 export const CARRIER_SEAM_ID = '@carrier';
 
 /**
- * What the `stackWater` generator needs to build the sea: the footprint it covers,
+ * What the `stackSea` generator needs to build the sea: the footprint it covers,
  * its level, and the column its BED comes from.
  */
-export type StackWaterSpec = {
+export type StackSeaSpec = {
   /** the stack boundary (scene XZ) the sea is drawn over */
   polygon: {
     coordinates: PlanarPolygonCoordinates;
@@ -86,14 +86,14 @@ export type StackWaterSpec = {
   section?: boolean;
 };
 
-/** What the `stackWater` generator returns: the sea's lid and the body under it. */
-export type StackWaterResponse = {
+/** What the `stackSea` generator returns: the sea's lid and the body under it. */
+export type StackSeaResponse = {
   /** the sea surface over the whole boundary */
   lid: PackedBufferGeometry | null;
   /** the water body's walls — the boundary rim and the shoreline */
   body: PackedBufferGeometry | null;
   /**
-   * The level and the bed as channels, when {@link StackWaterSpec.section} asked
+   * The level and the bed as channels, when {@link StackSeaSpec.section} asked
    * for them — what a cut face is swept over. Flat typed arrays, so it crosses the
    * worker boundary as it is.
    */
@@ -386,7 +386,7 @@ export type ZoneLayer = {
   /**
    * Leave this layer's CAP whole under the section and the fence, while the unit below
    * it is cut as usual: the cap stays as a sheet over the removed half. What
-   * {@link ZoneStackWater.keepBed} does for the sea bed, without needing a sea. Default false.
+   * {@link ZoneStackSea.keepBed} does for the sea bed, without needing a sea. Default false.
    */
   keepCap?: boolean;
   /**
@@ -430,9 +430,9 @@ export type ZoneLayer = {
 
 /**
  * How a water body tints whatever lies UNDER it, as if seen through the water
- * column — the zone's answer to the `Ocean` component's `seaBedWaterTint`.
+ * column — the zone's answer to the `Water` component's `bedWaterTint`.
  *
- * ⭐ Depth-dependent where the `Ocean` sea bed's is flat, because a zone's sea
+ * ⭐ Depth-dependent where the `Water` sea bed's is flat, because a zone's sea
  * bed is ordinary geology and can rise THROUGH the water. Absorption that fades
  * to nothing at the waterline leaves a coast or an island untinted without
  * anything having to know where the shoreline runs.
@@ -475,8 +475,8 @@ export type ZoneWaterTint = {
  * @expand
  * @group Components
  */
-export type ZoneStackWater = OceanWaterProps &
-  OceanBodyProps &
+export type ZoneStackSea = WaterSettings &
+  WaterBodyProps &
   ZoneWaterTint & {
     /** sea level, metres below datum (POSITIVE-DOWN, as surfaces are given). Default 0. */
     depth?: number;
@@ -501,8 +501,8 @@ export type ZoneStackWater = OceanWaterProps &
      */
     resolution?: number;
     /**
-     * Leave the sea bed's CAP whole when a cut takes the sea (`ZoneSection.water`
-     * / `ZoneFence.water`), while the unit below it is cut as usual. A sea the cut
+     * Leave the sea bed's CAP whole when a cut takes the sea (`ZoneSection.sea`
+     * / `ZoneFence.sea`), while the unit below it is cut as usual. A sea the cut
      * leaves whole keeps its bed anyway. Default false.
      */
     keepBed?: boolean;
@@ -525,19 +525,19 @@ export type ZoneStackWater = OceanWaterProps &
  * @expand
  * @group Components
  */
-export type ZoneStackImmersion = {
+export type ZoneStackInteriorFog = {
   /** fog inside the sea. Default true (when the stack declares water) */
   water?: boolean;
-  /** fog inside the block. Default true */
-  sediment?: boolean;
+  /** fog inside the block's rock. Default true */
+  rock?: boolean;
   /**
-   * Colour inside the block. Default a near-black brown.
+   * Colour inside the block's rock. Default a near-black brown.
    *
    * ⚠️ One colour for the whole block, not per unit: the fills live in the
    * appearance layer and the stack does not know them. Per-unit colour would mean
    * every zone publishing its palette upward.
    */
-  color?: ColorRepresentation;
+  rockColor?: ColorRepresentation;
   /**
    * Roughly how far you can see inside the block, in metres. Default 400.
    *
@@ -695,7 +695,7 @@ export type ZoneSection = {
    */
   offset?: number;
   /**
-   * Cut the sea too (see `ZoneStackProps.water`). Default FALSE.
+   * Cut the sea too (see `ZoneStackProps.sea`). Default FALSE.
    *
    * ⭐ Off by default because the sea FRAMES the block: an intact water surface
    * over an opened column reads immediately as a field seen in section, while a
@@ -708,7 +708,7 @@ export type ZoneSection = {
    *
    * ⚠️ Changing it rebuilds the two ocean materials (the cut is a define).
    */
-  water?: boolean;
+  sea?: boolean;
   /**
    * Cut the column's floor too (see `ZoneStackProps.carrier`). Default FALSE, so
    * the block stands on an intact base plate — which is the other half of the
@@ -727,9 +727,6 @@ export const DEFAULT_SECTION_OFFSET = -0.05;
 
 /** A zone's interior simplification error, in metres, when none is given (`maxError`). */
 export const DEFAULT_ZONE_MAX_ERROR = 5;
-
-/** Default {@link ZoneFence.cellSize}, in metres. @group Components */
-export const DEFAULT_FENCE_CELL_SIZE = 50;
 
 /** Default {@link ZoneFence.tolerance}, in metres. @group Components */
 export const DEFAULT_FENCE_TOLERANCE = 0.1;
@@ -954,11 +951,11 @@ export type ZoneFence = {
    */
   maxSpacing?: number;
   /**
-   * Cut the sea too. Default FALSE — see {@link ZoneSection.water}, which this
+   * Cut the sea too. Default FALSE — see {@link ZoneSection.sea}, which this
    * mirrors: the intact sea is what makes an opened column read as a section. Left
    * whole, the sea keeps its bed cap whole too, like any kept unit.
    */
-  water?: boolean;
+  sea?: boolean;
   /** Cut the column's floor too. Default FALSE — see {@link ZoneSection.carrier}. */
   carrier?: boolean;
   /**
@@ -993,7 +990,7 @@ export type ZoneFenceState = {
   /**
    * The EXACT boundary lookup, paired with `field`.
    *
-   * ⭐ What the immersion fog asks whether the camera is standing in the half that
+   * ⭐ What the interior fog asks whether the camera is standing in the half that
    * was taken away. The field alone would answer a fraction of a cell out, which is
    * metres — enough for the fog to switch on before the cut visually reaches you.
    */
@@ -1045,7 +1042,7 @@ export const DEFAULT_BED_TINT_DEPTH = 80;
 
 /**
  * Target lid resolution (metres) used when the sea displaces its vertices and
- * names no {@link ZoneStackWater.resolution} of its own. Coarse enough that a
+ * names no {@link ZoneStackSea.resolution} of its own. Coarse enough that a
  * field-sized footprint stays affordable, fine enough for the long swells that
  * are the only ones displaced.
  *
@@ -1054,7 +1051,7 @@ export const DEFAULT_BED_TINT_DEPTH = 80;
 export const DEFAULT_WATER_RESOLUTION = 100;
 
 /** Whether a {@link ZoneLayer.fill} asks for a volume at all. */
-export function hasFill(fill: ZoneLayer['fill']): boolean {
+function hasFill(fill: ZoneLayer['fill']): boolean {
   return fill !== undefined && fill !== null && fill !== false;
 }
 
@@ -1429,7 +1426,7 @@ export type SurfaceZoneSpec = {
   /**
    * The column's sea, given to the zone that draws its bed (`bed`, a column
    * surface id) at its level (`depth`, metres below the scene's zero, as
-   * `ZoneStackWater.depth`). The bed's coastline is then constrained into the build
+   * `ZoneStackSea.depth`). The bed's coastline is then constrained into the build
    * (`SurfaceStackOptions.levelLines`), so its cap meets the sea's flat lid where
    * the grid puts the shore. Column builds only.
    */

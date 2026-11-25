@@ -428,7 +428,7 @@ running; GPU ms of the surface's draws):
 | Timelapse, 2 km | 2.43 | 5.69 | 2.42 |
 | Clouds Earth, ~1000 km | 1.60 | 4.96 | 2.50 |
 
-The stand-alone `Ocean` near (OIT example): its surface 0.95 / 1.72 / 1.04 ms, its bed
+The stand-alone `Water` near (OIT example): its surface 0.95 / 1.72 / 1.04 ms, its bed
 0.45 / 0.94 / 0.59 ms. Merged, the Sea Bench's images matched the separate front's but
 for 0.02–0.05 % of the pixels, single ones at foam and glint edges where SMAA's blend
 turned. Hence `mergeFront` is on by default.
@@ -647,7 +647,7 @@ after the pipeline), rather than relying on `toneMapped = false`.
   the material, making `OITRenderPass.isMaterialOpaque` return false for it whatever
   `opacity` says. `isMaterialInvisible` would stay as it is — `opacity: 0` still
   honestly means "draw nothing". Default off, so nothing that does not opt in
-  changes. **Not** for Ocean or Grid: they mirror a genuine scalar alpha, which is
+  changes. **Not** for Water or Grid: they mirror a genuine scalar alpha, which is
   the bullet above and is correct as it stands.
 - **An injected `vViewPosition` follows the vertex shader, not the `position`
   attribute.** `makeOitCompatible` injects `vViewPosition` for materials that lack

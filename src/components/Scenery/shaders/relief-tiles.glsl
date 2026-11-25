@@ -226,7 +226,7 @@ vec3 reliefTileNormal() {
 }
 
 #ifdef RELIEF_OCCUPANTS
-// The stage's occupants' outlines (SkyReliefOccupantFields): per occupant a square of
+// The stage's occupants' outlines (SceneryReliefOccupantFields): per occupant a square of
 // texels, side by side, its signed distance, positive inside.
 uniform highp sampler2D uReliefOccupantFields;
 // Per occupant: X/Z of its square's min corner, and a texel's width.

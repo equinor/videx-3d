@@ -13,7 +13,7 @@ import {
   ZoneFenceState,
   ZoneResolveOptions,
   ZoneSectionState,
-  ZoneStackWater,
+  ZoneStackSea,
 } from './zone-defs';
 import { ZoneDepthMap } from './zone-depth-map';
 import { ZoneDetail } from './zone-detail';
@@ -99,11 +99,11 @@ export type ZoneStackContextValue = {
   contacts?: ZoneContactTexture[] | null;
   /**
    * The sea over the whole column, when the caller declared one and the column holds
-   * its sea bed (see `ZoneStackProps.water` / `seabed`). Zones read it for
+   * its sea bed (see `ZoneStackProps.sea` / `seabed`). Zones read it for
    * APPEARANCE only — the bed tint on the sea bed's cap; the sea's own geometry
    * belongs to the stack.
    */
-  water?: ZoneStackWater | null;
+  sea?: ZoneStackSea | null;
   /** the sea bed's surface id, when declared and the column holds it (see `ZoneStackProps.seabed`) */
   seabed?: string | null;
   /**
@@ -118,9 +118,9 @@ export type ZoneStackContextValue = {
    * Stable while the column is on the relief, whether a clip is given or not.
    */
   heightClip?: HeightFieldClipUniforms;
-  /** whether the stack draws its sea (see `ZoneStackProps.drawWater`) */
-  drawWater?: boolean;
-  /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ZoneStackProps.drawWater`) */
+  /** whether the stack draws its sea (see `ZoneStackProps.drawSea`) */
+  drawSea?: boolean;
+  /** 1 while the stack draws its sea, 0 while not: the bed tint follows it (see `ZoneStackProps.drawSea`) */
   waterTintShown?: IUniform<number>;
   /**
    * The stack's own water (its sea's `WaterBody`): what its sea bed is seen through. Its own,
@@ -129,7 +129,7 @@ export type ZoneStackContextValue = {
   waterBody?: WaterBody | null;
   /**
    * The sea bed's depth grid as a texture, when the stack builds a sea: the column's
-   * bed channel (the relief, on a relief column), from the `stackWater` generator.
+   * bed channel (the relief, on a relief column), from the `stackSea` generator.
    * APPEARANCE only: it drives the bed tint per fragment, so a face hanging below the
    * bed is tinted by the water standing over it rather than by its own depth.
    */
@@ -172,8 +172,8 @@ export type ZoneStackContextValue = {
    * context's identity, which is what every zone's build spec derives from.
    */
   sectionCarrier?: boolean;
-  /** Whether the section cuts the sea (see `ZoneSection.water`). A primitive, like {@link sectionCarrier}. */
-  sectionWater?: boolean;
+  /** Whether the section cuts the sea (see `ZoneSection.sea`). A primitive, like {@link sectionCarrier}. */
+  sectionSea?: boolean;
   /**
    * Whether the section is currently drawing (see `ZoneSection.enabled`). A
    * PRIMITIVE for the same reason as {@link sectionCarrier}: the cut FACES are
@@ -204,8 +204,8 @@ export type ZoneStackContextValue = {
   fenceOverlayUniforms?: ZoneFenceOverlayUniforms | null;
   /** Whether the column's floor is cut by the fence (see `ZoneFence.carrier`). */
   fenceCarrier?: boolean;
-  /** Whether the fence cuts the sea (see `ZoneFence.water`). */
-  fenceWater?: boolean;
+  /** Whether the fence cuts the sea (see `ZoneFence.sea`). */
+  fenceSea?: boolean;
   /**
    * Envelope footprint of the column (scene XZ) — must contain every zone's
    * boundary. Defaults to the stack `boundary`; with a wellbore cut source the

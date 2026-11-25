@@ -14,7 +14,7 @@ import {
 // ⚠️ Free of three.js: plain 2D drawing on a canvas, for a map (`GeoMap`) and its layers.
 
 /** Pixels round a map that paths are still drawn over, when cut to it: wider than any stroke. */
-export const MAP_CLIP_MARGIN = 16;
+const MAP_CLIP_MARGIN = 16;
 
 /**
  * A map view in pixels, `margin` round it: what its paths are cut to.

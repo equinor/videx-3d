@@ -8,11 +8,11 @@
 // x: 1 while the hollow is on; y: 1 while its opening is open (on, and the seabed peeled);
 // z: the angle its rim makes about the globe's centre, before it wanders (with the globe on);
 // w: its radius along the sea, world units (with the globe off, across).
-uniform vec4 uSkyHollow;
+uniform vec4 uSceneryHollow;
 // How the rim wanders round the axis (SCENERY_HOLLOW_RIM): per wave its number round the rim,
 // its share of the radius and its phase. The CPU builds the walls along the same.
 #define HOLLOW_RIM_WAVES 11
-uniform vec3 uSkyHollowRim[HOLLOW_RIM_WAVES];
+uniform vec3 uSceneryHollowRim[HOLLOW_RIM_WAVES];
 // Where the camera is, set each frame (SceneryHollowParts.setView). x: 1 inside the hollow's
 // rim, where its walls stand about the camera and its lid is drawn, at any depth; outside it
 // the camera is in solid rock. y: how shut the hollow is, 1 under the lid (the seabed in
@@ -41,7 +41,7 @@ float hollowRimScale(float turn) {
     return 1.0;
   float scale = 1.0;
   for(int i = 0; i < HOLLOW_RIM_WAVES; i++) {
-    vec3 wave = uSkyHollowRim[i];
+    vec3 wave = uSceneryHollowRim[i];
     scale += wave.y * sin(wave.x * turn + wave.z);
   }
   return scale;
@@ -55,13 +55,13 @@ float hollowInside(vec3 p) {
   vec3 across = v - uGlobeUp * h;
   float turn = atan(dot(across, uGlobeNorth), dot(across, uGlobeEast));
   float scale = hollowRimScale(turn);
-  float limit = globeOn() ? tan(uSkyHollow.z * scale) * (h + uGlobe.y) : uSkyHollow.w * scale;
+  float limit = globeOn() ? tan(uSceneryHollow.z * scale) * (h + uGlobe.y) : uSceneryHollow.w * scale;
   return limit - length(across);
 }
 
 // Whether `p` lies in the hollow's open opening: there the relief and the seabed are cut away.
 bool hollowOpenAt(vec3 p) {
-  return uSkyHollow.y > 0.5 && hollowInside(p) > 0.0;
+  return uSceneryHollow.y > 0.5 && hollowInside(p) > 0.0;
 }
 
 // The sky's own colour while the hollow is open: greyed and dimmed, so it stays a backdrop and
@@ -69,7 +69,7 @@ bool hollowOpenAt(vec3 p) {
 #define HOLLOW_SKY_SATURATION 0.35
 #define HOLLOW_SKY_LIGHT 0.7
 vec3 hollowDullSky(vec3 color) {
-  if(uSkyHollow.y < 0.5 || hollowStyleSimple())
+  if(uSceneryHollow.y < 0.5 || hollowStyleSimple())
     return color;
   float grey = dot(color, vec3(0.2126, 0.7152, 0.0722));
   return mix(vec3(grey), color, HOLLOW_SKY_SATURATION) * HOLLOW_SKY_LIGHT;
@@ -91,18 +91,18 @@ vec3 hollowDullSky(vec3 color) {
 // How much of the air is left `inside` the rim (hollowInside, negative outside): 1 beyond the
 // band, uHollowLook.w over the opening.
 float hollowAirAt(float inside) {
-  if(uSkyHollow.y < 0.5)
+  if(uSceneryHollow.y < 0.5)
     return 1.0;
-  return mix(uHollowLook.w, 1.0, smoothstep(0.0, HOLLOW_AIR_BAND * uSkyHollow.w, -inside));
+  return mix(uHollowLook.w, 1.0, smoothstep(0.0, HOLLOW_AIR_BAND * uSceneryHollow.w, -inside));
 }
 
 // How much of the air is left at `p` (hollowAirAt).
 float hollowAir(vec3 p) {
-  return uSkyHollow.y < 0.5 ? 1.0 : hollowAirAt(hollowInside(p));
+  return uSceneryHollow.y < 0.5 ? 1.0 : hollowAirAt(hollowInside(p));
 }
 
 // How much of the air the sky's view finds gone: about the camera, low enough to be in it
 // (uHollowView.z, sceneryHollowAirGone), the same for every pixel.
 float hollowAirGone() {
-  return uSkyHollow.y > 0.5 ? uHollowView.z : 0.0;
+  return uSceneryHollow.y > 0.5 ? uHollowView.z : 0.0;
 }

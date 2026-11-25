@@ -2,7 +2,7 @@ import storyArgs from '../story-args.json';
 import { SYNTHETIC_SEABED_NAME } from './synthetic-surfaces';
 
 /** One stratigraphic unit, as the demo dataset's own column describes it. */
-export type StratUnit = {
+type StratUnit = {
   /** the unit's name, e.g. `Utsira Fm.` */
   unit: string;
   /** `group` | `formation` | `subzone` in the demo column */

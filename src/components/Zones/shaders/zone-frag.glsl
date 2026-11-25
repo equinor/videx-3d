@@ -39,7 +39,7 @@ uniform vec2 bathySize; // grid size in texels
 varying float vSectionDist;
 #endif
 
-#if defined(ZONE_FENCE) || defined(ZONE_WATER_FENCE)
+#if defined(ZONE_FENCE) || defined(ZONE_SEA_FENCE)
 // x: 1 while the cut is live, 0 to pass everything; y: +1 normally, -1 to draw ONLY
 // what the fence removed (the peel patch).
 uniform vec2 fenceParams;
@@ -49,16 +49,16 @@ uniform vec2 fenceSize;   // grid size in texels
 #include ../../../sdk/materials/shaderLib/fence-field.glsl
 #endif
 
-#ifdef ZONE_WATER_SECTION
+#ifdef ZONE_SEA_SECTION
 // The section plane where it takes the water (object space): none stands where it is > 0.
 uniform vec4 waterSectionPlane;
 #endif
 
-#if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_WATER_SECTION) || defined(ZONE_WATER_FENCE)
+#if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_SEA_SECTION) || defined(ZONE_SEA_FENCE)
 varying vec3 vObjectPos;
 #endif
 // Once, for the scene's water (water-body.glsl) too: an include repeated is inlined again.
-#if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_WATER_SECTION) || defined(ZONE_WATER_FENCE) || defined(ZONE_WATER)
+#if defined(ZONE_CONTACTS) || defined(ZONE_BATHYMETRY) || defined(ZONE_FENCE) || defined(ZONE_FENCE_OVERLAY) || defined(ZONE_TILE_DEBUG) || defined(ZONE_TILE_LEVELS) || defined(ZONE_HEIGHT_CLIP) || defined(ZONE_SEA_SECTION) || defined(ZONE_SEA_FENCE) || defined(ZONE_SEA)
 #include ../../../sdk/materials/shaderLib/depth-map.glsl
 #endif
 
@@ -68,7 +68,7 @@ varying vec3 vObjectPos;
 #include ../../../sdk/materials/shaderLib/height-field-clip.glsl
 #endif
 
-#ifdef ZONE_WATER
+#ifdef ZONE_SEA
 // The scene's water (WaterBody): what lies in it fades by its path through it.
 #include ../../../sdk/materials/shaderLib/water-body.glsl
 #endif
@@ -425,7 +425,7 @@ void main() {
   }
   #endif
 
-  #if defined(ZONE_WATER) && defined(ZONE_WATER_TINT)
+  #if defined(ZONE_SEA) && defined(ZONE_WATER_TINT)
   // The seabed - the shallowest cap, the only one given the water - dimmed by the daylight its
   // depth leaves it (water-body.glsl's waterBodyDim): the stack's surface and walls carry the
   // water in front of it. On its water-facing side, while the stack draws its water, and where
@@ -433,11 +433,11 @@ void main() {
   // is.
   {
     float waterKept = waterTintShown;
-    #ifdef ZONE_WATER_SECTION
+    #ifdef ZONE_SEA_SECTION
     if(dot(waterSectionPlane.xyz, vObjectPos) + waterSectionPlane.w > 0.0)
       waterKept = 0.0;
     #endif
-    #ifdef ZONE_WATER_FENCE
+    #ifdef ZONE_SEA_FENCE
     // The side the block keeps (fenceParams' y aside: the peel patch draws the other).
     if(fenceParams.x > 0.5 && fenceSide(fenceMap, fenceToUv, fenceSize, vObjectPos.xz) < 0.0)
       waterKept = 0.0;

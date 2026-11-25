@@ -257,7 +257,7 @@ type Level = { snapshot: ProgressLevelSnapshot; taking: Set<string> };
  * @example
  * const progress = useMemo(createProgressStore, []);
  * // inside the canvas
- * <Scenery onProgress={progress.source('sky', { name: 'Scenery' })} />
+ * <Scenery onProgress={progress.source('scenery', { name: 'Scenery' })} />
  * // anywhere in the host's DOM
  * <ProgressPopup store={progress} position="top" />
  *

@@ -9,7 +9,7 @@ import { DataProviderDecorator } from '../../storybook/decorators/data-provider-
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import { SceneryGenerators } from '../../storybook/decorators/scenery-generators';
 import { Scenery } from '../Scenery/Scenery';
-import { SceneryOcean } from '../Scenery/SceneryOcean';
+import { ScenerySea } from '../Scenery/ScenerySea';
 import { SceneryStage } from '../Scenery/SceneryStage';
 import { World } from '../World/World';
 import { GeoGraticule } from './GeoGraticule';
@@ -91,7 +91,7 @@ const GraticuleStory = ({
       <SceneryGenerators>
         {scenery ? (
           <Scenery>
-            <SceneryOcean level={LEVEL} depth={DEPTH} water={water} />
+            <ScenerySea level={LEVEL} depth={DEPTH} water={water} />
             <SceneryStage boundary={STAGE_BOUNDS} />
             {graticule}
           </Scenery>
@@ -110,7 +110,7 @@ const GraticuleStory = ({
 };
 
 const meta = {
-  title: 'Components/Layers/Graticule',
+  title: 'Components/Geo layers/Graticule',
   component: GraticuleStory,
   decorators: [
     Canvas3dDecorator,

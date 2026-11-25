@@ -13,7 +13,7 @@ import {
 import type { GeoFrame } from '../../sdk/projection/geo-frame';
 import { Globe } from '../../sdk/projection/globe';
 import type { CameraSite } from '../../sdk/utils/camera-site';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useScenerySea } from '../Scenery/scenery-context';
 import { useWorld } from '../World/world-context';
 
 /**
@@ -88,9 +88,9 @@ export function useLayerGlobe(frame?: GeoFrame): {
   globe: Globe;
   level: number;
 } | null {
-  const ocean = useSceneryOcean();
+  const scenerySea = useScenerySea();
   const world = useWorld();
-  const shared = world?.globe ?? ocean?.material.globe ?? null;
+  const shared = world?.globe ?? scenerySea?.material.globe ?? null;
   const own = frame ?? null;
   const frameKey = own ? JSON.stringify(own) : '';
   const flat = useMemo(() => {
@@ -101,10 +101,11 @@ export function useLayerGlobe(frame?: GeoFrame): {
     return globe;
   }, [shared, frameKey]);
   return useMemo(() => {
-    if (shared) return { globe: shared, level: ocean?.level ?? shared.level };
+    if (shared)
+      return { globe: shared, level: scenerySea?.level ?? shared.level };
     if (flat) return { globe: flat, level: 0 };
     return null;
-  }, [shared, flat, ocean?.level]);
+  }, [shared, flat, scenerySea?.level]);
 }
 
 /**

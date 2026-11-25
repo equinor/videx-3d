@@ -18,13 +18,13 @@ import type { Vec3 } from '../src/sdk/types/common';
 import { directionFromCompass } from '../src/sdk/utils/vector-operations';
 
 const sea: SceneryZoneLevels = {
-  ocean: true,
-  oceanLevel: 0,
-  oceanDepth: 100,
-  oceanWater: true,
+  sea: true,
+  seaLevel: 0,
+  seaDepth: 100,
+  seaWater: true,
   // As Scenery sets it: the ocean turns the abyss on at its seabed.
-  abyss: true,
-  abyssLevel: -100,
+  void: true,
+  voidLevel: -100,
   background: true,
 };
 
@@ -36,8 +36,8 @@ describe('sceneryZone', () => {
   });
 
   it('is air down to the seabed where the sea is dry', () => {
-    expect(sceneryZone(-50, { ...sea, oceanWater: false })).toBe('air');
-    expect(sceneryZone(-150, { ...sea, oceanWater: false })).toBe('subsurface');
+    expect(sceneryZone(-50, { ...sea, seaWater: false })).toBe('air');
+    expect(sceneryZone(-150, { ...sea, seaWater: false })).toBe('subsurface');
   });
 
   it('never puts the camera in the water with a cutaway', () => {
@@ -47,25 +47,25 @@ describe('sceneryZone', () => {
     expect(sceneryZone(-150, cut)).toBe('subsurface');
   });
 
-  it('follows the abyss level without a sea', () => {
-    const abyss = { ...sea, ocean: false, abyssLevel: 20 };
-    expect(sceneryZone(30, abyss)).toBe('air');
-    expect(sceneryZone(10, abyss)).toBe('subsurface');
-    expect(sceneryZone(-1e6, { ...abyss, abyss: false })).toBe('air');
+  it('follows the void level without a sea', () => {
+    const voidOnly = { ...sea, sea: false, voidLevel: 20 };
+    expect(sceneryZone(30, voidOnly)).toBe('air');
+    expect(sceneryZone(10, voidOnly)).toBe('subsurface');
+    expect(sceneryZone(-1e6, { ...voidOnly, void: false })).toBe('air');
   });
 
   it("takes a stage's ground under the camera for the sea's", () => {
     // Inside a hill rising above the sea's seabed: in the ground.
-    expect(sceneryZone(-60, { ...sea, oceanGround: -20 })).toBe('subsurface');
+    expect(sceneryZone(-60, { ...sea, seaGround: -20 })).toBe('subsurface');
     // In a valley sunk below it: in the water.
-    expect(sceneryZone(-120, { ...sea, oceanGround: -150 })).toBe('water');
+    expect(sceneryZone(-120, { ...sea, seaGround: -150 })).toBe('water');
     // Deep in a trench, far below the sea's depth: in the water, the void under its floor.
-    expect(sceneryZone(-280, { ...sea, oceanGround: -300 })).toBe('water');
-    expect(sceneryZone(-320, { ...sea, oceanGround: -300 })).toBe('subsurface');
-    expect(sceneryZone(-60, { ...sea, oceanGround: null })).toBe('water');
+    expect(sceneryZone(-280, { ...sea, seaGround: -300 })).toBe('water');
+    expect(sceneryZone(-320, { ...sea, seaGround: -300 })).toBe('subsurface');
+    expect(sceneryZone(-60, { ...sea, seaGround: null })).toBe('water');
     // Inside land above the sea: in the ground; over it, in the air.
-    expect(sceneryZone(600, { ...sea, oceanGround: 830 })).toBe('subsurface');
-    expect(sceneryZone(900, { ...sea, oceanGround: 830 })).toBe('air');
+    expect(sceneryZone(600, { ...sea, seaGround: 830 })).toBe('subsurface');
+    expect(sceneryZone(900, { ...sea, seaGround: 830 })).toBe('air');
   });
 
   it('is all subsurface when the sky is not drawn', () => {
@@ -78,19 +78,15 @@ describe('sceneryLidOverCamera', () => {
     expect(sceneryLidOverCamera(-50, sea)).toBeNull();
     expect(sceneryLidOverCamera(-150, sea)).toBe(-100);
     // Inside a hill above the sea's seabed; in a trench below it, over its floor.
-    expect(sceneryLidOverCamera(-60, { ...sea, oceanGround: -20 })).toBe(-20);
-    expect(
-      sceneryLidOverCamera(-280, { ...sea, oceanGround: -300 }),
-    ).toBeNull();
-    expect(sceneryLidOverCamera(-320, { ...sea, oceanGround: -300 })).toBe(
-      -300,
-    );
+    expect(sceneryLidOverCamera(-60, { ...sea, seaGround: -20 })).toBe(-20);
+    expect(sceneryLidOverCamera(-280, { ...sea, seaGround: -300 })).toBeNull();
+    expect(sceneryLidOverCamera(-320, { ...sea, seaGround: -300 })).toBe(-300);
     // Inside land above the sea.
-    expect(sceneryLidOverCamera(600, { ...sea, oceanGround: 830 })).toBe(830);
+    expect(sceneryLidOverCamera(600, { ...sea, seaGround: 830 })).toBe(830);
   });
 
   it('is null without a sea: no lid', () => {
-    expect(sceneryLidOverCamera(-1e6, { ...sea, ocean: false })).toBeNull();
+    expect(sceneryLidOverCamera(-1e6, { ...sea, sea: false })).toBeNull();
   });
 });
 

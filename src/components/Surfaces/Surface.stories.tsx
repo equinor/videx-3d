@@ -1,15 +1,29 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { BufferGeometry, DoubleSide, Float32BufferAttribute } from 'three';
 import { ContourColorMode } from '../../common/types';
-import { SurfaceMeta, Vec2 } from '../../sdk';
+import { useData } from '../../hooks/useData';
+import {
+  createClippedSurface,
+  PlanarPolygonCoordinates,
+  PlanarPolygonGeometry,
+  SurfaceMeta,
+  Vec2,
+} from '../../sdk';
 import {
   SURFACE_DETAIL_PRESET_NAMES,
   SurfaceDetailPreset,
 } from '../../sdk/materials/surface-detail';
+import { demoCrs } from '../../storybook/data/demo-crs';
+import { createDemoMultiPolygon } from '../../storybook/data/demo-polygons';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
-import { useSurfaceMeta } from '../../storybook/hooks/useSurfaceMeta';
+import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
+import {
+  useSurfaceMeta,
+  useSurfaceMetaDict,
+} from '../../storybook/hooks/useSurfaceMeta';
 import storyArgs from '../../storybook/story-args.json';
 import { UtmArea, UtmPosition } from '../UtmArea';
 import { Surface, SurfaceProps } from './Surface';
@@ -129,6 +143,134 @@ const SurfaceStory = ({
             }
           />
         </UtmPosition>
+      )}
+    </UtmArea>
+  );
+};
+
+// The `Clipped` story's surface: the reservoir's top where the dataset has one, whose relief
+// shows the rim draped; else the first.
+const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
+const clippedSurfaceId =
+  Object.keys(surfaceOptions).find(
+    id => surfaceOptions[id] === 'Hugin Fm. VOLVE Top',
+  ) ?? Object.keys(surfaceOptions)[0];
+
+const MASKS = {
+  field: 'Field outline, from the wells',
+  demo: 'Three parts, with holes',
+};
+
+// The demo mask, authored in metres east and north of the field's origin: scene Z is south.
+const DEMO_MASK = createDemoMultiPolygon(([east, north]) => [east, -north]);
+
+// Every ring of `polygon` (scene X/Z) as line segments, level at `y`.
+function maskOutline(polygon: PlanarPolygonGeometry, y: number) {
+  const positions: number[] = [];
+  for (const rings of polygon.coordinates as PlanarPolygonCoordinates)
+    for (const ring of rings)
+      ring.forEach(([ax, az], i) => {
+        const [bx, bz] = ring[(i + 1) % ring.length];
+        positions.push(ax, y, az, bx, y, bz);
+      });
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  return geometry;
+}
+
+type ClippedArgs = {
+  surfaceId: string;
+  mask: keyof typeof MASKS;
+  cutHoles: boolean;
+  maxError: number;
+  color: string;
+  outline: boolean;
+  reference: boolean;
+};
+
+/**
+ * A surface clipped to a polygon mask with `createClippedSurface`: its values read from the
+ * store and triangulated inside the mask's exact rim, in the scene frame the mask is given
+ * in. The mesh is placed as a `Surface` is, so the two coincide.
+ */
+const ClippedSurfaceStory = ({
+  surfaceId,
+  mask,
+  cutHoles,
+  maxError,
+  color,
+  outline,
+  reference,
+}: ClippedArgs) => {
+  const store = useData();
+  const surfaces = useSurfaceMetaDict();
+  const meta = surfaces[surfaceId] ?? null;
+  const fieldOutline = useFieldOutline();
+  const polygon = mask === 'demo' ? DEMO_MASK : fieldOutline;
+
+  // The clipped mesh, and the surface it was cut from: drawn only under that surface's place.
+  const [clipped, setClipped] = useState<{
+    id: string;
+    geometry: BufferGeometry | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!store || !meta || !polygon) return;
+    let cancelled = false;
+    store.get<Float32Array>('surface-values', meta.id).then(values => {
+      if (cancelled || !values) return;
+      // Where the surface's `UtmPosition` puts its origin, in the mask's scene X/Z.
+      const at = demoCrs.utmToWorld(meta.header.xori, meta.header.yori, 0);
+      setClipped({
+        id: meta.id,
+        geometry: createClippedSurface(values, meta.header, {
+          polygon,
+          referenceDepth: meta.max,
+          worldPosition: [at.x, at.z],
+          maxError,
+          cutHoles,
+        }),
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store, meta, polygon, maxError, cutHoles]);
+  useEffect(() => () => clipped?.geometry?.dispose(), [clipped]);
+
+  // Level just over the surface's shallowest point (placed as below, at `meta.max`).
+  const top = meta ? meta.max - meta.min + 10 : 0;
+  const lines = useMemo(
+    () => (outline && polygon ? maskOutline(polygon, top) : null),
+    [outline, polygon, top],
+  );
+  useEffect(() => () => lines?.dispose(), [lines]);
+
+  const geometry = meta && clipped?.id === meta.id ? clipped.geometry : null;
+
+  return (
+    <UtmArea origin={origin} utmZone={utmZone}>
+      {meta && (
+        <UtmPosition
+          easting={meta.header.xori}
+          northing={meta.header.yori}
+          altitude={meta.max}
+        >
+          {geometry && (
+            <mesh geometry={geometry}>
+              <meshStandardMaterial
+                color={color}
+                side={DoubleSide}
+                roughness={0.8}
+              />
+            </mesh>
+          )}
+          {reference && <Surface meta={meta} opacity={0.25} wireframe />}
+        </UtmPosition>
+      )}
+      {lines && (
+        <lineSegments geometry={lines}>
+          <lineBasicMaterial color="#ffcc00" />
+        </lineSegments>
       )}
     </UtmArea>
   );
@@ -367,4 +509,81 @@ export const Default: Story = {
     cameraPosition: [-10000, 10000, 5000],
   },
   render: args => <SurfaceStory {...args} />,
+};
+
+const CLIP = 'Clip';
+const MASK = 'Mask';
+const LOOK = 'Look';
+
+/**
+ * A surface clipped to a polygon mask (`createClippedSurface`): only what lies inside the
+ * mask is triangulated, along its exact rim rather than the grid's staircase, with its holes
+ * and separate parts. The faint wireframe is the whole surface.
+ */
+export const Clipped: StoryObj<ClippedArgs> = {
+  args: {
+    surfaceId: clippedSurfaceId,
+    mask: 'field',
+    cutHoles: true,
+    maxError: 5,
+    color: '#59a14f',
+    outline: true,
+    reference: true,
+  },
+  argTypes: {
+    surfaceId: {
+      options: Object.keys(surfaceOptions),
+      control: { type: 'select', labels: surfaceOptions },
+      description:
+        'The surface clipped: its `SurfaceMeta`, and its values read from the store.',
+      table: { category: CLIP },
+    },
+    cutHoles: {
+      control: { type: 'boolean' },
+      description:
+        'Where the grid has no data inside the mask, cut it away with a clean rim (`cutHoles`); off, fill it from the samples around.',
+      table: { category: CLIP },
+    },
+    maxError: {
+      control: { type: 'range', min: 0.5, max: 50, step: 0.5 },
+      description:
+        'Metres the simplified interior may stray from the grid (`maxError`): lower is finer, with more triangles.',
+      table: { category: CLIP },
+    },
+    mask: {
+      options: Object.keys(MASKS),
+      control: { type: 'inline-radio', labels: MASKS },
+      description:
+        'The mask (`polygon`), in the scene\u2019s X/Z: FIELD, the outline of the field\u2019s wells, buffered; DEMO, three parts, two of them with holes.',
+      table: { category: MASK },
+    },
+    outline: {
+      control: { type: 'boolean' },
+      description: 'The mask\u2019s rings, drawn level over the surface.',
+      table: { category: MASK },
+    },
+    color: {
+      control: { type: 'color' },
+      description:
+        'The clipped mesh\u2019s colour: a plain `meshStandardMaterial` on it.',
+      table: { category: LOOK },
+    },
+    reference: {
+      control: { type: 'boolean' },
+      description:
+        'The whole surface (`Surface`), faint and in wireframe, placed the same way.',
+      table: { category: LOOK },
+    },
+  },
+  decorators: [
+    Canvas3dDecorator,
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+  ],
+  parameters: {
+    autoClear: true,
+    scale: 1000,
+    cameraPosition: [-5000, 6000, 6000],
+  },
+  render: args => <ClippedSurfaceStory {...args} />,
 };

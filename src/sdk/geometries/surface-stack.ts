@@ -102,9 +102,7 @@ export type StackSyntheticLayer = {
 export type StackLayer = StackGridLayer | StackSyntheticLayer;
 
 /** Whether a stack layer is synthetic (has no grid behind it). */
-export function isSyntheticLayer(
-  layer: StackLayer,
-): layer is StackSyntheticLayer {
+function isSyntheticLayer(layer: StackLayer): layer is StackSyntheticLayer {
   return (layer as StackGridLayer).values === undefined;
 }
 
@@ -190,14 +188,7 @@ export type StackReference = {
 export {
   layEmptyStackLayers,
   resampleStackLayer,
-  STACK_MASK_DATA,
   STACK_MASK_FILLED,
-  STACK_MASK_NONE,
-} from './surface-stack-resample';
-export type {
-  StackGridPlacement,
-  StackLayerResample,
-  StackReferencePlan,
 } from './surface-stack-resample';
 
 /**
@@ -205,7 +196,7 @@ export type {
  * {@link StackReferenceOptions.maxNodes}. At 25 m cells this is a 50 x 50 km
  * window at full resolution.
  */
-export const DEFAULT_STACK_MAX_NODES = 4_000_000;
+const DEFAULT_STACK_MAX_NODES = 4_000_000;
 
 /** Options for {@link buildStackReference}. */
 export type StackReferenceOptions = {

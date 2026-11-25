@@ -34,7 +34,7 @@ export type WeatherGustField = Required<WeatherGusts>;
  *
  * @group Weather
  */
-export function gustStrengthFor(windSpeed: number): number {
+function gustStrengthFor(windSpeed: number): number {
   return Math.min(Math.max(0.38 - 0.0095 * Math.max(windSpeed, 0), 0.24), 0.38);
 }
 
@@ -44,7 +44,7 @@ export function gustStrengthFor(windSpeed: number): number {
  *
  * @group Weather
  */
-export function slickShareFor(windSpeed: number): number {
+function slickShareFor(windSpeed: number): number {
   const t = Math.min(Math.max((windSpeed - 4) / 6, 0), 1);
   return 1 - t * t * (3 - 2 * t);
 }
@@ -72,7 +72,7 @@ export function weatherGustsOf(
  * The gusts' octaves: size (of the field's `scale`), stretch along the wind, speed (of the
  * wind's) and weight. Each runs at its own speed, so the field changes shape as it goes.
  */
-export const WEATHER_GUST_OCTAVES = [
+const WEATHER_GUST_OCTAVES = [
   { size: 1, stretch: 1.6, speed: 0.85, weight: 0.5 },
   { size: 1 / 5, stretch: 1.4, speed: 1, weight: 0.33 },
   { size: 1 / 25, stretch: 1.2, speed: 1.15, weight: 0.25 },

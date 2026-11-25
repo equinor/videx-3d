@@ -37,7 +37,7 @@ export function useScenery() {
 /**
  * The sea of the enclosing {@link Scenery}, which a stage draws on real geometry.
  */
-export type SceneryOceanState = {
+export type ScenerySeaState = {
   /** the sky's material: its uniforms are the sea's */
   material: SceneryMaterial;
   /** the sky's `renderOrder`; its sea surface layer draws at the next one */
@@ -46,7 +46,7 @@ export type SceneryOceanState = {
   water: boolean;
   /** the sea has a seabed; without it the void lies below the water */
   seabed: boolean;
-  /** how much of what lies beyond the seabed it hides, 0 to 1 (see `SceneryOceanProps.seabedOpacity`) */
+  /** how much of what lies beyond the seabed it hides, 0 to 1 (see `ScenerySeaProps.seabedOpacity`) */
   seabedOpacity: number;
   /**
    * the void is a hollow under the field (`SceneryVoidProps.hollow`): with the seabed peeled,
@@ -54,7 +54,7 @@ export type SceneryOceanState = {
    */
   hollow: boolean;
   /**
-   * what a stage and its relief compile with from the sky (`sceneryOceanDefines`: the
+   * what a stage and its relief compile with from the sky (`scenerySeaDefines`: the
    * seabed's detail, the waves), as a key: a new one recompiles them
    */
   definesKey: string;
@@ -79,11 +79,9 @@ export type SceneryOceanState = {
   reliefTiles: SceneryReliefHub;
 };
 
-export const SceneryOceanContext = createContext<SceneryOceanState | null>(
-  null,
-);
+export const ScenerySeaContext = createContext<ScenerySeaState | null>(null);
 
 /** The sea of the enclosing {@link Scenery}, or `null` when it has none. */
-export function useSceneryOcean() {
-  return useContext(SceneryOceanContext);
+export function useScenerySea() {
+  return useContext(ScenerySeaContext);
 }

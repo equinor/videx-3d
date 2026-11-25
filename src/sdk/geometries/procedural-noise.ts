@@ -24,7 +24,7 @@ const fract = (x: number) => x - Math.floor(x);
  *
  * @group Geometries
  */
-export function noiseHash2(px: number, py: number): number {
+function noiseHash2(px: number, py: number): number {
   // GLSL source samples `vec3(p.xyx)`, so the third lane repeats px.
   let x = fract(px * 0.1031);
   let y = fract(py * 0.1031);

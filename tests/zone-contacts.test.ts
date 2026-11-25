@@ -84,7 +84,7 @@ describe('surface depth map', () => {
 });
 
 /**
- * The bed tint reads the column's bed CHANNEL (from `stackWater`), so it sits on the
+ * The bed tint reads the column's bed CHANNEL (from `stackSea`), so it sits on the
  * bed the sea and the zones are built on — the relief, on a relief column — instead of
  * the raw bed surface a few metres off it.
  */

@@ -34,8 +34,8 @@ export type WeatherProps = {
 };
 
 /**
- * The weather for everything inside it: the wind and swells raise the waves of an `Ocean`, a
- * `SceneryOcean` and a `ZoneStack`'s water — one sea for all of them that take both from it
+ * The weather for everything inside it: the wind and swells raise the waves of a `Water`, a
+ * `ScenerySea` and a `ZoneStack`'s water — one sea for all of them that take both from it
  * (`WeatherSea`, `useWeatherSea`) — its air is a `Scenery`'s, its cloud (a local weather's
  * layers, a global one's weather systems) is what a `SceneryClouds`
  * draws, and its clock (`WeatherClock`, `useWeatherClock`) moves both: the clouds drift with
@@ -46,7 +46,7 @@ export type WeatherProps = {
  * @example
  * <Weather weather={weatherPreset('scattered', 'cumulus', { speed: 10, from: 240 })}>
  *   <Scenery>
- *     <SceneryOcean />
+ *     <ScenerySea />
  *     <SceneryClouds />
  *   </Scenery>
  * </Weather>

@@ -11,7 +11,7 @@ import type { TinSample } from './tin-sampler';
  * scale is metres — enough for an object to visibly float above the sea bed it is
  * meant to be standing on.
  *
- * The counterpart to `OceanSampler`: that one is analytic because the sea is a
+ * The counterpart to `WaterSampler`: that one is analytic because the sea is a
  * function of time, this one reads geometry because a horizon is a function of
  * data. Both return the caller's own scene frame, and both are `null` when there
  * is nothing to sample, so a consumer keeps its static pose rather than jumping to

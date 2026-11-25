@@ -1,6 +1,6 @@
 // The colours the air fades what it hazes into, as the camera sees them (SkyAirColors,
 // scenery-air-colors.ts): along each bearing about the camera's look, the horizon's colour
-// (skyHorizonColor) and the sky some 25° up (skySurfaceAt, as from the sea); and the sky
+// (skyHorizonColor) and the sky some 25° up (scenerySurfaceAt, as from the sea); and the sky
 // overhead. Drawn once for each place the camera draws from (sky-air-colors-fragment.glsl),
 // rather than worked out for every pixel of what lies in the air: the relief's, the sea's and
 // the clouds' haze read them here, so none of their programs holds a copy of the sky's surface.
@@ -33,12 +33,12 @@ vec3 skyAirHorizon(vec3 way) {
   return skyAirRow(way, 0.0);
 }
 
-// The sky some 25° up along `way`'s bearing, as from the sea (skySurfaceAt).
+// The sky some 25° up along `way`'s bearing, as from the sea (scenerySurfaceAt).
 vec3 skyAirBlue(vec3 way) {
   return skyAirRow(way, 1.0);
 }
 
-// The sky overhead, along the camera's look, as from the sea (skySurfaceAt).
+// The sky overhead, along the camera's look, as from the sea (scenerySurfaceAt).
 vec3 skyAirOverhead() {
   return texelFetch(uSkyAirColors, ivec2(0, 2), 0).rgb;
 }

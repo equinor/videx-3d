@@ -7,9 +7,9 @@ import {
 } from '../src/components/Scenery/scenery-layers';
 import { SceneryMaterial } from '../src/components/Scenery/scenery-material';
 import {
-  OCEAN_QUALITY_DEFINES,
-  OceanMaterial,
-} from '../src/components/Ocean/ocean-material';
+  WATER_QUALITY_DEFINES,
+  WaterMaterial,
+} from '../src/components/Water/water-material';
 
 const key = (defines: Record<string, unknown>) => JSON.stringify(defines);
 
@@ -19,10 +19,10 @@ describe('sceneryLayers', () => {
   });
 
   it('adds each feature as a layer of its own, in order', () => {
-    const sky = new SceneryMaterial();
-    sky.abyss = true;
-    sky.ocean = true;
-    expect(sceneryLayers(sky)).toEqual([
+    const scenery = new SceneryMaterial();
+    scenery.void = true;
+    scenery.sea = true;
+    expect(sceneryLayers(scenery)).toEqual([
       'sky',
       'void',
       'sea',
@@ -34,74 +34,74 @@ describe('sceneryLayers', () => {
 
 describe('sceneryLayerDefines', () => {
   it('leaves the sky’s own program alone when a feature switches', () => {
-    const sky = new SceneryMaterial();
-    const before = key(sky.defines);
-    const version = sky.switchesVersion;
-    sky.ocean = true;
-    sky.abyss = true;
-    expect(key(sky.defines)).toBe(before);
-    expect(sky.switchesVersion).toBeGreaterThan(version);
+    const scenery = new SceneryMaterial();
+    const before = key(scenery.defines);
+    const version = scenery.switchesVersion;
+    scenery.sea = true;
+    scenery.void = true;
+    expect(key(scenery.defines)).toBe(before);
+    expect(scenery.switchesVersion).toBeGreaterThan(version);
   });
 
   it('recompiles the sea, not the void, for the seabed’s detail', () => {
-    const sky = new SceneryMaterial();
-    sky.ocean = true;
-    sky.abyss = true;
-    const abyss = key(sceneryLayerDefines(sky, 'void'));
-    const sea = key(sceneryLayerDefines(sky, 'sea'));
+    const scenery = new SceneryMaterial();
+    scenery.sea = true;
+    scenery.void = true;
+    const voidKey = key(sceneryLayerDefines(scenery, 'void'));
+    const sea = key(sceneryLayerDefines(scenery, 'sea'));
     // The default seabed has a detail of its own: off is a change.
-    sky.oceanBedDetail = undefined;
-    expect(key(sceneryLayerDefines(sky, 'sea'))).not.toBe(sea);
-    expect(key(sceneryLayerDefines(sky, 'void'))).toBe(abyss);
+    scenery.seabedDetail = undefined;
+    expect(key(sceneryLayerDefines(scenery, 'sea'))).not.toBe(sea);
+    expect(key(sceneryLayerDefines(scenery, 'void'))).toBe(voidKey);
   });
 
   it('gives each layer a define of its own, so each is its own program', () => {
-    const sky = new SceneryMaterial();
-    sky.ocean = true;
-    sky.abyss = true;
+    const scenery = new SceneryMaterial();
+    scenery.sea = true;
+    scenery.void = true;
     const keys = (['void', 'sea', 'water'] as const).map(layer =>
-      key(sceneryLayerDefines(sky, layer)),
+      key(sceneryLayerDefines(scenery, layer)),
     );
     expect(new Set(keys).size).toBe(3);
   });
 
   it('draws the sea with its water’s glitter and Fresnel, as they change', () => {
-    const sky = new SceneryMaterial();
-    sky.ocean = true;
-    const water = new OceanMaterial();
-    sky.linkOcean(water);
-    const sea = () => sceneryLayerDefines(sky, 'sea');
+    const scenery = new SceneryMaterial();
+    scenery.sea = true;
+    const water = new WaterMaterial();
+    scenery.linkWater(water);
+    const sea = () => sceneryLayerDefines(scenery, 'sea');
     // No glitter by default on medium, compiled in once asked for.
-    expect(sea()).not.toHaveProperty('OCEAN_SPARKLE');
+    expect(sea()).not.toHaveProperty('WATER_SPARKLE');
     water.sparkle = 0.5;
-    sky.linkOcean(water);
-    expect(sea()).toHaveProperty('OCEAN_SPARKLE');
+    scenery.linkWater(water);
+    expect(sea()).toHaveProperty('WATER_SPARKLE');
     water.sparkle = null;
-    sky.linkOcean(water);
-    expect(sea()).not.toHaveProperty('OCEAN_SPARKLE');
-    expect(sea()).not.toHaveProperty('OCEAN_FRESNEL_POWER');
+    scenery.linkWater(water);
+    expect(sea()).not.toHaveProperty('WATER_SPARKLE');
+    expect(sea()).not.toHaveProperty('WATER_FRESNEL_POWER');
     water.fresnelPower = 4;
-    sky.linkOcean(water);
-    expect(sea()).toHaveProperty('OCEAN_FRESNEL_POWER');
+    scenery.linkWater(water);
+    expect(sea()).toHaveProperty('WATER_FRESNEL_POWER');
     water.fresnelPower = null;
-    sky.linkOcean(water);
-    expect(sea()).not.toHaveProperty('OCEAN_FRESNEL_POWER');
+    scenery.linkWater(water);
+    expect(sea()).not.toHaveProperty('WATER_FRESNEL_POWER');
     // On high, by default.
-    sky.linkOcean(new OceanMaterial({ quality: 'high' }));
-    expect(sea()).toHaveProperty('OCEAN_SPARKLE');
+    scenery.linkWater(new WaterMaterial({ quality: 'high' }));
+    expect(sea()).toHaveProperty('WATER_SPARKLE');
   });
 
   it('draws a low sea, and the void under it, without what low leaves out', () => {
-    const sky = new SceneryMaterial();
-    sky.ocean = true;
-    sky.abyss = true;
-    sky.linkOcean(new OceanMaterial({ quality: 'low' }));
+    const scenery = new SceneryMaterial();
+    scenery.sea = true;
+    scenery.void = true;
+    scenery.linkWater(new WaterMaterial({ quality: 'low' }));
     for (const layer of ['sea', 'water', 'void'] as const)
-      for (const name of OCEAN_QUALITY_DEFINES.low)
-        expect(sceneryLayerDefines(sky, layer)).toHaveProperty(name);
-    sky.linkOcean(new OceanMaterial({ quality: 'medium' }));
-    for (const name of OCEAN_QUALITY_DEFINES.low)
-      expect(sceneryLayerDefines(sky, 'sea')).not.toHaveProperty(name);
+      for (const name of WATER_QUALITY_DEFINES.low)
+        expect(sceneryLayerDefines(scenery, layer)).toHaveProperty(name);
+    scenery.linkWater(new WaterMaterial({ quality: 'medium' }));
+    for (const name of WATER_QUALITY_DEFINES.low)
+      expect(sceneryLayerDefines(scenery, 'sea')).not.toHaveProperty(name);
   });
 });
 
@@ -109,8 +109,8 @@ describe('sceneryLayersShown', () => {
   const sea = { level: 0, depth: 100, water: true, buried: false };
   const view = (over: Partial<SceneryLayerView>): SceneryLayerView => ({
     height: 40,
-    ocean: sea,
-    abyss: { level: -100, transition: 200 },
+    sea: sea,
+    void: { level: -100, transition: 200 },
     cutawayWater: 0,
     voidOpen: false,
     ...over,
@@ -118,7 +118,7 @@ describe('sceneryLayersShown', () => {
 
   it('draws the sky alone without a sea or a void', () => {
     expect(
-      sceneryLayersShown(view({ ocean: null, abyss: null, height: 500 })),
+      sceneryLayersShown(view({ sea: null, void: null, height: 500 })),
     ).toEqual({
       sky: true,
       void: false,
@@ -161,13 +161,13 @@ describe('sceneryLayersShown', () => {
       water: false,
     };
     expect(sceneryLayersShown(view({ height: -500 }))).toEqual(only);
-    expect(
-      sceneryLayersShown(view({ ocean: { ...sea, buried: true } })),
-    ).toEqual(only);
+    expect(sceneryLayersShown(view({ sea: { ...sea, buried: true } }))).toEqual(
+      only,
+    );
   });
 
   it('draws the view in the water in a trench below the seabed, over a stage’s ground', () => {
-    const trench = view({ height: -500, ocean: { ...sea, trench: true } });
+    const trench = view({ height: -500, sea: { ...sea, trench: true } });
     expect(sceneryLayersShown(trench)).toEqual({
       sky: false,
       void: false,
@@ -177,12 +177,12 @@ describe('sceneryLayersShown', () => {
   });
 
   it('fades the void in over the sky without a sea', () => {
-    const fading = sceneryLayersShown(view({ ocean: null, height: -200 }));
+    const fading = sceneryLayersShown(view({ sea: null, height: -200 }));
     expect(fading.sky && fading.void).toBe(true);
-    const under = sceneryLayersShown(view({ ocean: null, height: -400 }));
+    const under = sceneryLayersShown(view({ sea: null, height: -400 }));
     expect(under.sky).toBe(false);
     expect(under.void).toBe(true);
-    expect(sceneryLayersShown(view({ ocean: null, height: 50 })).void).toBe(
+    expect(sceneryLayersShown(view({ sea: null, height: 50 })).void).toBe(
       false,
     );
   });

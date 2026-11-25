@@ -820,13 +820,11 @@ export const Zone = ({
   const peelable = peel !== undefined || cutsPrepared;
   // The stack's sea, when this zone draws its bed: the coastline enters the build.
   // Primitives, so only the sea's level rebuilds it.
-  const seaBedId =
-    stack.water &&
-    !!stack.seabed &&
-    stableLayers[0]?.surface?.id === stack.seabed
+  const seabedId =
+    stack.sea && !!stack.seabed && stableLayers[0]?.surface?.id === stack.seabed
       ? stack.seabed
       : null;
-  const seaDepth = seaBedId ? (stack.water?.depth ?? 0) : 0;
+  const seaDepth = seabedId ? (stack.sea?.depth ?? 0) : 0;
 
   const spec = useMemo(() => {
     if (!boundaryPolygon || !utm || stableLayers.length === 0) return null;
@@ -846,7 +844,7 @@ export const Zone = ({
       // rebuild the geometry every time a section or fence is switched on or off.
       section: cutsPrepared,
       peelable,
-      sea: seaBedId ? { bed: seaBedId, depth: seaDepth } : null,
+      sea: seabedId ? { bed: seabedId, depth: seaDepth } : null,
       // Only a declared column with an envelope can be shared; otherwise this
       // zone builds (and resolves) on its own.
       stack:
@@ -878,7 +876,7 @@ export const Zone = ({
     stack.columnRelief,
     cutsPrepared,
     peelable,
-    seaBedId,
+    seabedId,
     seaDepth,
   ]);
 
@@ -1174,14 +1172,14 @@ export const Zone = ({
       | undefined,
     cullOffscreen,
     peel,
-    water: holdsSeabed ? stack.water : null,
+    sea: holdsSeabed ? stack.sea : null,
     waterTintShown: stack.waterTintShown,
     waterBody: stack.waterBody,
     bathymetry: stack.bathymetry,
     // A sea kept whole keeps its bed only while the stack draws that sea.
-    seaBed: holdsSeabed && !!stack.water && stack.drawWater !== false,
-    sectionWater: stack.sectionWater,
-    fenceWater: stack.fenceWater,
+    seabed: holdsSeabed && !!stack.sea && stack.drawSea !== false,
+    sectionSea: stack.sectionSea,
+    fenceSea: stack.fenceSea,
     carrierMaterial: stack.carrierMaterial,
     carrierDetail: stack.carrierDetail,
     contacts: stack.contacts,

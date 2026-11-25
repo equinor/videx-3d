@@ -732,7 +732,7 @@ const TraceDefects = (props: Props) => {
 };
 
 const meta: Meta<Props> = {
-  title: 'debug/Zones/Trace Defects',
+  title: 'Debug/Zones/Trace Defects',
   component: TraceDefects,
   /**
    * A preset SEEDS the controls rather than overriding them.

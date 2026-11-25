@@ -145,7 +145,7 @@ export function weatherSystemDrift(latitude: number): number {
  *
  * @group Weather
  */
-export const WEATHER_SYSTEM_DRIFT = {
+const WEATHER_SYSTEM_DRIFT = {
   trades: -5,
   westerlies: 12,
   poleward: 2,

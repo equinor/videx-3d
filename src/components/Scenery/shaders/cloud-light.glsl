@@ -4,7 +4,7 @@
 // above and below as ambient; then the air's haze over the distance their light comes from, and
 // from space the air over them.
 
-uniform vec3 uSkyEast;
+uniform vec3 uSceneryEast;
 uniform vec3 uSkyMoonDirection;
 uniform vec3 uSkyMoonColor;
 uniform float uSkyMoonPhase;
@@ -111,7 +111,7 @@ vec3 cloudThroughAir(vec3 color, vec3 dir, float dist) {
   vec3 look = globeCameraLook();
   vec3 level = dir - look * dot(dir, look);
   float n2 = dot(level, level);
-  vec3 way = n2 > 1e-8 ? level * inversesqrt(n2) : uSkyEast;
+  vec3 way = n2 > 1e-8 ? level * inversesqrt(n2) : uSceneryEast;
   vec3 blue = skyAirBlue(way);
   vec3 horizon = skyAirHorizon(way);
   float dusk = min(uSkyTwilight.x * uSkyTwilight.y, 1.0);

@@ -123,7 +123,7 @@ const MAX_SIZE = 8192;
 const MAX_RUNS = 50000;
 
 /** A CSS font family list's names, unquoted and in lower case: to match a `FontFace`'s. */
-export const labelFontFamilies = (fontFamily: string) =>
+const labelFontFamilies = (fontFamily: string) =>
   fontFamily
     .split(',')
     .map(name =>

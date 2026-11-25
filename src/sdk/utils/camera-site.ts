@@ -1,7 +1,7 @@
 import { type Camera, type ColorRepresentation, Vector3 } from 'three';
 
 /**
- * The water the camera is at, as the sea that knows it reports it (an `Ocean`, a `Scenery`'s
+ * The water the camera is at, as the sea that knows it reports it (a `Water`, a `Scenery`'s
  * sea, a `ZoneStack`'s water).
  *
  * @group Utils
@@ -20,7 +20,7 @@ export type CameraWater = {
 };
 
 /**
- * What the camera is inside of, to fade everything by (`useImmersionFog`): water, or rock.
+ * What the camera is inside of, to fade everything by (`useMediumFog`): water, or rock.
  *
  * @group Utils
  */
@@ -77,14 +77,14 @@ export type CameraSite = {
 export type CameraProbe = (site: CameraSite, camera: Camera) => void;
 
 /**
- * The orders probes run in, lowest first: the ground before the sky that reads it, the sky
- * before the waters, the waters before what fades by them.
+ * The orders probes run in, lowest first: the ground before the `Scenery` that reads it, the
+ * Scenery before the waters, the waters before what fades by them.
  *
  * @group Utils
  */
 export const CAMERA_PROBE_ORDER = {
   ground: 0,
-  sky: 10,
+  scenery: 10,
   water: 20,
   medium: 30,
 } as const;
@@ -106,7 +106,7 @@ function emptySite(site: CameraSite, camera: Camera | null) {
 
 /**
  * Report the water the camera is at to `site`, as a sea's probe does: the one it is in wins
- * over one it is only at; of those it is in, one with an edge (an `Ocean`'s, a `ZoneStack`'s)
+ * over one it is only at; of those it is in, one with an edge (a `Water`'s, a `ZoneStack`'s)
  * over an endless sea, and else the first.
  *
  * @group Utils

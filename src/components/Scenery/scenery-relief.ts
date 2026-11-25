@@ -2,10 +2,10 @@ import { ShaderMaterial, Texture, Uniform } from 'three';
 import { colorRampTexture } from '../../common/color-ramps';
 import { drawsSharedTextures } from '../../common/shared-textures';
 import fragmentShader from './shaders/relief-fragment.glsl';
-import skyVertexShader from './shaders/sky-vertex.glsl';
+import sceneryVertexShader from './shaders/scenery-vertex.glsl';
 import type { SceneryMaterial } from './scenery-material';
 import type { SceneryReliefAtlas } from './scenery-relief-atlas';
-import { sceneryOceanDefines } from './scenery-stage';
+import { scenerySeaDefines } from './scenery-stage';
 
 /**
  * The overview behind the relief drawn from tiles, for a far plane short of the
@@ -24,15 +24,15 @@ import { sceneryOceanDefines } from './scenery-stage';
  * as on the tiles
  */
 export function createSceneryReliefFarMaterial(
-  sky: SceneryMaterial,
+  scenery: SceneryMaterial,
   atlas: SceneryReliefAtlas,
   base: number,
   looks: Texture,
 ) {
-  const defines = sceneryOceanDefines(sky);
+  const defines = scenerySeaDefines(scenery);
   defines.RELIEF_FAR = '';
-  defines.SKY_AT_FAR = '';
-  const uniforms = Object.create(sky.uniforms) as Record<string, Uniform>;
+  defines.SCENERY_AT_FAR = '';
+  const uniforms = Object.create(scenery.uniforms) as Record<string, Uniform>;
   Object.assign(uniforms, atlas.uniforms);
   uniforms.uReliefBase = new Uniform(base);
   uniforms.uReliefReach = new Uniform(1e30);
@@ -42,7 +42,7 @@ export function createSceneryReliefFarMaterial(
   uniforms.uColorRamps = new Uniform(colorRampTexture);
   return drawsSharedTextures(
     new ShaderMaterial({
-      vertexShader: skyVertexShader,
+      vertexShader: sceneryVertexShader,
       fragmentShader,
       uniforms,
       defines,

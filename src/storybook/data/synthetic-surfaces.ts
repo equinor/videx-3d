@@ -680,10 +680,10 @@ export function getSyntheticColumn(key: string): SyntheticColumnUnit[] {
 }
 
 /** Every generated column key, in declaration order. */
-export const syntheticColumnKeys = Object.keys(COLUMNS);
+const syntheticColumnKeys = Object.keys(COLUMNS);
 
 /** Every generated scenario key, in declaration order. Naming them generates nothing. */
-export const syntheticScenarioKeys = Object.keys(SCENARIOS);
+const syntheticScenarioKeys = Object.keys(SCENARIOS);
 
 /** The stand-in sea bed's scenario key, for a dataset whose own surfaces start below one. */
 export const SYNTHETIC_SEABED_KEY = 'cap-seabed';

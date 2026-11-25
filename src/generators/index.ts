@@ -17,7 +17,7 @@ export * from './position-markers-generator';
 export * from './shoes-generator';
 export * from './scenery-relief-tile-generator';
 export * from './stack-release-generator';
-export * from './stack-water-generator';
+export * from './stack-sea-generator';
 export { generateSurfaceZone } from './surface-zone-generator';
 export * from './surface-generator';
 export * from './trajectory-generator';

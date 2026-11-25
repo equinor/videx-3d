@@ -65,7 +65,7 @@ Five ideas carry the whole design:
 | 4 | [coordination.md](./coordination.md) | How sibling zones agree: claims, boundaries, seams, gates, progress. |
 | 5 | [boundaries.md](./boundaries.md) | Cut sources, wellbore-derived footprints, coverage and trimming. |
 | 6 | [appearance.md](./appearance.md) | Materials, procedural detail, inference marking, ownership and disposal. |
-| 7 | [cutting-and-water.md](./cutting-and-water.md) | Sections, fences, peeling, the sea, contacts, immersion fog. |
+| 7 | [cutting-and-water.md](./cutting-and-water.md) | Sections, fences, peeling, the sea, contacts, interior fog. |
 | 8 | [sampling-and-perf.md](./sampling-and-perf.md) | Placing objects on what was drawn; cost model, budgets, diagnostics, troubleshooting. |
 | 9 | [streaming.md](./streaming.md) | Drawing a zone layer by layer while it builds: partial results, packets, buffer ownership. |
 
@@ -81,8 +81,8 @@ Five ideas carry the whole design:
 | `Zone.tsx` | One block. Resolves a boundary, assembles a build spec, drives the generator. |
 | `ZoneMeshes.tsx` | Presentational. Turns a built zone + layer declarations into meshes and materials. |
 | `ZoneContext.ts` | `ZoneStackContextValue` — everything the stack publishes downward. |
-| `zone-defs.ts` | The public type surface: `ZoneLayer`, `ZoneResolveOptions`, `ZoneSection`, `ZoneFence`, `ZoneStackWater`, generator keys, defaults. |
-| `zone-spec.ts` | Pure main-thread spec builders (`buildSurfaceZoneSpec`, `stackColumnSpec`, `buildStackWaterSpec`, `buildWellboreOutlineSpec`). |
+| `zone-defs.ts` | The public type surface: `ZoneLayer`, `ZoneResolveOptions`, `ZoneSection`, `ZoneFence`, `ZoneStackSea`, generator keys, defaults. |
+| `zone-spec.ts` | Pure main-thread spec builders (`buildSurfaceZoneSpec`, `stackColumnSpec`, `buildStackSeaSpec`, `buildWellboreOutlineSpec`). |
 | `cutout.ts` | `CutoutSource` / `ZoneBoundary` and the per-zone override merge. |
 | `resolveWellboreOutline.ts` | Calls the `wellboreOutline` generator and turns its rings into the footprint polygon. |
 | `zone-boundary-registry.ts` | Pure claim/boundary bookkeeping (unit-tested). |
@@ -93,8 +93,8 @@ Five ideas carry the whole design:
 | `zone-picking-material.ts` | The pick-pass twin of a cut material, so what is cut away is not picked. |
 | `zone-contacts.ts`, `zone-depth-map.ts` | Fluid contacts as lines, and depth grids (a surface's, or the bed's channel) as textures. |
 | `useZoneSection.ts`, `useZoneFenceFace.ts` | Cut-face geometry per interval. |
-| `useStackFence.ts`, `useStackWater.ts` | Stack-level fence and sea (the bed tint's grid comes back with the sea's geometry). |
-| `useImmersionFog.ts`, `StackImmersionFog.tsx` | Fog when the camera is inside the sea or the block: the stack's medium as the camera site's (`CameraSite.medium`, see [camera.md](../camera.md#where-the-camera-is)). |
+| `useStackFence.ts`, `useStackSea.ts` | Stack-level fence and sea (the bed tint's grid comes back with the sea's geometry). |
+| `useMediumFog.ts`, `StackInteriorFog.tsx` | Fog when the camera is inside the sea or the block: the stack's medium as the camera site's (`CameraSite.medium`, see [camera.md](../camera.md#where-the-camera-is)). |
 | `surface-sampler.ts`, `LevelledBase.tsx` | Sampling what was drawn, and standing things on it. |
 | `zone-resources.ts` | GPU/heap accounting and leak detection. |
 | `ZoneSectionDebug.tsx` | Draws where the section plane is. |
@@ -106,7 +106,7 @@ Five ideas carry the whole design:
 |------|------|
 | `surface-zone-generator.ts` | `generateSurfaceZone` — the whole worker-side build. |
 | `surface-stack-context.ts` | The shared-column cache (`getStackContext`), and what zones derive from a column (`getStackDerived`). |
-| `stack-water-generator.ts` | `generateStackWater` — the sea's lid and body. |
+| `stack-sea-generator.ts` | `generateStackSea` — the sea's lid and body. |
 | `stack-release-generator.ts` | `releaseStackResources` — drops the cached column. |
 | `wellbore-outline-generator.ts` | `generateWellboreOutline` — trajectories → boundary rings for a wellbore cut source. |
 | `generator-supersede.ts` | Latest-wins abort for superseded builds. |

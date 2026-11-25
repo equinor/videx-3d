@@ -1,61 +1,169 @@
-import {
-  SceneryArgsFeatures,
-  SceneryArgsMinimap,
-} from '../../storybook/components/scenery-features';
 import { useThree } from '@react-three/fiber';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
+import type { WaterOpticsPreset } from '../../sdk/weather/water-optics';
+import { SKY_PRESETS, type SkyPreset } from '../../sdk/weather/weather';
 import {
+  reportReliefProgress,
+  reportSceneryProgress,
   sceneryArgs,
   SceneryArgs,
   sceneryArgTypes,
+  sceneryBakedReliefLayer,
   sceneryDecorators,
-  sceneryMinimapArgs,
-  SceneryMinimapArgs,
-  sceneryMinimapArgTypes,
-  sceneryPropsFromArgs,
+  sceneryHiddenArgTypes,
   sceneryProgressArgs,
-  sceneryReliefArgs,
-  SceneryReliefArgs,
-  sceneryReliefArgTypes,
+  sceneryPropsFromArgs,
   sceneryReliefFrame,
-  sceneryReliefFromArgs,
-  skyDateAfter,
-  skySunPosition,
+  sceneryDateAfter,
+  scenerySunPosition,
 } from '../../storybook/components/scenery-controls';
 import {
-  ProgressArgs,
-  progressArgTypes,
-} from '../../storybook/decorators/progress-decorator';
-import {
-  formatSkyHour,
+  formatSunHour,
   useSunClock,
 } from '../../storybook/components/scenery-debug-panel';
-import { SceneryStoryRendering } from '../../storybook/components/scenery-story-rendering';
+import {
+  SceneryArgsFeatures,
+  SceneryDemoField,
+} from '../../storybook/components/scenery-features';
+import { Tanker } from '../../storybook/components/Tanker/Tanker';
+import { demoFrame } from '../../storybook/data/demo-crs';
+import {
+  SYNTHETIC_SEABED_ID,
+  SYNTHETIC_SEABED_KEY,
+} from '../../storybook/data/synthetic-surfaces';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
+import type { ProgressArgs } from '../../storybook/decorators/progress-decorator';
+import storyArgs from '../../storybook/story-args.json';
 import { GeoRelief } from '../Layers/GeoRelief';
-import { Tanker } from '../Tanker/Tanker';
 import { World } from '../World/World';
 import { Scenery } from './Scenery';
+import { SceneryClouds } from './SceneryClouds';
+import { ScenerySea } from './ScenerySea';
 import { SceneryStage } from './SceneryStage';
-import { SceneryStageBounds } from './scenery-stage';
+import { SceneryVoid } from './SceneryVoid';
+import { sceneryDefaults } from './scenery-model';
+import type { SceneryStageBounds } from './scenery-stage';
+import { VoidBackground } from './VoidBackground';
 
-// A day over the sea in a few seconds: the sun follows the clock from a date and a place,
-// on into the next day past midnight, and the moon, the stars, the light and a sky of clouds
-// (`fair` by default) follow the sun.
+// The `<Scenery>`, the world around the data, over the demo field in a `World` placed there:
+// the sky and the light that comes from it (a sun, an environment and a light probe), and what
+// it holds, each a component of its own: clouds (`SceneryClouds`), an endless sea
+// (`ScenerySea`), the void below it (`SceneryVoid`) and a stage about the field
+// (`SceneryStage`). The clouds, the void, the relief and the cutaway have stories of their own.
 
-const DEPTH = 100;
-const BOUNDS: SceneryStageBounds = [-5000, -5000, 5000, 5000];
+// The field's water depth: the sea's seabed.
+const DEPTH = storyArgs.waterDepth;
+// The stage's area, scene X/Z about the field's origin: wide enough to hold its wellbores.
+const FIELD_BOUNDS: SceneryStageBounds = [-10000, -10000, 10000, 10000];
+// A generated surface at the field's water depth, baked into a relief layer by the demo store.
+const GENERATED_SEABED = [sceneryBakedReliefLayer(SYNTHETIC_SEABED_ID)];
+
+const range = (
+  min: number,
+  max: number,
+  step: number,
+  category: string,
+  description: string,
+) => ({
+  control: { type: 'range' as const, min, max, step },
+  description,
+  table: { category },
+});
+
+const toggle = (category: string, description: string) => ({
+  control: { type: 'boolean' as const },
+  description,
+  table: { category },
+});
+
+type BasicArgs = {
+  background: boolean;
+  sunAzimuth: number;
+  sunElevation: number;
+  sky: boolean;
+  voidBackground: boolean;
+  clouds: SkyPreset;
+  moon: boolean;
+  stars: boolean;
+} & ProgressArgs;
+
+const BasicScenery = ({
+  background,
+  sunAzimuth,
+  sunElevation,
+  sky,
+  voidBackground,
+  clouds,
+  moon,
+  stars,
+}: BasicArgs) => (
+  <World frame={demoFrame}>
+    <Scenery
+      sun={{ azimuth: sunAzimuth, elevation: sunElevation }}
+      sky={sky}
+      moon={moon}
+      stars={stars}
+      background={background}
+      onProgress={reportSceneryProgress}
+    >
+      {/* Its control hidden with the sky off, Storybook leaves `clouds` out. */}
+      {clouds && clouds !== 'clear' && <SceneryClouds layers={clouds} />}
+      <SceneryVoid />
+    </Scenery>
+    {!sky && voidBackground && <VoidBackground />}
+    <SceneryDemoField reservoir />
+  </World>
+);
+
+type StageArgs = {
+  water: boolean;
+  seabed: boolean;
+  seabedOpacity: number;
+  optics: WaterOpticsPreset;
+  windSpeed: number;
+  generatedSeabed: boolean;
+} & ProgressArgs;
+
+const StageStory = ({
+  water,
+  seabed,
+  seabedOpacity,
+  optics,
+  windSpeed,
+  generatedSeabed,
+}: StageArgs) => (
+  <World frame={demoFrame}>
+    <Scenery onProgress={reportSceneryProgress}>
+      <ScenerySea
+        level={0}
+        depth={DEPTH}
+        water={water}
+        seabed={seabed}
+        seabedOpacity={seabedOpacity}
+        optics={optics}
+        windSpeed={windSpeed}
+      />
+      <SceneryStage boundary={FIELD_BOUNDS} />
+    </Scenery>
+    {generatedSeabed && (
+      <GeoRelief
+        layers={GENERATED_SEABED}
+        depth={DEPTH}
+        onProgress={reportReliefProgress}
+      />
+    )}
+    <SceneryDemoField />
+  </World>
+);
 
 type TimelapseArgs = {
   playing: boolean;
   speed: number;
   tanker: boolean;
 } & SceneryArgs &
-  SceneryReliefArgs &
-  SceneryMinimapArgs &
   ProgressArgs;
 
 // A line of text over the canvas, outside the scene.
@@ -84,89 +192,222 @@ const ClockOverlay = ({ text }: { text: string }) => {
   return null;
 };
 
-const SceneryTimelapse = (args: TimelapseArgs) => {
+const TimelapseStory = (args: TimelapseArgs) => {
   const { hour, days } = useSunClock(args.sunHour, args.playing, args.speed);
   // On to the next day at midnight: the same date again set the sky back a day.
-  const sunDate = skyDateAfter(args.sunDate, days);
+  const sunDate = sceneryDateAfter(args.sunDate, days);
 
   const sunArgs = { ...args, sunFromTime: true, sunDate, sunHour: hour };
-  const { elevation } = skySunPosition(sunArgs);
+  const { elevation } = scenerySunPosition(sunArgs);
   // Kept out of the clock's re-render every frame.
   const tanker = useMemo(
     () => args.tanker && <Tanker position={[0, 0, -900]} />,
     [args.tanker],
   );
 
-  // Where the sky is seen from: the sun's place, which the relief lies about too.
-  const frame = sceneryReliefFrame(args);
-  const relief = sceneryReliefFromArgs(args);
-
+  // Where the sky is seen from: the sun's place.
   return (
-    <World frame={frame} globe={args.globe}>
-      <SceneryStoryRendering args={args} />
+    <World frame={sceneryReliefFrame(args)} globe={args.globe}>
       <Scenery {...sceneryPropsFromArgs(sunArgs)}>
         <SceneryArgsFeatures
           args={args}
-          ocean={{ level: 0, depth: DEPTH }}
-          abyss={{}}
+          sea={{ level: 0, depth: DEPTH }}
+          void={{}}
         />
-        <SceneryStage boundary={BOUNDS} />
+        <SceneryStage boundary={FIELD_BOUNDS} />
         {tanker}
       </Scenery>
-      {relief && <GeoRelief {...relief} />}
-      {args.minimap && (
-        <SceneryArgsMinimap frame={frame} reliefLayers={args.reliefLayers} />
-      )}
       <ClockOverlay
-        text={`${sunDate}  ${formatSkyHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
+        text={`${sunDate}  ${formatSunHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
       />
     </World>
   );
 };
 
-const range = (
-  min: number,
-  max: number,
-  step: number,
-  category: string,
-  description: string,
-) => ({
-  control: { type: 'range' as const, min, max, step },
-  description,
-  table: { category },
-});
+const sharedArgTypes = sceneryArgTypes();
 
-const hidden = { table: { disable: true } };
-
+/**
+ * The `<Scenery>`: a procedural sky and the light that comes from it, and the features it
+ * holds — clouds, an endless sea, the void below it and a stage about the field — over the
+ * demo field.
+ */
 const meta = {
-  title: 'Components/Misc/Scenery',
-  component: SceneryTimelapse,
+  title: 'Components/Scenery/Scenery',
   decorators: [
     Canvas3dDecorator,
-    // The relief's, read from the store by a generator.
+    // The surfaces' and the relief's, read from the store by generators.
     GeneratorsProviderDecorator,
     DataProviderDecorator,
     ...sceneryDecorators,
   ],
   parameters: {
     scale: 1000,
-    // Past the horizon from 100 km up (1130 km), so the stage and its relief reach it.
+    // Past the horizon from 100 km up (1130 km).
     far: 3000000,
+    // Over the field from 2 km, looking down along its wellbores.
+    cameraPosition: [-6000, 2000, 6000],
+    cameraTarget: [0, -1500, 0],
+    ownLighting: () => true,
+  },
+} satisfies Meta;
+
+export default meta;
+
+/**
+ * The sky alone over the field: its sun, moon, stars and clouds, and below the sea's level
+ * the void (`SceneryVoid`), where the field's wellbores and reservoir lie, lit from below
+ * (`subsurface`). The sky lights the scene: a directional sun light, an environment map and a
+ * light probe. With `sky` off, whatever is behind the scene shows in its place: here a
+ * `VoidBackground`, the void's gradient, which the scene is then lit by.
+ */
+export const Default: StoryObj<BasicArgs> = {
+  render: args => <BasicScenery {...args} />,
+  args: {
+    ...sceneryProgressArgs,
+    background: true,
+    sunAzimuth: sceneryDefaults.sun.azimuth,
+    sunElevation: 30,
+    sky: true,
+    voidBackground: true,
+    clouds: 'clear',
+    moon: true,
+    stars: true,
+  },
+  argTypes: {
+    ...sceneryHiddenArgTypes(sceneryProgressArgs),
+    background: toggle(
+      'Scenery',
+      'Draw the background behind the scene (`background`): the sky and the void. Off, nothing; switched at once, the scene still lit by the sky.',
+    ),
+    sunAzimuth: range(
+      0,
+      360,
+      1,
+      'Sun',
+      'Compass bearing of the sun, in degrees (`sun.azimuth`): 180 is due south.',
+    ),
+    sunElevation: range(
+      -30,
+      90,
+      0.5,
+      'Sun',
+      'Degrees above the horizon (`sun.elevation`). Below it, night: the moon and the stars come out and light the scene.',
+    ),
+    sky: toggle(
+      'Sky',
+      'Draw the sky (`sky`): the air, the sun\u2019s disc, the moon, the stars and the clouds. Off, whatever is behind the scene shows instead; the sun\u2019s and the moon\u2019s light stay, and the void\u2019s gradient lights the scene.',
+    ),
+    voidBackground: {
+      ...toggle(
+        'Sky',
+        'With the sky off, the void\u2019s gradient behind the scene (`<VoidBackground />`). Off, the canvas\u2019 own background.',
+      ),
+      if: { arg: 'sky', truthy: false },
+    },
+    clouds: {
+      control: { type: 'select' },
+      options: Object.keys(SKY_PRESETS),
+      description:
+        'A sky of 3D clouds (`<SceneryClouds layers>`, a `SKY_PRESETS` name), lit by the sun; `clear` for none. Without a `Weather` around the `Scenery` they hold still: see the Clouds stories.',
+      if: { arg: 'sky' },
+      table: { category: 'Sky' },
+    },
+    moon: toggle(
+      'Sky',
+      'The moon (`moon`): a full one opposite the sun, lighting the scene once the sun is down.',
+    ),
+    stars: {
+      ...toggle('Sky', 'Stars, out once it is dark (`stars`).'),
+      if: { arg: 'sky' },
+    },
+  },
+};
+
+/**
+ * An endless sea (`ScenerySea`) and a stage about the field (`SceneryStage`): real geometry
+ * drawing the same sea, so the water lies in front of the wellbores and the seabed over what
+ * lies below it. A `GeoRelief` in the `World` is the stage's seabed: here a generated one, at
+ * the field's water depth.
+ */
+export const Stage: StoryObj<StageArgs> = {
+  render: args => <StageStory {...args} />,
+  parameters: { store: { syntheticScenarios: [SYNTHETIC_SEABED_KEY] } },
+  args: {
+    ...sceneryProgressArgs,
+    water: true,
+    seabed: true,
+    seabedOpacity: 0.6,
+    optics: 'clear',
+    windSpeed: 10,
+    generatedSeabed: true,
+  },
+  argTypes: {
+    ...sceneryHiddenArgTypes(sceneryProgressArgs),
+    water: toggle(
+      'Sea',
+      'The sea\u2019s water (`water`). Off, the seabed lies dry.',
+    ),
+    seabed: toggle(
+      'Sea',
+      'The sea\u2019s seabed (`seabed`). Off, it is peeled and the void opens under the field (see the SceneryVoid stories).',
+    ),
+    seabedOpacity: range(
+      0,
+      1,
+      0.01,
+      'Sea',
+      'How much of what lies under the seabed it hides over the stage (`seabedOpacity`): below 1 the wellbores show through it. Crossing 1 recompiles the seabed\u2019s materials.',
+    ),
+    optics: {
+      control: { type: 'inline-radio' },
+      options: ['realistic', 'clear'],
+      description:
+        'The water\u2019s look (`optics`): REALISTIC, the North Sea\u2019s, some 15 m visibility; CLEAR, 750 m, to see the seabed and the wellbores under the sea.',
+      table: { category: 'Sea' },
+    },
+    windSpeed: range(
+      0,
+      25,
+      0.5,
+      'Sea',
+      'The wind raising the waves, in m/s (`windSpeed`).',
+    ),
+    generatedSeabed: toggle(
+      'Stage',
+      'A seabed of the field\u2019s own for the stage: a generated surface at its water depth, baked by the demo store into a relief layer (`<GeoRelief layers>`). Off, the stage\u2019s flat seabed at the sea\u2019s `depth`.',
+    ),
+  },
+};
+
+/**
+ * A day over the sea in a few seconds: the sun follows the clock from a date and a place
+ * (the Scenery's `observer`), on into the next day past midnight, and the moon, the stars, the
+ * light and a sky of clouds follow it.
+ */
+export const Timelapse: StoryObj<TimelapseArgs> = {
+  render: args => <TimelapseStory {...args} />,
+  parameters: {
     // Low over the water, looking south and a little up: the sun crosses the view about noon.
     cameraPosition: [0, 40, -1500],
     cameraTarget: [0, 360, 0],
-    ownLighting: () => true,
+  },
+  args: {
+    ...sceneryArgs,
+    ...sceneryProgressArgs,
+    playing: true,
+    speed: 0.5,
+    sunFromTime: true,
+    sunHour: 5,
+    // Sooner than the Scenery's own 1000, so the light keeps up with the sun.
+    captureMaxWait: 250,
+    tanker: true,
+    clouds: 'fair',
   },
   argTypes: {
-    ...sceneryArgTypes(),
-    ...sceneryReliefArgTypes(),
-    ...sceneryMinimapArgTypes,
-    ...progressArgTypes,
-    playing: {
-      control: { type: 'boolean' },
-      description: 'Run the clock.',
-      table: { category: 'Timelapse' },
-    },
+    // Every other scenery arg at its default.
+    ...sceneryHiddenArgTypes(sceneryArgs),
+    ...sceneryHiddenArgTypes(sceneryProgressArgs),
+    playing: toggle('Timelapse', 'Run the clock.'),
     speed: range(
       0,
       6,
@@ -179,7 +420,7 @@ const meta = {
       24,
       0.05,
       'Timelapse',
-      'The hour the clock starts at, local solar time: 12 is noon. Changing it sets the clock. The date moves on at midnight.',
+      'The hour the clock starts at, local solar time: 12 is noon. Changing it sets the clock.',
     ),
     sunDate: {
       control: { type: 'text' },
@@ -194,35 +435,11 @@ const meta = {
       'Timelapse',
       'Degrees north. Far north in June the sun never sets; in December it never rises.',
     ),
-    sunLongitude: range(-180, 180, 0.1, 'Timelapse', 'Degrees east.'),
-    // The clock always sets the sun.
-    sunFromTime: hidden,
-    sunAzimuth: hidden,
-    sunElevation: hidden,
-    tanker: {
-      control: { type: 'boolean' },
-      description:
-        'A tanker riding the sky’s waves, with a foam collar where it meets the water: inside a `Scenery`, floating components work as inside an `Ocean`.',
-      table: { category: 'Sea' },
-    },
+    clouds: sharedArgTypes.clouds,
+    globe: sharedArgTypes.globe,
+    tanker: toggle(
+      'Sea',
+      'A tanker riding the waves, with a foam collar where it meets the water: inside a `Scenery`, floating components work as inside a `Water`.',
+    ),
   },
-  args: {
-    ...sceneryArgs,
-    ...sceneryReliefArgs,
-    ...sceneryMinimapArgs,
-    ...sceneryProgressArgs,
-    playing: true,
-    speed: 0.5,
-    sunFromTime: true,
-    sunHour: 5,
-    // Sooner than the Scenery's own 1000, so the light keeps up with the sun.
-    captureMaxWait: 250,
-    tanker: true,
-    clouds: 'fair',
-  },
-} satisfies Meta<typeof SceneryTimelapse>;
-
-export default meta;
-type Story = StoryObj<typeof meta>;
-
-export const Timelapse: Story = {};
+};

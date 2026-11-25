@@ -9,7 +9,7 @@ anywhere under it:
 | Component | Adds |
 |--|--|
 | `<SceneryClouds>` | 3D clouds, from sea level to space, from a `Weather` (see [clouds.md](./clouds.md)) |
-| `<SceneryOcean>` | an endless sea with a seabed, and the void below it |
+| `<ScenerySea>` | an endless sea with a seabed, and the void below it |
 | `<SceneryVoid>` | the void's look below a level (with a sea, its seabed) |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
 | `<SceneryStage>` | the sea, the seabed and the relief on real geometry about the field |
@@ -31,11 +31,11 @@ import { Scenery } from '@equinor/videx-3d'
 With clouds and a sea:
 
 ```tsx
-import { Scenery, SceneryClouds, SceneryOcean } from '@equinor/videx-3d'
+import { Scenery, SceneryClouds, ScenerySea } from '@equinor/videx-3d'
 
 <Scenery sun={{ azimuth: 200, elevation: 35 }}>
   <SceneryClouds />
-  <SceneryOcean level={0} depth={120} />
+  <ScenerySea level={0} depth={120} />
   {/* the scene */}
 </Scenery>
 ```
@@ -79,7 +79,7 @@ It closes about the sun while it is up, spreads widest about sunset and sinks on
 horizon as the sun goes down. The disc stays near white-gold (it is overexposed even when
 its light is red), and a faint pink belt rises opposite; `twilight` scales it all (default
 1, 0 for none). The sea reflects it, with a broad glitter path under the low sun
-(`OceanMaterial.sunGlintSpread`), and the bakes see it.
+(`WaterMaterial.sunGlintSpread`), and the bakes see it.
 
 The sun and the moon are their real size by default, both about half a degree across, as
 they are from the Earth (in an eclipse the moon just covers the sun). In the default 60°
@@ -259,8 +259,8 @@ it. On the way to black it deepens to the blue overhead, and through the ozone l
 (densest at 25 km, 15–35 km; `SKY_OZONE_LAYER`) it turns bluer still, as ozone takes out
 orange and red (`SKY_OZONE`). So from high up the rim is pale, or warm at twilight, at its
 bottom, a saturated blue above and black at its top. From 20 km up, fully by 80 km
-(`SKY_RIM_SHOWN`), a glow lies over the Earth's edge on top of it: pale just over the edge,
-deep blue higher, fading by e every 60 km the view passes over the ground (`SKY_RIM_HEIGHT`)
+(`SCENERY_RIM_SHOWN`), a glow lies over the Earth's edge on top of it: pale just over the edge,
+deep blue higher, fading by e every 60 km the view passes over the ground (`SCENERY_RIM_HEIGHT`)
 and brighter toward the sun, so from far off the Earth keeps a soft halo. Where the sky is all but black (under a
 twentieth of its light) the stars, the planets and the moon show as at night, by day too: none
 from 20 km at noon, the full field from about 40 km. The sun's disc and glare are drawn over
@@ -331,7 +331,7 @@ field's sun. So far round the Earth it takes the day where it lies (2026-10-27):
 relief's ground and the seabed are dimmed by the day there as a share of the day over the
 field (`skyDayFrom`, never brighter), the sea's surface by the day there against the day
 the camera sees the sky by, and the sea's glint, near (`oceanShade`'s, through
-`skyOceanSurfaceOf`) and from space (`skySpaceSea`), shows only while the sun stands over
+`scenerySeaSurfaceOf`) and from space (`skySpaceSea`), shows only while the sun stands over
 the horizon there (`skyLightFrom`, `skySunDiscUp`). Over the field nothing changes. From
 530 km the sea 15° past the terminator had kept a bright glint streak, and the land on
 the night side was lit as by day.
@@ -359,8 +359,8 @@ relief and anchored content stay flat. It is kept for comparison and for a host 
 a level horizon. Step 4 has the sky's look frame follow the camera instead
 ([world.md, step 4](./world.md#12-step-4-in-detail-the-sky-anywhere-on-the-globe)).
 
-The waves are drawn in charts fixed on the Earth (`SceneryMaterial.oceanCharts`, an sdk
-`OceanCharts`): the field's wave plane out to 1000 km, past it 162 stereographic charts, so
+The waves are drawn in charts fixed on the Earth (`SceneryMaterial.seaCharts`, an sdk
+`WaterCharts`): the field's wave plane out to 1000 km, past it 162 stereographic charts, so
 far round the Earth they lie on the sea there instead of on the field's plane seen edge on,
 keep the wind's compass bearing, and are as sharp as over the field. Where two charts meet
 the waves calm over a strip 8 km wide. A point's waves depend on the point alone, not on
@@ -423,16 +423,16 @@ exact, but 200 km out what they place stands 3 km over the sea
 `environment` bakes the sky into `scene.environment` (lights MeshStandard and
 MeshPhysical materials) and `lightProbe` into a `LightProbe` (lights every
 `lights: true` material). Both default on. ⚠️ With both, MeshStandard materials receive
-the sky's diffuse light from each. An `Ocean` or a `ZoneStack`'s sea in the scene reflects
+the sky's diffuse light from each. A `Water` or a `ZoneStack`'s sea in the scene reflects
 the air's bake, the 3D clouds' bake and the scene light's sun or moon, which the scenery
-publishes for them each frame (`sceneSky`; [ocean.md, One sky](./ocean.md#basic-usage)).
+publishes for them each frame (`sceneSky`; [water.md, One sky](./water.md#basic-usage)).
 
 The bakes are made once for each zone the camera can be in — the air over the sea, the
-water in it and, below the seabed (or the abyss level), the `subsurface` — and swapped as
+water in it and, below the seabed (or the void's level), the `subsurface` — and swapped as
 the camera crosses a level, so a moving camera never bakes. In the water the light dims
 with depth. Every zone is filmed with one small program of its own
 (`scenery-bake-fragment.glsl`, built 2026-11-18): the light is smooth, so none of the
-background is drawn into it. The air is the sky's own surface (`skySurface`: its gradient,
+background is drawn into it. The air is the sky's own surface (`scenerySurface`: its gradient,
 daylight, twilight and the sun's halo; the disc, the moon and the stars are the scene's
 lights') over a flat sea: the sky mirrored by Fresnel toward the horizon, the water and its
 seabed toward the nadir, and the whitecaps' mean cover. The water is its own light at the
@@ -449,7 +449,7 @@ water and sea surface), with copies of its programs where three keyed them apart
 compiled cold after the sky's (the Sea Bench's air and water bakes came at ~50 s instead of
 ~11 s), 4.6 ms of CPU
 a bake against 0.6 now (RTX A1000), and a frozen snapshot of the waves under the bake's
-point in every mirror-like object. The sea in a bake is read by no sea (an `Ocean`'s and a
+point in every mirror-like object. The sea in a bake is read by no sea (a `Water`'s and a
 `ZoneStack`'s reflections are turned above the horizon): it lights what lies in the scene
 from below.
 
@@ -481,7 +481,7 @@ sea's glint are dimmed by the share of the light they let through, so overcast t
 and lights the scene with grey bakes alone; and their shadows lie on the sea and the relief
 about the camera ([clouds.md](./clouds.md), "The scene's light"). They hand that over through
 the scenery's registry (`ScenerySkyOverlay`); a change to them makes the bakes due again. Until 2026-11-05 the baker's overrides that turn the globe off for the
-bakes (`uGlobe`, `uOceanCharts`) were `new Vector4()`, whose w of 1 is the globe's switch: the
+bakes (`uGlobe`, `uWaterCharts`) were `new Vector4()`, whose w of 1 is the globe's switch: the
 bakes drew the globe on with no radius, and half their sea lay in night.
 
 `subsurface` is the light where the sky's own means nothing: below the seabed, and
@@ -509,7 +509,7 @@ the stand-in shows while the sky compiles: the lid's colour overhead fading to t
 horizon's, and the depths' below, measured from the horizon the Earth's curve lowers, so
 from high up it meets the far ground's haze without a seam. There is no air, sun, moon,
 stars (all compiled
-out of the sky's layer, `SKY_VOID`), and no clouds. The void itself,
+out of the sky's layer, `SCENERY_VOID_BACKGROUND`), and no clouds. The void itself,
 a stage and a sea are drawn as ever; with neither water nor a seabed it is the
 void all round. The scene is lit by the subsurface everywhere, as with `false`, so only its
 zone is baked. Changing to or from it recompiles the sky's own layer.
@@ -517,33 +517,33 @@ zone is baked. Changing to or from it recompiles the sky's own layer.
 ```tsx
 <Scenery background="void">
   <SceneryVoid />
-  <SceneryOcean water={false} seabed={false} />
+  <ScenerySea water={false} seabed={false} />
 </Scenery>
 ```
 
 ## The endless sea
 
-`<SceneryOcean>` adds a sea: a wavy surface at `level` over a flat seabed `depth` below it,
+`<ScenerySea>` adds a sea: a wavy surface at `level` over a flat seabed `depth` below it,
 seen from above, from inside the water and, below the seabed, as the void. With a sea the
 void below its seabed is always there; `<SceneryVoid>` sets its look.
 
 ```tsx
 <Scenery>
-  <SceneryOcean level={0} depth={100} windSpeed={10} waterOpacity={0.8} />
+  <ScenerySea level={0} depth={100} windSpeed={10} waterOpacity={0.8} />
 </Scenery>
 ```
 
-The water takes the `<Ocean>` component's props under the same names (see
-[Ocean](./ocean.md)), so one object can drive both; the sun and the reflected sky come
+The water takes the `<Water>` component's props under the same names (see
+[Water](./water.md)), so one object can drive both; the sun and the reflected sky come
 from the sky. `water: false` leaves the seabed dry; `seabed: false` leaves the void
 below the water, seen through it from above, while from the void its lid is still a roof,
 as under a seabed. Far off, over the waves' `detailFadeDistance`, the water turns opaque
 whatever its `waterOpacity`; nearer it is as see-through as its depth and optics make it,
-from any height alike. (It used to turn opaque from 2 to 5 km up, `SKY_OCEAN_OPAQUE`, which
+from any height alike. (It used to turn opaque from 2 to 5 km up, `SCENERY_OCEAN_OPAQUE`, which
 hid the seabed showing wrong through shallow water; removed 2026-11-15 once that was fixed.)
 Seen from the air, the seabed under the background's sea lies as deep as the scene's ground
 map has it, on the line of sight (not bent at the surface, so it meets the stage's seabed and
-the relief, which lie where they are), and is lit as that deep (`skySeaLayer`):
+the relief, which lie where they are), and is lit as that deep (`scenerySeaLayer`):
 the water in front of it reads the same depth, so through the shallows it shows bright,
 and through deep water not at all. On the sea's fixed `depth` it was lit 100 m deep under
 water a metre deep: a dark rim along every coast with realistic optics, and with clear ones
@@ -556,8 +556,8 @@ a seam.
 
 The waves shoal and die out toward a coast by the depth of the scene's ground under the
 sea (its ground map, 60 m cells near the field and coarser out), and break in surf there
-(`shoreFoam` and the rest of the `<Ocean>`'s surf settings, default off): the same rule and
-code as the `<Ocean>`'s (see [the waves](./ocean-waves.md), Shallow water). The bed's slope
+(`shoreFoam` and the rest of the `<Water>`'s surf settings, default off): the same rule and
+code as the `<Water>`'s (see [the waves](./water-waves.md), Shallow water). The bed's slope
 for the surf comes from the depth's screen derivatives. The surf is placed to the map's
 accuracy against the coast the relief draws: on a gentle shelf the belt is hundreds of
 metres wide, on a steep coast under a pixel, where it dims. Floating children ride waves cut
@@ -570,20 +570,20 @@ instead, which draws it as the sea's own (see below).
 The sea is part of the background, so on its own it never hides anything in the scene.
 To have the water in FRONT of the scene, add a stage.
 
-Floating children work as inside an `<Ocean>`: while the sea has water, `<Scenery>` provides
-the wave sampler (`OceanSamplerContext`) and the contact-foam registry
-(`OceanContactContext`) to its children, so a `<Tanker>` — or anything using
-`useBuoyancy` and `useOceanContact` — rides the sky's waves and leaves a foam collar on
+Floating children work as inside a `<Water>`: while the sea has water, `<Scenery>` provides
+the wave sampler (`WaterSamplerContext`) and the contact-foam registry
+(`WaterContactContext`) to its children, so a `<Tanker>` — or anything using
+`useBuoyancy` and `useWaterContact` — rides the sky's waves and leaves a foam collar on
 its surface. Heights are absolute, the sea level included. ⚠️ Assumes the default `up`
 (+Y).
 
-Both are in the sea's wave plane (`skyOceanPlane`: true east and south at the field),
+Both are in the sea's wave plane (`scenerySeaPlane`: true east and south at the field),
 which a projected grid turns from the scene's X and Z by its convergence (about 1° at
-Volve): `<Scenery>` takes each sample point and each footprint into it (`OceanPlane`),
+Volve): `<Scenery>` takes each sample point and each footprint into it (`WaterPlane`),
 so a vessel kilometres from the origin rides the waves drawn under it and its foam hugs
 its hull. ⚠️ Until 2026-10-28 they were taken in the scene's X and Z: the foam lay off to
 one side, tens of metres a few kilometres out. With more footprints than the sea draws
-(`OceanMaterial.contactCount`, 8), those nearest the camera are drawn.
+(`WaterMaterial.contactCount`, 8), those nearest the camera are drawn.
 
 ## SceneryStage
 
@@ -608,7 +608,7 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
 
 <World frame={geoFrameFromCrs(crs)} boundary={[minX, minZ, maxX, maxZ]}>
   <Scenery>
-    <SceneryOcean level={0} depth={120} />
+    <ScenerySea level={0} depth={120} />
     <SceneryStage
       occupants={[{ outline, cut: cut ?? undefined, onStage: setStage, onGround: setGround }]}
     />
@@ -621,7 +621,7 @@ const [stage, setStage] = useState<SceneryStageOccupantState>({
     clip={ground}
     reliefSampler={sampler}
     water={water}
-    drawWater={!stage.water}
+    drawSea={!stage.water}
     onCut={setCut}
     /* ... */
   >
@@ -687,7 +687,7 @@ Each occupant:
   - `seabedOpacity`: the opacity the stage draws it at. Below 1, the occupant must not
     cull what lies under it: hand it on as the layer's `capOpacity`.
   - `water`: the stage owns the water over the occupant, with the sea's `water` on or
-    off. A `ZoneStack` then hides its own (`drawWater={false}`), which shows and hides
+    off. A `ZoneStack` then hides its own (`drawSea={false}`), which shows and hides
     it without a rebuild.
 
   All three reset (`false`, 1, `false`) once the stage is gone.
@@ -704,7 +704,7 @@ transparent passes; drawn in the min-depth and tail passes (the front merged int
 from ~1000 km up), and twice that or more with a separate front pass (oit-guide.md, "What a transparent frame costs"). Submerged see-through
 data sorts behind it there. The clouds draw once either way, on `LAYERS.OVERLAY`, after
 the transparency is resolved, their march within that draw. ⚠️ It assumes the default `up`
-(+Y), and renders nothing without a `<SceneryOcean>`.
+(+Y), and renders nothing without a `<ScenerySea>`.
 
 ### Boundaries
 
@@ -756,7 +756,7 @@ horizon, so a camera under the ground does not see the sky. It is part of the
 background, so it never hides anything in the scene, including objects above the level.
 The lid recedes into the horizon colour (`fadeDistance`; 0 for never) and has a noise relief
 (`detail`, `detailScale`); the depths have faint distant rock (`depthDetail`) and a
-`falloff`. A `<SceneryOcean>` turns the void on below its seabed by itself (then the
+`falloff`. A `<ScenerySea>` turns the void on below its seabed by itself (then the
 void's `level` is the seabed's, and `<SceneryVoid>` only sets its look), and with
 or without a seabed its lid is a roof from below. Its gradient, its rock and its lid are laid
 out by the camera's own up (the look frame), so the void is the same under any field.
@@ -764,7 +764,7 @@ out by the camera's own up (the look frame), so the void is the same under any f
 Under the `World`'s relief the void starts under the relief, at whatever depth: over
 it, down a trench below the sea's `depth`, the camera is still in the water. From the void
 the relief itself is the lid — its underside, shaded as the flat lid is, raked by a level
-light at the subsurface light's bearing (`SceneryMaterial.setAbyssLight`) so its shape
+light at the subsurface light's bearing (`SceneryMaterial.setVoidLight`) so its shape
 shows — and nothing above it is drawn: not the water,
 the land, nor a trench's floor deeper than the camera. Past the relief's reach the flat lid
 carries on, the two in one colour where the relief lies level (see
@@ -778,7 +778,7 @@ an axis-aligned rectangle. Removed, and parked on the branch `parked/abyss-walls
 
 By default the void is a hollow in the crust about the field (`SceneryVoid`'s `hollow`): a
 crater 500 km across the rim, its walls of rock down to a floor 35 km under the seabed, the
-seabed its lid. Peeling the seabed (`<SceneryOcean seabed={false} />`) opens it: the relief
+seabed its lid. Peeling the seabed (`<ScenerySea seabed={false} />`) opens it: the relief
 and the seabed are cut away inside its rim and kept whole around it, and the data under the
 field is seen against the crater. Past its walls and under its floor the void is black, with
 the lid overhead. It is real geometry with baked textures, drawn with the background, and
@@ -800,7 +800,7 @@ A cutaway also keeps the scene lit as from above the water.
 
 ```tsx
 <Scenery>
-  <SceneryOcean />
+  <ScenerySea />
   <SceneryCutaway reach={0.5} rim={{ width: 3 }} shadow={{ opacity: 0.5 }} />
 </Scenery>
 ```
@@ -852,10 +852,10 @@ default):
 | Layer | Drawn from | What |
 |--|--|--|
 | `sky` | `<Scenery>` | the air, sun, moon and stars, or the void's gradient (`background: 'void'`) |
-| `abyss` | `<SceneryVoid>`, or a sea | below its level, the lid and the depths over everything; above it, the depths only where the sea's layers leave them showing (no seabed, a see-through one, the cutaway, a stage's opening) |
-| `sea` | `<SceneryOcean>` | the seabed seen through the water from the air |
-| `water` | `<SceneryOcean>` | the view from in the water |
-| `surface` | `<SceneryOcean>` | the sea's surface, at the next `renderOrder` |
+| `void` | `<SceneryVoid>`, or a sea | below its level, the lid and the depths over everything; above it, the depths only where the sea's layers leave them showing (no seabed, a see-through one, the cutaway, a stage's opening) |
+| `sea` | `<ScenerySea>` | the seabed seen through the water from the air |
+| `water` | `<ScenerySea>` | the view from in the water |
+| `surface` | `<ScenerySea>` | the sea's surface, at the next `renderOrder` |
 
 The relief's overview draws after them, and the clouds (`<SceneryClouds>`) after the sea's
 surface layer, drawing themselves. Transparent parts draw after everything. It works with R3F's own render and with a
@@ -891,7 +891,7 @@ not on the far plane: with a far plane far enough from the near one (50 000 km o
 or its seabed — past a stage's reach (the far plane, at most 3000 km), off its area, or past
 the far plane — shows through it unless it hides itself. A stage's own surface is drawn over
 what lies under it, and its seabed and a relief's tiles hide what lies below by depth; past
-them a shader takes `skyOceanCover(world, height)` (sky-ocean.glsl): how much of the
+them a shader takes `scenerySeaCover(world, height)` (scenery-sea.glsl): how much of the
 background's surface and seabed lies between the camera and the point, by its height, or
 past the Earth's curve, with no depth needed. The geographic layers take it with `water`
 `'fog'` (see [layers.md](./layers.md#through-the-sea-water)).
@@ -955,12 +955,12 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   still late: the background takes ~23 s alone in Direct3D's compiler, fully cold.
 - Why it was slow: the background was one program for every zone and feature, and
   Direct3D's compile time grows about as a program's size to the power 2.5. Measured on
-  its HLSL with `D3DCompile` itself (2026-10-27): the abyss and its walls (since removed), the sea from the
+  its HLSL with `D3DCompile` itself (2026-10-27): the void and its walls (since removed), the sea from the
   air, the still clouds (since removed) and the view in the water were each a third to two
   thirds of it. First,
   with no change to what is drawn: loops whose count Direct3D would copy out per iteration
-  take it from a uniform (`uOceanDetailOctaves`, `uSkyPlanetCount`), the seabed is shaded once for the views from the air and in the water
-  (`skyOceanBedReach`), and the walls' two rock tests shared one copy of their shape:
+  take it from a uniform (`uWaterDetailOctaves`, `uSkyPlanetCount`), the seabed is shaded once for the views from the air and in the water
+  (`scenerySeabedReach`), and the walls' two rock tests shared one copy of their shape:
   ~30% faster (320 → 244 KB of bytecode), a stage's surface
   ~35% and the sea surface layer ~42%.
 - Then the background was split into its layers (see [Rendering](#rendering)), each
@@ -1013,7 +1013,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
   differed by less than its run-to-run noise (±1 ms).
 - The shaders compile without warnings from Direct3D's compiler, which three.js prints with
   each program (2026-11-20, surveyed cold over the Timelapse, StageDebug, a global weather,
-  the hollow, the Sea Bench, the stand-alone Ocean and a zone column). Two habits keep it so:
+  the hollow, the Sea Bench, the stand-alone Water and a zone column). Two habits keep it so:
   a function returns once, at its end (returned from within a branch, Direct3D took its value
   for one that may be left unset, X4000); and no vector's component is written by a loop's
   index (ANGLE emulates that, and Direct3D warned of a division by zero in its copy of one
@@ -1065,7 +1065,7 @@ fill-bound: they scale with the pixels drawn, about double at 1080p.
 
 `FieldColumn` WithScenery (Volve as the occupant, an `OITRenderPass` pipeline, no relief):
 
-| Camera | Frame | Sky off | Background | Stage's sea | Stage's seabed |
+| Camera | Frame | Scenery off | Background | Stage's sea | Stage's seabed |
 |--|--|--|--|--|--|
 | 2 km | 9.2 | 5.3 | 1.43 | 2.84 | 0.81 |
 | 40 m | 8.4 | 5.05 | 1.39 | 2.62 | 0.39 |
@@ -1087,7 +1087,7 @@ fill-bound: they scale with the pixels drawn, about double at 1080p.
   ms) 1.47 → 0.51 from 2 km, 1.44 → 0.85 from 40 m, 2.33 → 1.73 in the water (the
   stage's sea seen from below writes no depth, so the background is still shaded behind
   it) and 1.6 → 0.1 below the seabed; the frame 0.5–1.2 ms less.
-- Under a surface that hides it whole (`skyOceanSurfaceHides`: from 5 km up, or past the
+- Under a surface that hides it whole (`scenerySeaSurfaceHides`: from 5 km up, or past the
   detail fade, with the water on and no cutaway) the stage's seabed skips its shading and
   only writes its depth, so what lies under it stays hidden as before. The pixels are the
   same within 1/255; on the sea bench (2026-11-12, NVIDIA A1000, 1920 × 1080) the seabed draw
@@ -1127,7 +1127,7 @@ the shared preset out.
 | File | Role |
 |--|--|
 | `Scenery.tsx` | the component: props and its features' → material, the layers and which are drawn each frame, the directional light, the bakes |
-| `SceneryOcean.tsx`, `SceneryVoid.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
+| `ScenerySea.tsx`, `SceneryVoid.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
 | `SceneryClouds.tsx`, `scenery-clouds.ts`, `shaders/cloud-*.glsl` | the 3D clouds, which draw themselves and read the scenery's material and `SceneryView` from its registry ([clouds.md](./clouds.md)) |
 | `SceneryCutaway.tsx` | the cutaway: its props, its grip, and its per-frame placement, which the `Scenery` runs |
 | `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |
@@ -1139,15 +1139,15 @@ the shared preset out.
 | `scenery-stage.ts`, `SceneryStage.tsx` | the stage's geometry and materials |
 | `SceneryStageReliefTiles.tsx`, `scenery-relief-tiles.ts`, `SceneryStageReliefOverview.tsx`, `scenery-relief.ts`, `scenery-relief-atlas.ts` | the relief: its tiles, and its overview past the far plane, read from the same tiles through an index (see [tiles.md](./tiles.md)) |
 | `scenery-defs.ts`, `generators/scenery-relief-tile-generator.ts` | the `sceneryReliefTile` generator: the relief's tiles, for the stage, its overview and the `Minimap` |
-| `scenery-context.ts` | `useScenery`, `useSceneryOcean` |
-| `shaders/sky.glsl` | the background's layers: `skyAir`, `skyAbyssLayer`, `skySeaLayer`, `skyWaterLayer`, and the sky and void they draw |
-| `shaders/sky-fragment.glsl`, `sky-layer-fragment.glsl` | the sky's layer, and the others over it (one by its `SKY_LAYER_*` define) |
+| `scenery-context.ts` | `useScenery`, `useScenerySea` |
+| `shaders/scenery.glsl` | the background's layers: `skyAir`, `sceneryVoidLayer`, `scenerySeaLayer`, `sceneryWaterLayer`, and the sky and void they draw |
+| `shaders/sky-fragment.glsl`, `scenery-layer-fragment.glsl` | the sky's layer, and the others over it (one by its `SCENERY_LAYER_*` define) |
 | `shaders/sky-gradient.glsl` | the gradient alone |
 | `scenery-air-colors.ts`, `shaders/sky-air-colors.glsl`, `sky-air-colors-fragment.glsl` | `SkyAirColors`: the colours the haze fades into, drawn per camera place into a lookup, and its readers |
-| `shaders/sky-void.glsl` | the void's gradient alone: its colours, the depths' gradient, and the whole of it as the stand-in and `background: 'void'` draw it |
-| `shaders/sky-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
-| `shaders/sky-ocean.glsl` | the sea: surface, water, seabed, cutaway |
-| `shaders/stage-fragment.glsl`, `sky-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
+| `shaders/scenery-void.glsl` | the void's gradient alone: its colours, the depths' gradient, and the whole of it as the stand-in and `background: 'void'` draw it |
+| `shaders/scenery-stand-in-fragment.glsl` | the stand-in drawn while the sky compiles: the void's gradient |
+| `shaders/scenery-sea.glsl` | the sea: surface, water, seabed, cutaway |
+| `shaders/stage-fragment.glsl`, `scenery-surface-fragment.glsl` | the stage's parts, and the sea surface layer |
 
 - The layers', the stage's and the baker's materials share the `SceneryMaterial`'s UNIFORM
   OBJECTS, so they follow every change to it (the baker's but for its own and the field's
@@ -1155,18 +1155,18 @@ the shared preset out.
   layer takes those it needs (`sceneryLayerDefines`), a stage those listed in
   `SCENERY_SHARED_DEFINES`.
 - ⭐ A program is keyed on its defines' order, the `fog` flag and the number of lights
-  as well as on the source. `linkOcean` and the feature switches are set in render, so the
+  as well as on the source. `linkWater` and the feature switches are set in render, so the
   layers and a stage's materials are made with them.
 - The layers' shaders return their colour premultiplied (its alpha how much of the layers
-  before it it hides), and `sky-layer-fragment.glsl` draws it unpremultiplied, so three's
+  before it it hides), and `scenery-layer-fragment.glsl` draws it unpremultiplied, so three's
   tone mapping, colour space and fog apply as to any colour. Where the sea's floor shows the
-  void, the void's layer and the sea's take the same tests (`skyOceanShowsVoid`,
-  `skyOceanFromAirReach`), so the void is drawn under exactly the sea that lets it show.
+  void, the void's layer and the sea's take the same tests (`scenerySeaShowsVoid`,
+  `scenerySeaFromAirReach`), so the void is drawn under exactly the sea that lets it show.
 - Compiling ahead goes through `precompile` (`src/rendering/precompile.ts`, internal):
   it compiles as the scene draws, i.e. for the `RenderingPipeline`'s render target and
   through the `OITRenderPass`'s variants, each object when its turn in the renderer's
   queue comes (see Performance). The sky waits for its own meshes, the stages
-  registered through `SceneryOceanState.stage`; the bakes for their own program and the PMREM
+  registered through `ScenerySeaState.stage`; the bakes for their own program and the PMREM
   prefilter.
   The 1 × 1 target it binds for `'offscreen'` is kept on the renderer itself: kept in a
   `WeakMap` keyed by the renderer, its framebuffer led back to the renderer (its context, its
@@ -1208,7 +1208,7 @@ the shared preset out.
   derivatives are taken.
 - ⭐ On Direct3D (ANGLE), every call of a shader function compiles a copy of it. A heavy
   function (the waves, a noise) called from two places costs twice the compile time:
-  compute it once and pass the result down (see `SkyOceanWave`, `depths` in
-  `skyAbyssLayer`).
+  compute it once and pass the result down (see `ScenerySeaWave`, `depths` in
+  `sceneryVoidLayer`).
 - ⚠️ Derivatives (`fwidth`) taken after a branch some pixels of a quad have left are
-  undefined: take them first, before any early return (see `skyOceanCutawayRimAt`).
+  undefined: take them first, before any early return (see `scenerySeaCutawayRimAt`).

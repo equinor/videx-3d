@@ -55,8 +55,8 @@ The consequences show up all over the API and are worth stating explicitly:
 ```mermaid
 flowchart TD
   UA["&lt;UtmArea&gt;"] --> CS["&lt;ZoneStack&gt;"]
-  CS -.provides.-> CTX["ZoneStackContext<br/>SurfaceSamplerContext + Registry<br/>OceanSamplerContext<br/>OceanContactContext"]
-  CS --> FOG["&lt;StackImmersionFog&gt;<br/><i>only if immersion declared</i>"]
+  CS -.provides.-> CTX["ZoneStackContext<br/>SurfaceSamplerContext + Registry<br/>WaterSamplerContext<br/>WaterContactContext"]
+  CS --> FOG["&lt;StackInteriorFog&gt;<br/><i>only if interiorFog declared</i>"]
   CS --> SEA["sea lid + body + cut face<br/><i>only if water declared</i>"]
   CS --> DBG["&lt;ZoneSectionDebug&gt;<br/><i>only if section.debug</i>"]
   CS --> CH1["&lt;Zone&gt;"]
@@ -68,7 +68,7 @@ flowchart TD
 
 Everything renders inside one identity-transform `<group ref={stackFrame}>`. It
 exists so that anything driven from the **camera** — the locked section plane, the
-immersion test, the fence's auto side — has a frame to be brought into. It is the
+interior fog's test, the fence's auto side — has a frame to be brought into. It is the
 one place where world space and the stack's own space differ, because a stack may
 carry a vertical exaggeration (`scale={[1, k, 1]}`).
 
@@ -157,9 +157,9 @@ Deliberately **separate** from `ZoneStackContext`:
 | `SurfaceSamplerRegistryContext` | zones **publish** their built geometry | a sibling finishing its geometry must not disturb the value every zone's build spec is derived from |
 | `SurfaceSamplerContext` | consumers **read** the sampler | a new identity is the signal to re-sample |
 
-`OceanSamplerContext` and `OceanContactContext` are provided too, so a floating
+`WaterSamplerContext` and `WaterContactContext` are provided too, so a floating
 child heaves with the swell and spreads foam exactly as it would inside an
-`<Ocean>` — with nothing extra wired.
+`<Water>` — with nothing extra wired.
 
 ---
 
@@ -208,7 +208,7 @@ The same idiom appears on `ZoneStack` for `carrier`, `water`, `resolve` and
 
 - **`water` has two keys.** `waterKey` (the whole object) drives the *materials*;
   `waterBuildKey` (`depth` / `resolution` / `displacement` only) drives the
-  *geometry spec*. Everything else on `ZoneStackWater` is sea state, and keying the
+  *geometry spec*. Everything else on `ZoneStackSea` is sea state, and keying the
   spec on the whole object made every wind/foam/opacity tick rebuild the lid in the
   worker.
 - **`contacts` keys the surface by `id` only.** A grid cannot change under a stable
@@ -242,11 +242,11 @@ builds a whole column of its own and can push out one still in use. Declare
 | `ZoneStack.prepareCuts` | — | ● (and the sea) | ● | — |
 | `fence.debug` | — | — | ● | — |
 | `ZoneStack.contacts` | — | — | ● | — |
-| `ZoneStack.water` sea state | — | — | ●³ | — |
-| `ZoneStack.drawWater` | — | — | — | ● |
+| `ZoneStack.sea` sea state | — | — | ●³ | — |
+| `ZoneStack.drawSea` | — | — | — | ● |
 | `ZoneStack.relief` (its `key`) | — | ● (whole column, and the sea) | ● | — |
 | `ZoneStack.clip` (a clip coming, going or changing) | — | — | — | ● |
-| `ZoneStack.water.depth` / `.resolution` / `.displacement` | — | sea only | ● | — |
+| `ZoneStack.sea.depth` / `.resolution` / `.displacement` | — | sea only | ● | — |
 | a sibling zone's boundary settling | — | ●⁴ | ● | — |
 
 ¹ `wireframe` is a material property here, so it rebuilds materials, not geometry.
@@ -288,9 +288,9 @@ builds a whole column of its own and can push out one still in use. Declare
 | zone materials (caps, walls, faces) | `ZoneMeshes` | `ZoneMeshes` (`materials.owned`) |
 | inference overlays | `ZoneMeshes` | `ZoneMeshes` (`overlays.built`) |
 | sea lid / body geometry | `ZoneStack` | `ZoneStack` |
-| ocean materials | `useStackWater` | `useStackWater` |
+| ocean materials | `useStackSea` | `useStackSea` |
 | contact textures | `useZoneContacts` | the same hook |
-| bathymetry texture (the bed tint) | `ZoneStack`, from the `stackWater` response | `ZoneStack`, when the bed changes or on unmount |
+| bathymetry texture (the bed tint) | `ZoneStack`, from the `stackSea` response | `ZoneStack`, when the bed changes or on unmount |
 | **the cached column** | the generator scope | `releaseStackResources`, called by `ZoneStack` on unmount |
 
 Two traps worth remembering:

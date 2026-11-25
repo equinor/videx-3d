@@ -40,11 +40,11 @@ import {
 import type { CutUniforms } from '../../sdk/materials/fence-field';
 import type { HeightFieldClip } from '../../sdk/materials/height-field-clip';
 import {
-  SKY_RELIEF_MAX_OCCUPANTS,
+  SCENERY_RELIEF_MAX_OCCUPANTS,
   SceneryReliefOccupantFields,
   SceneryReliefTileOccupants,
 } from './scenery-relief-tiles';
-import { useSceneryOcean } from './scenery-context';
+import { useScenerySea } from './scenery-context';
 import { placeOnGlobe, releaseFromGlobe } from './scenery-anchor';
 import { useWorld } from '../World/world-context';
 import {
@@ -107,7 +107,7 @@ export type SceneryStageOccupantState = {
    * draw your own
    */
   seabed: boolean;
-  /** the opacity the stage draws it at, the sea's (`SceneryOceanProps.seabedOpacity`): below 1, cull nothing under it */
+  /** the opacity the stage draws it at, the sea's (`ScenerySeaProps.seabedOpacity`): below 1, cull nothing under it */
   seabedOpacity: number;
   /** the stage owns the water over the occupant: it is under a drawn sky with a sea, with water or not. While true, draw none of your own */
   water: boolean;
@@ -232,8 +232,8 @@ export const SceneryStage = ({
   occupants,
   debug,
 }: SceneryStageProps) => {
-  const ocean = useSceneryOcean();
-  const sky = ocean?.material ?? null;
+  const scenerySea = useScenerySea();
+  const scenery = scenerySea?.material ?? null;
   const far = useThree(state => state.camera.far);
   // Its materials are let go once their programs have linked (`releaseMaterial`): a swap
   // (a relief coming in, `curvedDepth`) may come while the sky still compiles them.
@@ -257,16 +257,16 @@ export const SceneryStage = ({
   // globe's disc to the stage. Without a World, the sky's own globe takes it from the sky.
   const setsWorldDisc = !!world && !world.boundary;
   const claims = occupants ?? NO_OCCUPANTS;
-  const level = ocean?.level ?? 0;
-  const bedY = level - (ocean?.depth ?? 0);
+  const level = scenerySea?.level ?? 0;
+  const bedY = level - (scenerySea?.depth ?? 0);
   // The sky's own sea has water; without it every part of the stage lies dry.
-  const wet = ocean?.water ?? true;
+  const wet = scenerySea?.water ?? true;
   // Without a seabed, the stage draws none, nor a relief: the void lies below the water.
-  const hasBed = ocean?.seabed ?? true;
-  const seabedOpacity = ocean?.seabedOpacity ?? 1;
+  const hasBed = scenerySea?.seabed ?? true;
+  const seabedOpacity = scenerySea?.seabedOpacity ?? 1;
   const seeThrough = seabedOpacity < 1;
   const surfaceShown = !debug?.hide?.includes('surface');
-  const definesKey = ocean?.definesKey;
+  const definesKey = scenerySea?.definesKey;
 
   const extent: SceneryStageBounds = useMemo(
     () => [minX - reach, minZ - reach, maxX + reach, maxZ + reach],
@@ -285,15 +285,16 @@ export const SceneryStage = ({
   const cameraSite = useCameraSite();
   const tiled = !!worldRelief?.present && hasBed;
   // Drawn at all: with the seabed peeled too while the void is a hollow, around its opening.
-  const reliefDrawn = !!worldRelief?.present && (hasBed || !!ocean?.hollow);
+  const reliefDrawn =
+    !!worldRelief?.present && (hasBed || !!scenerySea?.hollow);
 
   const materials = useMemo(
     () =>
-      sky && {
-        surface: createSceneryStageMaterial(sky, 'surface', {
+      scenery && {
+        surface: createSceneryStageMaterial(scenery, 'surface', {
           curvedDepth: reliefDrawn,
         }),
-        bed: createSceneryStageMaterial(sky, 'bed', {
+        bed: createSceneryStageMaterial(scenery, 'bed', {
           seeThrough,
           // Drawn only without a relief, flat: past the disc the curved sea falls below its
           // plane (√(2R·depth) out: 34 km for 91 m), whose depth would hide what lies there.
@@ -304,7 +305,7 @@ export const SceneryStage = ({
       },
     // The sky's defines are compiled in (the seabed's detail): new ones need new materials.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sky, definesKey, seeThrough, reliefDrawn, surfaceShown],
+    [scenery, definesKey, seeThrough, reliefDrawn, surfaceShown],
   );
 
   // The occupants' outlines, for the relief: over them the cutaway takes
@@ -315,7 +316,7 @@ export const SceneryStage = ({
     const at = new Map<number, number>();
     const fields: PolygonDistanceField[] = [];
     outlines.forEach((shape, i) => {
-      if (!shape || fields.length >= SKY_RELIEF_MAX_OCCUPANTS) return;
+      if (!shape || fields.length >= SCENERY_RELIEF_MAX_OCCUPANTS) return;
       const field = polygonDistanceField(
         shape.coordinates as PlanarPolygonCoordinates,
         shape.offset,
@@ -367,7 +368,7 @@ export const SceneryStage = ({
   const openingPlane = tiled ? reliefCut?.plane : undefined;
   const openingFence = tiled ? reliefCut?.fence : undefined;
   useEffect(() => {
-    if (!sky || (!openingPlane && !openingFence)) return;
+    if (!scenery || (!openingPlane && !openingFence)) return;
     const open = () => {
       const cutting = openingPlane?.value;
       return (
@@ -376,11 +377,11 @@ export const SceneryStage = ({
         (openingFence?.params.value.x ?? 0) > 0.5
       );
     };
-    sky.abyssOpenings.add(open);
+    scenery.voidOpenings.add(open);
     return () => {
-      sky.abyssOpenings.delete(open);
+      scenery.voidOpenings.delete(open);
     };
-  }, [sky, openingPlane, openingFence]);
+  }, [scenery, openingPlane, openingFence]);
 
   useEffect(
     () => () => {
@@ -392,33 +393,33 @@ export const SceneryStage = ({
   );
 
   useLayoutEffect(() => {
-    if (!sky) return;
+    if (!scenery) return;
     // Out to the far plane (stage-vertex keeps its vertices inside), as far as STAGE_REACH:
     // any shorter, and the scene between would show through the sky's sea, drawn on the far
     // plane. On the globe it claims nothing while the camera is off its rectangle, or on the
     // far half of the Earth (SceneryMaterial's claimStage).
-    sky.setOceanStage(extent, reach);
+    scenery.setSeaStage(extent, reach);
     // Flat over the disc that holds the stage's area, so the scene and the ground about it
     // meet level: the globe's disc, unless the World holds it.
-    sky.setFlatSea(boundary);
-    if (setsWorldDisc) sky.globe.setDisc(boundary);
+    scenery.setFlatSea(boundary);
+    if (setsWorldDisc) scenery.globe.setDisc(boundary);
     return () => {
-      sky.setOceanStage(null);
-      sky.setFlatSea(null);
-      if (setsWorldDisc) sky.globe.setDisc(null);
+      scenery.setSeaStage(null);
+      scenery.setFlatSea(null);
+      if (setsWorldDisc) scenery.globe.setDisc(null);
     };
-  }, [sky, extent, reach, boundary, setsWorldDisc]);
+  }, [scenery, extent, reach, boundary, setsWorldDisc]);
 
   // The cutaway's size, from the first occupant's footprint.
   const radiusOutline = outlines.find(o => o) ?? null;
   useEffect(() => {
-    if (!sky || !radiusOutline) return;
+    if (!scenery || !radiusOutline) return;
     const [x0, z0, x1, z1] = outlineSquare(radiusOutline);
-    sky.occupantRadius = Math.hypot(x1 - x0, z1 - z0) / 2;
+    scenery.occupantRadius = Math.hypot(x1 - x0, z1 - z0) / 2;
     return () => {
-      sky.occupantRadius = null;
+      scenery.occupantRadius = null;
     };
-  }, [sky, radiusOutline]);
+  }, [scenery, radiusOutline]);
 
   const surface = useRef<Mesh>(null);
   // Each occupant's group, placed about the middle of its outline, or of the stage's disc.
@@ -444,13 +445,13 @@ export const SceneryStage = ({
     [anchors],
   );
   useFrame(({ camera }) => {
-    if (!sky || !ocean) return;
+    if (!scenery || !scenerySea) return;
     const now: Object3D[] = [];
     anchors.forEach((anchor, i) => {
       const object = anchor?.current;
       if (!object) return;
       const [ax, az] = anchorCentres[i] ?? [discX, discZ];
-      placeOnGlobe(object, sky.globe, ax, az);
+      placeOnGlobe(object, scenery.globe, ax, az);
       now.push(object);
     });
     for (const object of placed.current) {
@@ -462,18 +463,18 @@ export const SceneryStage = ({
     // would discard every pixel. In the relief's ground above it the camera is in rock
     // (the camera site's `buried`), where none of the sea shows either.
     const site = cameraSite.get(camera);
-    const altitude = site.altitude ?? sky.globe.altitude(camera.position);
+    const altitude = site.altitude ?? scenery.globe.altitude(camera.position);
     const buried = tiled && site.buried;
     if (surface.current)
       surface.current.visible =
-        surfaceShown && altitude + sky.oceanDepth >= 0 && !buried;
+        surfaceShown && altitude + scenery.seaDepth >= 0 && !buried;
   });
 
   // Told on every change: the occupant draws its own seabed whenever the stage does not,
   // and its own water only while the stage does not own it. The relief is the occupant's
   // seabed.
-  const seabedDrawn = tiled && !!ocean?.visible && !!ocean.ready;
-  const ownsWater = !!ocean?.visible;
+  const seabedDrawn = tiled && !!scenerySea?.visible && !!scenerySea.ready;
+  const ownsWater = !!scenerySea?.visible;
   const listeners = useStableList(claims.map(claim => claim.onStage ?? null));
   const onStage = useRef(listeners);
   useLayoutEffect(() => {
@@ -541,8 +542,8 @@ export const SceneryStage = ({
 
   const setView = useCallback(
     (renderer: WebGLRenderer, _: Scene, camera: Camera) =>
-      sky?.setStageView(renderer, camera),
-    [sky],
+      scenery?.setStageView(renderer, camera),
+    [scenery],
   );
 
   const showOutline = debug?.outline === true;
@@ -605,7 +606,7 @@ export const SceneryStage = ({
 
   // Compiled with the sky before either is drawn; again when the parts may have changed.
   const root = useRef<Group>(null);
-  const register = ocean?.stage;
+  const register = scenerySea?.stage;
   useLayoutEffect(() => {
     if (!register || !root.current) return;
     return register(root.current);
@@ -620,7 +621,7 @@ export const SceneryStage = ({
     outlineLines,
   ]);
 
-  if (!ocean || !materials) return null;
+  if (!scenerySea || !materials) return null;
 
   const parts: {
     key: string;
@@ -652,7 +653,7 @@ export const SceneryStage = ({
   }
 
   return (
-    <group ref={root} visible={ocean.visible && ocean.ready}>
+    <group ref={root} visible={scenerySea.visible && scenerySea.ready}>
       {parts.map(part => (
         <mesh
           key={part.key}

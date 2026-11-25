@@ -1,4 +1,4 @@
-# Cutting, water and immersion
+# Cutting, water and interior fog
 
 Opening the block to look inside, the sea on top of it, and what happens when the
 camera goes in.
@@ -10,7 +10,7 @@ camera goes in.
 - [Restoring what the collapse dropped](#restoring-what-the-collapse-dropped)
 - [The fence](#the-fence)
 - [The sea](#the-sea)
-- [Immersion fog](#immersion-fog)
+- [Interior fog](#interior-fog)
 
 ---
 
@@ -139,7 +139,7 @@ Mutating `section.plane` directly therefore animates the section at no render co
 Turn `water: true` on when the water column itself is the subject. ⚠️ It rebuilds
 the two ocean materials (the cut is a define).
 
-`ZoneStackWater.keepBed` keeps the sea bed's **cap** whole under a cut that takes the
+`ZoneStackSea.keepBed` keeps the sea bed's **cap** whole under a cut that takes the
 sea, while the rock below it is cut as usual — the sea floor stays as a sheet over
 the opened block, which is what a subsea layout is placed on. Pair it with
 `capOpacity` on the bed layer to see the section through it.
@@ -266,10 +266,10 @@ kept unit, because there is nothing to close and a face there would sit inside
 solid material.
 
 ⭐ **The sea follows the same rule, as the unit above the sea bed.** When the live
-cut leaves the sea whole (`ZoneSection.water` / `ZoneFence.water` false), the
+cut leaves the sea whole (`ZoneSection.sea` / `ZoneFence.sea` false), the
 bed cap (the declared `seabed`, the same one the sea ends against) is kept whole as
 the sea's floor, and no water face is drawn along the cut — while the stack draws
-its sea (`drawWater`); a sea it hides keeps nothing, and the bed is cut like any
+its sea (`drawSea`); a sea it hides keeps nothing, and the bed is cut like any
 cap. When the cut takes the sea, the water face closes it and the bed cap is cut by
 the usual rule. The decision is made separately for the section and for the fence
 (`capCut(layers, i, seaKept)` in `ZoneMeshes`), so switching between the two cuts
@@ -418,7 +418,7 @@ leaves the rest whole:
   `fenceSide` (GLSL) and `fenceSideAt` read as KEPT without the exact segment test —
   near an arm that test would otherwise cut an untouched island. Every material that
   cuts by the fence follows: zone surfaces and walls, the peel, the inferred hatch,
-  the sea, and the immersion fog's "is this opened" test;
+  the sea, and the interior fog's "is this opened" test;
 - the masked node keeps its SIGN, i.e. which half of the cut it lies in, and
   `fenceHalfAt` reads it. `side: 'auto'` and `fenceViewPose` choose the view with it,
   so they work from anywhere — the face can be looked at from over ground the mask
@@ -532,19 +532,19 @@ stretched over the requested depths.
 ## The sea
 
 ```tsx
-<ZoneStack boundary={fieldPolygon} surfaces={column} seabed={seabedId} water={{ depth: 0, windSpeed: 8, opacity: 0.9 }}>
+<ZoneStack boundary={fieldPolygon} surfaces={column} seabed={seabedId} sea={{ depth: 0, windSpeed: 8, opacity: 0.9 }}>
 ```
 
 > ⭐ **The sea belongs to the COLUMN, not to a zone.** A lid covers its whole
 > footprint by design, so two zones each drawing part of it would leave two
 > coplanar lids wherever their footprints overlap. The stack draws it once.
 
-`ZoneStackWater` is `OceanWaterProps & OceanBodyProps & ZoneWaterTint` plus `depth`,
+`ZoneStackSea` is `WaterSettings & WaterBodyProps & ZoneWaterTint` plus `depth`,
 `opacity` and `resolution`.
 
 ### How it is built
 
-The `stackWater` generator builds the sea as a stack of exactly **two horizons**
+The `stackSea` generator builds the sea as a stack of exactly **two horizons**
 — `[level, bed]` — over the stack boundary:
 
 - the **bed** is the surface `ZoneStack.seabed` names, pulled from `getStackContext`
@@ -564,7 +564,7 @@ the shoreline), and the channels a cut face needs.
 
 ### Resolution
 
-`ZoneStackWater.resolution` is the lid's target triangle edge length. **Omit it** for
+`ZoneStackSea.resolution` is the lid's target triangle edge length. **Omit it** for
 the fewest triangles that fill the boundary — all a flat surface needs, since its
 waves are shaded per pixel.
 
@@ -578,17 +578,17 @@ count grows with the **square** of the field size. `DEFAULT_WATER_RESOLUTION` is
 > ⚠️⚠️ `water.waterOpacity` (default **0.7**) is the water's **own** opacity and
 > only a base — the shader computes `alpha = mix(uOpacity, 1, fresnel) *
 > uMasterOpacity`, so the surface is see-through from above and mirror-like at a
-> grazing angle whatever it says. `ZoneStackWater.opacity` is the master multiplier.
+> grazing angle whatever it says. `ZoneStackSea.opacity` is the master multiplier.
 > Water that looks "too transparent at opacity 1" is usually carrying
 > `waterOpacity`'s default.
 
 ### Floating objects come free
 
-`useStackWater` also creates the wave **sampler** (`createOceanSampler(surface,
--depth)`) and a contact registry (`createOceanContactRegistry`, shared with `<Ocean>`
+`useStackSea` also creates the wave **sampler** (`createWaterSampler(surface,
+-depth)`) and a contact registry (`createWaterContactRegistry`, shared with `<Water>`
 and `<Scenery>`), and `ZoneStack` provides them as
-`OceanSamplerContext` / `OceanContactContext`. A floating child — a vessel, a buoy —
-heaves with the swell and spreads foam exactly as it would inside an `<Ocean>`,
+`WaterSamplerContext` / `WaterContactContext`. A floating child — a vessel, a buoy —
+heaves with the swell and spreads foam exactly as it would inside a `<Water>`,
 with nothing extra wired. Heights come back **absolute** in the stack's frame, so
 no sea-level parent group is needed.
 
@@ -597,11 +597,11 @@ no sea-level parent group is needed.
 > `setContacts` uploaded `(cos, sin)` while the shader treated it as a direction
 > (a +Y rotation gives `(cos, −sin)` in XZ). **Hold the direction vector.**
 
-See [../ocean.md](../ocean.md).
+See [../water.md](../water.md).
 
 ### Hiding it without a rebuild
 
-`drawWater={false}` hides the sea — lid, body and cut faces — and the immersion
+`drawSea={false}` hides the sea — lid, body and cut faces — and the interior
 fog, and zeroes the water tint (`waterTintShown`), while keeping everything built:
 the sea itself, the cut that leaves room for it, the bed's tint materials. Turning
 it back on shows it at once. It is for a sky that owns the water over the column
@@ -610,10 +610,10 @@ hand over without a stutter.
 
 ---
 
-## Immersion fog
+## Interior fog
 
 ```tsx
-<ZoneStack immersion={{ water: true, sediment: true, visibility: 400 }}>
+<ZoneStack interiorFog={{ water: true, rock: true, visibility: 400 }}>
 ```
 
 > ⭐ Both the sea and the block are made of **surfaces**, not of a medium. From
@@ -623,13 +623,13 @@ hand over without a stutter.
 > reaches host geometry (vessels, facilities, pipelines) that no material of this
 > library could.
 
-`StackImmersionFog` decides the medium each frame by sampling the surface at the
+`StackInteriorFog` decides the medium each frame by sampling the surface at the
 camera's XZ, testing the camera against the section plane in object space, and
 testing it against the fence **index** (the exact boundary lookup, not the field —
 the field alone would answer a fraction of a cell out, which is metres, enough for
 the fog to switch on before the cut visually reaches you).
 
-`ZoneStackImmersion` options: `water`, `sediment`, `color`, `visibility` (default 400),
+`ZoneStackInteriorFog` options: `water`, `rock`, `rockColor`, `visibility` (default 400),
 `background` (default true), `transition` (default 5 m), `settle` (default 0.12 s).
 
 > ⚠️ **It is off unless declared, and it has to be.** Installing `scene.fog` at all

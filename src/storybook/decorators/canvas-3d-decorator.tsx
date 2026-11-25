@@ -20,7 +20,7 @@ import {
  * ⚠️ Must live INSIDE the canvas — the scene only exists here, and `ready()` and
  * `bounds()` are both about the scene rather than the camera.
  */
-export const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
+const Videx3dBridge = ({ manager }: { manager: CameraManager }) => {
   const scene = useThree(state => state.scene);
   const gl = useThree(state => state.gl);
   useEffect(

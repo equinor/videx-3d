@@ -7,7 +7,7 @@
 #define GEO_REVEAL_FRAGMENT
 #include ./geo-reveal.glsl
 #ifdef GEO_SYMBOL_WATER
-#include ../../Scenery/shaders/sky.glsl
+#include ../../Scenery/shaders/scenery.glsl
 #include ./geo-water.glsl
 #endif
 #ifdef USE_OIT

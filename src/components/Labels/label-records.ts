@@ -101,9 +101,6 @@ export const LABEL_RECORD_FLOATS = 16;
 /** Texels across a label group's records' texture: 512 labels a row; and its runs': 2048 glyphs. */
 export const LABEL_RECORDS_WIDTH = 2048;
 
-/** Floats in a row of a label group's records' texture. */
-export const LABEL_RECORDS_ROW_FLOATS = LABEL_RECORDS_WIDTH * 4;
-
 /** What a label group asks of its atlas: a text laid out in its glyphs, if it has room. */
 export type LabelTexts = {
   text(text: string, style: LabelStyle): LabelTextRun | null;

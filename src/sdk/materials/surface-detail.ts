@@ -13,7 +13,7 @@ import { Vec2 } from '../types/common';
  * mapped straight through.
  *
  * `seabed` is the odd one out: it is not a sediment class but the sand-dune relief
- * the `Ocean` sea bed draws, for a surface that IS a sea bed.
+ * the `Water` sea bed draws, for a surface that IS a sea bed.
  */
 export type SurfaceDetailPreset =
   | 'sand'

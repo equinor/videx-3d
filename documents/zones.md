@@ -439,7 +439,7 @@ presents.
 Putting something ON a surface — a template, a pipeline, a marker — needs the
 height of that surface at a given X/Z. A `ZoneStack` publishes a
 `SurfaceSampler` through `SurfaceSamplerContext` for exactly that, the way it
-already publishes the wave field through `OceanSamplerContext`. Both are `null`
+already publishes the wave field through `WaterSamplerContext`. Both are `null`
 when there is nothing to sample, so a consumer keeps its static pose rather than
 jumping to the origin.
 
@@ -617,7 +617,7 @@ colour choice. Two of them, in fact, and they are worth keeping apart:
   table. Drawn as a LINE where it crosses a face (`ZoneStackProps.contacts`,
   §6.1.1), not as a layer of any zone.
 - the **sea**: open water over the whole column, declared once on the
-  `ZoneStack` (`ZoneStackProps.water`) and drawn by the stack itself.
+  `ZoneStack` (`ZoneStackProps.sea`) and drawn by the stack itself.
 
 ⭐ The sea is not a zone layer, for two reasons. It is a property of the COLUMN,
 exactly like the carrier (§10.9) — every zone cut from that column stands under
@@ -741,7 +741,7 @@ from the gradient direction, since an implicit contour has no arc-length
 parameterisation; they degrade where the line turns within a pixel.
 
 ⚠️⚠️ The SDK's `fluid` machinery stays exactly as it is: the SEA depends on it
-(`stack-water-generator` passes `fluid: [true, false]`), and the sea never had this
+(`stack-sea-generator` passes `fluid: [true, false]`), and the sea never had this
 bug because its floor is the sea bed — a solid. Only the component-level layer flag
 is gone.
 
@@ -767,7 +767,7 @@ lid's middle subdivides, its edge does not.
 
 ### 6.3 How the sea is built
 
-The `stackWater` generator builds it as a stack in its own right, of exactly two
+The `stackSea` generator builds it as a stack in its own right, of exactly two
 horizons: **the level and the bed**. That is what makes it both cheap and
 correct — the level is a fluid, so it is never the authority for what lies under
 it, and being the FIRST layer there is then nothing left in the stack to order at
@@ -835,7 +835,7 @@ cached in the generator. Changing the sea level rebuilds only the zone that
 draws the bed, besides the sea.
 
 This is the STILL water's line. With `displacement` on the lid heaves with the
-waves, which die out toward the shore by the bed's depth (`ocean-waves.md`,
+waves, which die out toward the shore by the bed's depth (`water-waves.md`,
 Shallow water), so it stays near this line; the surf's swash moves the foam's
 edge, not the lid.
 
@@ -844,16 +844,16 @@ draw it over.
 
 ### 6.4 The shaders
 
-`ZoneStackWater` carries the sea state (`OceanWaterProps` / `OceanBodyProps`, shared
-with the `Ocean` component through `ocean-material-sync.ts`) and `useStackWater`
-supplies both materials: an `OceanMaterial` for the lid and an
-`OceanVolumeMaterial` for the body. They are created once and then have their
+`ZoneStackSea` carries the sea state (`WaterSettings` / `WaterBodyProps`, shared
+with the `Water` component through `water-settings.ts`) and `useStackSea`
+supplies both materials: an `WaterMaterial` for the lid and an
+`WaterVolumeMaterial` for the body. They are created once and then have their
 uniforms updated, unlike the rest of a zone's appearance, which is rebuilt on
 change: a sea state is swept continuously and rebuilding a `ShaderMaterial`
 recompiles its program.
 
 ⚠️ The water body reads its unit-relative height from the `wallV` attribute
-(`OceanVolumeMaterial({ wallAttribute: true })`), because a zone's interval wall
+(`WaterVolumeMaterial({ wallAttribute: true })`), because a zone's interval wall
 measures `uv` in metres — arc length and world height — which is what anchors
 patterns in world space and must not be renormalised. With that in place the body
 knobs carry over unchanged: `bodyFogDensity`, `bodyMaxOpacity` and `bodyShimmer`
@@ -863,8 +863,8 @@ the water rather than the side of a box.
 
 #### 6.4.1 The bed tint
 
-The `Ocean` component tints the top of its own sea bed toward the water colour
-(`seaBedWaterTint`), because the surface's alpha stands for REFLECTION, not for
+The `Water` component tints the top of its own sea bed toward the water colour
+(`bedWaterTint`), because the surface's alpha stands for REFLECTION, not for
 absorption through the water column — looking straight down, the Fresnel term
 makes the surface nearly clear and an untinted bed reads as if it were dry.
 
@@ -892,7 +892,7 @@ know where the shoreline runs, and it stays right as the level is swept.
   exists only over the footprint, and the rim stands at that boundary, so there is
   no water between the eye and the flank. The same goes for a section cut face,
   which is drawn with the interval's own fill material. ⚠️⚠️ Tinting the wall WAS
-  tried (2026-08-14) on the argument that the `Ocean` component has "the same gap",
+  tried (2026-08-14) on the argument that the `Water` component has "the same gap",
   and reverted: the gap is not one, and §6.4.1 said so as a defect for a while.
 
 ##### The depth comes from the BED's grid, not from the vertex (2026-08-14)
@@ -931,8 +931,8 @@ the water shaders have no depth input of any kind.
   bed the sea's own geometry ends against and every zone is built on, sealed and on
   the column's common grid; a second opinion about where the bed is would show along
   the whole shoreline. On a column built on a relief (`ZoneStack.relief`) that is the
-  relief, plus the column's margin. The `stackWater` generator hands it back with the
-  sea's geometry (`StackWaterResponse.bed`, a copy — the channels stay cached for the
+  relief, plus the column's margin. The `stackSea` generator hands it back with the
+  sea's geometry (`StackSeaResponse.bed`, a copy — the channels stay cached for the
   next build), `buildChannelDepthMap` packs it, and it is published on
   `ZoneStackContextValue.bathymetry`: one texture upload, never a geometry rebuild,
   and the same texture kept when only the sea changes (`sameStackBedGrid`).
@@ -952,13 +952,13 @@ the water shaders have no depth input of any kind.
 
 ### 6.5 Floating objects
 
-The stack provides the same two contexts an `<Ocean>` does, so a floating child
+The stack provides the same two contexts a `<Water>` does, so a floating child
 needs nothing else:
 
-- `OceanSamplerContext` — the wave field. ⭐ `createOceanSampler` takes the sea's
+- `WaterSamplerContext` — the wave field. ⭐ `createWaterSampler` takes the sea's
   LEVEL, so heights come back absolute in the stack's frame and a floater needs no
   sea-level parent group of its own; it is simply placed at the water plane.
-- `OceanContactContext` — where floating children register contact-foam
+- `WaterContactContext` — where floating children register contact-foam
   footprints. Collected in the same `useFrame` that advances the wave clock, and
   skipped entirely when nothing is registered.
 
@@ -1007,7 +1007,7 @@ surface (default 0 — clear, leaving only the reflection).
   and mirror-like edge-on. That is correct, not a leak.
 - ⭐ Everything blends by the map's COVERAGE channel, so an unmapped area is
   bit-for-bit the original angle-driven look rather than a hole — and
-  `OCEAN_BATHYMETRY` compiles the whole branch out when no bed is supplied.
+  `WATER_BATHYMETRY` compiles the whole branch out when no bed is supplied.
 
 #### 6.6.2 Shore foam, and where the swash comes from
 
@@ -1031,20 +1031,20 @@ Foam is generated where the waves break and then washes shoreward while decaying
 so the bright line stands OFFSHORE and the water's edge is the dim end — a profile
 that maxes at depth 0 traces the coastline exactly, which is precisely what a
 boundary is. The shape is a peak at the break, an exponential decay inshore to
-`OCEAN_SURF_RESIDUAL`, and a Gaussian cutoff seaward.
+`WATER_SURF_RESIDUAL`, and a Gaussian cutoff seaward.
 
 ⭐⭐ **The surf zone moves with the sea state.** Waves break where the depth falls
 to about 1.3× their own height, so `breakDepth = shoreBreakDepth × Hs` — a thin
 line in a calm, a wide belt in a storm. A FIXED band in metres was the single most
 unphysical thing here: the whole sea offshore responded to the wind and the shore
 did not, which is visible without being nameable. ⚠️ `Hs` is floored at
-`OCEAN_SWELL_FLOOR` to stand in for background swell, or the shore would go glassy
+`WATER_SWELL_FLOOR` to stand in for background swell, or the shore would go glassy
 at wind 0 — this model has no swell separate from the local wind.
 
 ⭐ **Exposure is free.** `|dot(windDir, ∇bed)|` is already computed for the swash,
 and a windward coast breaks while a lee shore mostly does not — so the same term
 modulates how much surf a stretch of coast gets at all, floored at
-`OCEAN_LEE_EXPOSURE` for the energy that refracts round a headland.
+`WATER_LEE_EXPOSURE` for the energy that refracts round a headland.
 
 ⚠️ Slow low-frequency sets pulse the band, because surf arrives in groups. Along
 the coast as well as in time, so a straight shore does not flash uniformly.
@@ -1197,7 +1197,7 @@ this section used to call for.
 - ⚠️ **A `ShaderMaterial`'s `fog` defaults to false.** Every library shader has
   carried `<fog_pars_fragment>` and `<fog_fragment>` all along, but three only
   defines `USE_FOG` when the material asks for it, so all of it compiled to
-  nothing. `ZoneMaterial` and `OceanMaterial` now set `fog = true`; the other
+  nothing. `ZoneMaterial` and `WaterMaterial` now set `fog = true`; the other
   library materials still do not, and turning them on is one line each.
 - ⭐ **The lid is fogged too**, since looking up from inside the water there is
   water in the way. ⚠️ The water BODY is deliberately NOT: its walls already fog
@@ -1209,11 +1209,11 @@ this section used to call for.
   shaders each time the camera left the water.
 - ⚠️ `scene.fog` and `scene.background` are HOST state. Both are saved and handed
   back on unmount.
-- ⚠⚠ **There is no free "disabled" state, which is why `immersion` is absent by
+- ⚠⚠ **There is no free "disabled" state, which is why `interiorFog` is absent by
   default.** Installing `scene.fog` at all changes every material's program cache
   key, so a hook that stayed mounted and returned early would still cost a
   different shader. The medium test therefore lives in a CHILD COMPONENT
-  (`StackImmersionFog`) that is only rendered when the prop is declared: nothing
+  (`StackInteriorFog`) that is only rendered when the prop is declared: nothing
   subscribes to the frame loop, nothing is installed, and every program compiles
   exactly as it did before. ⚠️ The one thing that cannot be gated: if a HOST sets
   `scene.fog` for its own reasons, zones and surfaces are now fogged where before
@@ -1270,7 +1270,7 @@ their legibility follows the same knob.
 - ⚠⚠ **PEELING does not, and cannot here:** peel is a per-zone property and the
   stack does not see it, so peeling a unit away leaves the camera "inside" it. The
   workaround is the feature's own switch — a host that peels should drop
-  `immersion` while it does. Acceptable because this is an opt-in visual effect,
+  `interiorFog` while it does. Acceptable because this is an opt-in visual effect,
   not a correctness feature.
 - ⚠️ The medium is chosen by one `getHeightAt` and one `solidAt` per frame, both
   CSR bucket lookups — but they are per frame, and only paid when the feature is
@@ -1857,13 +1857,13 @@ termination, not its area (§10.5).
    above.
 4. **The water shader** — **BUILT, see §6.** The sea is declared on the
    `ZoneStack` (`water`), which supplies both ocean materials and draws it as a
-   two-horizon stack of its own; the prop→uniform sync is shared with `Ocean`
+   two-horizon stack of its own; the prop→uniform sync is shared with `Water`
    rather than copied. Both snags recorded here were real and are closed: the wall
    reads a normalised `wallV` attribute under a define instead of the metric
    `uv.y`, and the lid is built on its own triangulation of the boundary rather
    than inheriting the sea bed's TIN. ⭐ Floating objects are closed too — the
    stack provides the wave sampler AND the contact-foam registry, so a vessel
-   floats and foams with nothing extra wired (§6.5). ⚠️ `Ocean` did NOT decompose:
+   floats and foams with nothing extra wired (§6.5). ⚠️ `Water` did NOT decompose:
    it still owns its own meshes, so the standalone component stays.
 5. **One stack or several, when grids differ** — *recorded, not urgent.* A stack welds
    together two separable things: a **resolve domain** (one depth-order pass, one
@@ -3608,12 +3608,12 @@ and the default is NEGATIVE — see §15.9.8.
 **What the STACK draws** — the zones, and, when asked, the sea and the floor. Both of
 those default to being left WHOLE (changed 2026-08-21):
 
-- `ZoneSection.water` (default **off**) puts the same shared uniform into
-  `OceanMaterial` and `OceanVolumeMaterial`, and the water body is then closed by a
+- `ZoneSection.sea` (default **off**) puts the same shared uniform into
+  `WaterMaterial` and `WaterVolumeMaterial`, and the water body is then closed by a
   cut FACE of its own — built over the sea's level and bed by the same
   `sectionStackInterval` the zones use, since the sea is itself a two-horizon stack
-  and can emit a `StackSectionSource` (`StackWaterSpec.section`). Drawn with an
-  uncut `OceanVolumeMaterial`, for the reason a fence's face is.
+  and can emit a `StackSectionSource` (`StackSeaSpec.section`). Drawn with an
+  uncut `WaterVolumeMaterial`, for the reason a fence's face is.
 - `ZoneSection.carrier` (default **off**) cuts the column's floor with the rest. On,
   the base plate is cut away with the block.
 

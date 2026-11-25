@@ -5,7 +5,7 @@ export {
   generatorStatsKey,
   layersFromGroups,
   stackRelease,
-  stackWater,
+  stackSea,
   surfaceZone,
   wellboreOutline,
   DEFAULT_FENCE_MARGIN,
@@ -15,8 +15,8 @@ export {
 } from './zone-defs';
 export type {
   FenceSideInfo,
-  ZoneStackImmersion,
-  ZoneStackWater,
+  ZoneStackInteriorFog,
+  ZoneStackSea,
   ZoneBuildState,
   ZoneFence,
   ZoneFenceOverlay,

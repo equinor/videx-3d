@@ -17,7 +17,7 @@ export const LABEL_COOLDOWN = 0.5;
  * where it is) from which a label is near: near labels are kept apart from near ones,
  * distant from distant ones, and a near one may lie over a distant one, drawn in front.
  */
-export const LABEL_NEAR_SCALE = 0.5;
+const LABEL_NEAR_SCALE = 0.5;
 
 /**
  * Which band a label is in, 0 near or 1 distant: near while its layer's `distanceFactor`
@@ -65,7 +65,7 @@ export function stepLabelFade(alpha: number, target: number, dt: number) {
  * there (see {@link labelPlaceChoice}): so one whose text just fits two ways does not
  * switch back and forth as the view moves by a hair.
  */
-export const LABEL_PLACE_HYSTERESIS = 0.05;
+const LABEL_PLACE_HYSTERESIS = 0.05;
 
 /**
  * Which of a label's places to draw it at (`Label.places`, or its text's line breaks in its
@@ -178,7 +178,7 @@ function separatedByEdges(
 const MAX_GRID_CELLS = 4096;
 
 /** The side of a placement grid's cells, in pixels, at the least. */
-export const LABEL_GRID_CELL = 32;
+const LABEL_GRID_CELL = 32;
 
 /**
  * Keeps labels apart on screen, as annotations are: taken best first, a label is let in

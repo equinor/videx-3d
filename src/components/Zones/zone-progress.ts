@@ -105,7 +105,7 @@ export type ZoneProgressLabelOverrides = {
  *
  * @group Components
  */
-export const ZONE_PROGRESS_LABELS: ZoneProgressLabels = {
+const ZONE_PROGRESS_LABELS: ZoneProgressLabels = {
   phases: {
     fetch: 'Loading surfaces',
     resolve: 'Resolving layer order',

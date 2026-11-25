@@ -21,7 +21,7 @@ import waterBodyShader from './shaderLib/water-body.glsl';
  * A body of water, as its surface, its walls and what lies in it read it: its surface's height
  * along up, how far down its seabed lies (a bed's map, the scene's ground, a flat floor), its
  * look ({@link WaterOptics}) and the daylight. The sea that draws it (an
- * `Ocean`, a `Scenery`'s sea, a `ZoneStack`'s water) keeps it in step; what lies in the water
+ * `Water`, a `Scenery`'s sea, a `ZoneStack`'s water) keeps it in step; what lies in the water
  * fades by it (`water-body.glsl`'s `waterBodyFog`, or {@link applyWaterFog} for a stock
  * material), so data under the sea fades as the sea's own seabed does. Its uniforms are bound
  * by reference: one change reaches every material reading it.
@@ -204,7 +204,7 @@ export class WaterBody {
 const SCENE_WATER = new WeakMap<object, WaterBody>();
 
 /**
- * The water of a scene (one per scene): what the sea drawn in it writes (an `Ocean`'s or a
+ * The water of a scene (one per scene): what the sea drawn in it writes (a `Water`'s or a
  * `ZoneStack`'s surface as it renders, a `Scenery`'s sea each frame), and what the library's
  * materials there read, wherever they lie in the tree. No water until a sea writes it.
  *

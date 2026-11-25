@@ -38,7 +38,7 @@ import {
 } from '../../sdk/tiles/tile-transitions';
 import { setFrustumFromMatrix } from '../../sdk/utils/depth-buffer';
 import { pixelsPerUnit } from '../../sdk/utils/lod';
-import { useSceneryOcean } from '../Scenery/scenery-context';
+import { useScenerySea } from '../Scenery/scenery-context';
 import { useCameraSite } from '../../hooks/useCameraSite';
 import { useWorldRelief } from '../World/world-relief';
 import {
@@ -304,11 +304,12 @@ export const GeoTileLayer = ({
   const gl = useThree(state => state.gl);
   const placed = useLayerGlobe(frame);
   const globe = placed?.globe ?? null;
-  const ocean = useSceneryOcean();
+  const scenerySea = useScenerySea();
   const cameraSite = useCameraSite();
-  const sky = water === 'fog' && ocean ? ocean.material : null;
+  const scenery = water === 'fog' && scenerySea ? scenerySea.material : null;
   // The relief's tiles drawn: the World's, else the sky's.
-  const reliefTiles = useWorldRelief()?.tiles ?? ocean?.reliefTiles ?? null;
+  const reliefTiles =
+    useWorldRelief()?.tiles ?? scenerySea?.reliefTiles ?? null;
   const hub = drape ? reliefTiles : null;
   const size = source?.size ?? 1;
   // Drawn from its shader alone: no texels, one placeholder slot for the sampler.
@@ -367,7 +368,7 @@ export const GeoTileLayer = ({
     take();
     return hub.subscribe(take);
   }, [hub]);
-  const definesKey = sky ? ocean?.definesKey : '';
+  const definesKey = scenery ? scenerySea?.definesKey : '';
   const material = useMemo(
     () =>
       globe
@@ -378,12 +379,12 @@ export const GeoTileLayer = ({
             uniforms: shader.uniforms,
             cells,
             relief: hub ? reliefTextures : null,
-            sky,
+            scenery,
           })
         : null,
     // The sky's defines are compiled in: new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [globe, textures, shader, cells, hub, reliefTextures, sky, definesKey],
+    [globe, textures, shader, cells, hub, reliefTextures, scenery, definesKey],
   );
   useEffect(() => () => material?.dispose(), [material]);
   const floorMaterial = useMemo(
@@ -396,12 +397,12 @@ export const GeoTileLayer = ({
             uniforms: shader.uniforms,
             cells: GEO_TILE_FLAT_CELLS,
             relief: null,
-            sky,
+            scenery,
           })
         : null,
     // The sky's defines are compiled in: new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [globe, textures, shader, floored, sky, definesKey],
+    [globe, textures, shader, floored, scenery, definesKey],
   );
   useEffect(() => () => floorMaterial?.dispose(), [floorMaterial]);
   useEffect(() => {
@@ -636,7 +637,7 @@ export const GeoTileLayer = ({
     if (!globe || !globe.frame || !streaming || !source) return hide();
     const altitude = globe.altitude(camera.position);
     // Revealed as a map: on the sea where it lies under it, over the sea, fading in.
-    const revealed = sky ? layerRevealAt(altitude, revealRef.current) : 0;
+    const revealed = scenery ? layerRevealAt(altitude, revealRef.current) : 0;
     const floorAt = floor ?? NO_FLOOR;
     const laid = Math.max(revealed > 0 ? Math.max(height, 0) : height, floorAt);
     const shown =
@@ -649,7 +650,7 @@ export const GeoTileLayer = ({
     if (shown <= 0) return hide();
     // Only a 'fog' layer is revealed; a 'clear' one stays on LAYERS.OVERLAY as made, or an
     // OITRenderPass draws it with the opaque, under a stage's sea surface.
-    if (sky) {
+    if (scenery) {
       const order = renderOrder ?? 0.5;
       drawOverSea(mesh.current, revealed > 0, order);
       if (floorMesh.current)
@@ -794,10 +795,10 @@ export const GeoTileLayer = ({
         geometry={geometry}
         material={material}
         frustumCulled={false}
-        renderOrder={renderOrder ?? (sky ? 0.5 : OVER_SEA_ORDER)}
-        layers={sky ? LAYERS_FOG : LAYERS_OVERLAY}
+        renderOrder={renderOrder ?? (scenery ? 0.5 : OVER_SEA_ORDER)}
+        layers={scenery ? LAYERS_FOG : LAYERS_OVERLAY}
         visible={false}
-        onBeforeRender={sky ? sky.onBeforeDraw : undefined}
+        onBeforeRender={scenery ? scenery.onBeforeDraw : undefined}
       />
       {floorGeometry && floorMaterial && (
         <mesh
@@ -805,10 +806,10 @@ export const GeoTileLayer = ({
           geometry={floorGeometry}
           material={floorMaterial}
           frustumCulled={false}
-          renderOrder={renderOrder ?? (sky ? 0.5 : OVER_SEA_ORDER)}
-          layers={sky ? LAYERS_FOG : LAYERS_OVERLAY}
+          renderOrder={renderOrder ?? (scenery ? 0.5 : OVER_SEA_ORDER)}
+          layers={scenery ? LAYERS_FOG : LAYERS_OVERLAY}
           visible={false}
-          onBeforeRender={sky ? sky.onBeforeDraw : undefined}
+          onBeforeRender={scenery ? scenery.onBeforeDraw : undefined}
         />
       )}
     </>

@@ -136,7 +136,7 @@ function geometryBytes(geometry: BufferGeometry, seen: Set<ArrayBufferLike>) {
  * How long a zone's materials, and its sea's, are kept once let go, in ms
  * (`releaseMaterial`'s `linger`). A rebuild lets the old zone go at once (see `Zone`), and
  * the next one's materials, made as it comes in, then take over the programs they share
- * instead of compiling them again: about 27 programs a rebuild in the FieldColumn story
+ * instead of compiling them again: about 27 programs a rebuild in the Field model example
  * before. A rebuild slower than this compiles them again. A material holds no geometry.
  */
 export const ZONE_MATERIAL_LINGER = 5000;

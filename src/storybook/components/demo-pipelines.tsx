@@ -1,15 +1,7 @@
 import type { ArgTypes } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  GeoSymbols,
-  type GeoSymbolsProps,
-  type GeoSymbolStyle,
-} from '../../components/Layers/GeoSymbols';
-import {
-  GeoTubes,
-  type GeoTubesProps,
-  type GeoTubeStyle,
-} from '../../components/Layers/GeoTubes';
+import { type GeoSymbolStyle } from '../../components/Layers/GeoSymbols';
+import { type GeoTubeStyle } from '../../components/Layers/GeoTubes';
 import type {
   GeoFeature,
   GeoJsonFeatureCollection,
@@ -96,45 +88,6 @@ export const demoFacilityStyle = (
     color: demoInService(phase) ? tint : '#777777',
     size: onshore ? 400 : surface === 'Y' ? 80 : 25,
   };
-};
-
-/**
- * The demo pipelines as `GeoTubes`, as the `Pipelines` story draws them by default: 20 times
- * as wide as built, at least 2 pixels, resting on the high points over 60 m hollows. Any
- * other prop is passed on.
- */
-export const DemoPipelines = (
-  props: Omit<GeoTubesProps<DemoPipeline>, 'data'>,
-) => {
-  const pipelines = useDemoPipelines();
-  return (
-    <GeoTubes
-      data={pipelines}
-      style={demoPipelineStyle}
-      exaggeration={20}
-      minPixels={2}
-      span={60}
-      {...props}
-    />
-  );
-};
-
-/**
- * The demo facilities as `GeoSymbols`, as the `Pipelines` story draws them by default: at
- * least 6 pixels across. Any other prop is passed on.
- */
-export const DemoFacilities = (
-  props: Omit<GeoSymbolsProps<DemoFacility>, 'data'>,
-) => {
-  const facilities = useDemoFacilities();
-  return (
-    <GeoSymbols
-      data={facilities}
-      style={demoFacilityStyle}
-      minPixels={6}
-      {...props}
-    />
-  );
 };
 
 /** Story args for the demo layers revealed as a map (see {@link useDemoReveal}). */

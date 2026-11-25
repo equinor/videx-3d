@@ -101,8 +101,8 @@ describe('fence uniforms', () => {
     ['zone material', 'src/components/Zones/zone-material.ts'],
     ['inference material', 'src/components/Zones/inference-material.ts'],
     ['zone picking material', 'src/components/Zones/zone-picking-material.ts'],
-    ['ocean material', 'src/components/Ocean/ocean-material.ts'],
-    ['ocean volume material', 'src/components/Ocean/ocean-volume-material.ts'],
+    ['water material', 'src/components/Water/water-material.ts'],
+    ['water volume material', 'src/components/Water/water-volume-material.ts'],
     [
       'sky relief tile material',
       'src/components/Scenery/scenery-relief-tiles.ts',
@@ -128,8 +128,8 @@ describe('fence uniforms', () => {
       'src/components/Zones/shaders/zone-frag.glsl',
       'src/components/Zones/shaders/zone-pick-frag.glsl',
       'src/components/Zones/inference-material.ts',
-      'src/components/Ocean/shaders/fragment.glsl',
-      'src/components/Ocean/shaders/volume-fragment.glsl',
+      'src/components/Water/shaders/fragment.glsl',
+      'src/components/Water/shaders/volume-fragment.glsl',
       'src/components/Scenery/shaders/relief-tiles.glsl',
     ].map(path => [path, readFileSync(path, 'utf-8')] as const);
 

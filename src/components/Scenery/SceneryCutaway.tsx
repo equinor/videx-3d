@@ -131,13 +131,13 @@ const scratch = new Color();
 const toHex = (value: ColorRepresentation) => scratch.set(value).getHex();
 
 /**
- * A cut through the sea of a {@link Scenery} (its `SceneryOcean`) in front of the view (see
+ * A cut through the sea of a {@link Scenery} (its `ScenerySea`) in front of the view (see
  * {@link SceneryCutawayProps}). It follows the camera; its grip, with `handle`, drags it.
  * Anywhere under the `Scenery`; without a sea it cuts nothing.
  *
  * @example
  * <Scenery>
- *   <SceneryOcean depth={120} />
+ *   <ScenerySea depth={120} />
  *   <SceneryCutaway water={1} handle />
  * </Scenery>
  *
@@ -217,8 +217,8 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
       const size = cutawaySize.current;
       if (!size.active) return null;
       const { camera } = getThree();
-      const skyUp = material.up;
-      const altitude = camera.position.dot(skyUp) - size.plane;
+      const sceneryUp = material.up;
+      const altitude = camera.position.dot(sceneryUp) - size.plane;
       const box = canvas.getBoundingClientRect();
       const ray = a
         .set(
@@ -229,20 +229,21 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
         .unproject(camera)
         .sub(camera.position)
         .normalize();
-      const down = -ray.dot(skyUp);
+      const down = -ray.dot(sceneryUp);
       if (altitude <= 0 || down <= 0) return null;
-      const anchor = material.uniforms.uSkyOceanCutawayAnchor.value as Vector3;
-      const heading = material.uniforms.uSkyOceanCutawayHeading
+      const anchor = material.uniforms.uScenerySeaCutawayAnchor
+        .value as Vector3;
+      const heading = material.uniforms.uScenerySeaCutawayHeading
         .value as Vector3;
       const point = b
         .copy(camera.position)
         .addScaledVector(ray, altitude / Math.max(down, CUTAWAY_MIN_DOWN))
         .sub(anchor);
       const wave = cutawayEdgeAhead(
-        point.dot(side.crossVectors(heading, skyUp)),
+        point.dot(side.crossVectors(heading, sceneryUp)),
         0,
-        material.uniforms.uSkyOceanCutawayWaveA.value,
-        material.uniforms.uSkyOceanCutawayWaveB.value,
+        material.uniforms.uScenerySeaCutawayWaveA.value,
+        material.uniforms.uScenerySeaCutawayWaveB.value,
       );
       let edge = point.dot(heading) - wave;
       // Sliding out, the edge is eased toward `floor` from below it (see the frame): undone.
@@ -293,24 +294,24 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
     // The cutaway: from below the camera to where the `reach` row meets its plane, the
     // surface from above the water and the seabed from in it, or from above a dry one.
     // The camera's matrices are this frame's (Scenery's frame).
-    const cutawayShape = material.uniforms.uSkyOceanCutawayShape
+    const cutawayShape = material.uniforms.uScenerySeaCutawayShape
       .value as Vector3;
     const size = cutawaySize.current;
-    const bedLevel = material.oceanLevel - material.oceanDepth;
+    const bedLevel = material.seaLevel - material.seaDepth;
     // A cutaway lights the water as the air (see sceneryZone), so the plane goes by height.
-    const plane = !material.oceanWater
+    const plane = !material.seaWater
       ? height > bedLevel
         ? bedLevel
         : null
       : zone === 'subsurface'
         ? null
-        : height > material.oceanLevel
-          ? material.oceanLevel
+        : height > material.seaLevel
+          ? material.seaLevel
           : bedLevel;
     const altitude = plane === null ? 0 : height - plane;
     const cutsAny =
-      (cutawayWater > 0 && material.oceanWater) ||
-      (cutawaySeabed && material.oceanSeabed);
+      (cutawayWater > 0 && material.seaWater) ||
+      (cutawaySeabed && material.seabed);
     // How far it has given way to a distant view (CUTAWAY_AWAY): 0 none, 1 off.
     let away = 0;
     if (material.globeEnabled) {
@@ -323,7 +324,7 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
       );
     }
     if (
-      !material.ocean ||
+      !material.sea ||
       !cutsAny ||
       plane === null ||
       altitude <= 0 ||
@@ -331,29 +332,30 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
     ) {
       cutawayShape.y = 0;
       size.active = false;
-      (material.uniforms.uSkyOceanCutawayGrip.value as Vector2).x = 0;
+      (material.uniforms.uScenerySeaCutawayGrip.value as Vector2).x = 0;
       cutawayGrip.current?.hide();
     } else {
-      (material.uniforms.uSkyOceanCutawayCuts.value as Vector2).set(
+      (material.uniforms.uScenerySeaCutawayCuts.value as Vector2).set(
         cutawayWater,
         cutawaySeabed ? 1 : 0,
       );
-      const skyUp = material.up;
-      const anchor = material.uniforms.uSkyOceanCutawayAnchor.value as Vector3;
-      anchor.copy(camera.position).addScaledVector(skyUp, -altitude);
+      const sceneryUp = material.up;
+      const anchor = material.uniforms.uScenerySeaCutawayAnchor
+        .value as Vector3;
+      anchor.copy(camera.position).addScaledVector(sceneryUp, -altitude);
       // The frame's up plus its view direction, laid level: defined looking straight down too.
-      const heading = material.uniforms.uSkyOceanCutawayHeading
+      const heading = material.uniforms.uScenerySeaCutawayHeading
         .value as Vector3;
       const m = camera.matrixWorld.elements;
       cutawayRay.set(m[4] - m[8], m[5] - m[9], m[6] - m[10]);
-      cutawayRay.addScaledVector(skyUp, -cutawayRay.dot(skyUp));
+      cutawayRay.addScaledVector(sceneryUp, -cutawayRay.dot(sceneryUp));
       if (cutawayRay.lengthSq() > 1e-12) heading.copy(cutawayRay).normalize();
 
       // The tip's row climbs from `reach` looking level to the frame's top looking straight down.
       const tilt =
         Math.asin(
           MathUtils.clamp(
-            m[8] * skyUp.x + m[9] * skyUp.y + m[10] * skyUp.z,
+            m[8] * sceneryUp.x + m[9] * sceneryUp.y + m[10] * sceneryUp.z,
             0,
             1,
           ),
@@ -365,7 +367,7 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
         .unproject(camera)
         .sub(camera.position)
         .normalize();
-      const down = -cutawayRay.dot(skyUp);
+      const down = -cutawayRay.dot(sceneryUp);
       // At least just below the horizon: in proportion to the height, so any zoom frames it alike.
       const distance = altitude / Math.max(down, CUTAWAY_MIN_DOWN);
       const reach = Math.max(distance * cutawayRay.dot(heading), 0);
@@ -387,7 +389,7 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
           .sub(camera.position)
           .normalize();
         const centre =
-          (altitude / Math.max(-cutawayRay.dot(skyUp), CUTAWAY_MIN_DOWN)) *
+          (altitude / Math.max(-cutawayRay.dot(sceneryUp), CUTAWAY_MIN_DOWN)) *
           cutawayRay.dot(heading);
         shift = centre * (1 - scale);
       }
@@ -405,7 +407,8 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
         .sub(camera.position)
         .normalize();
       let ceiling =
-        (altitude / Math.max(-cutawayRay.dot(skyUp), CUTAWAY_CEILING_DOWN)) *
+        (altitude /
+          Math.max(-cutawayRay.dot(sceneryUp), CUTAWAY_CEILING_DOWN)) *
         cutawayRay.dot(heading);
       if (material.globeEnabled) {
         const radius = material.globe.radius;
@@ -431,7 +434,7 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
           .sub(camera.position)
           .normalize();
         const top =
-          (altitude / Math.max(-cutawayRay.dot(skyUp), CUTAWAY_MIN_DOWN)) *
+          (altitude / Math.max(-cutawayRay.dot(sceneryUp), CUTAWAY_MIN_DOWN)) *
           cutawayRay.dot(heading);
         const swing =
           (Math.abs(cutawayWaves[0]?.amplitude ?? 0) +
@@ -467,13 +470,13 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
         Math.max(width * cutawaySoftness, CUTAWAY_MIN_EDGE),
       );
       setCutawayWave(
-        material.uniforms.uSkyOceanCutawayWaveA.value,
+        material.uniforms.uScenerySeaCutawayWaveA.value,
         cutawayWaves[0],
         size.frame,
         far,
       );
       setCutawayWave(
-        material.uniforms.uSkyOceanCutawayWaveB.value,
+        material.uniforms.uScenerySeaCutawayWaveB.value,
         cutawayWaves[1],
         size.frame,
         far,
@@ -481,27 +484,29 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
       // Thinning with the cut, down to a pixel; wider while the grip is held or hovered.
       const held = !!grip && (grip.active || grip.hover);
       const rimWidth = cutawayRimWidth * (held ? 1.5 : 1);
-      (material.uniforms.uSkyOceanCutawayRim.value as Vector4).set(
+      (material.uniforms.uScenerySeaCutawayRim.value as Vector4).set(
         cutawayRimColor.r,
         cutawayRimColor.g,
         cutawayRimColor.b,
         Math.max(rimWidth * far, Math.min(rimWidth, 1)),
       );
-      (material.uniforms.uSkyOceanCutawayShadow.value as Vector2).set(
+      (material.uniforms.uScenerySeaCutawayShadow.value as Vector2).set(
         cutawayShadowOpacity,
         width * cutawayShadowWidth,
       );
 
       // The grip, drawn on the rim in the middle of the view, and the element taking the
       // pointer over it. Like the rim, only on the surface seen from above.
-      const gripUniform = material.uniforms.uSkyOceanCutawayGrip
+      const gripUniform = material.uniforms.uScenerySeaCutawayGrip
         .value as Vector2;
       gripUniform.set(0, held ? 1.2 : 1);
       if (grip) {
         const { a, b, side } = cutawayScratch;
-        const waveA = material.uniforms.uSkyOceanCutawayWaveA.value as Vector3;
-        const waveB = material.uniforms.uSkyOceanCutawayWaveB.value as Vector3;
-        side.crossVectors(heading, skyUp);
+        const waveA = material.uniforms.uScenerySeaCutawayWaveA
+          .value as Vector3;
+        const waveB = material.uniforms.uScenerySeaCutawayWaveB
+          .value as Vector3;
+        side.crossVectors(heading, sceneryUp);
         const edgeAt = (s: number, out: Vector3) =>
           out
             .copy(anchor)
@@ -517,14 +522,14 @@ export const SceneryCutaway = (props: SceneryCutawayProps) => {
           Math.abs(centre.x) > 1 ||
           Math.abs(centre.y) > 1 ||
           Math.abs(standardNdcZ(centre.z, camera)) > 1;
-        if (plane !== material.oceanLevel || lost || away > 0) {
+        if (plane !== material.seaLevel || lost || away > 0) {
           grip.hide();
           // Out of view where it could be held — over the sea, not sliding out, not held, not
           // giving way to a distant view (a tilt carrying a near edge below the frame, say):
           // back to no offset, as a double click puts it, and told so.
           if (
             lost &&
-            plane === material.oceanLevel &&
+            plane === material.seaLevel &&
             exit <= 0 &&
             away <= 0 &&
             !grip.active &&

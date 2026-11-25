@@ -27,7 +27,7 @@ export type WallRing = {
  * flat walls — a square crop then reads as a lozenge. Past this angle the point's
  * vertices are split so each wall keeps its own normal.
  */
-export const WALL_SMOOTH_ANGLE = 40;
+const WALL_SMOOTH_ANGLE = 40;
 
 /** Options for {@link buildRingWalls}. */
 export type RingWallOptions = {

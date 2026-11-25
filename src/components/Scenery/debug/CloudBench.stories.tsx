@@ -56,7 +56,7 @@ type Viewport = keyof typeof VIEWPORTS;
 // Scene metres (X east, Z south; the local weather's middle at 0, 0), for the 'scattered' sky's
 // cumulus (1200–2400 m): the camera's place and what it looks at.
 const POSES = {
-  // Over the field from 3 km, out over the clouds (the Clouds spike's default).
+  // Over the field from 3 km, out over the clouds.
   over: [
     [-9000, 3000, 9000],
     [6000, 1200, -6000],
@@ -157,14 +157,14 @@ const BenchPose = ({ pose }: { pose: Pose }) => {
 
 const CloudBenchStory = (args: CloudBenchArgs) => {
   // The background on (the clouds show only with it), its own layers hidden but with SKY.
-  const sky = {
+  const scenery = {
     ...sceneryArgs,
     sunFromTime: true,
     hollow: false,
     environment: args.bakes,
     lightProbe: args.bakes,
   };
-  const props = sceneryPropsFromArgs(sky);
+  const props = sceneryPropsFromArgs(scenery);
   const weatherKey = JSON.stringify(weatherOf(args));
   const weather = useMemo(
     () => JSON.parse(weatherKey) as WeatherState,
@@ -175,7 +175,7 @@ const CloudBenchStory = (args: CloudBenchArgs) => {
       ? undefined
       : sceneryReliefFromArgs({ ...sceneryReliefArgs, relief: true });
   return (
-    <World frame={sceneryReliefFrame(sky)} globe>
+    <World frame={sceneryReliefFrame(scenery)} globe>
       <Weather
         weather={weather}
         timeScale={args.cloudRate}
@@ -381,7 +381,7 @@ const viewportDecorator: Decorator = (Story, { args }) => {
 };
 
 const meta = {
-  title: 'debug/Scenery/Cloud Bench',
+  title: 'Debug/Scenery/Cloud Bench',
   component: CloudBenchStory,
   decorators: [
     Canvas3dDecorator,

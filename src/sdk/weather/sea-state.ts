@@ -64,10 +64,10 @@ const SEA_LAYERS_MEDIUM: readonly SeaLayerSpec[] = [
  *
  * @group Weather
  */
-export type SeaQuality = 'low' | 'medium' | 'high' | 'ultra';
+export type WaterQuality = 'low' | 'medium' | 'high' | 'ultra';
 
-/** What a {@link SeaQuality} draws: its layers, and whether the detail octave below them. */
-export type SeaQualitySpec = {
+/** What a {@link WaterQuality} draws: its layers, and whether the detail octave below them. */
+export type WaterQualitySpec = {
   layers: readonly SeaLayerSpec[];
   /** the finest layer read again {@link SEA_DETAIL_SCALE} times smaller ({@link SeaState.detail}) */
   detail: boolean;
@@ -79,8 +79,8 @@ export type SeaQualitySpec = {
   anisotropy?: number;
 };
 
-/** What each {@link SeaQuality} draws. */
-export const SEA_QUALITY: Readonly<Record<SeaQuality, SeaQualitySpec>> = {
+/** What each {@link WaterQuality} draws. */
+export const WATER_QUALITY: Readonly<Record<WaterQuality, WaterQualitySpec>> = {
   low: {
     layers: SEA_LAYERS_LONG.map(({ size }) => ({
       size,

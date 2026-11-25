@@ -12,7 +12,7 @@ const LIST_WIDTH = 64;
 
 /**
  * The cell of a cube-face grid over the sky a direction falls in: its face (+x, -x, +y,
- * -y, +z, -z) and its column and row. ⚠️ sky.glsl's `skyCatalogue` repeats it.
+ * -y, +z, -z) and its column and row. ⚠️ scenery.glsl's `skyCatalogue` repeats it.
  */
 export function skyStarCell(
   x: number,

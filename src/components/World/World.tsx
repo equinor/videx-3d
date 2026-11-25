@@ -19,7 +19,7 @@ import {
 } from '../../sdk/projection/place-frame';
 import type { Vec2 } from '../../sdk/types/common';
 import type { ReliefTileLoader } from '../Layers/relief-tile-loader';
-import type { SceneryOceanState } from '../Scenery/scenery-context';
+import type { ScenerySeaState } from '../Scenery/scenery-context';
 import { SceneryReliefHub } from '../Scenery/scenery-relief-hub';
 import { WorldContext, WorldState } from './world-context';
 import {
@@ -132,7 +132,7 @@ export type WorldProps = {
  *   onFrameSettled={uncover}
  * >
  *   <Scenery observer={{ date }}>
- *     <SceneryOcean />
+ *     <ScenerySea />
  *     <SceneryStage />
  *   </Scenery>
  *   <GeoRelief layers={layers} />
@@ -233,15 +233,15 @@ export const World = ({
   // The relief's: what it shares (the tiles it draws), and the sky and the stage that join it.
   const [tiles] = useState(() => new SceneryReliefHub());
   const [reliefs, setReliefs] = useState(0);
-  const [sky, setSky] = useState<SceneryOceanState | null>(null);
+  const [scenery, setScenery] = useState<ScenerySeaState | null>(null);
   const [stage, setStage] = useState<WorldReliefStage | null>(null);
   const addRelief = useCallback(() => {
     setReliefs(count => count + 1);
     return () => setReliefs(count => count - 1);
   }, []);
-  const provideSky = useCallback((offered: SceneryOceanState) => {
-    setSky(offered);
-    return () => setSky(current => (current === offered ? null : current));
+  const provideScenery = useCallback((offered: ScenerySeaState) => {
+    setScenery(offered);
+    return () => setScenery(current => (current === offered ? null : current));
   }, []);
   const provideStage = useCallback((handed: WorldReliefStage) => {
     setStage(handed);
@@ -256,22 +256,22 @@ export const World = ({
     () => ({
       tiles,
       present: reliefs > 0,
-      sky,
+      scenery,
       stage,
       loader,
       addRelief,
-      provideSky,
+      provideScenery,
       provideStage,
       provideLoader,
     }),
     [
       tiles,
       reliefs,
-      sky,
+      scenery,
       stage,
       loader,
       addRelief,
-      provideSky,
+      provideScenery,
       provideStage,
       provideLoader,
     ],

@@ -38,7 +38,7 @@ import {
   SurfaceDetailUniforms,
 } from '../../sdk/materials/surface-detail';
 import { Globe } from '../../sdk/projection/globe';
-import { OceanCharts } from '../../sdk/projection/ocean-charts';
+import { WaterCharts } from '../../sdk/projection/water-charts';
 import { Vec2, Vec3 } from '../../sdk/types/common';
 import {
   type WaterOptics,
@@ -52,12 +52,12 @@ import {
   directionFromCompass,
 } from '../../sdk/utils/vector-operations';
 import {
-  OCEAN_SHADING_DEFINES,
-  OCEAN_SURFACE_UNIFORMS,
-  OceanMaterial,
-} from '../Ocean/ocean-material';
+  WATER_SHADING_DEFINES,
+  WATER_SURFACE_UNIFORMS,
+  WaterMaterial,
+} from '../Water/water-material';
 import fragmentShader from './shaders/sky-fragment.glsl';
-import vertexShader from './shaders/sky-vertex.glsl';
+import vertexShader from './shaders/scenery-vertex.glsl';
 import { SkyAirColors } from './scenery-air-colors';
 import {
   SCENERY_EARTH_RADIUS,
@@ -73,14 +73,14 @@ import type {
   ScenerySkyShadow,
 } from './scenery-registry';
 
-// The naked-eye planets (`PLANETS`); sky.glsl's `uSkyPlanets` has as many.
+// The naked-eye planets (`PLANETS`); scenery.glsl's `uSkyPlanets` has as many.
 const SKY_PLANET_COUNT = 5;
 
 // An empty rectangle: nothing is on a stage.
 const NO_STAGE = [1, 1, -1, -1] as const;
 
 // The look the background's seabed takes under a relief until it hands its own over
-// (oceanReliefLooks), in relief-look.glsl's rows: the land flat grey, no contours, and the seabed
+// (seaReliefLooks), in relief-look.glsl's rows: the land flat grey, no contours, and the seabed
 // the sea's own colour, plain.
 const NO_RELIEF_LOOK = shareTexture(
   (() => {
@@ -103,15 +103,15 @@ const NO_RELIEF_LOOK = shareTexture(
 
 /**
  * The defines a material drawing the sky's sea takes over from the {@link SceneryMaterial}:
- * its waves and its water's shading ({@link OCEAN_SHADING_DEFINES}). In this order wherever a
+ * its waves and its water's shading ({@link WATER_SHADING_DEFINES}). In this order wherever a
  * program is made, as a program is keyed on the order of its defines.
  */
 export const SCENERY_SEA_DEFINES = [
   'SEA_LAYERS',
   'SEA_DETAIL',
   'SEA_ANISO',
-  'OCEAN_CONTACT_COUNT',
-  ...OCEAN_SHADING_DEFINES,
+  'WATER_CONTACT_COUNT',
+  ...WATER_SHADING_DEFINES,
 ];
 
 /** The same and the seabed's detail: what a stage's sea compiles with. */
@@ -162,7 +162,7 @@ export class SceneryMaterial extends ShaderMaterial {
    * over the field, fixed ones on the Earth far off. Kept in step with the globe and the
    * camera ({@link syncCamera}).
    */
-  readonly oceanCharts: OceanCharts;
+  readonly seaCharts: WaterCharts;
   /**
    * The ground's maps (`GroundMap`): how deep the sea is under its surface where they cover.
    * None until a `Scenery`'s ground draws them (`SceneryGround`); its uniforms are the sky's.
@@ -180,7 +180,7 @@ export class SceneryMaterial extends ShaderMaterial {
   private bedDetailKey = '';
   // The disc the sea is flat over (setFlatSea): the globe's.
   private get flatSea(): Vector4 {
-    return this.uniforms.uSkyStageFlat.value;
+    return this.uniforms.uSceneryStageFlat.value;
   }
   private starTextures: { cells: DataTexture; list: DataTexture } | null = null;
   private observing = false;
@@ -205,7 +205,7 @@ export class SceneryMaterial extends ShaderMaterial {
   // The sun's elevation where the camera is (setSeenSun), null for the field's.
   private seenElevation: number | null = null;
   private seenMoonShine = 1;
-  // The stage's reach as set (setOceanStage); the uniform holds it only while the stage
+  // The stage's reach as set (setSeaStage); the uniform holds it only while the stage
   // can draw what it claims (claimStage).
   private stageReach = 0;
 
@@ -214,19 +214,24 @@ export class SceneryMaterial extends ShaderMaterial {
    *   ({@link globeEnabled} then follows it). Default a globe of its own.
    */
   constructor(parameters: ShaderMaterialParameters = {}, globe?: Globe) {
-    const { sun, colors, void: abyss, ocean } = sceneryDefaults;
-    const oceanOptics = waterOpticsOf();
+    const {
+      sun,
+      colors,
+      void: voidDefaults,
+      sea: seaDefaults,
+    } = sceneryDefaults;
+    const seaOptics = waterOpticsOf();
     super({
       vertexShader,
       fragmentShader,
       uniforms: {
         ...UniformsUtils.clone(UniformsLib.lights),
-        // `fog: true` makes three write these once a scene has fog (see `useImmersionFog`).
+        // `fog: true` makes three write these once a scene has fog (see `useMediumFog`).
         ...UniformsUtils.clone(UniformsLib.fog),
         ...createSurfaceDetailUniforms(),
-        uSkyUp: new Uniform(new Vector3(0, 1, 0)),
-        uSkyNorth: new Uniform(new Vector3(0, 0, -1)),
-        uSkyEast: new Uniform(new Vector3(1, 0, 0)),
+        uSceneryUp: new Uniform(new Vector3(0, 1, 0)),
+        uSceneryNorth: new Uniform(new Vector3(0, 0, -1)),
+        uSceneryEast: new Uniform(new Vector3(1, 0, 0)),
         uSkyZenithColor: new Uniform(new Color(colors.zenith)),
         uSkyHorizonColor: new Uniform(new Color(colors.horizon)),
         uSkyGroundColor: new Uniform(new Color(colors.ground)),
@@ -265,27 +270,33 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkySunDisc: new Uniform(1),
         uSkyHorizonBlend: new Uniform(sceneryDefaults.horizonBlend),
         uSkyDaylight: new Uniform(1),
-        uSkyIntensity: new Uniform(sceneryDefaults.intensity),
-        uSkyDebug: new Uniform(0),
-        uSkyAbyssLevel: new Uniform(abyss.level),
-        uSkyAbyssCeilingColor: new Uniform(new Color(abyss.colors.ceiling)),
-        uSkyAbyssHorizonColor: new Uniform(new Color(abyss.colors.horizon)),
-        uSkyAbyssDepthColor: new Uniform(new Color(abyss.colors.depth)),
-        uSkyAbyssFadeDistance: new Uniform(abyss.fadeDistance),
-        uSkyAbyssTransition: new Uniform(abyss.transition),
-        uSkyAbyssDarkening: new Uniform(abyss.darkening),
-        uSkyAbyssDetail: new Uniform(abyss.detail),
-        uSkyAbyssDetailScale: new Uniform(abyss.detailScale),
-        uSkyAbyssDepthDetail: new Uniform(
-          new Vector2(abyss.depthDetail, abyss.depthDetailScale),
+        uSceneryIntensity: new Uniform(sceneryDefaults.intensity),
+        uSceneryDebug: new Uniform(0),
+        uSceneryVoidLevel: new Uniform(voidDefaults.level),
+        uSceneryVoidCeilingColor: new Uniform(
+          new Color(voidDefaults.colors.ceiling),
         ),
-        uSkyAbyssFalloff: new Uniform(abyss.falloff),
-        // Toward the subsurface's light raking the lid (setAbyssLight).
-        uSkyAbyssLight: new Uniform(new Vector3(0, 1, 0)),
+        uSceneryVoidHorizonColor: new Uniform(
+          new Color(voidDefaults.colors.horizon),
+        ),
+        uSceneryVoidDepthColor: new Uniform(
+          new Color(voidDefaults.colors.depth),
+        ),
+        uSceneryVoidTransition: new Uniform(voidDefaults.transition),
+        uSceneryVoidDarkening: new Uniform(voidDefaults.darkening),
+        uSceneryVoidDetail: new Uniform(voidDefaults.detail),
+        uSceneryVoidDetailScale: new Uniform(voidDefaults.detailScale),
+        uSceneryVoidFalloff: new Uniform(voidDefaults.falloff),
+        // 1 while the sky is drawn; 0 with none, its light the void's gradient (sky).
+        uScenerySky: new Uniform(1),
+        // Toward the subsurface's light raking the lid (setVoidLight).
+        uSceneryVoidLight: new Uniform(new Vector3(0, 1, 0)),
         // The hollow under the seabed (hollow.glsl): on, open, its rim's angle, its radius;
         // and how its rim wanders round it.
-        uSkyHollow: new Uniform(new Vector4(0, 0, 0, abyss.hollow.radius)),
-        uSkyHollowRim: new Uniform(
+        uSceneryHollow: new Uniform(
+          new Vector4(0, 0, 0, voidDefaults.hollow.radius),
+        ),
+        uSceneryHollowRim: new Uniform(
           SCENERY_HOLLOW_RIM.map(([k, a, p]) => new Vector3(k, a, p)),
         ),
         // The hollow's look (hollow-look.glsl), set by the Scenery: its rock (a RockTexture),
@@ -297,32 +308,32 @@ export class SceneryMaterial extends ShaderMaterial {
         uHollowCliff: new Uniform<Texture | null>(null),
         uHollowShape: new Uniform(
           new Vector4(
-            abyss.hollow.floorDepth,
-            abyss.hollow.radius,
-            Math.max(40000, 0.35 * abyss.hollow.radius),
-            abyss.hollow.lightFalloff,
+            voidDefaults.hollow.floorDepth,
+            voidDefaults.hollow.radius,
+            Math.max(40000, 0.35 * voidDefaults.hollow.radius),
+            voidDefaults.hollow.lightFalloff,
           ),
         ),
         uHollowWallColor: new Uniform(
-          new Color(abyss.hollow.styles.calm.colors.walls),
+          new Color(voidDefaults.hollow.styles.calm.colors.walls),
         ),
         uHollowFloorColor: new Uniform(
-          new Color(abyss.hollow.styles.calm.colors.floor),
+          new Color(voidDefaults.hollow.styles.calm.colors.floor),
         ),
         uHollowEmberColor: new Uniform(
-          new Color(abyss.hollow.styles.calm.colors.embers),
+          new Color(voidDefaults.hollow.styles.calm.colors.embers),
         ),
         uHollowLidColor: new Uniform(
-          new Color(abyss.hollow.styles.calm.colors.lid),
+          new Color(voidDefaults.hollow.styles.calm.colors.lid),
         ),
         // How much its fissures glow, how much its air darkens, 1 for the calm style, and how
         // much of the air is left over it while open.
         uHollowLook: new Uniform(
           new Vector4(
-            abyss.hollow.styles.calm.embers,
-            abyss.hollow.murk,
+            voidDefaults.hollow.styles.calm.embers,
+            voidDefaults.hollow.murk,
             1,
-            abyss.hollow.styles.calm.air,
+            voidDefaults.hollow.styles.calm.air,
           ),
         ),
         // Where the camera is, set each frame (SceneryHollowParts.setView): x 1 inside the
@@ -335,50 +346,54 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyHaze: new Uniform(
           new Vector2(sceneryDefaults.air.hazeHeight, sceneryDefaults.air.haze),
         ),
-        uSkyCurvature: new Uniform(
+        uSceneryCurvature: new Uniform(
           sceneryDefaults.globe ? 1 / SCENERY_EARTH_RADIUS : 0,
         ),
-        uSkyStageFlat: new Uniform(new Vector4()),
-        uSkyOceanLevel: new Uniform(ocean.level),
-        uSkyOceanDepth: new Uniform(ocean.depth),
-        uSkyOceanBedColor: new Uniform(new Color(ocean.seabed.color)),
-        uSkyOceanBedSpecular: new Uniform(new Color(ocean.seabed.specular)),
-        uSkyOceanBedShininess: new Uniform(ocean.seabed.shininess),
-        uSkyOceanBedAmbient: new Uniform(new Vector2(...ocean.seabed.ambient)),
-        uSkyOceanExtinction: new Uniform(
-          new Vector3(...waterExtinctionOf(oceanOptics)),
+        uSceneryStageFlat: new Uniform(new Vector4()),
+        uScenerySeaLevel: new Uniform(seaDefaults.level),
+        uScenerySeaDepth: new Uniform(seaDefaults.depth),
+        uScenerySeabedColor: new Uniform(new Color(seaDefaults.seabed.color)),
+        uScenerySeabedSpecular: new Uniform(
+          new Color(seaDefaults.seabed.specular),
         ),
-        uSkyOceanWaterColor: new Uniform(
-          new Color().fromArray(waterColorOf(oceanOptics)),
+        uScenerySeabedShininess: new Uniform(seaDefaults.seabed.shininess),
+        uScenerySeabedAmbient: new Uniform(
+          new Vector2(...seaDefaults.seabed.ambient),
         ),
-        uSkyOceanBuried: new Uniform(0),
-        uSkyOceanTrench: new Uniform(0),
-        uSkyOceanStageOpen: new Uniform(0),
-        uSkyOceanCutawayAnchor: new Uniform(new Vector3()),
-        uSkyOceanCutawayHeading: new Uniform(new Vector3(0, 0, -1)),
-        uSkyOceanCutawayShape: new Uniform(new Vector3()),
-        uSkyOceanCutawayWaveA: new Uniform(new Vector3()),
-        uSkyOceanCutawayWaveB: new Uniform(new Vector3()),
-        uSkyOceanCutawayRim: new Uniform(new Vector4(1, 1, 1, 0)),
-        uSkyOceanCutawayShadow: new Uniform(new Vector2()),
-        uSkyOceanCutawayCuts: new Uniform(new Vector2(1, 1)),
-        uSkyOceanCutawayGrip: new Uniform(new Vector2(0, 1)),
-        uSkyOceanWater: new Uniform(1),
-        uSkyOceanSeabed: new Uniform(1),
-        uSkyOceanSeabedOpacity: new Uniform(1),
-        uSkyOceanStage: new Uniform(new Vector4(...NO_STAGE)),
-        uSkyOceanStageReach: new Uniform(0),
-        uSkyOceanReliefReach: new Uniform(0),
-        // The relief's looks, for the background's seabed under it (oceanReliefBed).
+        uScenerySeaExtinction: new Uniform(
+          new Vector3(...waterExtinctionOf(seaOptics)),
+        ),
+        uScenerySeaWaterColor: new Uniform(
+          new Color().fromArray(waterColorOf(seaOptics)),
+        ),
+        uScenerySeaBuried: new Uniform(0),
+        uScenerySeaTrench: new Uniform(0),
+        uScenerySeaStageOpen: new Uniform(0),
+        uScenerySeaCutawayAnchor: new Uniform(new Vector3()),
+        uScenerySeaCutawayHeading: new Uniform(new Vector3(0, 0, -1)),
+        uScenerySeaCutawayShape: new Uniform(new Vector3()),
+        uScenerySeaCutawayWaveA: new Uniform(new Vector3()),
+        uScenerySeaCutawayWaveB: new Uniform(new Vector3()),
+        uScenerySeaCutawayRim: new Uniform(new Vector4(1, 1, 1, 0)),
+        uScenerySeaCutawayShadow: new Uniform(new Vector2()),
+        uScenerySeaCutawayCuts: new Uniform(new Vector2(1, 1)),
+        uScenerySeaCutawayGrip: new Uniform(new Vector2(0, 1)),
+        uScenerySeaWater: new Uniform(1),
+        uScenerySeabed: new Uniform(1),
+        uScenerySeabedOpacity: new Uniform(1),
+        uScenerySeaStage: new Uniform(new Vector4(...NO_STAGE)),
+        uScenerySeaStageReach: new Uniform(0),
+        uScenerySeaReliefReach: new Uniform(0),
+        // The relief's looks, for the background's seabed under it (seaReliefBed).
         uReliefLook: new Uniform<Texture>(NO_RELIEF_LOOK),
         uColorRamps: new Uniform(colorRampTexture),
-        uSkyOceanClouds: new Uniform<CubeTexture | null>(null),
-        uSkyOceanCloudsOn: new Uniform(0),
-        // What the sea reflects of them away from where they were baked (setOceanCloudReflection).
-        uSkyOceanCloudBase: new Uniform(0),
-        uSkyOceanCloudMap: new Uniform<CubeTexture | null>(null),
-        uSkyOceanCloudEarth: new Uniform(new Matrix3()),
-        uSkyOceanCloudFar: new Uniform(new Vector4(0, 0, 1, 0)),
+        uScenerySeaClouds: new Uniform<CubeTexture | null>(null),
+        uScenerySeaCloudsOn: new Uniform(0),
+        // What the sea reflects of them away from where they were baked (setSeaCloudReflection).
+        uScenerySeaCloudBase: new Uniform(0),
+        uScenerySeaCloudMap: new Uniform<CubeTexture | null>(null),
+        uScenerySeaCloudEarth: new Uniform(new Matrix3()),
+        uScenerySeaCloudFar: new Uniform(new Vector4(0, 0, 1, 0)),
         // The clouds' shadows (cloud-shadow.glsl, setCloudShadow).
         uSkyCloudShadow: new Uniform<Texture | null>(null),
         uSkyCloudShadowPlace: new Uniform(new Vector4()),
@@ -390,8 +405,8 @@ export class SceneryMaterial extends ShaderMaterial {
         uSkyAirColors: new Uniform<Texture | null>(null),
         uSkyAirEast: new Uniform(new Vector3(1, 0, 0)),
         uSkyAirNorth: new Uniform(new Vector3(0, 0, -1)),
-        uSkyStageInverseProjection: new Uniform(new Matrix4()),
-        uSkyStageViewport: new Uniform(new Vector4()),
+        uSceneryStageInverseProjection: new Uniform(new Matrix4()),
+        uSceneryStageViewport: new Uniform(new Vector4()),
       },
       side: DoubleSide,
       depthTest: false,
@@ -403,22 +418,18 @@ export class SceneryMaterial extends ShaderMaterial {
     });
 
     this.setSun(sun.azimuth, sun.elevation);
-    this.oceanBedDetail = ocean.seabed.detail;
+    this.seabedDetail = seaDefaults.seabed.detail;
     this.globe = globe ?? new Globe();
     this.ownsGlobe = !globe;
-    this.oceanCharts = new OceanCharts(this.globe);
+    this.seaCharts = new WaterCharts(this.globe);
     // The globe's own uniform objects, so every material sharing the sky's shares them too;
     // the same for the sea's charts and the ground's maps.
-    Object.assign(
-      this.uniforms,
-      this.globe.uniforms,
-      this.oceanCharts.uniforms,
-    );
+    Object.assign(this.uniforms, this.globe.uniforms, this.seaCharts.uniforms);
     this.groundMap.bind(this.uniforms);
     if (this.ownsGlobe)
-      this.globe.enabled = this.uniforms.uSkyCurvature.value > 0;
+      this.globe.enabled = this.uniforms.uSceneryCurvature.value > 0;
     else this.syncCurvature();
-    this.globe.level = this.oceanLevel;
+    this.globe.level = this.seaLevel;
     // After the globe's uniforms: its frame follows the camera's look.
     this.airColors = new SkyAirColors(this.uniforms, createSceneryGeometry());
     this.uniforms.uSkyAirColors.value = this.airColors.texture;
@@ -497,20 +508,20 @@ export class SceneryMaterial extends ShaderMaterial {
   /** Set which way is up (the horizon is perpendicular to it) and which way is north. */
   setFrame(frame: CompassFrame) {
     const { up, north, east } = compassBasis(frame);
-    this.uniforms.uSkyUp.value.fromArray(up);
-    this.uniforms.uSkyNorth.value.fromArray(north);
-    this.uniforms.uSkyEast.value.fromArray(east);
-    this.globe.setUp(this.uniforms.uSkyUp.value);
-    // The wave plane's X and Z: east and south (skyOceanPlane).
-    this.oceanCharts.setPlane(
-      this.uniforms.uSkyEast.value,
-      planeZ.copy(this.uniforms.uSkyNorth.value).negate(),
+    this.uniforms.uSceneryUp.value.fromArray(up);
+    this.uniforms.uSceneryNorth.value.fromArray(north);
+    this.uniforms.uSceneryEast.value.fromArray(east);
+    this.globe.setUp(this.uniforms.uSceneryUp.value);
+    // The wave plane's X and Z: east and south (scenerySeaPlane).
+    this.seaCharts.setPlane(
+      this.uniforms.uSceneryEast.value,
+      planeZ.copy(this.uniforms.uSceneryNorth.value).negate(),
     );
   }
 
   /** the world's up direction (normalised); see {@link setFrame} */
   get up(): Vector3 {
-    return this.uniforms.uSkyUp.value;
+    return this.uniforms.uSceneryUp.value;
   }
 
   /**
@@ -850,40 +861,38 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   get intensity(): number {
-    return this.uniforms.uSkyIntensity.value;
+    return this.uniforms.uSceneryIntensity.value;
   }
   set intensity(value: number) {
-    this.uniforms.uSkyIntensity.value = Math.max(value, 0);
+    this.uniforms.uSceneryIntensity.value = Math.max(value, 0);
   }
 
   /** tint what the sky, and a stage drawing its sea, draw by part (see `SceneryDebug.tint`) */
   get debugTint(): boolean {
-    return this.uniforms.uSkyDebug.value > 0;
+    return this.uniforms.uSceneryDebug.value > 0;
   }
   set debugTint(value: boolean) {
-    this.uniforms.uSkyDebug.value = value ? 1 : 0;
+    this.uniforms.uSceneryDebug.value = value ? 1 : 0;
   }
 
   /** the void below the level (see {@link SceneryVoidProps}); changing it recompiles the layers that draw it */
-  get abyss(): boolean {
-    return this.switches.SKY_ABYSS !== undefined;
+  get void(): boolean {
+    return this.switches.SCENERY_VOID !== undefined;
   }
-  set abyss(value: boolean) {
-    this.setSwitch('SKY_ABYSS', value);
+  set void(value: boolean) {
+    this.setSwitch('SCENERY_VOID', value);
   }
 
   /**
-   * No sky: the void's gradient in its place, with no air, sun, moon, stars or clouds
-   * (`background: 'void'`); changing it recompiles the sky's own layer
+   * The sky is drawn (the `Scenery`'s `sky`): off, its surface everywhere it is read (the
+   * seas' reflections, Snell's window, the bakes) is the void's gradient in its place. A
+   * uniform: nothing recompiles.
    */
-  get voidBackground(): boolean {
-    return this.defines.SKY_VOID !== undefined;
+  get sky(): boolean {
+    return this.uniforms.uScenerySky.value > 0.5;
   }
-  set voidBackground(value: boolean) {
-    if (value === this.voidBackground) return;
-    if (value) this.defines.SKY_VOID = '';
-    else delete this.defines.SKY_VOID;
-    this.needsUpdate = true;
+  set sky(value: boolean) {
+    this.uniforms.uScenerySky.value = value ? 1 : 0;
   }
 
   /**
@@ -946,7 +955,7 @@ export class SceneryMaterial extends ShaderMaterial {
 
   // The shaders' curvature, the globe's: 1 over the Earth's radius, 0 for a flat sea.
   private syncCurvature() {
-    this.uniforms.uSkyCurvature.value = this.globe.enabled
+    this.uniforms.uSceneryCurvature.value = this.globe.enabled
       ? 1 / SCENERY_EARTH_RADIUS
       : 0;
   }
@@ -968,127 +977,102 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   /** height of the lid along {@link up} */
-  get abyssLevel(): number {
-    return this.uniforms.uSkyAbyssLevel.value;
+  get voidLevel(): number {
+    return this.uniforms.uSceneryVoidLevel.value;
   }
-  set abyssLevel(value: number) {
-    this.uniforms.uSkyAbyssLevel.value = value;
-  }
-
-  get abyssCeilingColor(): Color {
-    return this.uniforms.uSkyAbyssCeilingColor.value;
-  }
-  set abyssCeilingColor(value: ColorRepresentation) {
-    this.uniforms.uSkyAbyssCeilingColor.value.set(value);
+  set voidLevel(value: number) {
+    this.uniforms.uSceneryVoidLevel.value = value;
   }
 
-  get abyssHorizonColor(): Color {
-    return this.uniforms.uSkyAbyssHorizonColor.value;
+  get voidCeilingColor(): Color {
+    return this.uniforms.uSceneryVoidCeilingColor.value;
   }
-  set abyssHorizonColor(value: ColorRepresentation) {
-    this.uniforms.uSkyAbyssHorizonColor.value.set(value);
-  }
-
-  get abyssDepthColor(): Color {
-    return this.uniforms.uSkyAbyssDepthColor.value;
-  }
-  set abyssDepthColor(value: ColorRepresentation) {
-    this.uniforms.uSkyAbyssDepthColor.value.set(value);
+  set voidCeilingColor(value: ColorRepresentation) {
+    this.uniforms.uSceneryVoidCeilingColor.value.set(value);
   }
 
-  /** distance over which the lid recedes into the horizon colour; 0 for never */
-  get abyssFadeDistance(): number {
-    return this.uniforms.uSkyAbyssFadeDistance.value;
+  get voidHorizonColor(): Color {
+    return this.uniforms.uSceneryVoidHorizonColor.value;
   }
-  set abyssFadeDistance(value: number) {
-    this.uniforms.uSkyAbyssFadeDistance.value = Math.max(value, 0);
+  set voidHorizonColor(value: ColorRepresentation) {
+    this.uniforms.uSceneryVoidHorizonColor.value.set(value);
+  }
+
+  get voidDepthColor(): Color {
+    return this.uniforms.uSceneryVoidDepthColor.value;
+  }
+  set voidDepthColor(value: ColorRepresentation) {
+    this.uniforms.uSceneryVoidDepthColor.value.set(value);
   }
 
   /** depth below the level over which the void fades in */
-  get abyssTransition(): number {
-    return this.uniforms.uSkyAbyssTransition.value;
+  get voidTransition(): number {
+    return this.uniforms.uSceneryVoidTransition.value;
   }
-  set abyssTransition(value: number) {
-    this.uniforms.uSkyAbyssTransition.value = Math.max(value, 1e-3);
+  set voidTransition(value: number) {
+    this.uniforms.uSceneryVoidTransition.value = Math.max(value, 1e-3);
   }
 
   /** depth below the level over which the void dims toward black; 0 = off */
-  get abyssDarkening(): number {
-    return this.uniforms.uSkyAbyssDarkening.value;
+  get voidDarkening(): number {
+    return this.uniforms.uSceneryVoidDarkening.value;
   }
-  set abyssDarkening(value: number) {
-    this.uniforms.uSkyAbyssDarkening.value = Math.max(value, 0);
+  set voidDarkening(value: number) {
+    this.uniforms.uSceneryVoidDarkening.value = Math.max(value, 0);
   }
 
   /** strength of the noise relief on the lid */
-  get abyssDetail(): number {
-    return this.uniforms.uSkyAbyssDetail.value;
+  get voidDetail(): number {
+    return this.uniforms.uSceneryVoidDetail.value;
   }
-  set abyssDetail(value: number) {
-    this.uniforms.uSkyAbyssDetail.value = Math.max(value, 0);
+  set voidDetail(value: number) {
+    this.uniforms.uSceneryVoidDetail.value = Math.max(value, 0);
   }
 
   /** size of the noise relief, in world units */
-  get abyssDetailScale(): number {
-    return this.uniforms.uSkyAbyssDetailScale.value;
+  get voidDetailScale(): number {
+    return this.uniforms.uSceneryVoidDetailScale.value;
   }
-  set abyssDetailScale(value: number) {
-    this.uniforms.uSkyAbyssDetailScale.value = Math.max(value, 1e-3);
-  }
-
-  /** strength of the faint rock in the depths; 0 for none */
-  get abyssDepthDetail(): number {
-    return this.uniforms.uSkyAbyssDepthDetail.value.x;
-  }
-  set abyssDepthDetail(value: number) {
-    this.uniforms.uSkyAbyssDepthDetail.value.x = Math.max(value, 0);
-  }
-
-  /** size of the rock's features in the depths, relative */
-  get abyssDepthDetailScale(): number {
-    return this.uniforms.uSkyAbyssDepthDetail.value.y;
-  }
-  set abyssDepthDetailScale(value: number) {
-    this.uniforms.uSkyAbyssDepthDetail.value.y = Math.max(value, 1e-3);
+  set voidDetailScale(value: number) {
+    this.uniforms.uSceneryVoidDetailScale.value = Math.max(value, 1e-3);
   }
 
   /** exponent of the depths' gradient below the horizon */
-  get abyssFalloff(): number {
-    return this.uniforms.uSkyAbyssFalloff.value;
+  get voidFalloff(): number {
+    return this.uniforms.uSceneryVoidFalloff.value;
   }
-  set abyssFalloff(value: number) {
-    this.uniforms.uSkyAbyssFalloff.value = Math.max(value, 0.01);
+  set voidFalloff(value: number) {
+    this.uniforms.uSceneryVoidFalloff.value = Math.max(value, 0.01);
   }
 
   /**
    * Openings to the void from above that stages make (a `SceneryStage` occupant's cut),
    * each telling whether it is open now.
    */
-  readonly abyssOpenings = new Set<() => boolean>();
+  readonly voidOpenings = new Set<() => boolean>();
 
   /**
    * Whether the void can show from above the lid: through a seabed that is off or
    * see-through, a cutaway taking the seabed (`cutaway`), or a stage's opening
-   * ({@link abyssOpenings}). Sets whether a stage's opening is open now.
+   * ({@link voidOpenings}). Sets whether a stage's opening is open now.
    */
-  abyssOpenFromAbove(cutaway: boolean) {
-    const covers =
-      this.ocean && this.oceanSeabed && this.oceanSeabedOpacity >= 1;
+  voidOpenFromAbove(cutaway: boolean) {
+    const covers = this.sea && this.seabed && this.seabedOpacity >= 1;
     let opening = false;
-    for (const open of this.abyssOpenings) {
+    for (const open of this.voidOpenings) {
       if (open()) {
         opening = true;
         break;
       }
     }
-    this.uniforms.uSkyOceanStageOpen.value = opening ? 1 : 0;
-    if (!this.ocean) return false;
+    this.uniforms.uScenerySeaStageOpen.value = opening ? 1 : 0;
+    if (!this.sea) return false;
     return !covers || cutaway || opening;
   }
 
   /** the light raking the void's lid from below, to show a relief's shape: `direction` toward it */
-  setAbyssLight(direction: Vector3) {
-    this.uniforms.uSkyAbyssLight.value.copy(direction).normalize();
+  setVoidLight(direction: Vector3) {
+    this.uniforms.uSceneryVoidLight.value.copy(direction).normalize();
   }
 
   /**
@@ -1098,10 +1082,10 @@ export class SceneryMaterial extends ShaderMaterial {
    * void is the plain void. A uniform: nothing recompiles.
    */
   get hollow(): boolean {
-    return this.uniforms.uSkyHollow.value.x > 0.5;
+    return this.uniforms.uSceneryHollow.value.x > 0.5;
   }
   set hollow(value: boolean) {
-    this.uniforms.uSkyHollow.value.x = value ? 1 : 0;
+    this.uniforms.uSceneryHollow.value.x = value ? 1 : 0;
   }
 
   /**
@@ -1109,117 +1093,118 @@ export class SceneryMaterial extends ShaderMaterial {
    * cut inside its rim, and stay whole around it. Only while {@link hollow}.
    */
   get hollowOpen(): boolean {
-    return this.uniforms.uSkyHollow.value.y > 0.5;
+    return this.uniforms.uSceneryHollow.value.y > 0.5;
   }
   set hollowOpen(value: boolean) {
-    this.uniforms.uSkyHollow.value.y = value ? 1 : 0;
+    this.uniforms.uSceneryHollow.value.y = value ? 1 : 0;
   }
 
   /** the hollow's radius along the sea, about the globe's disc centre, in world units */
   get hollowRadius(): number {
-    return this.uniforms.uSkyHollow.value.w;
+    return this.uniforms.uSceneryHollow.value.w;
   }
   set hollowRadius(value: number) {
-    this.uniforms.uSkyHollow.value.w = Math.max(value, 0);
+    this.uniforms.uSceneryHollow.value.w = Math.max(value, 0);
     this.syncHollow();
   }
 
   // The rim's angle about the globe's centre, as hollow.glsl takes it: the globe's radius may
   // have changed since (a World's frame).
   private syncHollow() {
-    const hollow = this.uniforms.uSkyHollow.value as Vector4;
+    const hollow = this.uniforms.uSceneryHollow.value as Vector4;
     hollow.z = Math.min(hollow.w / this.globe.radius, 1.5);
   }
 
-  /** the endless sea (see {@link SceneryOceanProps}); link its water first ({@link linkOcean}). Changing it recompiles the layers that draw it */
-  get ocean(): boolean {
-    return this.switches.SKY_OCEAN !== undefined;
+  /** the endless sea (see {@link ScenerySeaProps}); link its water first ({@link linkWater}). Changing it recompiles the layers that draw it */
+  get sea(): boolean {
+    return this.switches.SCENERY_SEA !== undefined;
   }
-  set ocean(value: boolean) {
-    this.setSwitch('SKY_OCEAN', value);
+  set sea(value: boolean) {
+    this.setSwitch('SCENERY_SEA', value);
   }
 
   /**
-   * Draw the sea with an {@link OceanMaterial}'s water. Its uniform objects are shared
+   * Draw the sea with an {@link WaterMaterial}'s water. Its uniform objects are shared
    * by reference, so its setters, sea layers and clock drive the sky's sea too; the water
-   * bakes its layers each frame (`OceanMaterial.renderWaves`).
+   * bakes its layers each frame (`WaterMaterial.renderWaves`).
    */
-  linkOcean(water: OceanMaterial) {
-    for (const name of OCEAN_SURFACE_UNIFORMS) {
+  linkWater(water: WaterMaterial) {
+    for (const name of WATER_SURFACE_UNIFORMS) {
       this.uniforms[name] = water.uniforms[name];
     }
     const layers = water.seaState.layers.length;
     const contacts = water.contactCount;
     if (
       this.switches.SEA_LAYERS !== layers ||
-      this.switches.OCEAN_CONTACT_COUNT !== contacts
+      this.switches.WATER_CONTACT_COUNT !== contacts
     ) {
       this.switches.SEA_LAYERS = layers;
-      this.switches.OCEAN_CONTACT_COUNT = contacts;
+      this.switches.WATER_CONTACT_COUNT = contacts;
       this.switchesVersion++;
     }
     this.setSwitch('SEA_DETAIL', water.seaState.detail !== null);
     this.setSwitchValue('SEA_ANISO', water.defines.SEA_ANISO);
     // Its shading as the water's: what its quality leaves out, its glitter, its Fresnel and
     // its whitecaps' life (`sparkle`, `fresnelPower`, `foamLife`).
-    for (const name of OCEAN_SHADING_DEFINES)
+    for (const name of WATER_SHADING_DEFINES)
       this.setSwitch(name, name in water.defines);
   }
 
   /** height of the sea surface along {@link up} */
-  get oceanLevel(): number {
-    return this.uniforms.uSkyOceanLevel.value;
+  get seaLevel(): number {
+    return this.uniforms.uScenerySeaLevel.value;
   }
-  set oceanLevel(value: number) {
-    this.uniforms.uSkyOceanLevel.value = value;
+  set seaLevel(value: number) {
+    this.uniforms.uScenerySeaLevel.value = value;
     this.globe.level = value;
   }
 
   /** depth of the seabed below the surface */
-  get oceanDepth(): number {
-    return this.uniforms.uSkyOceanDepth.value;
+  get seaDepth(): number {
+    return this.uniforms.uScenerySeaDepth.value;
   }
-  set oceanDepth(value: number) {
-    this.uniforms.uSkyOceanDepth.value = Math.max(value, 0);
+  set seaDepth(value: number) {
+    this.uniforms.uScenerySeaDepth.value = Math.max(value, 0);
   }
 
-  get oceanBedColor(): Color {
-    return this.uniforms.uSkyOceanBedColor.value;
+  get seabedColor(): Color {
+    return this.uniforms.uScenerySeabedColor.value;
   }
-  set oceanBedColor(value: ColorRepresentation) {
-    this.uniforms.uSkyOceanBedColor.value.set(value);
+  set seabedColor(value: ColorRepresentation) {
+    this.uniforms.uScenerySeabedColor.value.set(value);
   }
 
   /** the seabed's specular highlight colour */
-  get oceanBedSpecular(): Color {
-    return this.uniforms.uSkyOceanBedSpecular.value;
+  get seabedSpecular(): Color {
+    return this.uniforms.uScenerySeabedSpecular.value;
   }
-  set oceanBedSpecular(value: ColorRepresentation) {
-    this.uniforms.uSkyOceanBedSpecular.value.set(value);
+  set seabedSpecular(value: ColorRepresentation) {
+    this.uniforms.uScenerySeabedSpecular.value.set(value);
   }
 
   /** the seabed's specular exponent */
-  get oceanBedShininess(): number {
-    return this.uniforms.uSkyOceanBedShininess.value;
+  get seabedShininess(): number {
+    return this.uniforms.uScenerySeabedShininess.value;
   }
-  set oceanBedShininess(value: number) {
-    this.uniforms.uSkyOceanBedShininess.value = Math.max(value, 0);
+  set seabedShininess(value: number) {
+    this.uniforms.uScenerySeabedShininess.value = Math.max(value, 0);
   }
 
   /** the seabed's ambient multipliers facing up / facing down; `false` leaves the ambient flat */
-  get oceanBedAmbient(): Vector2 {
-    return this.uniforms.uSkyOceanBedAmbient.value;
+  get seabedAmbient(): Vector2 {
+    return this.uniforms.uScenerySeabedAmbient.value;
   }
-  set oceanBedAmbient(value: Readonly<Vec2> | false) {
-    if (value) this.uniforms.uSkyOceanBedAmbient.value.set(value[0], value[1]);
-    else this.uniforms.uSkyOceanBedAmbient.value.set(1, 1);
+  set seabedAmbient(value: Readonly<Vec2> | false) {
+    if (value)
+      this.uniforms.uScenerySeabedAmbient.value.set(value[0], value[1]);
+    else this.uniforms.uScenerySeabedAmbient.value.set(1, 1);
   }
 
   /** the seabed's procedural relief; `undefined` for none. Changing it recompiles the layers that draw it */
-  get oceanBedDetail(): SurfaceDetail | undefined {
+  get seabedDetail(): SurfaceDetail | undefined {
     return this.bedDetail;
   }
-  set oceanBedDetail(value: SurfaceDetail | undefined) {
+  set seabedDetail(value: SurfaceDetail | undefined) {
     const key = surfaceDetailKey(value);
     if (key === this.bedDetailKey) return;
     this.bedDetail = value;
@@ -1236,40 +1221,40 @@ export class SceneryMaterial extends ShaderMaterial {
    * the water's look (`waterOpticsOf`), or `null` where the seabed lies dry: lit as if no water
    * lay over it
    */
-  set oceanOptics(value: Required<WaterOptics> | null) {
-    const extinction = this.uniforms.uSkyOceanExtinction.value as Vector3;
+  set seaOptics(value: Required<WaterOptics> | null) {
+    const extinction = this.uniforms.uScenerySeaExtinction.value as Vector3;
     if (value) {
       extinction.fromArray(waterExtinctionOf(value));
-      (this.uniforms.uSkyOceanWaterColor.value as Color).fromArray(
+      (this.uniforms.uScenerySeaWaterColor.value as Color).fromArray(
         waterColorOf(value),
       );
     } else extinction.set(0, 0, 0);
   }
 
   /** how quickly the water tints what is seen through it, per world unit: its mean extinction */
-  get oceanFogDensity(): number {
-    const e = this.uniforms.uSkyOceanExtinction.value as Vector3;
+  get seaFogDensity(): number {
+    const e = this.uniforms.uScenerySeaExtinction.value as Vector3;
     return (e.x + e.y + e.z) / 3;
   }
 
-  /** the camera is under the ground a stage draws, above the sea's own seabed (see {@link oceanGround}) */
-  get oceanBuried(): boolean {
-    return this.uniforms.uSkyOceanBuried.value > 0;
+  /** the camera is under the ground a stage draws, above the sea's own seabed (see {@link seaGround}) */
+  get seaBuried(): boolean {
+    return this.uniforms.uScenerySeaBuried.value > 0;
   }
-  set oceanBuried(value: boolean) {
-    this.uniforms.uSkyOceanBuried.value = value ? 1 : 0;
+  set seaBuried(value: boolean) {
+    this.uniforms.uScenerySeaBuried.value = value ? 1 : 0;
   }
 
   /**
    * the camera is over the ground a stage draws but below the sea's own seabed, as in a
-   * trench of a relief deeper than the sea's `depth` (see {@link oceanGround}): the
+   * trench of a relief deeper than the sea's `depth` (see {@link seaGround}): the
    * background's view starts just above that seabed, in the water
    */
-  get oceanTrench(): boolean {
-    return this.uniforms.uSkyOceanTrench.value > 0;
+  get seaTrench(): boolean {
+    return this.uniforms.uScenerySeaTrench.value > 0;
   }
-  set oceanTrench(value: boolean) {
-    this.uniforms.uSkyOceanTrench.value = value ? 1 : 0;
+  set seaTrench(value: boolean) {
+    this.uniforms.uScenerySeaTrench.value = value ? 1 : 0;
   }
 
   /**
@@ -1277,58 +1262,58 @@ export class SceneryMaterial extends ShaderMaterial {
    * relief drawn from tiles): the seabed, or land above the sea, at whatever depth — deeper
    * than the sea's own seabed in a trench. `null` where the sea's flat seabed is.
    */
-  oceanGround: number | null = null;
+  seaGround: number | null = null;
 
   /** half the width of a stage occupant's outline (`SceneryStage`): the scale a cutaway keeps to (see `SceneryCutawayProps.zoomFollow`) */
   occupantRadius: number | null = null;
 
   /** the sea has water; without it the seabed lies dry */
-  get oceanWater(): boolean {
-    return this.uniforms.uSkyOceanWater.value > 0;
+  get seaWater(): boolean {
+    return this.uniforms.uScenerySeaWater.value > 0;
   }
-  set oceanWater(value: boolean) {
-    this.uniforms.uSkyOceanWater.value = value ? 1 : 0;
+  set seaWater(value: boolean) {
+    this.uniforms.uScenerySeaWater.value = value ? 1 : 0;
   }
 
   /** the sea has a seabed; without it the void lies below the water */
-  get oceanSeabed(): boolean {
-    return this.uniforms.uSkyOceanSeabed.value > 0;
+  get seabed(): boolean {
+    return this.uniforms.uScenerySeabed.value > 0;
   }
-  set oceanSeabed(value: boolean) {
-    this.uniforms.uSkyOceanSeabed.value = value ? 1 : 0;
+  set seabed(value: boolean) {
+    this.uniforms.uScenerySeabed.value = value ? 1 : 0;
   }
 
   /**
    * How far from the camera the relief draws its ground from tiles (a `GeoRelief`,
    * out to the far plane), 0 without one. From in the water and over a dry sea it
    * draws the seabed there too, which hides what lies below it by depth: there the
-   * background's seabed covers nothing for what is drawn under it (`skyOceanCover`).
+   * background's seabed covers nothing for what is drawn under it (`scenerySeaCover`).
    */
-  get oceanReliefReach(): number {
-    return this.uniforms.uSkyOceanReliefReach.value;
+  get seaReliefReach(): number {
+    return this.uniforms.uScenerySeaReliefReach.value;
   }
-  set oceanReliefReach(value: number) {
-    this.uniforms.uSkyOceanReliefReach.value = Math.max(value, 0);
+  set seaReliefReach(value: number) {
+    this.uniforms.uScenerySeaReliefReach.value = Math.max(value, 0);
   }
 
   /**
    * Whether a relief is the seabed (a `GeoRelief` in the `World`): the background's own then
    * shows only where none of its tiles is drawn yet, or past their edge, so it is drawn plain,
-   * in the relief's look ({@link oceanReliefLooks}) by the ground's height under it, without
+   * in the relief's look ({@link seaReliefLooks}) by the ground's height under it, without
    * the seabed's detail. Changing it recompiles the sea's layers.
    */
-  get oceanReliefBed(): boolean {
-    return this.switches.SKY_OCEAN_BED_LOOK !== undefined;
+  get seaReliefBed(): boolean {
+    return this.switches.SCENERY_SEABED_LOOK !== undefined;
   }
-  set oceanReliefBed(value: boolean) {
-    this.setSwitch('SKY_OCEAN_BED_LOOK', value);
+  set seaReliefBed(value: boolean) {
+    this.setSwitch('SCENERY_SEABED_LOOK', value);
   }
 
   /**
    * The relief's looks (`SceneryReliefLooks.texture`), which the background's seabed takes
-   * under it ({@link oceanReliefBed}): its own; null for the sea's seabed colour, plain.
+   * under it ({@link seaReliefBed}): its own; null for the sea's seabed colour, plain.
    */
-  set oceanReliefLooks(value: Texture | null) {
+  set seaReliefLooks(value: Texture | null) {
     this.uniforms.uReliefLook.value = value ?? NO_RELIEF_LOOK;
   }
 
@@ -1337,32 +1322,32 @@ export class SceneryMaterial extends ShaderMaterial {
    * premultiplied colour and alpha without the sky's intensity: the sea reflects it over the
    * sky. Null for none.
    */
-  get oceanClouds(): CubeTexture | null {
-    return this.uniforms.uSkyOceanClouds.value;
+  get seaClouds(): CubeTexture | null {
+    return this.uniforms.uScenerySeaClouds.value;
   }
-  set oceanClouds(value: CubeTexture | null) {
-    this.uniforms.uSkyOceanClouds.value = value;
-    this.uniforms.uSkyOceanCloudsOn.value = value ? 1 : 0;
+  set seaClouds(value: CubeTexture | null) {
+    this.uniforms.uScenerySeaClouds.value = value;
+    this.uniforms.uScenerySeaCloudsOn.value = value ? 1 : 0;
   }
 
   /**
-   * What the sea reflects of what draws itself in the sky away from where {@link oceanClouds}
+   * What the sea reflects of what draws itself in the sky away from where {@link seaClouds}
    * was baked (`ScenerySkyReflection`): the bake blurred as much as reading it by direction
    * alone blows its clouds up from over the sea, and far off the weather's own cover. Null for
    * neither.
    */
-  setOceanCloudReflection(reflection: ScenerySkyReflection | null) {
+  setSeaCloudReflection(reflection: ScenerySkyReflection | null) {
     const u = this.uniforms;
-    const far = u.uSkyOceanCloudFar.value as Vector4;
+    const far = u.uScenerySeaCloudFar.value as Vector4;
     if (!reflection) {
-      u.uSkyOceanCloudBase.value = 0;
-      u.uSkyOceanCloudMap.value = null;
+      u.uScenerySeaCloudBase.value = 0;
+      u.uScenerySeaCloudMap.value = null;
       far.set(0, 0, 1, 0);
       return;
     }
-    u.uSkyOceanCloudBase.value = reflection.base;
-    u.uSkyOceanCloudMap.value = reflection.map;
-    (u.uSkyOceanCloudEarth.value as Matrix3).copy(reflection.earth);
+    u.uScenerySeaCloudBase.value = reflection.base;
+    u.uScenerySeaCloudMap.value = reflection.map;
+    (u.uScenerySeaCloudEarth.value as Matrix3).copy(reflection.earth);
     far.set(
       reflection.map ? reflection.strength : 0,
       reflection.near,
@@ -1400,14 +1385,11 @@ export class SceneryMaterial extends ShaderMaterial {
   }
 
   /** how much of what lies beyond the seabed it hides, 0 to 1 */
-  get oceanSeabedOpacity(): number {
-    return this.uniforms.uSkyOceanSeabedOpacity.value;
+  get seabedOpacity(): number {
+    return this.uniforms.uScenerySeabedOpacity.value;
   }
-  set oceanSeabedOpacity(value: number) {
-    this.uniforms.uSkyOceanSeabedOpacity.value = Math.min(
-      Math.max(value, 0),
-      1,
-    );
+  set seabedOpacity(value: number) {
+    this.uniforms.uScenerySeabedOpacity.value = Math.min(Math.max(value, 0), 1);
   }
 
   /**
@@ -1415,8 +1397,8 @@ export class SceneryMaterial extends ShaderMaterial {
    * within `reach` of the camera, to a stage's real geometry; `null` for none. On the globe,
    * only while the camera is over the rectangle on the field's half of it (see claimStage).
    */
-  setOceanStage(bounds: [number, number, number, number] | null, reach = 1e30) {
-    this.uniforms.uSkyOceanStage.value.fromArray(bounds ?? NO_STAGE);
+  setSeaStage(bounds: [number, number, number, number] | null, reach = 1e30) {
+    this.uniforms.uScenerySeaStage.value.fromArray(bounds ?? NO_STAGE);
     this.stageReach = bounds ? reach : 0;
     this.claimStage(cameraAt);
   }
@@ -1431,21 +1413,21 @@ export class SceneryMaterial extends ShaderMaterial {
     let reach = this.stageReach;
     if (reach > 0 && this.globe.enabled) {
       const u = this.uniforms;
-      const stage = u.uSkyOceanStage.value;
-      const x = camera.dot(u.uSkyEast.value);
-      const z = -camera.dot(u.uSkyNorth.value);
+      const stage = u.uScenerySeaStage.value;
+      const x = camera.dot(u.uSceneryEast.value);
+      const z = -camera.dot(u.uSceneryNorth.value);
       const fieldSide =
         stageAway.subVectors(camera, this.globe.centre).dot(this.globe.up) > 0;
       const over = x > stage.x && x < stage.z && z > stage.y && z < stage.w;
       if (!fieldSide || !over) reach = 0;
     }
-    this.uniforms.uSkyOceanStageReach.value = reach;
+    this.uniforms.uScenerySeaStageReach.value = reach;
   }
 
   /** For stage geometry, which rebuilds each pixel's view ray: call before drawing it. */
   setStageView(renderer: WebGLRenderer, camera: Camera) {
-    renderer.getCurrentViewport(this.uniforms.uSkyStageViewport.value);
-    this.uniforms.uSkyStageInverseProjection.value.copy(
+    renderer.getCurrentViewport(this.uniforms.uSceneryStageViewport.value);
+    this.uniforms.uSceneryStageInverseProjection.value.copy(
       camera.projectionMatrixInverse,
     );
     this.prepareDraw(renderer, camera);
@@ -1461,9 +1443,9 @@ export class SceneryMaterial extends ShaderMaterial {
     // A World's globe may have been curved or flattened since.
     if (!this.ownsGlobe) this.syncCurvature();
     this.globe.setCamera(cameraAt.setFromMatrixPosition(camera.matrixWorld));
-    // Out to where the sea's detail has faded (OceanMaterial.detailFadeDistance).
+    // Out to where the sea's detail has faded (WaterMaterial.detailFadeDistance).
     const fade = this.uniforms.uDetailFade?.value as Vector2 | undefined;
-    this.oceanCharts.setCamera(cameraAt, fade ? fade.y : Infinity);
+    this.seaCharts.setCamera(cameraAt, fade ? fade.y : Infinity);
     this.syncHollow();
     this.claimStage(cameraAt);
   }

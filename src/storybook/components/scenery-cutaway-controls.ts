@@ -30,7 +30,7 @@ export type SceneryCutawayArgs = {
 };
 
 /** The Scenery's own defaults, with the cutaway off and its grip on. */
-export const skyCutawayArgs: SceneryCutawayArgs = {
+export const sceneryCutawayArgs: SceneryCutawayArgs = {
   cutaway: false,
   cutawayWater: 1,
   cutawaySeabed: true,

@@ -80,8 +80,8 @@ import {
   createSceneryReliefTilePatch,
   createSceneryReliefTileSeeThroughMaterial,
   createSceneryReliefTileSubset,
-  SKY_RELIEF_MAX_TILES,
-  SKY_RELIEF_TILE_ATTRIBUTES,
+  SCENERY_RELIEF_MAX_TILES,
+  SCENERY_RELIEF_TILE_ATTRIBUTES,
   SceneryReliefRegion,
   SceneryReliefRegions,
   SceneryReliefTileDebug,
@@ -207,7 +207,7 @@ type SceneryStageReliefTilesProps = {
    * the sky that shades it (sea, air, void), or null to draw it plainly, lit by the scene's
    * lights (see `createReliefTilePlainMaterial`): a change swaps its materials, its tiles kept
    */
-  sky: SceneryMaterial | null;
+  scenery: SceneryMaterial | null;
   /** the globe it lies on, the sky's if any (a `World`'s); it needs a frame (`Globe.setFrame`): the tiles are placed by latitude and longitude */
   globe: Globe;
   source: ReliefLayersSource;
@@ -223,7 +223,7 @@ type SceneryStageReliefTilesProps = {
   cellPixels: number;
   /** ms a swap between levels of detail takes (see `SceneryStage`'s `relief.transition`); 0 at once */
   transition: number;
-  /** what it compiles with from the sky, as a key (`SceneryOceanState.definesKey`): a new one needs a new material */
+  /** what it compiles with from the sky, as a key (`ScenerySeaState.definesKey`): a new one needs a new material */
   definesKey?: string;
   visible: boolean;
   onStats?: (stats: SceneryReliefTileStats) => void;
@@ -271,8 +271,8 @@ type SceneryStageReliefTilesProps = {
   /** told the relief's sampler (see `ReliefSampler`): a new one whenever pinned tiles come in, and null once gone */
   onSampler?: (sampler: ReliefSampler | null) => void;
   /** the sky's sea surface layer's `renderOrder`: the overview past the tiles draws after it */
-  skyOrder: number;
-  /** told the tiles drawn, each time they are chosen, for what lies on them (`SceneryOceanState.reliefTiles`) */
+  sceneryOrder: number;
+  /** told the tiles drawn, each time they are chosen, for what lies on them (`ScenerySeaState.reliefTiles`) */
   hub?: SceneryReliefHub;
 };
 
@@ -293,7 +293,7 @@ type SceneryReliefTileGroundRequest = {
  * one plainly, and neither. Its tiles stay in whichever.
  */
 export const SceneryStageReliefTiles = ({
-  sky,
+  scenery,
   globe,
   source,
   looks,
@@ -319,7 +319,7 @@ export const SceneryStageReliefTiles = ({
   groundLive = false,
   occupants,
   onSampler,
-  skyOrder,
+  sceneryOrder,
   hub,
 }: SceneryStageReliefTilesProps) => {
   const gl = useThree(state => state.gl);
@@ -354,12 +354,12 @@ export const SceneryStageReliefTiles = ({
 
   // Without a sky, see-through everywhere below an opacity of 1: one draw of every tile,
   // instead of the opaque one.
-  const seeAll = !sky && opacity < 1;
+  const seeAll = !scenery && opacity < 1;
   const material = useMemo(
     () =>
-      sky
+      scenery
         ? createSceneryReliefTileMaterial(
-            sky,
+            scenery,
             textures,
             looks,
             seeThrough ? 'around' : undefined,
@@ -375,7 +375,7 @@ export const SceneryStageReliefTiles = ({
     // The sky's defines are compiled in (the seabed's detail): new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      sky,
+      scenery,
       globe,
       textures,
       looks,
@@ -407,8 +407,8 @@ export const SceneryStageReliefTiles = ({
   // From under the ground, the void's lid: the same tiles' undersides, drawn instead (see
   // the frame loop). Compiled with the stage's, hidden or not. Without a sky, nothing.
   const belowMaterial = useMemo(
-    () => (sky ? createSceneryReliefTileFromBelowMaterial(material) : null),
-    [sky, material],
+    () => (scenery ? createSceneryReliefTileFromBelowMaterial(material) : null),
+    [scenery, material],
   );
   useEffect(
     () => () => {
@@ -441,7 +441,7 @@ export const SceneryStageReliefTiles = ({
   // Its own tiles only: the vertices and triangles are the patch's.
   useEffect(
     () => () => {
-      for (const name of SKY_RELIEF_TILE_ATTRIBUTES)
+      for (const name of SCENERY_RELIEF_TILE_ATTRIBUTES)
         subset.deleteAttribute(name);
       subset.dispose();
     },
@@ -469,17 +469,17 @@ export const SceneryStageReliefTiles = ({
     (uReliefOpacity?.value as Vector2 | undefined)?.set(opacity, fieldOpacity);
     if (uReliefBedDepth) uReliefBedDepth.value = Math.max(-base, 0);
   }, [material, opacity, fieldOpacity, base]);
-  // Where the tiles draw the seabed, it hides what lies below it by depth (skyOceanCover); the
+  // Where the tiles draw the seabed, it hides what lies below it by depth (scenerySeaCover); the
   // background's own, where none is drawn, takes their look.
   useEffect(() => {
-    if (!sky) return;
-    sky.oceanReliefReach = visible ? reach : 0;
-    sky.oceanReliefLooks = looks;
+    if (!scenery) return;
+    scenery.seaReliefReach = visible ? reach : 0;
+    scenery.seaReliefLooks = looks;
     return () => {
-      sky.oceanReliefReach = 0;
-      sky.oceanReliefLooks = null;
+      scenery.seaReliefReach = 0;
+      scenery.seaReliefLooks = null;
     };
-  }, [sky, reach, visible, looks]);
+  }, [scenery, reach, visible, looks]);
 
   const generate = useGenerator<SceneryReliefTileResponse>(sceneryReliefTile);
   // What is placed on the relief pins the ground under it (see `ReliefSampler`).
@@ -867,13 +867,13 @@ export const SceneryStageReliefTiles = ({
       seen = Math.min(reach, horizon);
     }
     // The ground in view reaches past the tiles: with a sky, the overview draws it.
-    overviewState.beyond = !!sky && horizon > reach;
+    overviewState.beyond = !!scenery && horizon > reach;
     // Toward their reach, where the overview takes over, the tiles take its rules, eased in
     // from half the reach: cells as fine on screen as its (as it last chose them), and every
     // tile split by them where it colours by height — with the water off, or above the sea —
     // so the two meet at the same detail. Nearer, as before. Not if that would want more
     // than their share of the slots (below). Without a sky there is no water.
-    const wet = sky?.oceanWater ?? false;
+    const wet = scenery?.seaWater ?? false;
     overviewState.handover = wet
       ? OVERVIEW_HANDOVER_MIN
       : OVERVIEW_HANDOVER_MIN_DRY;
@@ -896,7 +896,7 @@ export const SceneryStageReliefTiles = ({
     // Seen from over it, the hollow's open opening peels the ground away (relief-fragment): a
     // tile wholly inside is never seen. From under the ground it is the lid, seen as any.
     // Per tile while the globe and the opening hold.
-    const opening = sky?.hollowOpen ? sky.hollowRadius : 0;
+    const opening = scenery?.hollowOpen ? scenery.hollowRadius : 0;
     const holdsKey = `${globe.version},${opening}`;
     if (view.hollowHoldsKey !== holdsKey) {
       view.hollowHoldsKey = holdsKey;
@@ -963,7 +963,7 @@ export const SceneryStageReliefTiles = ({
       view.regions.boxes,
     );
     const regionKey = `${view.regions.boxes.map(box => box.join(',')).join(';')}|${globe.version}`;
-    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${seeAll}|${regionKey}|${wet}|${!!sky}|${opening}`;
+    const chosenKey = `${e.join(',')}|${size.width}x${size.height}x${viewport.dpr}|${streaming.resident.changes}|${y}|${seen}|${pixelError}|${cellPixels}|${transition}|${under}|${globe.version}|${groundsKey}|${groundLive}|${visible}|${!!seeThroughMaterial}|${seeAll}|${regionKey}|${wet}|${!!scenery}|${opening}`;
     if (
       chosenKey === view.chosen.key &&
       pinnedNow === view.chosen.pins &&
@@ -1272,7 +1272,7 @@ export const SceneryStageReliefTiles = ({
     // on the relief takes its ground from them. From under the ground they are the lid.
     let order = drawnTiles;
     let kept = drawnTiles.length;
-    if (sky?.hollowOpen && !under) {
+    if (scenery?.hollowOpen && !under) {
       order = view.hollowOrder;
       const cut = view.hollowCut;
       order.length = 0;
@@ -1288,7 +1288,7 @@ export const SceneryStageReliefTiles = ({
     for (let at = 0; at < order.length; at++) {
       if (at === kept) drawn = count;
       const { key, from, blend, proxy } = order[at];
-      if (count >= SKY_RELIEF_MAX_TILES) break;
+      if (count >= SCENERY_RELIEF_MAX_TILES) break;
       // A fill: its own square, all of it drawn from the ancestor in its place.
       const data = proxy ?? key;
       const tile = streamer.get(data);
@@ -1388,7 +1388,7 @@ export const SceneryStageReliefTiles = ({
         );
       }
       const squares = view.regions.squares;
-      const into = SKY_RELIEF_TILE_ATTRIBUTES.map(name => {
+      const into = SCENERY_RELIEF_TILE_ATTRIBUTES.map(name => {
         const attribute = subset.getAttribute(name) as InstancedBufferAttribute;
         const from = geometry.getAttribute(name) as InstancedBufferAttribute;
         return {
@@ -1512,21 +1512,21 @@ export const SceneryStageReliefTiles = ({
 
   // Shown each frame: the tops from above the ground, the undersides from under it; and
   // past the tiles' reach, the overview. With a sky, each draw sets its camera's uniforms.
-  const beforeDraw = sky ? sky.onBeforeDraw : NO_DRAW_HOOK;
+  const beforeDraw = scenery ? scenery.onBeforeDraw : NO_DRAW_HOOK;
   const aboveMaterial =
     seeAll && seeThroughMaterial ? seeThroughMaterial : material;
   return (
     <>
-      {sky && (
+      {scenery && (
         <SceneryStageReliefOverview
-          sky={sky}
+          scenery={scenery}
           atlas={overviewAtlas}
           told={overviewState}
           base={source.base}
           looks={looks}
           reach={reach}
           definesKey={definesKey}
-          skyOrder={skyOrder}
+          sceneryOrder={sceneryOrder}
           visible={visible}
         />
       )}

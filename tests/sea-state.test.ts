@@ -5,7 +5,7 @@ import {
   windSeaPeak,
   type SeaSpectrumInput,
 } from '../src/sdk/weather/sea-spectrum';
-import { SEA_QUALITY, SeaState } from '../src/sdk/weather/sea-state';
+import { WATER_QUALITY, SeaState } from '../src/sdk/weather/sea-state';
 
 const EAST: Vec2 = [1, 0];
 const SOUTH: Vec2 = [0, 1];
@@ -41,7 +41,7 @@ const run = (sea: SeaState, seconds: number, dt = 1 / 30) => {
 };
 
 describe('seaSpectrum', () => {
-  it('holds the wind sea’s variance at Hs ≈ 0.21 U² / g, as the Ocean always had', () => {
+  it('holds the wind sea’s variance at Hs ≈ 0.21 U² / g, as the Water always had', () => {
     const spectrum = seaSpectrum(wind(10));
     const hs = windSeaPeak(10).height;
     expect(spectrum.significantHeight).toBeCloseTo(hs, 6);
@@ -131,7 +131,7 @@ describe('SeaState', () => {
   });
 
   it('draws the ripples below its finest layer as the detail octave, out of the residual, without a jump', () => {
-    const sea = new SeaState(wind(10), SEA_QUALITY.high);
+    const sea = new SeaState(wind(10), WATER_QUALITY.high);
     const detail = sea.detail!;
     const before = sea.stats();
     const finest = sea.layers[sea.layers.length - 1];
@@ -156,7 +156,7 @@ describe('SeaState', () => {
 
   it('draws each layer to the short end of its band, the steepest waves first', () => {
     for (const quality of ['medium', 'ultra'] as const) {
-      const sea = new SeaState(wind(10), SEA_QUALITY[quality]);
+      const sea = new SeaState(wind(10), WATER_QUALITY[quality]);
       for (const table of sea.layerTables()) {
         let top = 0;
         for (let i = 0; i < table.count; i++)
@@ -174,7 +174,7 @@ describe('SeaState', () => {
 
   it('roughens its short waves in a gust and calms them in a lull, as the spectrum has them', () => {
     const factors = [0.25, 0.5, 1, 1.5, 2];
-    const sea = new SeaState(wind(10), SEA_QUALITY.medium);
+    const sea = new SeaState(wind(10), WATER_QUALITY.medium);
     const ratios = sea.shortWaveRatios(factors, sea.layers[3].kMin);
     expect(ratios[2]).toBeCloseTo(1, 9);
     for (let i = 1; i < ratios.length; i++)
