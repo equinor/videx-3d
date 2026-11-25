@@ -63,6 +63,7 @@ import { WellMapDecorator } from '../decorators/well-map-decorator.tsx';
 import { useSurfaceMetaDict } from '../hooks/useSurfaceMeta.tsx';
 import { useWellboreHeaders } from '../hooks/useWellboreHeaders.tsx';
 import storyArgs from '../story-args.json';
+import { orderArgs } from '../components/order-controls';
 
 const gridCellSize = 1000;
 const colorScale = scaleOrdinal([
@@ -905,40 +906,44 @@ const meta = {
 
 type Story = StoryObj<typeof meta>;
 
-const commonArgs = {
-  oitEnabled: true,
-  useColorRamp: false,
-  reverseRamp: false,
-  colorRamp: 0,
-  opacity: 0.8,
-  wireframe: false,
-  depthMarkerInterval: 250,
-  showFormationMarkers: false,
-  showFormationColumns: false,
-  showShoes: true,
-  showDepthMarkers: false,
-  showCasingAndCompletion: false,
-  showPerforations: true,
-  showSeismic: false,
-  showCameraTarget: false,
-  sizeMultiplier: 3,
-  casingOpacity: 1,
-  aaMode: 'taa' as const,
-  supersample: 1 as const,
-  msaaSamples: 0 as const,
-  smaaQuality: 'high' as const,
-  skipFrontPeeling: false,
-  mergeFront: true,
-  showDebugTargets: false,
-  profileTail: false,
-  occlusionDepthStamp: false,
-  occlusionDepthThreshold: 0.5,
-  emitterDepthStamp: false,
-  emitterDepthThreshold: 0.5,
-  precomputeSurfaceNormals: true,
-  showWater: false,
-  showTanker: false,
-};
+// The groups A to Z: many of them.
+const commonArgs = orderArgs(
+  {
+    oitEnabled: true,
+    useColorRamp: false,
+    reverseRamp: false,
+    colorRamp: 0,
+    opacity: 0.8,
+    wireframe: false,
+    depthMarkerInterval: 250,
+    showFormationMarkers: false,
+    showFormationColumns: false,
+    showShoes: true,
+    showDepthMarkers: false,
+    showCasingAndCompletion: false,
+    showPerforations: true,
+    showSeismic: false,
+    showCameraTarget: false,
+    sizeMultiplier: 3,
+    casingOpacity: 1,
+    aaMode: 'taa' as const,
+    supersample: 1 as const,
+    msaaSamples: 0 as const,
+    smaaQuality: 'high' as const,
+    skipFrontPeeling: false,
+    mergeFront: true,
+    showDebugTargets: false,
+    profileTail: false,
+    occlusionDepthStamp: false,
+    occlusionDepthThreshold: 0.5,
+    emitterDepthStamp: false,
+    emitterDepthThreshold: 0.5,
+    precomputeSurfaceNormals: true,
+    showWater: false,
+    showTanker: false,
+  },
+  meta.argTypes,
+);
 
 export const Default: Story = {
   args: {

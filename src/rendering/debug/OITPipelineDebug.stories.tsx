@@ -40,6 +40,7 @@ import { RenderingPipeline } from '../RenderingPipeline.tsx';
 import { registerVidex3d } from '../../storybook/debug/videx3d.ts';
 import { DebugBoxOutputPass } from './DebugBoxOutputPass.ts';
 import { DebugPattern, DebugPatternPass } from './DebugPatternPass.ts';
+import { orderControls } from '../../storybook/components/order-controls';
 
 /**
  * Standalone pipeline debug harness for the OIT / rendering pipeline.
@@ -1227,244 +1228,251 @@ const meta = {
       )}
     </div>
   ),
-  argTypes: {
-    debugPattern: {
-      control: 'select',
-      options: [
-        'off',
-        'zonePlate',
-        'grid',
-        'checker',
-        'gradient',
-        'colorBars',
-        'grayStep',
-        'grayCard',
-      ],
-      table: { category: 'Content' },
+  // Many groups: A to Z.
+  ...orderControls<DebugArgs>(
+    {
+      args: {
+        // Content
+        debugPattern: 'off',
+        patternScale: 24,
+        geometry: 'torusKnot',
+        stackLayers: 16,
+        stackSegments: 256,
+        stackOpacity: 0.5,
+        stackMaterial: 'standard',
+        animate: true,
+        // Rendering
+        toneMapping: 'none',
+        outputColorSpace: 'srgb',
+        aaMode: 'taa',
+        temporalClampStrength: 0.2,
+        taaRestClampStrength: 0.2,
+        taaRestBoxGamma: 1.6,
+        taaRestNeighbourhoodRadius: 1.5,
+        // Debug
+        showDebugTargets: false,
+        measureAA: false,
+        // Display
+        background: '#101014',
+        transparentBackground: false,
+        dpr: 1,
+        layout: 'single',
+        logDepth: true,
+        // Pipeline
+        oitEnabled: true,
+        oitMaterials: true,
+        frontPeelTolerance: DEFAULT_OIT_FRONT_TOLERANCE,
+        skipFrontPeeling: false,
+        mergeFront: true,
+        tailSlices: 0,
+        tailSliceSpacing: 'linear',
+        supersample: 1,
+        downsampleMode: 'mipmap',
+      },
+      argTypes: {
+        debugPattern: {
+          control: 'select',
+          options: [
+            'off',
+            'zonePlate',
+            'grid',
+            'checker',
+            'gradient',
+            'colorBars',
+            'grayStep',
+            'grayCard',
+          ],
+          table: { category: 'Content' },
+        },
+        patternScale: {
+          control: { type: 'range', min: 2, max: 128, step: 1 },
+          table: { category: 'Content' },
+        },
+        geometry: {
+          control: 'select',
+          options: [
+            'torusKnot',
+            'thinBars',
+            'thinBars-transparent',
+            'lines',
+            'lines-transparent',
+            'transparentStack',
+          ],
+          table: { category: 'Content' },
+        },
+        stackLayers: {
+          control: { type: 'range', min: 2, max: 48, step: 1 },
+          if: { arg: 'geometry', eq: 'transparentStack' },
+          table: { category: 'Content' },
+        },
+        stackSegments: {
+          description:
+            'Grid cells per side of each layer (2 triangles per cell).',
+          control: { type: 'range', min: 16, max: 512, step: 16 },
+          if: { arg: 'geometry', eq: 'transparentStack' },
+          table: { category: 'Content' },
+        },
+        stackOpacity: {
+          control: { type: 'range', min: 0.05, max: 0.95, step: 0.05 },
+          if: { arg: 'geometry', eq: 'transparentStack' },
+          table: { category: 'Content' },
+        },
+        stackMaterial: {
+          description:
+            'Lit (standard) or unlit (basic) layers: how much shading costs.',
+          control: 'inline-radio',
+          options: ['standard', 'basic'],
+          if: { arg: 'geometry', eq: 'transparentStack' },
+          table: { category: 'Content' },
+        },
+        animate: { control: 'boolean', table: { category: 'Content' } },
+        // Rendering controls
+        toneMapping: {
+          control: 'select',
+          options: Object.keys(TONE_MAPPING),
+          table: { category: 'Rendering' },
+        },
+        outputColorSpace: {
+          control: 'inline-radio',
+          options: ['srgb', 'linear'],
+          table: { category: 'Rendering' },
+        },
+        aaMode: {
+          control: 'select',
+          options: ['none', 'fxaa', 'smaa', 'temporal', 'temporal-smaa', 'taa'],
+          table: { category: 'Rendering' },
+        },
+        // Temporal AA anti-ghost tuning (still-camera). These reject stale history
+        // when a moving object (spinning geometry under a still camera) leaves a
+        // trail, while staying a no-op for converged near-Nyquist static geometry.
+        temporalClampStrength: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          name: 'temporal clamp',
+          description:
+            'temporal / temporal-smaa: neighbourhood-clip strength while still ' +
+            '(0 = pure EMA / old behaviour, 1 = full clip). Higher = less ghosting.',
+          if: { arg: 'aaMode', neq: 'none' },
+          table: { category: 'AA tuning' },
+        },
+        taaRestClampStrength: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          name: 'taa rest clamp',
+          description:
+            'taa: neighbourhood-clip strength floor while the camera is still ' +
+            '(0 = trust history verbatim, 1 = full clip). Higher = less ghosting.',
+          if: { arg: 'aaMode', eq: 'taa' },
+          table: { category: 'AA tuning' },
+        },
+        taaRestBoxGamma: {
+          control: { type: 'range', min: 0.5, max: 3, step: 0.05 },
+          name: 'taa rest box γ',
+          description:
+            'taa: variance-box width (in σ) while still. Wider keeps converged ' +
+            'thin features inside the box (no wobble); narrower rejects ghosts harder.',
+          if: { arg: 'aaMode', eq: 'taa' },
+          table: { category: 'AA tuning' },
+        },
+        taaRestNeighbourhoodRadius: {
+          control: { type: 'range', min: 0.5, max: 3, step: 0.1 },
+          name: 'taa rest radius',
+          description:
+            'taa: 3×3 sampling stride (in pixels) for the variance box while still. ' +
+            'Wider stride represents near-Nyquist detail in the box → no-op clip.',
+          if: { arg: 'aaMode', eq: 'taa' },
+          table: { category: 'AA tuning' },
+        },
+        // Debug controls
+        showDebugTargets: {
+          control: 'boolean',
+          table: { category: 'Debug' },
+        },
+        measureAA: { control: 'boolean', table: { category: 'Debug' } },
+        // Display controls
+        background: { control: 'color', table: { category: 'Display' } },
+        transparentBackground: {
+          control: 'boolean',
+          table: { category: 'Display' },
+        },
+        dpr: {
+          control: 'inline-radio',
+          options: [1, 1.5, 2],
+          table: { category: 'Display' },
+        },
+        layout: {
+          control: 'inline-radio',
+          options: ['single', 'sideBySide'],
+          table: { category: 'Display' },
+        },
+        logDepth: {
+          control: 'boolean',
+          if: { arg: 'layout', eq: 'single' },
+          table: { category: 'Display' },
+        },
+        // Pipeline controls
+        oitEnabled: { control: 'boolean', table: { category: 'Pipeline' } },
+        oitMaterials: {
+          control: 'boolean',
+          name: 'OIT materials',
+          description:
+            'Make the test geometry OIT-capable (via makeOitCompatible) so transparent ' +
+            'surfaces resolve order-independently through the OIT pass.',
+          table: { category: 'Pipeline' },
+        },
+        frontPeelTolerance: {
+          control: 'select',
+          options: [1e-7, 1e-6, 1e-5, 1e-4, 1e-3],
+          description:
+            'How close to the nearest transparent fragment a fragment may be and still ' +
+            'count as the front layer, as a FRACTION of its view distance (so the slab ' +
+            'is about distance x tolerance metres). Too large and a second surface ' +
+            'grazing the first is composited exactly instead of averaged into the tail — ' +
+            'a harder, more opaque band where two surfaces meet at a shallow angle. Too ' +
+            'small and the true front fragment fails its own test and the pixel shimmers.',
+          table: { category: 'Pipeline' },
+        },
+        skipFrontPeeling: {
+          control: 'boolean',
+          description:
+            'Disable the exact front layer and resolve every transparent fragment ' +
+            'through the weighted-blended tail. The A/B for any front-peel question.',
+          table: { category: 'Pipeline' },
+        },
+        mergeFront: {
+          control: 'boolean',
+          description:
+            'Render the exact front layer in the same geometry pass as the tail (a ' +
+            'second render-target attachment) instead of a separate front pass (the ' +
+            'default). Off, every transparent fragment is shaded twice.',
+          table: { category: 'Pipeline' },
+        },
+        tailSlices: {
+          control: 'inline-radio',
+          options: [0, 2, 3],
+          description:
+            'Split the weighted-blended tail into per-pixel depth slices (between the ' +
+            'nearest and farthest transparent fragment), composited back to front.',
+          table: { category: 'Pipeline' },
+        },
+        tailSliceSpacing: {
+          control: 'inline-radio',
+          options: ['linear', 'log'],
+          if: { arg: 'tailSlices', neq: 0 },
+          table: { category: 'Pipeline' },
+        },
+        supersample: {
+          control: 'inline-radio',
+          options: [0.5, 1, 1.5, 2, 4],
+          table: { category: 'Pipeline' },
+        },
+        downsampleMode: {
+          control: 'inline-radio',
+          options: ['mipmap', 'box'],
+          table: { category: 'Pipeline' },
+        },
+      },
     },
-    patternScale: {
-      control: { type: 'range', min: 2, max: 128, step: 1 },
-      table: { category: 'Content' },
-    },
-    geometry: {
-      control: 'select',
-      options: [
-        'torusKnot',
-        'thinBars',
-        'thinBars-transparent',
-        'lines',
-        'lines-transparent',
-        'transparentStack',
-      ],
-      table: { category: 'Content' },
-    },
-    stackLayers: {
-      control: { type: 'range', min: 2, max: 48, step: 1 },
-      if: { arg: 'geometry', eq: 'transparentStack' },
-      table: { category: 'Content' },
-    },
-    stackSegments: {
-      description: 'Grid cells per side of each layer (2 triangles per cell).',
-      control: { type: 'range', min: 16, max: 512, step: 16 },
-      if: { arg: 'geometry', eq: 'transparentStack' },
-      table: { category: 'Content' },
-    },
-    stackOpacity: {
-      control: { type: 'range', min: 0.05, max: 0.95, step: 0.05 },
-      if: { arg: 'geometry', eq: 'transparentStack' },
-      table: { category: 'Content' },
-    },
-    stackMaterial: {
-      description:
-        'Lit (standard) or unlit (basic) layers: how much shading costs.',
-      control: 'inline-radio',
-      options: ['standard', 'basic'],
-      if: { arg: 'geometry', eq: 'transparentStack' },
-      table: { category: 'Content' },
-    },
-    animate: { control: 'boolean', table: { category: 'Content' } },
-    // Rendering controls
-    toneMapping: {
-      control: 'select',
-      options: Object.keys(TONE_MAPPING),
-      table: { category: 'Rendering' },
-    },
-    outputColorSpace: {
-      control: 'inline-radio',
-      options: ['srgb', 'linear'],
-      table: { category: 'Rendering' },
-    },
-    aaMode: {
-      control: 'select',
-      options: ['none', 'fxaa', 'smaa', 'temporal', 'temporal-smaa', 'taa'],
-      table: { category: 'Rendering' },
-    },
-    // Temporal AA anti-ghost tuning (still-camera). These reject stale history
-    // when a moving object (spinning geometry under a still camera) leaves a
-    // trail, while staying a no-op for converged near-Nyquist static geometry.
-    temporalClampStrength: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      name: 'temporal clamp',
-      description:
-        'temporal / temporal-smaa: neighbourhood-clip strength while still ' +
-        '(0 = pure EMA / old behaviour, 1 = full clip). Higher = less ghosting.',
-      if: { arg: 'aaMode', neq: 'none' },
-      table: { category: 'AA tuning' },
-    },
-    taaRestClampStrength: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      name: 'taa rest clamp',
-      description:
-        'taa: neighbourhood-clip strength floor while the camera is still ' +
-        '(0 = trust history verbatim, 1 = full clip). Higher = less ghosting.',
-      if: { arg: 'aaMode', eq: 'taa' },
-      table: { category: 'AA tuning' },
-    },
-    taaRestBoxGamma: {
-      control: { type: 'range', min: 0.5, max: 3, step: 0.05 },
-      name: 'taa rest box γ',
-      description:
-        'taa: variance-box width (in σ) while still. Wider keeps converged ' +
-        'thin features inside the box (no wobble); narrower rejects ghosts harder.',
-      if: { arg: 'aaMode', eq: 'taa' },
-      table: { category: 'AA tuning' },
-    },
-    taaRestNeighbourhoodRadius: {
-      control: { type: 'range', min: 0.5, max: 3, step: 0.1 },
-      name: 'taa rest radius',
-      description:
-        'taa: 3×3 sampling stride (in pixels) for the variance box while still. ' +
-        'Wider stride represents near-Nyquist detail in the box → no-op clip.',
-      if: { arg: 'aaMode', eq: 'taa' },
-      table: { category: 'AA tuning' },
-    },
-    // Debug controls
-    showDebugTargets: {
-      control: 'boolean',
-      table: { category: 'Debug' },
-    },
-    measureAA: { control: 'boolean', table: { category: 'Debug' } },
-    // Display controls
-    background: { control: 'color', table: { category: 'Display' } },
-    transparentBackground: {
-      control: 'boolean',
-      table: { category: 'Display' },
-    },
-    dpr: {
-      control: 'inline-radio',
-      options: [1, 1.5, 2],
-      table: { category: 'Display' },
-    },
-    layout: {
-      control: 'inline-radio',
-      options: ['single', 'sideBySide'],
-      table: { category: 'Display' },
-    },
-    logDepth: {
-      control: 'boolean',
-      if: { arg: 'layout', eq: 'single' },
-      table: { category: 'Display' },
-    },
-    // Pipeline controls
-    oitEnabled: { control: 'boolean', table: { category: 'Pipeline' } },
-    oitMaterials: {
-      control: 'boolean',
-      name: 'OIT materials',
-      description:
-        'Make the test geometry OIT-capable (via makeOitCompatible) so transparent ' +
-        'surfaces resolve order-independently through the OIT pass.',
-      table: { category: 'Pipeline' },
-    },
-    frontPeelTolerance: {
-      control: 'select',
-      options: [1e-7, 1e-6, 1e-5, 1e-4, 1e-3],
-      description:
-        'How close to the nearest transparent fragment a fragment may be and still ' +
-        'count as the front layer, as a FRACTION of its view distance (so the slab ' +
-        'is about distance x tolerance metres). Too large and a second surface ' +
-        'grazing the first is composited exactly instead of averaged into the tail — ' +
-        'a harder, more opaque band where two surfaces meet at a shallow angle. Too ' +
-        'small and the true front fragment fails its own test and the pixel shimmers.',
-      table: { category: 'Pipeline' },
-    },
-    skipFrontPeeling: {
-      control: 'boolean',
-      description:
-        'Disable the exact front layer and resolve every transparent fragment ' +
-        'through the weighted-blended tail. The A/B for any front-peel question.',
-      table: { category: 'Pipeline' },
-    },
-    mergeFront: {
-      control: 'boolean',
-      description:
-        'Render the exact front layer in the same geometry pass as the tail (a ' +
-        'second render-target attachment) instead of a separate front pass (the ' +
-        'default). Off, every transparent fragment is shaded twice.',
-      table: { category: 'Pipeline' },
-    },
-    tailSlices: {
-      control: 'inline-radio',
-      options: [0, 2, 3],
-      description:
-        'Split the weighted-blended tail into per-pixel depth slices (between the ' +
-        'nearest and farthest transparent fragment), composited back to front.',
-      table: { category: 'Pipeline' },
-    },
-    tailSliceSpacing: {
-      control: 'inline-radio',
-      options: ['linear', 'log'],
-      if: { arg: 'tailSlices', neq: 0 },
-      table: { category: 'Pipeline' },
-    },
-    supersample: {
-      control: 'inline-radio',
-      options: [0.5, 1, 1.5, 2, 4],
-      table: { category: 'Pipeline' },
-    },
-    downsampleMode: {
-      control: 'inline-radio',
-      options: ['mipmap', 'box'],
-      table: { category: 'Pipeline' },
-    },
-  },
-  args: {
-    // Content
-    debugPattern: 'off',
-    patternScale: 24,
-    geometry: 'torusKnot',
-    stackLayers: 16,
-    stackSegments: 256,
-    stackOpacity: 0.5,
-    stackMaterial: 'standard',
-    animate: true,
-    // Rendering
-    toneMapping: 'none',
-    outputColorSpace: 'srgb',
-    aaMode: 'taa',
-    temporalClampStrength: 0.2,
-    taaRestClampStrength: 0.2,
-    taaRestBoxGamma: 1.6,
-    taaRestNeighbourhoodRadius: 1.5,
-    // Debug
-    showDebugTargets: false,
-    measureAA: false,
-    // Display
-    background: '#101014',
-    transparentBackground: false,
-    dpr: 1,
-    layout: 'single',
-    logDepth: true,
-    // Pipeline
-    oitEnabled: true,
-    oitMaterials: true,
-    frontPeelTolerance: DEFAULT_OIT_FRONT_TOLERANCE,
-    skipFrontPeeling: false,
-    mergeFront: true,
-    tailSlices: 0,
-    tailSliceSpacing: 'linear',
-    supersample: 1,
-    downsampleMode: 'mipmap',
-  },
+    'alphabetical',
+  ),
 } satisfies Meta<DebugArgs>;
 
 export default meta;

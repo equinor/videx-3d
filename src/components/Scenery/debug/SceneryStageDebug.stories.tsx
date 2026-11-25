@@ -367,7 +367,7 @@ const meta = {
     cameraTarget: [0, BED_Y, 0],
     ownLighting: () => true,
   },
-  // The stage's own groups first, then the Scenery's, then the tools.
+  // The groups A to Z: many of them.
   ...orderControls<StageDebugArgs>(
     {
       args: {
@@ -486,26 +486,7 @@ const meta = {
         },
       },
     },
-    [
-      'Stage',
-      'Stand-in data',
-      'Scenery',
-      'Sun',
-      'Sky',
-      'Clouds',
-      'Sea',
-      'Void',
-      'Subsurface',
-      'Environment',
-      'Relief',
-      'Graticule',
-      'Cutaway',
-      'Minimap',
-      'Progress',
-      'Tone mapping',
-      'Debug',
-      'Probes',
-    ],
+    'alphabetical',
   ),
 } satisfies Meta<typeof StageDebug>;
 

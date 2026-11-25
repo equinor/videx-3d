@@ -29,6 +29,7 @@ import {
   waterOpticsArgsOf,
   waterOpticsFromArgs,
 } from '../../storybook/components/water-optics-controls';
+import { orderArgs } from '../../storybook/components/order-controls';
 
 const surfaceOptions = storyArgs.surfaceOptions as Record<string, string>;
 
@@ -644,56 +645,60 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-const commonArgs = {
-  variant: 'box' as WaterVariant,
+// The groups A to Z: many of them.
+const commonArgs = orderArgs(
+  {
+    variant: 'box' as WaterVariant,
 
-  size: 10000,
-  sizeZ: 0,
-  rotation: 0,
-  surfaceSegments: 0,
-  perimeterSegments: 96,
-  bedSegments: 48,
-  waterDepth: 120,
-  depthVariation: 20,
-  maxError: 5,
-  edgeSmoothing: 0,
-  surfaceId: Object.keys(surfaceOptions)[0],
-  polygonId: Object.keys(polygonOptions)[0],
+    size: 10000,
+    sizeZ: 0,
+    rotation: 0,
+    surfaceSegments: 0,
+    perimeterSegments: 96,
+    bedSegments: 48,
+    waterDepth: 120,
+    depthVariation: 20,
+    maxError: 5,
+    edgeSmoothing: 0,
+    surfaceId: Object.keys(surfaceOptions)[0],
+    polygonId: Object.keys(polygonOptions)[0],
 
-  waterLevel: 0,
-  quality: 'medium' as WaterQuality,
-  detailOctaves: 4,
-  detailScale: 0.05,
-  windDirection: 45,
-  windSpeed: DEFAULT_WATER_WIND_SPEED,
-  steepness: 1,
-  displacement: false,
-  opticsColor: waterOpticsArgsOf('realistic').color,
-  opticsClarity: waterOpticsArgsOf('realistic').clarity,
-  reflectionIntensity: 1,
-  foamAmount: 0.5,
-  foamColor: '#ffffff',
-  opacity: 1,
-  wireframe: false,
+    waterLevel: 0,
+    quality: 'medium' as WaterQuality,
+    detailOctaves: 4,
+    detailScale: 0.05,
+    windDirection: 45,
+    windSpeed: DEFAULT_WATER_WIND_SPEED,
+    steepness: 1,
+    displacement: false,
+    opticsColor: waterOpticsArgsOf('realistic').color,
+    opticsClarity: waterOpticsArgsOf('realistic').clarity,
+    reflectionIntensity: 1,
+    foamAmount: 0.5,
+    foamColor: '#ffffff',
+    opacity: 1,
+    wireframe: false,
 
-  bedColor: '#b8a06a',
-  bedOpacity: 1,
-  bedDuneStrength: 0.15,
-  bedDuneWavelength: 180,
-  bedDuneDirection: 30,
-  bedDuneSharpness: 0,
-  bodyMaxOpacity: 0.7,
-  bodyShimmer: 0,
+    bedColor: '#b8a06a',
+    bedOpacity: 1,
+    bedDuneStrength: 0.15,
+    bedDuneWavelength: 180,
+    bedDuneDirection: 30,
+    bedDuneSharpness: 0,
+    bodyMaxOpacity: 0.7,
+    bodyShimmer: 0,
 
-  surfaceVisible: true,
-  bodyVisible: true,
-  bedVisible: true,
+    surfaceVisible: true,
+    bodyVisible: true,
+    bedVisible: true,
 
-  floaters: false,
-  contactFoam: false,
+    floaters: false,
+    contactFoam: false,
 
-  studioEnvironment: false,
-};
+    studioEnvironment: false,
+  },
+  meta.argTypes,
+);
 
 /** Flat ocean surface plane (`createWaterPlane`). */
 export const Plane: Story = {

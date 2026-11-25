@@ -29,6 +29,7 @@ import {
   type MinimapProps,
   type MinimapZoom,
 } from './Minimap';
+import { orderControls } from '../../../storybook/components/order-controls';
 
 // The inlet map over the demo reliefs around Volve (npm run generate-relief), in an
 // Overlay over the 3D view with the altitude gadget: shaded or as an outline, zoomed by the
@@ -240,264 +241,270 @@ const meta = {
     cameraTarget: [0, LEVEL - DEPTH, 0],
     ownLighting: () => true,
   },
-  argTypes: {
-    layerIds: {
-      control: { type: 'check' },
-      options: LAYERS.map(layer => layer.id),
-      description:
-        'The reliefs it merges, coarse to fine, as a `GeoRelief` merges its `layers`.',
-      table: { category: 'Data' },
+  // Many groups: A to Z.
+  ...orderControls<MinimapArgs>(
+    {
+      args: {
+        layerIds: LAYERS.map(layer => layer.id),
+        mode: 'shaded',
+        orientation: 'north-up',
+        center: 'camera',
+        contours: false,
+        projection: 'auto',
+        globalProjection: 'web-mercator',
+        globalFrom: 2000000,
+        zoneOutline: true,
+        zoom: 'auto',
+        autoZoomFactor: 4,
+        anchor: 'bottom-right',
+        width: 240,
+        height: 240,
+        resizable: true,
+        closable: true,
+        controlButtons: MINIMAP_CONTROLS,
+        compass: true,
+        pan: true,
+        altitudeReadout: true,
+        markers: true,
+        targetMarker: true,
+        draggable: true,
+        dragControls: true,
+        shape: 'cone',
+        radiusMetres: 0,
+        markerColor: '#ffffff',
+        shapeColor: '#ffffff',
+        altitudeGadget: true,
+        altitudeMarker: 'camera',
+        altitudeAnchor: 'left-center',
+        altitudeMaxSpeed: 100,
+        altitudeBoost: 200,
+        compassAnchor: 'top-left',
+        readoutAnchor: 'top-center',
+        controlsAnchor: 'top-right',
+        controlsDirection: 'column',
+      },
+      argTypes: {
+        layerIds: {
+          control: { type: 'check' },
+          options: LAYERS.map(layer => layer.id),
+          description:
+            'The reliefs it merges, coarse to fine, as a `GeoRelief` merges its `layers`.',
+          table: { category: 'Data' },
+        },
+        mode: {
+          control: { type: 'inline-radio' },
+          options: ['shaded', 'outline'],
+          description:
+            'SHADED: coloured by height and lit by the slope. OUTLINE: the coast and the contours as lines.',
+          table: { category: 'Look' },
+        },
+        orientation: {
+          control: { type: 'inline-radio' },
+          options: ['north-up', 'heading-up'],
+          description:
+            'What points up the map: the scene’s north, or where the camera looks.',
+          table: { category: 'Look' },
+        },
+        contours: {
+          control: { type: 'boolean' },
+          description: 'Contour lines, every 100 m.',
+          table: { category: 'Look' },
+        },
+        center: {
+          control: { type: 'inline-radio' },
+          options: ['camera', 'target'],
+          description:
+            'What the map is centred on: the camera, or what it looks at (the controls’ target, at the sea’s level). The marker button toggles it.',
+          table: { category: 'Look' },
+        },
+        projection: {
+          control: { type: 'inline-radio' },
+          options: [
+            'scene',
+            'web-mercator',
+            'equal-earth',
+            'lambert-conformal-conic',
+            'auto',
+          ],
+          description:
+            'What the map is drawn in: SCENE, the scene’s own map (UTM here); WEB-MERCATOR, EQUAL-EARTH or LAMBERT-CONFORMAL-CONIC (its standard parallels following the view), a projection about the meridian under the map’s middle; AUTO, the scene’s map up to the global extent below and the global projection past it. A change cross-fades. Zoom out to 5000 km or more to see a projection’s use.',
+          table: { category: 'Projection' },
+        },
+        globalProjection: {
+          control: { type: 'inline-radio' },
+          options: ['web-mercator', 'equal-earth', 'lambert-conformal-conic'],
+          description: 'AUTO: the projection past the global extent.',
+          table: { category: 'Projection' },
+        },
+        globalFrom: {
+          control: { type: 'range', min: 500000, max: 10000000, step: 100000 },
+          description:
+            'AUTO: the extent, metres across the shorter side, from which the global projection draws the map (back to the scene’s below 80 % of it).',
+          table: { category: 'Projection' },
+        },
+        zoneOutline: {
+          control: { type: 'boolean' },
+          description:
+            'The bounds of the scene’s UTM zone (31N here, 0–6°E), dashed, while the map is in the scene’s map: its meridians bend toward the pole as they lie in it.',
+          table: { category: 'Projection' },
+        },
+        zoom: {
+          control: { type: 'select' },
+          options: [...ZOOM_OPTIONS],
+          description:
+            'AUTO follows the camera’s height over the sea (the map is 4 times as wide as the camera is high); the others are the levels, metres across the shorter side. The buttons and the wheel change it too.',
+          table: { category: 'Zoom' },
+        },
+        autoZoomFactor: {
+          control: { type: 'range', min: 1, max: 12, step: 0.5 },
+          table: { category: 'Zoom' },
+        },
+        anchor: {
+          control: { type: 'select' },
+          options: ANCHORS,
+          description: 'Where it sits in the overlay.',
+          table: { category: 'Panel' },
+        },
+        width: {
+          control: { type: 'range', min: 120, max: 600, step: 10 },
+          description: 'The width it starts at; drag its edges to resize it.',
+          table: { category: 'Panel' },
+        },
+        height: {
+          control: { type: 'range', min: 120, max: 600, step: 10 },
+          description: 'The height it starts at.',
+          table: { category: 'Panel' },
+        },
+        resizable: {
+          control: { type: 'boolean' },
+          description:
+            'Resized by dragging its edges and corner away from where it sits.',
+          table: { category: 'Panel' },
+        },
+        closable: {
+          control: { type: 'boolean' },
+          description:
+            'Its × closes it into a button where it sat, which opens it again: closed, the map is unmounted (its WebGL context given back), and keeps its size, zoom, orientation and centre.',
+          table: { category: 'Panel' },
+        },
+        controlButtons: {
+          control: { type: 'check' },
+          options: MINIMAP_CONTROLS,
+          description: 'The buttons shown, in this order.',
+          table: { category: 'Panel' },
+        },
+        compass: {
+          description:
+            'The compass, which a click turns between north-up and heading-up.',
+          table: { category: 'Panel' },
+        },
+        pan: {
+          description:
+            'Drag the map to look around (left button, or a finger); it eases back to its centre on release. The markers are taken first.',
+          table: { category: 'Panel' },
+        },
+        altitudeReadout: {
+          description:
+            'The altitude readout: the height of what the map is centred on, as text.',
+          table: { category: 'Panel' },
+        },
+        markers: {
+          description:
+            'Layers of its own: Volve, the trench and the coast as points.',
+          table: { category: 'Layers' },
+        },
+        targetMarker: {
+          description: 'A marker on the camera’s target.',
+          table: { category: 'Layers' },
+        },
+        draggable: {
+          description:
+            'Drag the camera’s arrow or the target marker and drop them on the map to move the camera controls (the camera flies there with its target; the target re-aims the camera), at the heights they have. Drop outside the map, or press Escape, to cancel. Drops are logged to the console.',
+          table: { category: 'Layers' },
+        },
+        dragControls: {
+          description:
+            'Whether a drop and the home button move the controls; off, a drop is only reported (`onMarkerDrop`).',
+          table: { category: 'Layers' },
+        },
+        shape: {
+          control: { type: 'inline-radio' },
+          options: ['cone', 'circle', 'none'],
+          description:
+            'Round the camera’s arrow: its field of view as a CONE, or a CIRCLE, reaching as far as the scale bar measures (or the radius below).',
+          table: { category: 'Layers' },
+        },
+        radiusMetres: {
+          control: { type: 'range', min: 0, max: 500000, step: 500 },
+          description:
+            'The circle’s radius, or the cone’s reach, in metres; 0 for the scale bar’s length, which reads as the distance the bar shows at every zoom.',
+          table: { category: 'Layers' },
+        },
+        markerColor: {
+          control: { type: 'color' },
+          description: 'The camera’s arrow and the target marker.',
+          table: { category: 'Layers' },
+        },
+        shapeColor: {
+          control: { type: 'color' },
+          description: 'The cone or circle.',
+          table: { category: 'Layers' },
+        },
+        altitudeGadget: {
+          description:
+            'The altitude control, a gadget of the overlay anchored to the 3D view: pull its knob up to climb, down to descend; let go and it springs back. Escape puts the height back.',
+          table: { category: 'Altitude' },
+        },
+        altitudeMarker: {
+          control: { type: 'inline-radio' },
+          options: ['camera', 'target'],
+          description:
+            'Whose height it changes: the camera’s (its target comes along) or its target’s alone.',
+          table: { category: 'Altitude' },
+        },
+        altitudeAnchor: {
+          control: { type: 'select' },
+          options: ANCHORS,
+          table: { category: 'Altitude' },
+        },
+        altitudeMaxSpeed: {
+          control: { type: 'range', min: 1, max: 1000, step: 1 },
+          description:
+            'Metres a second with the knob at the end of its travel: the knob sets the speed directly, growing with the square of how far it is from the middle.',
+          table: { category: 'Altitude' },
+        },
+        altitudeBoost: {
+          control: { type: 'range', min: 1, max: 1000, step: 1 },
+          description:
+            'How many times that speed it can accelerate to, held at the end of the travel. 1: no acceleration.',
+          table: { category: 'Altitude' },
+        },
+        compassAnchor: {
+          control: { type: 'select' },
+          options: ANCHORS,
+          description:
+            'Layout: where each item sits on the map, a corner or the middle of an edge.',
+          table: { category: 'Layout' },
+        },
+        readoutAnchor: {
+          control: { type: 'select' },
+          options: ANCHORS,
+          table: { category: 'Layout' },
+        },
+        controlsAnchor: {
+          control: { type: 'select' },
+          options: ANCHORS,
+          table: { category: 'Layout' },
+        },
+        controlsDirection: {
+          control: { type: 'inline-radio' },
+          options: ['column', 'row'],
+          table: { category: 'Layout' },
+        },
+      },
     },
-    mode: {
-      control: { type: 'inline-radio' },
-      options: ['shaded', 'outline'],
-      description:
-        'SHADED: coloured by height and lit by the slope. OUTLINE: the coast and the contours as lines.',
-      table: { category: 'Look' },
-    },
-    orientation: {
-      control: { type: 'inline-radio' },
-      options: ['north-up', 'heading-up'],
-      description:
-        'What points up the map: the scene’s north, or where the camera looks.',
-      table: { category: 'Look' },
-    },
-    contours: {
-      control: { type: 'boolean' },
-      description: 'Contour lines, every 100 m.',
-      table: { category: 'Look' },
-    },
-    center: {
-      control: { type: 'inline-radio' },
-      options: ['camera', 'target'],
-      description:
-        'What the map is centred on: the camera, or what it looks at (the controls’ target, at the sea’s level). The marker button toggles it.',
-      table: { category: 'Look' },
-    },
-    projection: {
-      control: { type: 'inline-radio' },
-      options: [
-        'scene',
-        'web-mercator',
-        'equal-earth',
-        'lambert-conformal-conic',
-        'auto',
-      ],
-      description:
-        'What the map is drawn in: SCENE, the scene’s own map (UTM here); WEB-MERCATOR, EQUAL-EARTH or LAMBERT-CONFORMAL-CONIC (its standard parallels following the view), a projection about the meridian under the map’s middle; AUTO, the scene’s map up to the global extent below and the global projection past it. A change cross-fades. Zoom out to 5000 km or more to see a projection’s use.',
-      table: { category: 'Projection' },
-    },
-    globalProjection: {
-      control: { type: 'inline-radio' },
-      options: ['web-mercator', 'equal-earth', 'lambert-conformal-conic'],
-      description: 'AUTO: the projection past the global extent.',
-      table: { category: 'Projection' },
-    },
-    globalFrom: {
-      control: { type: 'range', min: 500000, max: 10000000, step: 100000 },
-      description:
-        'AUTO: the extent, metres across the shorter side, from which the global projection draws the map (back to the scene’s below 80 % of it).',
-      table: { category: 'Projection' },
-    },
-    zoneOutline: {
-      control: { type: 'boolean' },
-      description:
-        'The bounds of the scene’s UTM zone (31N here, 0–6°E), dashed, while the map is in the scene’s map: its meridians bend toward the pole as they lie in it.',
-      table: { category: 'Projection' },
-    },
-    zoom: {
-      control: { type: 'select' },
-      options: [...ZOOM_OPTIONS],
-      description:
-        'AUTO follows the camera’s height over the sea (the map is 4 times as wide as the camera is high); the others are the levels, metres across the shorter side. The buttons and the wheel change it too.',
-      table: { category: 'Zoom' },
-    },
-    autoZoomFactor: {
-      control: { type: 'range', min: 1, max: 12, step: 0.5 },
-      table: { category: 'Zoom' },
-    },
-    anchor: {
-      control: { type: 'select' },
-      options: ANCHORS,
-      description: 'Where it sits in the overlay.',
-      table: { category: 'Panel' },
-    },
-    width: {
-      control: { type: 'range', min: 120, max: 600, step: 10 },
-      description: 'The width it starts at; drag its edges to resize it.',
-      table: { category: 'Panel' },
-    },
-    height: {
-      control: { type: 'range', min: 120, max: 600, step: 10 },
-      description: 'The height it starts at.',
-      table: { category: 'Panel' },
-    },
-    resizable: {
-      control: { type: 'boolean' },
-      description:
-        'Resized by dragging its edges and corner away from where it sits.',
-      table: { category: 'Panel' },
-    },
-    closable: {
-      control: { type: 'boolean' },
-      description:
-        'Its × closes it into a button where it sat, which opens it again: closed, the map is unmounted (its WebGL context given back), and keeps its size, zoom, orientation and centre.',
-      table: { category: 'Panel' },
-    },
-    controlButtons: {
-      control: { type: 'check' },
-      options: MINIMAP_CONTROLS,
-      description: 'The buttons shown, in this order.',
-      table: { category: 'Panel' },
-    },
-    compass: {
-      description:
-        'The compass, which a click turns between north-up and heading-up.',
-      table: { category: 'Panel' },
-    },
-    pan: {
-      description:
-        'Drag the map to look around (left button, or a finger); it eases back to its centre on release. The markers are taken first.',
-      table: { category: 'Panel' },
-    },
-    altitudeReadout: {
-      description:
-        'The altitude readout: the height of what the map is centred on, as text.',
-      table: { category: 'Panel' },
-    },
-    markers: {
-      description:
-        'Layers of its own: Volve, the trench and the coast as points.',
-      table: { category: 'Layers' },
-    },
-    targetMarker: {
-      description: 'A marker on the camera’s target.',
-      table: { category: 'Layers' },
-    },
-    draggable: {
-      description:
-        'Drag the camera’s arrow or the target marker and drop them on the map to move the camera controls (the camera flies there with its target; the target re-aims the camera), at the heights they have. Drop outside the map, or press Escape, to cancel. Drops are logged to the console.',
-      table: { category: 'Layers' },
-    },
-    dragControls: {
-      description:
-        'Whether a drop and the home button move the controls; off, a drop is only reported (`onMarkerDrop`).',
-      table: { category: 'Layers' },
-    },
-    shape: {
-      control: { type: 'inline-radio' },
-      options: ['cone', 'circle', 'none'],
-      description:
-        'Round the camera’s arrow: its field of view as a CONE, or a CIRCLE, reaching as far as the scale bar measures (or the radius below).',
-      table: { category: 'Layers' },
-    },
-    radiusMetres: {
-      control: { type: 'range', min: 0, max: 500000, step: 500 },
-      description:
-        'The circle’s radius, or the cone’s reach, in metres; 0 for the scale bar’s length, which reads as the distance the bar shows at every zoom.',
-      table: { category: 'Layers' },
-    },
-    markerColor: {
-      control: { type: 'color' },
-      description: 'The camera’s arrow and the target marker.',
-      table: { category: 'Layers' },
-    },
-    shapeColor: {
-      control: { type: 'color' },
-      description: 'The cone or circle.',
-      table: { category: 'Layers' },
-    },
-    altitudeGadget: {
-      description:
-        'The altitude control, a gadget of the overlay anchored to the 3D view: pull its knob up to climb, down to descend; let go and it springs back. Escape puts the height back.',
-      table: { category: 'Altitude' },
-    },
-    altitudeMarker: {
-      control: { type: 'inline-radio' },
-      options: ['camera', 'target'],
-      description:
-        'Whose height it changes: the camera’s (its target comes along) or its target’s alone.',
-      table: { category: 'Altitude' },
-    },
-    altitudeAnchor: {
-      control: { type: 'select' },
-      options: ANCHORS,
-      table: { category: 'Altitude' },
-    },
-    altitudeMaxSpeed: {
-      control: { type: 'range', min: 1, max: 1000, step: 1 },
-      description:
-        'Metres a second with the knob at the end of its travel: the knob sets the speed directly, growing with the square of how far it is from the middle.',
-      table: { category: 'Altitude' },
-    },
-    altitudeBoost: {
-      control: { type: 'range', min: 1, max: 1000, step: 1 },
-      description:
-        'How many times that speed it can accelerate to, held at the end of the travel. 1: no acceleration.',
-      table: { category: 'Altitude' },
-    },
-    compassAnchor: {
-      control: { type: 'select' },
-      options: ANCHORS,
-      description:
-        'Layout: where each item sits on the map, a corner or the middle of an edge.',
-      table: { category: 'Layout' },
-    },
-    readoutAnchor: {
-      control: { type: 'select' },
-      options: ANCHORS,
-      table: { category: 'Layout' },
-    },
-    controlsAnchor: {
-      control: { type: 'select' },
-      options: ANCHORS,
-      table: { category: 'Layout' },
-    },
-    controlsDirection: {
-      control: { type: 'inline-radio' },
-      options: ['column', 'row'],
-      table: { category: 'Layout' },
-    },
-  },
-  args: {
-    layerIds: LAYERS.map(layer => layer.id),
-    mode: 'shaded',
-    orientation: 'north-up',
-    center: 'camera',
-    contours: false,
-    projection: 'auto',
-    globalProjection: 'web-mercator',
-    globalFrom: 2000000,
-    zoneOutline: true,
-    zoom: 'auto',
-    autoZoomFactor: 4,
-    anchor: 'bottom-right',
-    width: 240,
-    height: 240,
-    resizable: true,
-    closable: true,
-    controlButtons: MINIMAP_CONTROLS,
-    compass: true,
-    pan: true,
-    altitudeReadout: true,
-    markers: true,
-    targetMarker: true,
-    draggable: true,
-    dragControls: true,
-    shape: 'cone',
-    radiusMetres: 0,
-    markerColor: '#ffffff',
-    shapeColor: '#ffffff',
-    altitudeGadget: true,
-    altitudeMarker: 'camera',
-    altitudeAnchor: 'left-center',
-    altitudeMaxSpeed: 100,
-    altitudeBoost: 200,
-    compassAnchor: 'top-left',
-    readoutAnchor: 'top-center',
-    controlsAnchor: 'top-right',
-    controlsDirection: 'column',
-  },
+    'alphabetical',
+  ),
 } satisfies Meta<typeof MinimapStory>;
 
 export default meta;

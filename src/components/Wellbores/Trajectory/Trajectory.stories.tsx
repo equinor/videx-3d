@@ -30,6 +30,7 @@ import { WellboreBounds } from '../WellboreBounds/WellboreBounds';
 import { Wells } from '../Wells/Wells';
 import { Trajectory } from './Trajectory';
 import { TrajectoryColorInterval } from './trajectory-defs';
+import { orderArgs } from '../../../storybook/components/order-controls';
 
 const utmZone = storyArgs.utmZone;
 const origin = storyArgs.origin as Vec2;
@@ -446,12 +447,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<TrajectoryArgs>;
 
+// The groups A to Z: many of them.
+const sortedArgs = orderArgs(baseArgs, meta.argTypes);
+
 /**
  * The base tube: adjust `radius`, the screen-space `minPixelRadius` floor, `opacity`
  * and the rim `shading`. Hover to highlight, click to fly to a wellbore.
  */
 export const Default: Story = {
-  args: baseArgs,
+  args: sortedArgs,
 };
 
 /**
@@ -461,7 +465,7 @@ export const Default: Story = {
  */
 export const Textured: Story = {
   args: {
-    ...baseArgs,
+    ...sortedArgs,
     applyMap: true,
   },
 };
@@ -473,7 +477,7 @@ export const Textured: Story = {
  */
 export const DepthMarkers: Story = {
   args: {
-    ...baseArgs,
+    ...sortedArgs,
     depthMarkers: true,
   },
 };
@@ -485,7 +489,7 @@ export const DepthMarkers: Story = {
  */
 export const IntervalColors: Story = {
   args: {
-    ...baseArgs,
+    ...sortedArgs,
     intervalColors: true,
   },
 };
@@ -497,7 +501,7 @@ export const IntervalColors: Story = {
  */
 export const Transparent: Story = {
   args: {
-    ...baseArgs,
+    ...sortedArgs,
     opacity: 0.5,
   },
 };

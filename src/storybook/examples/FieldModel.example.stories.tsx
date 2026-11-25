@@ -1739,7 +1739,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof FieldColumnStory>;
 
-// The field's own groups first, then its sea and the Scenery's, then the tools.
+// The groups A to Z, each with its own leading controls first.
 export const Default: Story = {
   ...orderControls<FieldColumnStoryProps>(
     {
@@ -2608,36 +2608,7 @@ export const Default: Story = {
         ...progressArgTypes,
       },
     },
-    [
-      'Surfaces',
-      'Wellbores',
-      'Section',
-      'Fence',
-      'Fly to',
-      'Seismic',
-      'Resolve',
-      'Interior fog',
-      'Floor',
-      'Appearance',
-      'Interaction',
-      'Sea',
-      'Scenery',
-      'Sun',
-      'Sky',
-      'Clouds',
-      'Void',
-      'Subsurface',
-      'Environment',
-      'Relief',
-      'Stage',
-      'Graticule',
-      'Cutaway',
-      'Minimap',
-      'Progress',
-      'Tone mapping',
-      'Diagnostics',
-      'Debug',
-    ],
+    'alphabetical',
     {
       Sea: [
         'sea',

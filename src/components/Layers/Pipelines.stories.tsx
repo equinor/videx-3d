@@ -38,6 +38,7 @@ import { GeoLabels } from './GeoLabels';
 import { GeoRelief } from './GeoRelief';
 import { GeoSymbols } from './GeoSymbols';
 import { GeoTubes } from './GeoTubes';
+import { orderControls } from '../../storybook/components/order-controls';
 
 // Pipelines and facilities on the Norwegian continental shelf (demo-pipelines.tsx), lying on
 // the seabed the relief (GeoRelief) draws, about the demo field at Volve.
@@ -208,114 +209,120 @@ const meta = {
     cameraTarget: [0, -DEPTH, 6000],
     ownLighting: () => true,
   },
-  args: {
-    sea: true,
-    relief: true,
-    height: -DEPTH,
-    water: 'fog',
-    exaggeration: 20,
-    minPixels: 2,
-    spacingPerDistance: 0.01,
-    span: 60,
-    inServiceOnly: false,
-    opacity: 1,
-    facilities: true,
-    facilityPixels: 6,
-    labels: true,
-    labelsMaxHeight: 40000,
-    labelsMaxDistance: 60000,
-    ...demoRevealArgs,
-    minimap: true,
-  },
-  argTypes: {
-    sea: {
-      description:
-        'The sea’s water (`ScenerySea`’s `water`): off, the seabed lies dry and in plain view.',
-      table: { category: 'Scene' },
+  // Many groups: A to Z.
+  ...orderControls<PipelinesArgs>(
+    {
+      args: {
+        sea: true,
+        relief: true,
+        height: -DEPTH,
+        water: 'fog',
+        exaggeration: 20,
+        minPixels: 2,
+        spacingPerDistance: 0.01,
+        span: 60,
+        inServiceOnly: false,
+        opacity: 1,
+        facilities: true,
+        facilityPixels: 6,
+        labels: true,
+        labelsMaxHeight: 40000,
+        labelsMaxDistance: 60000,
+        ...demoRevealArgs,
+        minimap: true,
+      },
+      argTypes: {
+        sea: {
+          description:
+            'The sea’s water (`ScenerySea`’s `water`): off, the seabed lies dry and in plain view.',
+          table: { category: 'Scene' },
+        },
+        relief: {
+          description:
+            'The stage’s relief: the seabed and the land the pipelines and facilities lie on.',
+          table: { category: 'Scene' },
+        },
+        height: {
+          control: { type: 'range', min: -400, max: 200, step: 10 },
+          description: 'Metres over the sea’s level where no relief is drawn.',
+          table: { category: 'Scene' },
+        },
+        water: {
+          control: 'inline-radio',
+          options: ['fog', 'clear'],
+          description:
+            '`fog`: the pipelines and facilities are seen through the sea as the seabed is, gone where the sea turns opaque from a few kilometres up. `clear`: as they are.',
+          table: { category: 'Scene' },
+        },
+        exaggeration: {
+          control: { type: 'range', min: 1, max: 200, step: 1 },
+          description:
+            'How many times wider than built (the diameter) the pipelines are drawn.',
+          table: { category: 'Pipelines' },
+        },
+        minPixels: {
+          control: { type: 'range', min: 0, max: 8, step: 0.5 },
+          description:
+            'The least width a pipeline is drawn, in pixels, however far: a tube reads as a line from afar. 0: as built, gone from afar.',
+          table: { category: 'Pipelines' },
+        },
+        spacingPerDistance: {
+          control: { type: 'range', min: 0.002, max: 0.05, step: 0.002 },
+          description:
+            'Farther from the camera, nodes this share of the distance apart (20 m apart near it): fewer nodes, coarser on the seabed.',
+          table: { category: 'Pipelines' },
+        },
+        span: {
+          control: { type: 'range', min: 0, max: 500, step: 10 },
+          description:
+            'The longest hollow a pipe bridges, resting on the high points (metres; 0 on the ground everywhere).',
+          table: { category: 'Pipelines' },
+        },
+        opacity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Pipelines' },
+        },
+        inServiceOnly: {
+          description: 'Only pipelines in service (or being installed).',
+          table: { category: 'Pipelines' },
+        },
+        facilities: {
+          description:
+            'Facilities as discs on the seabed (`GeoSymbols`): at the surface yellow, subsea light blue, onshore white, out of service grey.',
+          table: { category: 'Facilities' },
+        },
+        facilityPixels: {
+          control: { type: 'range', min: 0, max: 20, step: 1 },
+          description:
+            'The least size of a facility on screen, in pixels. 0: as built, gone from afar.',
+          table: { category: 'Facilities' },
+        },
+        labels: {
+          description: 'Their names (`GeoLabels`), on the sea over them.',
+          table: { category: 'Facilities' },
+        },
+        labelsMaxHeight: {
+          control: { type: 'range', min: 0, max: 400000, step: 5000 },
+          description:
+            'Above this camera height over the sea the names are hidden (0: never).',
+          table: { category: 'Facilities' },
+        },
+        labelsMaxDistance: {
+          control: { type: 'range', min: 5000, max: 300000, step: 5000 },
+          description:
+            'Farther from the camera than this (metres) a name is not drawn, nor the layer once all are (`GeoLabels`’ `maxDistance`).',
+          table: { category: 'Facilities' },
+        },
+        ...demoRevealArgTypes('Reveal'),
+        minimap: {
+          description:
+            'The same data on a `Minimap`, from the same props as the scene’s layers (`GeoMapLines`, `GeoMapSymbols`), less the subsea facilities (its `filter`): the routes thinned to a pixel as they are drawn.',
+          table: { category: 'Minimap' },
+        },
+      },
     },
-    relief: {
-      description:
-        'The stage’s relief: the seabed and the land the pipelines and facilities lie on.',
-      table: { category: 'Scene' },
-    },
-    height: {
-      control: { type: 'range', min: -400, max: 200, step: 10 },
-      description: 'Metres over the sea’s level where no relief is drawn.',
-      table: { category: 'Scene' },
-    },
-    water: {
-      control: 'inline-radio',
-      options: ['fog', 'clear'],
-      description:
-        '`fog`: the pipelines and facilities are seen through the sea as the seabed is, gone where the sea turns opaque from a few kilometres up. `clear`: as they are.',
-      table: { category: 'Scene' },
-    },
-    exaggeration: {
-      control: { type: 'range', min: 1, max: 200, step: 1 },
-      description:
-        'How many times wider than built (the diameter) the pipelines are drawn.',
-      table: { category: 'Pipelines' },
-    },
-    minPixels: {
-      control: { type: 'range', min: 0, max: 8, step: 0.5 },
-      description:
-        'The least width a pipeline is drawn, in pixels, however far: a tube reads as a line from afar. 0: as built, gone from afar.',
-      table: { category: 'Pipelines' },
-    },
-    spacingPerDistance: {
-      control: { type: 'range', min: 0.002, max: 0.05, step: 0.002 },
-      description:
-        'Farther from the camera, nodes this share of the distance apart (20 m apart near it): fewer nodes, coarser on the seabed.',
-      table: { category: 'Pipelines' },
-    },
-    span: {
-      control: { type: 'range', min: 0, max: 500, step: 10 },
-      description:
-        'The longest hollow a pipe bridges, resting on the high points (metres; 0 on the ground everywhere).',
-      table: { category: 'Pipelines' },
-    },
-    opacity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Pipelines' },
-    },
-    inServiceOnly: {
-      description: 'Only pipelines in service (or being installed).',
-      table: { category: 'Pipelines' },
-    },
-    facilities: {
-      description:
-        'Facilities as discs on the seabed (`GeoSymbols`): at the surface yellow, subsea light blue, onshore white, out of service grey.',
-      table: { category: 'Facilities' },
-    },
-    facilityPixels: {
-      control: { type: 'range', min: 0, max: 20, step: 1 },
-      description:
-        'The least size of a facility on screen, in pixels. 0: as built, gone from afar.',
-      table: { category: 'Facilities' },
-    },
-    labels: {
-      description: 'Their names (`GeoLabels`), on the sea over them.',
-      table: { category: 'Facilities' },
-    },
-    labelsMaxHeight: {
-      control: { type: 'range', min: 0, max: 400000, step: 5000 },
-      description:
-        'Above this camera height over the sea the names are hidden (0: never).',
-      table: { category: 'Facilities' },
-    },
-    labelsMaxDistance: {
-      control: { type: 'range', min: 5000, max: 300000, step: 5000 },
-      description:
-        'Farther from the camera than this (metres) a name is not drawn, nor the layer once all are (`GeoLabels`’ `maxDistance`).',
-      table: { category: 'Facilities' },
-    },
-    ...demoRevealArgTypes('Reveal'),
-    minimap: {
-      description:
-        'The same data on a `Minimap`, from the same props as the scene’s layers (`GeoMapLines`, `GeoMapSymbols`), less the subsea facilities (its `filter`): the routes thinned to a pixel as they are drawn.',
-      table: { category: 'Minimap' },
-    },
-  },
+    'alphabetical',
+  ),
 } satisfies Meta<typeof PipelinesStory>;
 
 export default meta;

@@ -4,21 +4,36 @@ const categoryOf = (argType: unknown) =>
   (argType as { table?: { category?: string } } | undefined)?.table?.category ??
   '';
 
+// The groups A to Z: those in no group first, as Storybook shows them; Debug last.
+function alphabeticalGroups(argTypes: object): string[] {
+  const groups = new Set(Object.values(argTypes).map(categoryOf));
+  const named = [...groups]
+    .filter(group => group !== '' && group !== 'Debug')
+    .sort((x, y) => x.localeCompare(y));
+  return ['', ...named, 'Debug'];
+}
+
 /**
  * A story's `args` and `argTypes` with the Controls panel's groups in the order of
- * `categories`. Storybook lays the panel out by the order of the args (then of the argTypes),
- * a group where its first control comes; so both are reordered. Within a group, the keys
+ * `categories`, or A to Z (`'alphabetical'`: Debug last), for a story with many of them.
+ * Storybook lays the panel out by the order of the args (then of the argTypes), a group where
+ * its first control comes, and no project-wide hook can change that: Storybook rebuilds the
+ * argTypes in the args' order after them. So both are reordered here. Within a group, the keys
  * `first` lists for it lead, in that order, and the rest keep theirs. Groups not named follow,
  * as they came.
  */
 export function orderControls<T>(
   controls: { args: Partial<T>; argTypes: Partial<ArgTypes<T>> },
-  categories: string[],
+  categories: string[] | 'alphabetical',
   first: Record<string, string[]> = {},
 ): { args: Partial<T>; argTypes: Partial<ArgTypes<T>> } {
+  const order =
+    categories === 'alphabetical'
+      ? alphabeticalGroups(controls.argTypes)
+      : categories;
   const rank = (category: string) => {
-    const index = categories.indexOf(category);
-    return index < 0 ? categories.length : index;
+    const index = order.indexOf(category);
+    return index < 0 ? order.length : index;
   };
   const lead = (key: string, category: string) => {
     const index = first[category]?.indexOf(key) ?? -1;
@@ -54,4 +69,16 @@ export function orderControls<T>(
     args: reorder(controls.args),
     argTypes: reorder(controls.argTypes),
   };
+}
+
+/**
+ * A story's own `args` in the order {@link orderControls} gives the groups of `argTypes` (the
+ * meta's): for args a story spreads in (a `commonArgs`), its argTypes held by the meta.
+ */
+export function orderArgs<A extends object>(
+  args: A,
+  argTypes: object,
+  categories: string[] | 'alphabetical' = 'alphabetical',
+): A {
+  return orderControls({ args, argTypes }, categories).args as A;
 }

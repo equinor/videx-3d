@@ -20,6 +20,7 @@ import { Wellbore, WellboreProps } from '../Wellbore';
 import { CasingEffects } from './CasingMaterial';
 import { Casings } from './Casings';
 import { CasingSectionType, defaultMaterialOptions } from './casings-defs';
+import { orderControls } from '../../../storybook/components/order-controls';
 
 type StoryArgs = React.ComponentProps<typeof Casings> &
   WellboreProps & {
@@ -67,243 +68,254 @@ const wellboreId = storyArgs.defaultWellbore;
 const meta = {
   title: 'Components/Wellbores/Casings',
   component: Casings,
-  args: {
-    id: wellboreId,
-    schematic: false,
-    sliceAngle: 0,
-    sliceOffset: 0,
-    autoSlicePosition: false,
-    segmentsPerMeter: 0.1,
-    radialSegments: 32,
-    sizeMultiplier: 1,
-    shoeFactor: 1.5,
-    showCompletion: false,
-    opacity: 1,
-    detailQuality: 0.6,
-    sectionVariation: 0.35,
-    silhouette: 0.35,
-    silhouettePower: 3,
-    edgeShading: 0.5,
-    edgeShadingWidth: 0.2,
-    weathering: 0.3,
-    weatheringScale: 1.5,
-    granularStrength: 0,
-    granularFrequency: 2,
-    granularOctaves: 3,
-    granularAnisotropy: 0,
-    brushedStrength: 0,
-    brushedFrequency: 2,
-    brushedOctaves: 3,
-    brushedAngle: 0,
-    brushedSharpness: 0.5,
-    scratchStrength: 0,
-    scratchFrequency: 10,
-    scratchAngle: 0,
-    scratchDensity: 0.4,
-    brushedUniformity: 0,
-    scratchLength: 0.6,
-    scratchWander: 1,
-    scratchWidth: 0.15,
-    mapUvUnits: 'normalized',
-    normalMapUvUnits: 'normalized',
-    applyNormalMap: false,
-    showUvGrid: false,
-    mapRepeatU: 1,
-    mapRepeatV: 1,
-    normalRepeatU: 2,
-    normalRepeatV: 200,
-    normalScale: 1,
-  },
-  argTypes: {
-    schematic: {
-      control: { type: 'boolean' },
-      table: { category: 'Mode' },
-    },
-    id: {
-      options: Object.keys(storyArgs.wellboreOptions),
-      control: { type: 'select', labels: storyArgs.wellboreOptions },
-      table: { category: 'Geometry & Slicing' },
-    },
-    segmentsPerMeter: {
-      control: { type: 'range', min: 0.02, max: 1, step: 0.02 },
-      table: { category: 'Geometry & Slicing' },
-    },
-    radialSegments: {
-      control: { type: 'range', min: 4, max: 64, step: 1 },
-      table: { category: 'Geometry & Slicing' },
-    },
-    sizeMultiplier: {
-      control: { type: 'range', min: 0.5, max: 10, step: 0.5 },
-      table: { category: 'Geometry & Slicing' },
-    },
-    shoeFactor: {
-      control: { type: 'range', min: 1, max: 3, step: 0.1 },
-      table: { category: 'Geometry & Slicing' },
-    },
-    sliceAngle: {
-      control: { type: 'range', min: 0, max: Math.ceil(Math.PI), step: 0.05 },
-      table: { category: 'Geometry & Slicing' },
-    },
-    sliceOffset: {
-      control: {
-        type: 'range',
-        min: 0,
-        max: Math.ceil(Math.PI * 2),
-        step: 0.05,
+  // Many groups: A to Z.
+  ...orderControls<StoryArgs>(
+    {
+      args: {
+        id: wellboreId,
+        schematic: false,
+        sliceAngle: 0,
+        sliceOffset: 0,
+        autoSlicePosition: false,
+        segmentsPerMeter: 0.1,
+        radialSegments: 32,
+        sizeMultiplier: 1,
+        shoeFactor: 1.5,
+        showCompletion: false,
+        opacity: 1,
+        detailQuality: 0.6,
+        sectionVariation: 0.35,
+        silhouette: 0.35,
+        silhouettePower: 3,
+        edgeShading: 0.5,
+        edgeShadingWidth: 0.2,
+        weathering: 0.3,
+        weatheringScale: 1.5,
+        granularStrength: 0,
+        granularFrequency: 2,
+        granularOctaves: 3,
+        granularAnisotropy: 0,
+        brushedStrength: 0,
+        brushedFrequency: 2,
+        brushedOctaves: 3,
+        brushedAngle: 0,
+        brushedSharpness: 0.5,
+        scratchStrength: 0,
+        scratchFrequency: 10,
+        scratchAngle: 0,
+        scratchDensity: 0.4,
+        brushedUniformity: 0,
+        scratchLength: 0.6,
+        scratchWander: 1,
+        scratchWidth: 0.15,
+        mapUvUnits: 'normalized',
+        normalMapUvUnits: 'normalized',
+        applyNormalMap: false,
+        showUvGrid: false,
+        mapRepeatU: 1,
+        mapRepeatV: 1,
+        normalRepeatU: 2,
+        normalRepeatV: 200,
+        normalScale: 1,
       },
-      table: { category: 'Geometry & Slicing' },
+      argTypes: {
+        schematic: {
+          control: { type: 'boolean' },
+          table: { category: 'Mode' },
+        },
+        id: {
+          options: Object.keys(storyArgs.wellboreOptions),
+          control: { type: 'select', labels: storyArgs.wellboreOptions },
+          table: { category: 'Geometry & Slicing' },
+        },
+        segmentsPerMeter: {
+          control: { type: 'range', min: 0.02, max: 1, step: 0.02 },
+          table: { category: 'Geometry & Slicing' },
+        },
+        radialSegments: {
+          control: { type: 'range', min: 4, max: 64, step: 1 },
+          table: { category: 'Geometry & Slicing' },
+        },
+        sizeMultiplier: {
+          control: { type: 'range', min: 0.5, max: 10, step: 0.5 },
+          table: { category: 'Geometry & Slicing' },
+        },
+        shoeFactor: {
+          control: { type: 'range', min: 1, max: 3, step: 0.1 },
+          table: { category: 'Geometry & Slicing' },
+        },
+        sliceAngle: {
+          control: {
+            type: 'range',
+            min: 0,
+            max: Math.ceil(Math.PI),
+            step: 0.05,
+          },
+          table: { category: 'Geometry & Slicing' },
+        },
+        sliceOffset: {
+          control: {
+            type: 'range',
+            min: 0,
+            max: Math.ceil(Math.PI * 2),
+            step: 0.05,
+          },
+          table: { category: 'Geometry & Slicing' },
+        },
+        autoSlicePosition: {
+          control: { type: 'boolean' },
+          table: { category: 'Geometry & Slicing' },
+        },
+        showCompletion: {
+          control: { type: 'boolean' },
+          table: { category: 'Scene' },
+        },
+        opacity: {
+          control: { type: 'range', min: 0.1, max: 1, step: 0.1 },
+          table: { category: 'Scene' },
+        },
+        silhouette: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Silhouette Effect' },
+        },
+        silhouettePower: {
+          control: { type: 'range', min: 0.5, max: 8, step: 0.1 },
+          table: { category: 'Silhouette Effect' },
+        },
+        edgeShading: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Edge Shading Effect' },
+        },
+        edgeShadingWidth: {
+          control: { type: 'range', min: 0, max: 3, step: 0.05 },
+          table: { category: 'Edge Shading Effect' },
+        },
+        detailQuality: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Detail Quality' },
+        },
+        weathering: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Weathering Effect' },
+        },
+        weatheringScale: {
+          control: { type: 'range', min: 0.2, max: 6, step: 0.1 },
+          table: { category: 'Weathering Effect' },
+        },
+        sectionVariation: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Weathering Effect' },
+        },
+        granularStrength: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Granular Effect' },
+        },
+        granularFrequency: {
+          control: { type: 'range', min: 0.1, max: 400, step: 0.1 },
+          table: { category: 'Granular Effect' },
+        },
+        granularOctaves: {
+          control: { type: 'range', min: 1, max: 5, step: 1 },
+          table: { category: 'Granular Effect' },
+        },
+        granularAnisotropy: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Granular Effect' },
+        },
+        brushedStrength: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Brushed Effect' },
+        },
+        brushedFrequency: {
+          control: { type: 'range', min: 0.1, max: 100, step: 0.1 },
+          table: { category: 'Brushed Effect' },
+        },
+        brushedOctaves: {
+          control: { type: 'range', min: 1, max: 5, step: 1 },
+          table: { category: 'Brushed Effect' },
+        },
+        brushedAngle: {
+          control: { type: 'range', min: -1.57, max: 1.57, step: 0.02 },
+          table: { category: 'Brushed Effect' },
+        },
+        brushedSharpness: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Brushed Effect' },
+        },
+        brushedUniformity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Brushed Effect' },
+        },
+        scratchStrength: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Scratches Effect' },
+        },
+        scratchFrequency: {
+          control: { type: 'range', min: 0.1, max: 100, step: 0.1 },
+          table: { category: 'Scratches Effect' },
+        },
+        scratchAngle: {
+          control: { type: 'range', min: -1.57, max: 1.57, step: 0.02 },
+          table: { category: 'Scratches Effect' },
+        },
+        scratchDensity: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Scratches Effect' },
+        },
+        scratchLength: {
+          control: { type: 'range', min: 0.1, max: 5, step: 0.1 },
+          table: { category: 'Scratches Effect' },
+        },
+        scratchWander: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Scratches Effect' },
+        },
+        scratchWidth: {
+          control: { type: 'range', min: 0, max: 1, step: 0.05 },
+          table: { category: 'Scratches Effect' },
+        },
+        mapUvUnits: {
+          options: ['normalized', 'world'],
+          control: { type: 'inline-radio' },
+          table: { category: 'Texture' },
+        },
+        normalMapUvUnits: {
+          options: ['normalized', 'world'],
+          control: { type: 'inline-radio' },
+          table: { category: 'Texture' },
+        },
+        applyNormalMap: {
+          control: { type: 'boolean' },
+          table: { category: 'Texture' },
+        },
+        showUvGrid: {
+          control: { type: 'boolean' },
+          table: { category: 'Texture' },
+        },
+        mapRepeatU: {
+          control: { type: 'range', min: 0.1, max: 50, step: 0.1 },
+          table: { category: 'Texture' },
+        },
+        mapRepeatV: {
+          control: { type: 'range', min: 0.1, max: 400, step: 0.1 },
+          table: { category: 'Texture' },
+        },
+        normalRepeatU: {
+          control: { type: 'range', min: 0.1, max: 20, step: 0.1 },
+          table: { category: 'Texture' },
+        },
+        normalRepeatV: {
+          control: { type: 'range', min: 1, max: 6000, step: 1 },
+          table: { category: 'Texture' },
+        },
+        normalScale: {
+          control: { type: 'range', min: 0, max: 3, step: 0.05 },
+          table: { category: 'Texture' },
+        },
+      },
     },
-    autoSlicePosition: {
-      control: { type: 'boolean' },
-      table: { category: 'Geometry & Slicing' },
-    },
-    showCompletion: {
-      control: { type: 'boolean' },
-      table: { category: 'Scene' },
-    },
-    opacity: {
-      control: { type: 'range', min: 0.1, max: 1, step: 0.1 },
-      table: { category: 'Scene' },
-    },
-    silhouette: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Silhouette Effect' },
-    },
-    silhouettePower: {
-      control: { type: 'range', min: 0.5, max: 8, step: 0.1 },
-      table: { category: 'Silhouette Effect' },
-    },
-    edgeShading: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Edge Shading Effect' },
-    },
-    edgeShadingWidth: {
-      control: { type: 'range', min: 0, max: 3, step: 0.05 },
-      table: { category: 'Edge Shading Effect' },
-    },
-    detailQuality: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Detail Quality' },
-    },
-    weathering: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Weathering Effect' },
-    },
-    weatheringScale: {
-      control: { type: 'range', min: 0.2, max: 6, step: 0.1 },
-      table: { category: 'Weathering Effect' },
-    },
-    sectionVariation: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Weathering Effect' },
-    },
-    granularStrength: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Granular Effect' },
-    },
-    granularFrequency: {
-      control: { type: 'range', min: 0.1, max: 400, step: 0.1 },
-      table: { category: 'Granular Effect' },
-    },
-    granularOctaves: {
-      control: { type: 'range', min: 1, max: 5, step: 1 },
-      table: { category: 'Granular Effect' },
-    },
-    granularAnisotropy: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Granular Effect' },
-    },
-    brushedStrength: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Brushed Effect' },
-    },
-    brushedFrequency: {
-      control: { type: 'range', min: 0.1, max: 100, step: 0.1 },
-      table: { category: 'Brushed Effect' },
-    },
-    brushedOctaves: {
-      control: { type: 'range', min: 1, max: 5, step: 1 },
-      table: { category: 'Brushed Effect' },
-    },
-    brushedAngle: {
-      control: { type: 'range', min: -1.57, max: 1.57, step: 0.02 },
-      table: { category: 'Brushed Effect' },
-    },
-    brushedSharpness: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Brushed Effect' },
-    },
-    brushedUniformity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Brushed Effect' },
-    },
-    scratchStrength: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Scratches Effect' },
-    },
-    scratchFrequency: {
-      control: { type: 'range', min: 0.1, max: 100, step: 0.1 },
-      table: { category: 'Scratches Effect' },
-    },
-    scratchAngle: {
-      control: { type: 'range', min: -1.57, max: 1.57, step: 0.02 },
-      table: { category: 'Scratches Effect' },
-    },
-    scratchDensity: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Scratches Effect' },
-    },
-    scratchLength: {
-      control: { type: 'range', min: 0.1, max: 5, step: 0.1 },
-      table: { category: 'Scratches Effect' },
-    },
-    scratchWander: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Scratches Effect' },
-    },
-    scratchWidth: {
-      control: { type: 'range', min: 0, max: 1, step: 0.05 },
-      table: { category: 'Scratches Effect' },
-    },
-    mapUvUnits: {
-      options: ['normalized', 'world'],
-      control: { type: 'inline-radio' },
-      table: { category: 'Texture' },
-    },
-    normalMapUvUnits: {
-      options: ['normalized', 'world'],
-      control: { type: 'inline-radio' },
-      table: { category: 'Texture' },
-    },
-    applyNormalMap: {
-      control: { type: 'boolean' },
-      table: { category: 'Texture' },
-    },
-    showUvGrid: {
-      control: { type: 'boolean' },
-      table: { category: 'Texture' },
-    },
-    mapRepeatU: {
-      control: { type: 'range', min: 0.1, max: 50, step: 0.1 },
-      table: { category: 'Texture' },
-    },
-    mapRepeatV: {
-      control: { type: 'range', min: 0.1, max: 400, step: 0.1 },
-      table: { category: 'Texture' },
-    },
-    normalRepeatU: {
-      control: { type: 'range', min: 0.1, max: 20, step: 0.1 },
-      table: { category: 'Texture' },
-    },
-    normalRepeatV: {
-      control: { type: 'range', min: 1, max: 6000, step: 1 },
-      table: { category: 'Texture' },
-    },
-    normalScale: {
-      control: { type: 'range', min: 0, max: 3, step: 0.05 },
-      table: { category: 'Texture' },
-    },
-  },
+    'alphabetical',
+  ),
   decorators: [
     PerformanceDecorator,
     Canvas3dDecorator,
