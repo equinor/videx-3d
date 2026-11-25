@@ -28,7 +28,6 @@ export type {
   SceneryHollowStyle,
   ScenerySeaProps,
   ScenerySeaWater,
-  ScenerySeabed,
   ScenerySubsurface,
   ScenerySubsurfaceColors,
   ScenerySubsurfaceLight,
@@ -58,6 +57,7 @@ export type {
   ReliefContours,
   ReliefLook,
   ReliefLookProps,
+  ReliefSeabed,
   ReliefSeabedRamp,
 } from './scenery-relief-look';
 export type { ReliefSampler } from './scenery-relief-sampler';

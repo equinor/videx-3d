@@ -9,7 +9,7 @@ anywhere under it:
 | Component | Adds |
 |--|--|
 | `<SceneryClouds>` | 3D clouds, from sea level to space, from a `Weather` (see [clouds.md](./clouds.md)) |
-| `<ScenerySea>` | an endless sea with a seabed, and the void below it |
+| `<ScenerySea>` | an endless sea over the relief's seabed, and the void below it |
 | `<SceneryVoid>` | the void's look below a level (with a sea, its seabed) |
 | `<SceneryCutaway>` | a cut through the sea's water and seabed in front of the view |
 | `<SceneryStage>` | the sea, the seabed and the relief on real geometry about the field |
@@ -534,9 +534,10 @@ block, from whatever it is then, and hands it back on leaving.
 
 ## The endless sea
 
-`<ScenerySea>` adds a sea: a wavy surface at `level` over a flat seabed `depth` below it,
-seen from above, from inside the water and, below the seabed, as the void. With a sea the
-void below its seabed is always there; `<SceneryVoid>` sets its look.
+`<ScenerySea>` adds a sea: a wavy surface at `level` over its seabed — the `World`'s
+`<GeoRelief>`, flat `depth` below the surface where it has no data — seen from above, from
+inside the water and, below the seabed, as the void. With a sea the void below its seabed is
+always there; `<SceneryVoid>` sets its look.
 
 ```tsx
 <Scenery>
@@ -546,9 +547,25 @@ void below its seabed is always there; `<SceneryVoid>` sets its look.
 
 The water takes the `<Water>` component's props under the same names (see
 [Water](./water.md)), so one object can drive both; the sun and the reflected sky come
-from the sky. `water: false` leaves the seabed dry; `seabed: false` leaves the void
-below the water, seen through it from above, while from the void its lid is still a roof,
-as under a seabed. Far off, over the waves' `detailFadeDistance`, the water turns opaque;
+from the sky. `water: false` leaves the seabed dry.
+
+The seabed is the `World`'s `<GeoRelief>` (see [Relief](./relief.md)): its ground where its
+layers have data, and flat at the sea's `depth` where they have none. A `<GeoRelief />` with
+no layers is the flat seabed alone, which the sky and a stage draw themselves, no tiles
+loaded. Without one, or with it hidden (`visible={false}`), there is no seabed: the void lies
+below the water, seen through it from above, while from the void its lid is still a roof, as
+under a seabed (with a hollow, the hollow lies open; see [The void](./void.md)).
+
+```tsx
+<World frame={frame}>
+  <Scenery>
+    <ScenerySea level={0} depth={100} />
+  </Scenery>
+  <GeoRelief seabed={{ color: '#8c8573' }} fieldOpacity={0.6} />
+</World>
+```
+
+Far off, over the waves' `detailFadeDistance`, the water turns opaque;
 nearer it is as see-through as its depth and optics make it,
 from any height alike. (It used to turn opaque from 2 to 5 km up, `SCENERY_OCEAN_OPAQUE`, which
 hid the seabed showing wrong through shallow water; removed 2026-11-15 once that was fixed.)
@@ -558,10 +575,11 @@ the relief, which lie where they are), and is lit as that deep (`scenerySeaLayer
 the water in front of it reads the same depth, so through the shallows it shows bright,
 and through deep water not at all. On the sea's fixed `depth` it was lit 100 m deep under
 water a metre deep: a dark rim along every coast with realistic optics, and with clear ones
-a bright bed through fjords hundreds of metres deep. `seabedOpacity` (default 1) lets the void, or the scene under a stage's
-seabed, show through it. Each of these only changes uniforms, except that crossing a
-`seabedOpacity` of 1 makes a stage's seabed materials again (see Performance). The
-seabed's look (`ScenerySeabed`) is lit with the model and options of a
+a bright bed through fjords hundreds of metres deep. The relief's `fieldOpacity` (default 1)
+lets the void, or the scene under a stage's seabed, show through it. Each of these only
+changes uniforms, except that crossing a `fieldOpacity` of 1 makes a stage's seabed
+materials again (see Performance). The seabed's look (the relief's `seabed`, a
+`ReliefSeabed`) is lit with the model and options of a
 `ZoneMaterial`, so a zone layer given the same colour and detail continues it without
 a seam.
 
@@ -601,7 +619,7 @@ one side, tens of metres a few kilometres out. With more footprints than the sea
 `<SceneryStage>` puts the sky's sea and seabed on real geometry between the scene and the
 background, drawn with the sky's own shading so the two meet without a seam. Being
 geometry, the water lies in front of what is under it, and the seabed hides what is
-below it at the sea's `seabedOpacity` — unless the camera is below it too. It reaches the camera's far plane
+below it at the relief's `fieldOpacity` — unless the camera is below it too. It reaches the camera's far plane
 beyond its `boundary`, so every view ray that can reach the scene crosses it. With the sky's
 `globe` it stays flat but shades the sea beyond the disc holding its `boundary` on the
 globe (see The globe).
@@ -657,11 +675,11 @@ draws the sea about the scene's origin, curved from there (no flat disc), the re
 see-through only over the fields loaded in the `World`, and an occupant without an `outline`
 is handed no ground. `occupants` claim parts of it — typically field
 columns. The sky's sea is
-global: its `water`, `seabed` and their opacities hold over the occupants as everywhere else.
+global: its `water`, its seabed and their opacities hold over the occupants as everywhere else.
 
-Without a `GeoRelief` in the `World` the stage's seabed is flat, at the sea's depth, over
-everything: the occupants draw their own seabeds, and the flat one lies under them too. With
-one, the relief is the seabed everywhere, the occupants' ground included (see
+With a `GeoRelief` of no layers in the `World` the stage's seabed is flat, at the sea's depth,
+over everything: the occupants draw their own seabeds, and the flat one lies under them too.
+With layers, the relief is the seabed everywhere, the occupants' ground included (see
 [Relief](./relief.md)), and the bridge to a `ZoneStack` comes in three parts
 ([tiles.md](./tiles.md)): the stack builds its sea bed on the relief (`relief`, from
 `reliefSource`, derived from the very props the relief is given), ends its faces where the
@@ -691,21 +709,23 @@ Each occupant:
   and fields in other frames are in [world.md](./world.md).
 - `onStage({ seabed, seabedOpacity, water })` tells the occupant what the stage does for
   it, whenever that changes:
-  - `seabed`: the stage draws its seabed — with a relief, once the sky has compiled,
-    while the sky is drawn (`background`), and while the sea has a seabed. Until then
-    the occupant draws its own — a zone layer's `drawCap` — so one of the two always
+  - `seabed`: the stage draws its seabed — with a relief of layers, once the sky has
+    compiled, while the sky is drawn (`background`), and while the sea has a seabed. Until
+    then the occupant draws its own — a zone layer's `drawCap` — so one of the two always
     draws it, give or take the frame a change takes to reach the occupant.
-  - `seabedOpacity`: the opacity the stage draws it at. Below 1, the occupant must not
-    cull what lies under it: hand it on as the layer's `capOpacity`.
+  - `seabedOpacity`: the opacity the stage draws it at, the relief's `fieldOpacity`. Below
+    1, the occupant must not cull what lies under it: hand it on as the layer's `capOpacity`.
   - `water`: the stage owns the water over the occupant, with the sea's `water` on or
     off. A `ZoneStack` then hides its own (`drawSea={false}`), which shows and hides
-    it without a rebuild.
+    it without a rebuild, and its sea bed's cap is seen through the sky's water.
 
   All three reset (`false`, 1, `false`) once the stage is gone.
 
-⚠️ Without a relief the stage's flat seabed lies at one depth under the occupants: where
-an occupant's own top lies deeper, the flat seabed hides it unless the cutaway or
-`seabedOpacity` opens it.
+⚠️ With a relief of no layers the stage's flat seabed lies at one depth under the
+occupants: where an occupant's own top lies deeper, the flat seabed hides it unless the
+cutaway or `fieldOpacity` opens it. For a seabed that meets a field column, give the relief
+the column's sea bed as its finest layer (a store surface baked into a relief layer).
+Without a relief there is no seabed about the column: its own sea bed is the floor.
 
 The stage's transparent parts are ready for the `OITRenderPass`: its surface always (its
 alpha is per fragment), its seabed when see-through. With nothing else see-through in view
@@ -743,8 +763,8 @@ What each part makes of it:
 - **The globe** is cut flat over the smallest disc that holds it (`boundaryDisc`: a box's
   about its middle, half its diagonal across; a polygon's through two or three of its
   points), and a field not anchored is placed about that disc's middle.
-- **The relief** is see-through over the shape itself (the sea's `seabedOpacity`, or a
-  `GeoRelief`'s `fieldOpacity`): each region is tested in its own frame in the shader — a box
+- **The relief** is see-through over the shape itself (a `GeoRelief`'s `fieldOpacity`, with or
+  without a `Scenery`): each region is tested in its own frame in the shader — a box
   with its turn undone in its matrix, a circle, or a polygon by its outline's distance field
   (`polygonDistanceField`, 256², one layer each of an array texture made when the regions
   change, not each frame). A polygon's edge is as fine as a texel of its field, 1/246 of its
@@ -791,11 +811,12 @@ an axis-aligned rectangle. Removed, and parked on the branch `parked/abyss-walls
 
 By default the void is a hollow in the crust about the field (`SceneryVoid`'s `hollow`): a
 crater 500 km across the rim, its walls of rock down to a floor 35 km under the seabed, the
-seabed its lid. Peeling the seabed (`<ScenerySea seabed={false} />`) opens it: the relief
-and the seabed are cut away inside its rim and kept whole around it, and the data under the
-field is seen against the crater. Past its walls and under its floor the void is black, with
+seabed its lid. Opening it (`<SceneryVoid hollow={{ open: true }} />`) peels the seabed over
+it: the relief is cut away inside its rim and kept whole around it, and the data under the
+field is seen against the crater. Without a seabed (no `GeoRelief`) it lies open under the
+water. Past its walls and under its floor the void is black, with
 the lid overhead. It is real geometry with baked textures, drawn with the background, and
-peeling, moving or flying into it re-bakes and recompiles nothing. `hollow={false}` keeps the
+opening, moving or flying into it re-bakes and recompiles nothing. `hollow={false}` keeps the
 plain void above: the plain lid over the gradient. Its design, look, light and cost:
 [void.md](./void.md).
 
@@ -820,7 +841,7 @@ A cutaway also keeps the scene lit as from above the water.
 
 - `water` (default 1) is how much of the water it cuts: 0 leaves it whole, 0.5 half of it.
   `seabed: false` leaves the seabed whole, seen through the cut; for a see-through seabed,
-  lower the sea's `seabedOpacity` instead. The rim and the shadow mark the edge either way;
+  lower the relief's `fieldOpacity` instead. The rim and the shadow mark the edge either way;
   only cutting some of the water lights the scene as from above it.
 - `reach` is the frame row the edge sits on when looking level; tilting down raises it,
   and from `exitTilt` (default 45°) it slides out of the top of the view.
@@ -1047,7 +1068,7 @@ ShaderChunk.logdepthbuf_pars_fragment = ShaderChunk.logdepthbuf_pars_fragment.re
 - Adding or removing a feature compiles or drops only its own layer (see
   [Rendering](#rendering)); the seabed's `detail` and the sea's wave count recompile the
   sea's layers and its stages; and a stage recompiles
-  when `seabedOpacity` crosses 1 (its seabed turns see-through, `STAGE_SEE_THROUGH`).
+  when the relief's `fieldOpacity` crosses 1 (its seabed turns see-through, `STAGE_SEE_THROUGH`).
   Every other option only changes uniforms. While a layer compiles the stand-in is drawn
   in place of the whole background, for that layer's compile alone.
 - The bakes run only when the sky changes, never as the camera moves, and swap
@@ -1201,8 +1222,8 @@ the shared preset out.
   (`boundaryBox`) as a 5 × 5 grid, then rings
   each about twice as wide as the one inside, out to the far plane. The flat parts are
   shaded at the ray's exact hit, so their triangles only need to grow with their distance
-  from the scene: ~1000 km triangles crack where the GPU clips them. Without a relief the
-  flat seabed lies on the same mesh; with one, the relief's tiles are the seabed.
+  from the scene: ~1000 km triangles crack where the GPU clips them. With a relief of no
+  layers the flat seabed lies on the same mesh; with layers, the relief's tiles are the seabed.
 - ⚠️ The grid and the rings have an ODD number of segments a side (`RING_SEGMENTS`), so no
   edge runs through the stage's centre. A camera exactly over an edge and looking along
   it draws that edge down a column of pixel centres; where the triangles on both sides
@@ -1212,7 +1233,7 @@ the shared preset out.
   With 4 segments the Timelapse story's camera (x = 0, looking along z, 1975 px wide) drew
   it down the middle; a millimetre off the edge, or a near plane of 1 m, drew none
   (measured 2026-11-20, RTX A1000). A camera exactly over another edge still would.
-- Below a `seabedOpacity` of 1 the seabed parts compile with `STAGE_SEE_THROUGH`:
+- Below a `fieldOpacity` of 1 the seabed parts compile with `STAGE_SEE_THROUGH`:
   transparent, without depth writes, and with the seabed's opacity as their alpha rather
   than mixed toward the void behind them.
 - The cutting occupant's `cut` compiles into the relief's material as

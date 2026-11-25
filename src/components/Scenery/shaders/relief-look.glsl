@@ -17,8 +17,8 @@
 //   0: the land's ramp: its row of the colour ramps (-1 for a flat colour), its low and
 //      high heights, 1 to run it backwards (colorRampAt)
 //   1: the land's flat colour, linear; and how contours shade (ContourColorMode)
-//   2: the seabed's ramp, as the land's; its row -1 for the sea's seabed colour darkened
-//      with depth, -2 for it plain
+//   2: the seabed's ramp, as the land's; its row -1 for the seabed's own colour (ReliefSeabed)
+//      darkened with depth, -2 for it even at every depth
 //   3: contours: metres apart (0 for none), width in pixels, every how many a major line,
 //      1 on the seabed too
 //   4: the contours' colour, linear; and how strongly they shade
@@ -32,7 +32,7 @@ vec4 reliefLookRow(int look, int row) {
 
 // The colour of ground `height` metres from the sea's level by look `look`. Where the look
 // gives the seabed no ramp, it is `bedColor`, darkened with depth from `bedDepth` metres
-// below the sea (the sea's own seabed) down, unless the look keeps it plain.
+// below the sea (the flat seabed's) down, unless the look keeps it even.
 vec3 reliefLookAlbedo(float height, int look, vec3 bedColor, float bedDepth) {
   vec4 landRamp = reliefLookRow(look, 0);
   vec4 bedRamp = reliefLookRow(look, 2);

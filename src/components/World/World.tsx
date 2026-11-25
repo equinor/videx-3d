@@ -29,6 +29,7 @@ import {
 } from './world-fields';
 import {
   WorldReliefContext,
+  WorldReliefGround,
   WorldReliefStage,
   WorldReliefState,
 } from './world-relief';
@@ -233,11 +234,16 @@ export const World = ({
   // The relief's: what it shares (the tiles it draws), and the sky and the stage that join it.
   const [tiles] = useState(() => new SceneryReliefHub());
   const [reliefs, setReliefs] = useState(0);
+  const [ground, setGround] = useState<WorldReliefGround | null>(null);
   const [scenery, setScenery] = useState<ScenerySeaState | null>(null);
   const [stage, setStage] = useState<WorldReliefStage | null>(null);
   const addRelief = useCallback(() => {
     setReliefs(count => count + 1);
     return () => setReliefs(count => count - 1);
+  }, []);
+  const provideGround = useCallback((handed: WorldReliefGround) => {
+    setGround(handed);
+    return () => setGround(current => (current === handed ? null : current));
   }, []);
   const provideScenery = useCallback((offered: ScenerySeaState) => {
     setScenery(offered);
@@ -256,10 +262,12 @@ export const World = ({
     () => ({
       tiles,
       present: reliefs > 0,
+      ground,
       scenery,
       stage,
       loader,
       addRelief,
+      provideGround,
       provideScenery,
       provideStage,
       provideLoader,
@@ -267,10 +275,12 @@ export const World = ({
     [
       tiles,
       reliefs,
+      ground,
       scenery,
       stage,
       loader,
       addRelief,
+      provideGround,
       provideScenery,
       provideStage,
       provideLoader,
@@ -279,7 +289,7 @@ export const World = ({
   useEffect(() => {
     if (reliefs > 1)
       console.warn(
-        'World: more than one GeoRelief with layers; the first one drawn is the one layers lie on.',
+        'World: more than one GeoRelief drawing tiles; the first one drawn is the one layers lie on.',
       );
   }, [reliefs]);
 

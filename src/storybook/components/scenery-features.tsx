@@ -8,6 +8,7 @@ import { SceneryClouds } from '../../components/Scenery/SceneryClouds';
 import { SceneryCutaway } from '../../components/Scenery/SceneryCutaway';
 import { VoidBackground } from '../../components/Scenery/VoidBackground';
 import { GeoGraticule } from '../../components/Layers/GeoGraticule';
+import { GeoRelief } from '../../components/Layers/GeoRelief';
 import { ScenerySea } from '../../components/Scenery/ScenerySea';
 import type {
   SceneryVoidProps,
@@ -23,6 +24,8 @@ import { demoCrs } from '../data/demo-crs';
 import { useSurfaceMeta } from '../hooks/useSurfaceMeta';
 import { useWellboreHeaders } from '../hooks/useWellboreHeaders';
 import {
+  reportReliefProgress,
+  SCENERY_GLOBAL_RELIEF,
   SceneryArgs,
   sceneryVoidFromArgs,
   sceneryCloudsFromArgs,
@@ -77,6 +80,19 @@ export const SceneryArgsFeatures = ({
     </>
   );
 };
+
+/**
+ * The global demo relief alone (`SCENERY_GLOBAL_RELIEF`): the seabed of a story's sea, flat at
+ * `depth` where it has no data, and the land the world over. In the story's `World`, inside a
+ * `GeneratorsProvider` and a `DataProvider`.
+ */
+export const SceneryGlobalRelief = ({ depth }: { depth?: number }) => (
+  <GeoRelief
+    layers={SCENERY_GLOBAL_RELIEF}
+    depth={depth}
+    onProgress={reportReliefProgress}
+  />
+);
 
 /**
  * A story's minimap (see `sceneryMinimapArgs`): the `Minimap`'s defaults and a camera marker,

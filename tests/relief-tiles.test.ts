@@ -134,6 +134,19 @@ describe('buildReliefTile', () => {
     expect(tile.error).toBe(0);
     expect(tile.leaf).toBe(true);
     expect(tile.layers.every(id => id === 0)).toBe(true);
+
+    // No layers at all (a GeoRelief that is the flat seabed alone): the same, nothing read.
+    const store = storeOf();
+    const flat = await buildReliefTile(
+      store.reader,
+      source([], -95),
+      tileKey(4, 0, 0),
+      CELLS,
+      ROOT,
+    );
+    expect(flat.heights.every(h => h === -95)).toBe(true);
+    expect(flat.leaf).toBe(true);
+    expect(store.calls).toEqual([]);
   });
 
   it('reads the coarsest level no coarser than its cells', async () => {

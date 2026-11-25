@@ -98,12 +98,15 @@ const GraticuleStory = ({
         ) : (
           graticule
         )}
-        <GeoRelief
-          layers={relief ? SCENERY_DEMO_RELIEF_LAYERS : []}
-          depth={DEPTH}
-          color={{ ramp: 'terrain' }}
-          onProgress={reportReliefProgress}
-        />
+        {/* The seabed: the demo reliefs, or under the Scenery flat at the sea's depth. */}
+        {(relief || scenery) && (
+          <GeoRelief
+            layers={relief ? SCENERY_DEMO_RELIEF_LAYERS : []}
+            depth={DEPTH}
+            color={{ ramp: 'terrain' }}
+            onProgress={reportReliefProgress}
+          />
+        )}
       </SceneryGenerators>
     </World>
   );

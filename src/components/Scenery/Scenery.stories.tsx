@@ -5,6 +5,7 @@ import { SKY_PRESETS, type SkyPreset } from '../../sdk/weather/weather';
 import {
   reportReliefProgress,
   reportSceneryProgress,
+  SCENERY_GLOBAL_RELIEF,
   sceneryArgs,
   SceneryArgs,
   sceneryArgTypes,
@@ -24,6 +25,7 @@ import {
 import {
   SceneryArgsFeatures,
   SceneryDemoField,
+  SceneryGlobalRelief,
 } from '../../storybook/components/scenery-features';
 import { Tanker } from '../../storybook/components/Tanker/Tanker';
 import {
@@ -126,8 +128,8 @@ const BasicScenery = ({
 
 type StageArgs = {
   water: boolean;
-  seabed: boolean;
-  seabedOpacity: number;
+  relief: boolean;
+  fieldOpacity: number;
   opticsColor: string;
   opticsClarity: number;
   windSpeed: number;
@@ -136,8 +138,8 @@ type StageArgs = {
 
 const StageStory = ({
   water,
-  seabed,
-  seabedOpacity,
+  relief,
+  fieldOpacity,
   opticsColor,
   opticsClarity,
   windSpeed,
@@ -149,17 +151,20 @@ const StageStory = ({
         level={0}
         depth={DEPTH}
         water={water}
-        seabed={seabed}
-        seabedOpacity={seabedOpacity}
         optics={waterOpticsFromArgs(opticsColor, opticsClarity)}
         windSpeed={windSpeed}
       />
       <SceneryStage boundary={FIELD_BOUNDS} />
     </Scenery>
-    {generatedSeabed && (
+    {relief && (
       <GeoRelief
-        layers={GENERATED_SEABED}
+        layers={
+          generatedSeabed
+            ? [...SCENERY_GLOBAL_RELIEF, ...GENERATED_SEABED]
+            : SCENERY_GLOBAL_RELIEF
+        }
         depth={DEPTH}
+        fieldOpacity={fieldOpacity}
         onProgress={reportReliefProgress}
       />
     )}
@@ -225,6 +230,7 @@ const TimelapseStory = (args: TimelapseArgs) => {
         <SceneryStage boundary={FIELD_BOUNDS} />
         {tanker}
       </Scenery>
+      <SceneryGlobalRelief depth={DEPTH} />
       <ClockOverlay
         text={`${sunDate}  ${formatSunHour(hour)} solar time  sun ${elevation.toFixed(1)}\u00b0`}
       />
@@ -334,8 +340,8 @@ export const Default: StoryObj<BasicArgs> = {
 /**
  * An endless sea (`ScenerySea`) and a stage about the field (`SceneryStage`): real geometry
  * drawing the same sea, so the water lies in front of the wellbores and the seabed over what
- * lies below it. A `GeoRelief` in the `World` is the stage's seabed: here a generated one, at
- * the field's water depth.
+ * lies below it. The seabed is the `GeoRelief` in the `World`: the global relief, and here a
+ * generated seabed of the field's own at its water depth over it.
  */
 export const Stage: StoryObj<StageArgs> = {
   render: args => <StageStory {...args} />,
@@ -343,8 +349,8 @@ export const Stage: StoryObj<StageArgs> = {
   args: {
     ...sceneryProgressArgs,
     water: true,
-    seabed: true,
-    seabedOpacity: 0.6,
+    relief: true,
+    fieldOpacity: 0.6,
     // Clear, to see the seabed and the wellbores under the sea.
     opticsColor: waterOpticsArgsOf('clear').color,
     opticsClarity: waterOpticsArgsOf('clear').clarity,
@@ -357,17 +363,6 @@ export const Stage: StoryObj<StageArgs> = {
       'Sea',
       'The sea\u2019s water (`water`). Off, the seabed lies dry.',
     ),
-    seabed: toggle(
-      'Sea',
-      'The sea\u2019s seabed (`seabed`). Off, it is peeled and the void opens under the field (see the SceneryVoid stories).',
-    ),
-    seabedOpacity: range(
-      0,
-      1,
-      0.01,
-      'Sea',
-      'How much of what lies under the seabed it hides over the stage (`seabedOpacity`): below 1 the wellbores show through it. Crossing 1 recompiles the seabed\u2019s materials.',
-    ),
     opticsColor: waterColorArgType('Sea'),
     opticsClarity: waterClarityArgType('Sea'),
     windSpeed: range(
@@ -377,10 +372,27 @@ export const Stage: StoryObj<StageArgs> = {
       'Sea',
       'The wind raising the waves, in m/s (`windSpeed`).',
     ),
-    generatedSeabed: toggle(
-      'Stage',
-      'A seabed of the field\u2019s own for the stage: a generated surface at its water depth, baked by the demo store into a relief layer (`<GeoRelief layers>`). Off, the stage\u2019s flat seabed at the sea\u2019s `depth`.',
+    relief: toggle(
+      'Relief',
+      'The relief (`<GeoRelief>`), the sea\u2019s seabed: the global demo relief, flat at the sea\u2019s `depth` where it has no data. Off, there is no seabed: the void opens under the water (see the SceneryVoid stories).',
     ),
+    fieldOpacity: {
+      ...range(
+        0,
+        1,
+        0.01,
+        'Relief',
+        'How much of what lies under the seabed it hides over the stage (`fieldOpacity`): below 1 the wellbores show through it. Crossing 1 recompiles the seabed\u2019s materials.',
+      ),
+      if: { arg: 'relief' },
+    },
+    generatedSeabed: {
+      ...toggle(
+        'Relief',
+        'A seabed of the field\u2019s own over the global relief: a generated surface at its water depth, baked by the demo store into a relief layer (`<GeoRelief layers>`), the finest.',
+      ),
+      if: { arg: 'relief' },
+    },
   },
 };
 

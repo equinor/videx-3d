@@ -10,6 +10,7 @@ import {
   type WeatherSystemsPreset,
 } from '../../../sdk/weather/weather';
 import {
+  SCENERY_DEMO_RELIEF_LAYERS,
   sceneryArgs,
   sceneryPropsFromArgs,
   sceneryReliefArgs,
@@ -170,10 +171,15 @@ const CloudBenchStory = (args: CloudBenchArgs) => {
     () => JSON.parse(weatherKey) as WeatherState,
     [weatherKey],
   );
+  // Every demo relief, as the bench has always timed the clouds over.
   const relief =
     args.ground === 'none'
       ? undefined
-      : sceneryReliefFromArgs({ ...sceneryReliefArgs, relief: true });
+      : sceneryReliefFromArgs({
+          ...sceneryReliefArgs,
+          relief: true,
+          reliefLayers: SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
+        });
   return (
     <World frame={sceneryReliefFrame(scenery)} globe>
       <Weather

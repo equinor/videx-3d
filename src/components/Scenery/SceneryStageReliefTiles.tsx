@@ -89,8 +89,10 @@ import {
   SceneryReliefTileGroundTile,
   SceneryReliefTileOccupants,
   SceneryReliefTileTextures,
+  setReliefPlainSeabed,
   setReliefRegions,
 } from './scenery-relief-tiles';
+import type { ReliefSeabed } from './scenery-relief-look';
 import type { Boundary } from '../../sdk/geometries/boundary';
 import type { SceneryStageBounds } from './scenery-stage';
 import {
@@ -225,6 +227,7 @@ type SceneryStageReliefTilesProps = {
   transition: number;
   /** what it compiles with from the sky, as a key (`ScenerySeaState.definesKey`): a new one needs a new material */
   definesKey?: string;
+  /** drawn: while not, it chooses and loads nothing, the tiles in kept (see the frame loop) */
   visible: boolean;
   onStats?: (stats: SceneryReliefTileStats) => void;
   /** told of the tiles as they load (see `SceneryReliefLoading`) whenever that changes, and null once gone */
@@ -240,7 +243,7 @@ type SceneryStageReliefTilesProps = {
   fields?: readonly SceneryReliefRegion[];
   /**
    * so is the relief over the regions (`stage`, `fields`): with a sky while the sea's seabed
-   * is (`seabedOpacity` below 1), at its opacity; without one at `fieldOpacity`
+   * is (the relief's `fieldOpacity` below 1), at its opacity; without one at `fieldOpacity`
    */
   seeThrough: boolean;
   /**
@@ -251,10 +254,8 @@ type SceneryStageReliefTilesProps = {
   opacity?: number;
   /** without a sky, the same over the regions, drawn see-through with `seeThrough`. Default 1 */
   fieldOpacity?: number;
-  /** without a sky, draw the ground at or above the sea's level. Default true */
-  land?: boolean;
-  /** without a sky, draw the ground below the sea's level. Default true */
-  seabed?: boolean;
+  /** without a sky, the seabed's look (with one, the sky's: the same, from the relief) */
+  seabed?: ReliefSeabed;
   /** a debug view of the tiles */
   debug?: SceneryReliefTileDebug;
   /**
@@ -312,8 +313,7 @@ export const SceneryStageReliefTiles = ({
   seeThrough,
   opacity = 1,
   fieldOpacity = 1,
-  land = true,
-  seabed = true,
+  seabed,
   debug,
   grounds,
   groundLive = false,
@@ -369,8 +369,6 @@ export const SceneryStageReliefTiles = ({
         : createReliefTilePlainMaterial(globe, textures, looks, {
             stage: seeThrough && !seeAll ? 'around' : undefined,
             debug,
-            land,
-            seabed,
           }),
     // The sky's defines are compiled in (the seabed's detail): new ones need a new material.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -384,11 +382,11 @@ export const SceneryStageReliefTiles = ({
       seeAll,
       debug,
       occupants,
-      land,
-      seabed,
     ],
   );
   useEffect(() => () => releaseMaterial(gl, material), [gl, material]);
+  // Without a sky, the seabed's look is its own (the sky's are the sky's uniforms).
+  useEffect(() => setReliefPlainSeabed(material, seabed), [material, seabed]);
   const seeThroughMaterial = useMemo(
     () =>
       seeAll
@@ -853,6 +851,10 @@ export const SceneryStageReliefTiles = ({
     ] as const) {
       if (mesh.current) mesh.current.visible = visible && shows;
     }
+    // Not drawn (hidden, or its sky's background off): nothing chosen or loaded. The tiles in
+    // stay in, and what was handed out — the hub's tiles, the grounds — stands until it is
+    // drawn again, when the key below has changed and it chooses afresh.
+    if (!visible) return;
 
     // No farther than can be seen: past the globe's horizon, the highest ground's own, and
     // the disc's flat sea, over which a view runs on level.

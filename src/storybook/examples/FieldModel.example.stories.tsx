@@ -47,6 +47,7 @@ import { WellboreFence } from '../../sdk/geometries/wellbore-fence';
 import { ResourceMonitor } from '../../storybook/components/ResourceMonitor';
 import { SeabedFacility } from '../../storybook/components/SeabedFacility';
 import {
+  SCENERY_DEMO_RELIEF_LAYERS,
   sceneryArgs,
   SceneryArgs,
   sceneryArgTypes,
@@ -1449,38 +1450,17 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   );
 
   const sceneryLevel = -props.seaLevel;
-  // The Scenery's relief, which the column builds its sea bed on too, the column's own sea bed
-  // baked in as its finest layer: the ground over the field is then the column's top, and
-  // no unit is cut away where the bathymetry lies deeper. Its flat base is given here
-  // rather than taken from the sea's depth, which waits for the column's rim: the column
-  // would be built twice.
+  // The Scenery's relief, the sea's seabed, which the column builds its sea bed on too, the
+  // column's own sea bed baked in as its finest layer: the ground over the field is then the
+  // column's top, and no unit is cut away where the bathymetry lies deeper. Its flat base is
+  // given here rather than taken from the sea's depth, which waits for the column's rim: the
+  // column would be built twice. None with `relief` off: no seabed, and the column draws its own.
   const demoRelief = sceneryReliefFromArgs(
     props,
-    props.relief && props.bakeSeabed && seabedMeta
+    props.bakeSeabed && seabedMeta
       ? [sceneryBakedReliefLayer(seabedMeta.id)]
       : [],
   );
-  const stageRelief: GeoReliefProps | undefined = demoRelief && {
-    ...demoRelief,
-    depth: RELIEF_BASE_DEPTH,
-    onSampler: setReliefSampler,
-  };
-  const columnRelief =
-    props.scenery && stageRelief
-      ? reliefSource(
-          { ...stageRelief, frame: reliefFrame },
-          { level: sceneryLevel },
-        )
-      : undefined;
-  // The Scenery's seabed lies at the column's top along the boundary: shallowest, median or
-  // deepest.
-  const bedHeight = rim
-    ? props.stageBed === 'top'
-      ? rim.heights[rim.heights.length - 1]
-      : props.stageBed === 'bottom'
-        ? rim.heights[0]
-        : rim.heights[rim.heights.length >> 1]
-    : null;
   // The sea bed's unit, as the whole column colours it: the column may start below it.
   const bedColor = drawsSeabed
     ? layers[0]?.material
@@ -1490,6 +1470,31 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           column.find(m => m.id !== seabedMeta.id)?.name,
         ])[0]
       : undefined;
+  const stageRelief: GeoReliefProps | undefined = demoRelief && {
+    ...demoRelief,
+    depth: RELIEF_BASE_DEPTH,
+    // The relief's seabed in the look of the column's sea bed: its unit's colour and detail.
+    ...(props.stageMatchBed
+      ? { seabed: { color: bedColor, detail: layers[0]?.detail ?? false } }
+      : {}),
+    onSampler: setReliefSampler,
+  };
+  const columnRelief =
+    props.scenery && stageRelief
+      ? reliefSource(
+          { ...stageRelief, frame: reliefFrame },
+          { level: sceneryLevel },
+        )
+      : undefined;
+  // The sea's depth: the column's top along the boundary, shallowest, median or deepest. The
+  // relief's flat seabed lies there where no layer has data, and without a relief the void's lid.
+  const bedHeight = rim
+    ? props.stageBed === 'top'
+      ? rim.heights[rim.heights.length - 1]
+      : props.stageBed === 'bottom'
+        ? rim.heights[0]
+        : rim.heights[rim.heights.length >> 1]
+    : null;
 
   if (!boundary || layers.length === 0) return null;
   const { min: boundaryMin, max: boundaryMax } = boundary.getBounds();
@@ -1632,14 +1637,6 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
             <SceneryArgsFeatures
               args={props}
               sea={{
-                seabed:
-                  props.scenerySeabed &&
-                  (props.stageMatchBed
-                    ? {
-                        color: bedColor,
-                        detail: layers[0]?.detail ?? false,
-                      }
-                    : { color: props.scenerySeabedColor }),
                 level: sceneryLevel,
                 depth: Math.max(sceneryLevel - bedHeight, 1),
               }}
@@ -1669,7 +1666,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
               ]}
             />
           </Scenery>
-          {/* The Scenery's ground: the relief, which the column is built on. */}
+          {/* The relief: the sea's seabed, which the column is built on. */}
           {stageRelief && <GeoRelief {...stageRelief} />}
         </SceneryGenerators>
       )}
@@ -1873,9 +1870,12 @@ export const Default: Story = {
         resources: false,
         resourceInterval: 1000,
         ...progressArgs,
-        // Scenery: it lights the column, and draws nothing behind it (`background`; see `WithScenery`).
+        // Scenery: it lights the column, and draws nothing behind it (`background`; see
+        // `WithScenery`). The relief, every demo relief, idles while the background is off,
+        // but the column is still built on it.
         scenery: true,
         background: false,
+        reliefLayers: SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
         stageMatchBed: true,
         stageBed: 'median',
         sunElevation: 30,
@@ -1892,7 +1892,7 @@ export const Default: Story = {
         relief: {
           ...sceneryReliefArgTypes('scenery').relief,
           description:
-            'The relief drawn from tiles \u2014 the demo reliefs merged, Volve\u2019s survey finest \u2014 and the column\u2019s sea bed built on it (`ZoneStack.relief`), so its top is the ground the stage draws, and the stage draws it as the sea\u2019s. Off, the stage\u2019s seabed is flat, and the column draws its own. Rebuilds the column. Made on demand: `npm run generate-relief`.',
+            'The relief drawn from tiles, the sea\u2019s seabed \u2014 the demo reliefs ticked, and the column\u2019s own sea bed baked in finest (`bakeSeabed`) \u2014 and the column\u2019s sea bed built on it (`ZoneStack.relief`), so its top is the ground the stage draws, and the stage draws it as the sea\u2019s. Off, there is no seabed: the column draws its own, and the void lies below the water about it. Rebuilds the column. Made on demand: `npm run generate-relief`.',
         },
         pipeline: { table: { disable: true } },
         scenery: {
@@ -1934,36 +1934,23 @@ export const Default: Story = {
           if: { arg: 'sea' },
           table: { category: 'Sea' },
         },
-        scenerySeabed: {
-          description:
-            'The Scenery\u2019s seabed, everywhere: off, the void lies below the water, and the column draws its own sea bed again. With the cutaway, it cuts the water alone.',
-          if: { arg: 'scenery' },
-          table: { category: 'Sea' },
-        },
-        scenerySeabedOpacity: {
-          control: { type: 'range', min: 0, max: 1, step: 0.01 },
-          description:
-            'How much of what lies under the seabed it hides, the column\u2019s sea bed included. Below 1 the column stops culling under it (`capOpacity`), and both rebuild their materials once.',
-          if: { arg: 'scenerySeabed' },
-          table: { category: 'Sea' },
-        },
         seabedOpacity: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
           description:
-            'Opacity of the column\u2019s first drawn layer\u2019s CAP alone (`ZoneLayer.capOpacity`) \u2014 the sea bed, while the column draws it; the rock below stays solid. Pair with `keepBed` to leave a see-through bed over a cut. \u26a0\ufe0f Below 1 it switches hidden-cap culling off, as any transparent cap does.',
+            'Opacity of the column\u2019s first drawn layer\u2019s CAP alone (`ZoneLayer.capOpacity`) \u2014 the sea bed, while the column draws it; the rock below stays solid. Pair with `keepBed` to leave a see-through bed over a cut. \u26a0\ufe0f Below 1 it switches hidden-cap culling off, as any transparent cap does. While the stage draws it, the relief\u2019s `reliefFieldOpacity` instead.',
           table: { category: 'Sea' },
         },
         stageMatchBed: {
           description:
-            'The Scenery\u2019s seabed takes the look of the column\u2019s sea bed: its unit\u2019s colour, even while the column starts below it, and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s.',
-          if: { arg: 'scenery' },
-          table: { category: 'Stage' },
+            'The relief\u2019s seabed takes the look of the column\u2019s sea bed (`GeoRelief.seabed`): its unit\u2019s colour, even while the column starts below it, and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s. Off, `reliefSeabedColor`.',
+          if: { arg: 'relief' },
+          table: { category: 'Relief' },
         },
         stageBed: {
           control: { type: 'inline-radio' },
           options: ['top', 'median', 'bottom'],
           description:
-            'Where the Scenery\u2019s flat seabed lies: at the shallowest, median or deepest point of the column\u2019s top surface along its boundary.',
+            'The sea\u2019s depth: at the shallowest, median or deepest point of the column\u2019s top surface along its boundary. The relief\u2019s flat seabed lies there where no layer has data; without the relief, the void\u2019s lid.',
           if: { arg: 'scenery' },
           table: { category: 'Stage' },
         },
@@ -2667,6 +2654,9 @@ export const Default: Story = {
         'relief',
         'reliefLayers',
         'bakeSeabed',
+        'stageMatchBed',
+        'reliefSeabedColor',
+        'reliefFieldOpacity',
         'reliefCut',
         'reliefMarkers',
       ],
@@ -2692,8 +2682,8 @@ export const Default: Story = {
   ],
 };
 
-// The field under the videx Scenery: its sea over the column, the column's sea bed drawn by
-// the Scenery's stage as the sea's, and the Scenery's seabed eased into it around the boundary.
+// The field under the videx Scenery: its sea over the column, the seabed the demo reliefs with
+// the column's sea bed baked in, which the column is built on and the Scenery's stage draws.
 export const WithScenery: Story = {
   ...Default,
   args: { ...Default.args, scenery: true, background: true },

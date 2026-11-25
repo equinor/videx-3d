@@ -146,8 +146,6 @@ export type SceneryArgs = {
   discScale: number;
   // Sea
   sea: boolean;
-  scenerySeabed: boolean;
-  scenerySeabedOpacity: number;
   windSpeed: number;
   foamAmount: number;
   /** surf where the waves break on a coast of the scene's ground (`shoreFoam`) */
@@ -171,7 +169,6 @@ export type SceneryArgs = {
   seaColor: string;
   /** and how far one sees through it, metres */
   seaClarity: number;
-  scenerySeabedColor: string;
   seaDetailScale: number;
   /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
   seaFresnelPower: number;
@@ -208,6 +205,8 @@ export type SceneryArgs = {
   voidFalloff: number;
   /** the void as a hollow under the field (`SceneryVoid`'s `hollow`) */
   hollow: boolean;
+  /** the seabed over it peeled (`hollow.open`) */
+  hollowOpen: boolean;
   hollowStyle: SceneryHollowStyle;
   hollowRadius: number;
   hollowFloorDepth: number;
@@ -298,10 +297,8 @@ export const sceneryArgs: SceneryArgs = {
   seaFoamLife: 'auto',
   seaDetailFadeStart: 15000,
   seaDetailFadeEnd: 60000,
-  scenerySeabed: true,
-  scenerySeabedOpacity: sceneryDefaults.sea.seabedOpacity,
-  scenerySeabedColor: sceneryDefaults.sea.seabed.color,
   hollow: true,
+  hollowOpen: false,
   hollowStyle: sceneryDefaults.void.hollow.style,
   hollowRadius: sceneryDefaults.void.hollow.radius,
   hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
@@ -627,17 +624,15 @@ export const seaWaterFromArgs = (
 
 /**
  * A `ScenerySea`'s props from {@link SceneryArgs}, but for its level and depth, which are the
- * story's: its water ({@link seaWaterFromArgs}), and its own seabed and quality. With
- * `weather`, no wind or swell of its own: it draws the enclosing `Weather`'s sea
- * ({@link sceneryWeatherFromArgs}).
+ * story's: its water ({@link seaWaterFromArgs}) and quality. Its seabed is the relief's
+ * ({@link sceneryReliefFromArgs}). With `weather`, no wind or swell of its own: it draws the
+ * enclosing `Weather`'s sea ({@link sceneryWeatherFromArgs}).
  */
 export const scenerySeaFromArgs = (
   args: SceneryArgs,
   weather = false,
 ): ScenerySeaProps => ({
   water: args.sea,
-  seabed: args.scenerySeabed && { color: args.scenerySeabedColor },
-  seabedOpacity: args.scenerySeabedOpacity,
   ...seaWaterFromArgs(args, weather),
   quality: args.scenerySeaQuality,
 });
@@ -655,6 +650,7 @@ export const sceneryVoidFromArgs = (args: SceneryArgs): SceneryVoidProps => ({
   detailScale: args.voidDetailScale,
   falloff: args.voidFalloff,
   hollow: args.hollow && {
+    open: args.hollowOpen,
     style: args.hollowStyle,
     radius: args.hollowRadius,
     floorDepth: args.hollowFloorDepth,
@@ -792,7 +788,6 @@ const ADVANCED = new Set<string>([
   'swellPeriod',
   'swellFrom',
   'seaSteepness',
-  'scenerySeabedColor',
   'seaDetailScale',
   'seaFresnelPower',
   'seaSparkle',
@@ -1156,28 +1151,17 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
     ...range(1000, 400000, 1000, SEA, 'Distance at which they are gone.'),
     if: { arg: 'sea' },
   },
-  scenerySeabed: toggle(
-    SEA,
-    'The sea\u2019s seabed, everywhere, an occupant\u2019s included. Off, it is peeled: with the void a hollow (`hollow`), the relief and the seabed are cut away over the hollow and stay around it; without, the void lies below the water. From below its lid is still a roof, and the cutaway cuts the water alone.',
-  ),
-  scenerySeabedOpacity: {
-    ...range(
-      0,
-      1,
-      0.01,
-      SEA,
-      'How much of what lies under the seabed it hides. Crossing 1 rebuilds the seabed\u2019s materials, which compile again.',
-    ),
-    if: { arg: 'scenerySeabed' },
-  },
-  scenerySeabedColor: {
-    ...color(SEA, 'The seabed\u2019s colour.'),
-    if: { arg: 'scenerySeabed' },
-  },
   hollow: toggle(
     VOID,
-    'The void as a hollow in the crust under the field (`SceneryVoid`\u2019s `hollow`): a floor deep under the seabed and walls about it. Peeling the seabed opens it, the relief and the seabed cut away inside its rim and whole around it. Off, the bottomless gradient, and a peeled seabed gone everywhere.',
+    'The void as a hollow in the crust under the field (`SceneryVoid`\u2019s `hollow`): a floor deep under the seabed and walls about it. Off, the bottomless gradient.',
   ),
+  hollowOpen: {
+    ...toggle(
+      VOID,
+      'Peel the seabed over the hollow (`hollow.open`): the relief is cut away inside its rim and stays whole around it, and the field\u2019s data shows down to the floor. Without a seabed (the relief off) it lies open anyway.',
+    ),
+    if: { arg: 'hollow' },
+  },
   hollowStyle: {
     control: { type: 'inline-radio' },
     options: ['calm', 'molten', 'simple'],
@@ -1609,21 +1593,25 @@ export function sceneryArgTypes({
 
 /** Story args for the relief, a `GeoRelief` (see {@link sceneryReliefFromArgs}). */
 export type SceneryReliefArgs = SceneryReliefLookArgs & {
+  /** the relief: the seabed (flat where no layer has data), and the demo reliefs ticked */
   relief: boolean;
   /** the demo reliefs merged, by id (see {@link SCENERY_DEMO_RELIEF_LAYERS}) */
   reliefLayers: string[];
+  /** how much of what lies under the seabed it hides over the fields (`fieldOpacity`) */
+  reliefFieldOpacity: number;
 };
 
 /** Story args for how a relief looks (see {@link sceneryReliefLookFromArgs}). */
 export type SceneryReliefLookArgs = {
   reliefColor: 'flat' | 'ramp';
   reliefLandColor: string;
+  reliefSeabedColor: string;
   reliefRamp: string;
   reliefRampRange: boolean;
   reliefRampMin: number;
   reliefRampMax: number;
   reliefRampReverse: boolean;
-  reliefSeabed: 'sea' | 'ramp' | 'bathymetry';
+  reliefSeabed: 'plain' | 'ramp' | 'bathymetry';
   reliefContours: boolean;
   reliefContourInterval: number;
   reliefContourMajor: number;
@@ -1641,12 +1629,13 @@ export type SceneryReliefLookArgs = {
 const sceneryReliefLookArgs: SceneryReliefLookArgs = {
   reliefColor: 'flat',
   reliefLandColor: '#34433b',
+  reliefSeabedColor: sceneryDefaults.relief.seabed.color,
   reliefRamp: 'terrain',
   reliefRampRange: false,
   reliefRampMin: 0,
   reliefRampMax: 2000,
   reliefRampReverse: false,
-  reliefSeabed: 'sea',
+  reliefSeabed: 'plain',
   reliefContours: false,
   reliefContourInterval: 100,
   reliefContourMajor: 5,
@@ -1678,13 +1667,20 @@ function sceneryReliefLookArgTypes(
       control: { type: 'inline-radio' },
       options: ['flat', 'ramp'],
       description:
-        'The land in one colour, the seabed as the sea\u2019s; or by height through `reliefRamp`. Changing any of the look builds nothing again.',
+        'The land in one colour, the seabed in its own (`reliefSeabedColor`); or by height through `reliefRamp`. Changing any of the look builds nothing again.',
       table: { category: RELIEF },
       ...shown,
     },
     reliefLandColor: {
       ...color(RELIEF, 'The land\u2019s colour.'),
       if: { arg: 'reliefColor', eq: 'flat' },
+    },
+    reliefSeabedColor: {
+      ...color(
+        RELIEF,
+        'The seabed\u2019s colour (`seabed.color`), darker with depth, where the look gives it no ramp: the flat seabed\u2019s too.',
+      ),
+      ...shown,
     },
     reliefRamp: {
       control: { type: 'select' },
@@ -1721,9 +1717,9 @@ function sceneryReliefLookArgTypes(
     },
     reliefSeabed: {
       control: { type: 'inline-radio' },
-      options: ['sea', 'ramp', 'bathymetry'],
+      options: ['plain', 'ramp', 'bathymetry'],
       description:
-        'The seabed: the SEA\u2019s seabed colour, darker with depth; the land\u2019s RAMP too, across both; or BATHYMETRY, a ramp of its own.',
+        'The seabed: PLAIN, its own colour (`reliefSeabedColor`), darker with depth; the land\u2019s RAMP too, across both; or BATHYMETRY, a ramp of its own.',
       table: { category: RELIEF },
       ...ramped,
     },
@@ -1824,18 +1820,19 @@ const contourLabelsOf = (a: SceneryReliefLookArgs) => ({
 });
 
 /**
- * A relief's `color`, `contours` and `layerLooks` from {@link SceneryReliefLookArgs}, for a
- * relief of `layers` (the last, the finest, takes `reliefLocalLook`).
+ * A relief's `color`, `seabed`, `contours` and `layerLooks` from {@link SceneryReliefLookArgs},
+ * for a relief of `layers` (the last, the finest, takes `reliefLocalLook`).
  */
 function sceneryReliefLookFromArgs(
   args: Partial<SceneryReliefLookArgs>,
   layers: ReliefLayer[],
-): Pick<GeoReliefProps, 'color' | 'contours' | 'layerLooks'> {
+): Pick<GeoReliefProps, 'color' | 'seabed' | 'contours' | 'layerLooks'> {
   const a = { ...sceneryReliefLookArgs, ...args };
   const seabed =
     a.reliefSeabed === 'bathymetry' ? { ramp: 'bathymetry' } : a.reliefSeabed;
   const finest = layers[layers.length - 1];
   return {
+    seabed: { color: a.reliefSeabedColor },
     color:
       a.reliefColor === 'ramp'
         ? {
@@ -1888,6 +1885,28 @@ export const SCENERY_DEMO_RELIEF_LAYERS: ReliefLayer[] = [
   { id: 'emodnet-2020-volve', feather: 500 },
 ];
 
+/**
+ * The global demo relief alone (ETOPO 2022, 10′): the seabed, and the land, the world over.
+ * What a story's relief is by default.
+ */
+export const SCENERY_GLOBAL_RELIEF: ReliefLayer[] = [
+  SCENERY_DEMO_RELIEF_LAYERS[0],
+];
+
+/** A story's switch for the global relief alone (`SceneryGlobalRelief`): its sea's seabed. */
+export type SceneryGlobalReliefArgs = { relief: boolean };
+
+export const sceneryGlobalReliefArgs: SceneryGlobalReliefArgs = {
+  relief: true,
+};
+
+export const sceneryGlobalReliefArgTypes: ArgTypes<SceneryGlobalReliefArgs> = {
+  relief: toggle(
+    RELIEF,
+    'The relief (`<GeoRelief>`), the sea\u2019s seabed: the global demo relief, land and seabed the world over, flat at the sea\u2019s depth where it has no data. Off, there is no seabed: the void lies below the water.',
+  ),
+};
+
 /** What each demo relief is, by id: the labels of a control of them. */
 export const SCENERY_DEMO_RELIEF_LABELS: Record<string, string> = {
   'etopo-2022-world': 'ETOPO 2022, 10\u2032, the world',
@@ -1929,7 +1948,7 @@ export const sceneryHideArgType = {
     RELIEF_HIDE_LAYER,
   ],
   description:
-    'Layers not to draw. Only their visibility changes: nothing is rebuilt or baked again.',
+    'Layers not to draw. Only their visibility changes: nothing is rebuilt or baked again, but for the relief, whose hiding takes the sea\u2019s seabed with it (the void below the water).',
   table: { category: 'Debug' },
 } as const;
 
@@ -1954,10 +1973,12 @@ export const sceneryOutlineArgType = {
   table: { category: 'Debug' },
 } as const;
 
-// The switch and the layers first: the Controls panel follows the args' order.
+// The switch and the layers first: the Controls panel follows the args' order. On, the global
+// relief alone: the seabed, and the land, the world over.
 export const sceneryReliefArgs: SceneryReliefArgs = {
-  relief: false,
-  reliefLayers: SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
+  relief: true,
+  reliefLayers: SCENERY_GLOBAL_RELIEF.map(layer => layer.id),
+  reliefFieldOpacity: 1,
   ...sceneryReliefLookArgs,
 };
 
@@ -1969,7 +1990,7 @@ export function sceneryReliefArgTypes(
     relief: {
       ...toggle(
         RELIEF,
-        'Land and seabed from the store, drawn from tiles over everything, the stage included: the demo reliefs ticked in `reliefLayers`, merged coarse to fine. Made on demand: `npm run generate-relief`.',
+        'The relief (`GeoRelief`), the sea\u2019s seabed: flat at the sea\u2019s depth where no layer has data, with the land and seabed of the demo reliefs ticked in `reliefLayers`, merged coarse to fine, drawn from tiles over everything, the stage included. Off, there is no seabed: the void lies below the water. Made on demand: `npm run generate-relief`.',
       ),
       ...(shownIf ? { if: { arg: shownIf } } : {}),
     },
@@ -1977,8 +1998,18 @@ export function sceneryReliefArgTypes(
       control: { type: 'check', labels: SCENERY_DEMO_RELIEF_LABELS },
       options: SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
       description:
-        'The demo reliefs merged, coarse to fine whatever the order ticked: a later one wins where it has data, faded in over 3, 1.5 and 0.5 km from where its data ends. A story may add layers of its own over them. Changing them builds every tile again.',
+        'The demo reliefs merged, coarse to fine whatever the order ticked: a later one wins where it has data, faded in over 3, 1.5 and 0.5 km from where its data ends. None ticked: the flat seabed alone, no tiles. A story may add layers of its own over them. Changing them builds every tile again.',
       table: { category: RELIEF },
+      if: { arg: 'relief' },
+    },
+    reliefFieldOpacity: {
+      ...range(
+        0,
+        1,
+        0.01,
+        RELIEF,
+        'How much of what lies under the seabed it hides over the fields (`fieldOpacity`): below 1 the data under it shows through. Crossing 1 rebuilds the seabed\u2019s materials, which compile again.',
+      ),
       if: { arg: 'relief' },
     },
     ...sceneryReliefLookArgTypes('relief'),
@@ -1996,25 +2027,25 @@ export const sceneryReliefFrame = (args: Partial<SceneryArgs>): GeoFrame =>
   );
 
 /**
- * A `GeoRelief`'s props from {@link SceneryReliefArgs}: the demo reliefs ticked while `relief`
- * is on, then the story's own `local` layers, finest last; its progress reported to the
- * story's progress display. None without any layers.
+ * A `GeoRelief`'s props from {@link SceneryReliefArgs} while `relief` is on: the demo reliefs
+ * ticked, then the story's own `local` layers, finest last (none: the flat seabed alone); its
+ * progress reported to the story's progress display. None while it is off: no seabed.
  */
 export const sceneryReliefFromArgs = (
   args: Partial<SceneryReliefArgs>,
   local: ReliefLayer[] = [],
 ): GeoReliefProps | undefined => {
+  if (!(args.relief ?? sceneryReliefArgs.relief)) return undefined;
   const ticked = args.reliefLayers ?? sceneryReliefArgs.reliefLayers;
   const layers = [
-    ...(args.relief
-      ? SCENERY_DEMO_RELIEF_LAYERS.filter(layer => ticked.includes(layer.id))
-      : []),
+    ...SCENERY_DEMO_RELIEF_LAYERS.filter(layer => ticked.includes(layer.id)),
     ...local,
   ];
-  if (layers.length === 0) return undefined;
   return {
     layers,
     ...sceneryReliefLookFromArgs(args, layers),
+    fieldOpacity:
+      args.reliefFieldOpacity ?? sceneryReliefArgs.reliefFieldOpacity,
     onProgress: reportReliefProgress,
   };
 };
@@ -2037,6 +2068,6 @@ export const sceneryMinimapArgTypes: ArgTypes<SceneryMinimapArgs> = {
 
 /** The demo reliefs a story's minimap draws: those `ticked`, coarse to fine. All of them by default. */
 export const sceneryMinimapLayers = (
-  ticked: string[] = sceneryReliefArgs.reliefLayers,
+  ticked: string[] = SCENERY_DEMO_RELIEF_LAYERS.map(layer => layer.id),
 ): ReliefLayer[] =>
   SCENERY_DEMO_RELIEF_LAYERS.filter(layer => ticked.includes(layer.id));

@@ -98,6 +98,7 @@ import {
 } from './scenery-hollow';
 import { SceneryHollowGrip } from './scenery-hollow-grip';
 import { SceneryReliefHub } from './scenery-relief-hub';
+import type { ReliefSeabed } from './scenery-relief-look';
 import { SceneryGround } from './scenery-ground';
 import { scenerySeaDefines } from './scenery-stage';
 import {
@@ -117,7 +118,6 @@ import {
   SceneryObserver,
   sceneryObserverValid,
   ScenerySeaProps,
-  ScenerySeabed,
   skyStarShare,
   skyStarFrame,
   SceneryStars,
@@ -380,7 +380,9 @@ const LAYER_DATA = {
  * a light probe, all from the same sky — and whatever else it holds: clouds that draw
  * themselves (`SceneryClouds`), an endless sea (`ScenerySea`) with the void below it
  * (`SceneryVoid`) and a cut through it (`SceneryCutaway`), and stages that draw the sea
- * and the relief on real geometry (`SceneryStage`). Each is drawn as a layer of its own and
+ * and the relief on real geometry (`SceneryStage`). The sea's seabed is the ground of the
+ * `World`'s `GeoRelief`, flat where it has no data; without one the void lies below the
+ * water. Each is drawn as a layer of its own and
  * compiled on its own (see `SceneryBackgroundLayer`), so a scenery without a sea compiles
  * none of it. Nothing else in the library depends on this component.
  *
@@ -394,10 +396,13 @@ const LAYER_DATA = {
  * sky light from each.
  *
  * @example
- * <Scenery sun={{ azimuth: 200, elevation: 35 }}>
- *   <SceneryClouds />
- *   <ScenerySea depth={120} />
- * </Scenery>
+ * <World frame={frame}>
+ *   <Scenery sun={{ azimuth: 200, elevation: 35 }}>
+ *     <SceneryClouds />
+ *     <ScenerySea depth={120} />
+ *   </Scenery>
+ *   <GeoRelief />
+ * </World>
  *
  * @group Components
  */
@@ -541,8 +546,15 @@ export const Scenery = ({
   const voidDetailScale = voidOptions?.detailScale ?? voidDefaults.detailScale;
   const voidFalloff = voidOptions?.falloff ?? voidDefaults.falloff;
   // The void as a hollow in the crust about the field: on by default. Compared by value, as
-  // the props are an inline object.
-  const hollowKey = JSON.stringify(voidOptions?.hollow ?? null);
+  // the props are an inline object; without `open`, which peels the seabed over it and changes
+  // nothing of its look.
+  const hollowGiven = voidOptions?.hollow;
+  const hollowOpenAsked = typeof hollowGiven === 'object' && !!hollowGiven.open;
+  const hollowKey = JSON.stringify(
+    typeof hollowGiven === 'object'
+      ? { ...hollowGiven, open: undefined }
+      : (hollowGiven ?? null),
+  );
   const hollowLook = useMemo(
     () => sceneryHollowLook(JSON.parse(hollowKey) ?? undefined),
     [hollowKey],
@@ -575,17 +587,15 @@ export const Scenery = ({
     sceneryDefaults.air.hazeHeight;
   // The air's ground: the sea's surface, or the void's lid.
   const airLevel = hasSea ? seaLevel : hasVoid ? voidLevel : 0;
+  // The seabed is the World's relief's ground, flat at its depth where it has no data; none
+  // without a shown `GeoRelief` (the void below the water), or peeled over an open hollow.
+  const reliefGround = worldRelief?.ground ?? null;
   const seaDepth = seaOptions?.depth ?? seaDefaults.depth;
   const seaWater = seaOptions?.water ?? true;
-  const seabed = seaOptions?.seabed !== false;
-  const seabedOpacity = MathUtils.clamp(
-    seaOptions?.seabedOpacity ?? seaDefaults.seabedOpacity,
-    0,
-    1,
-  );
-  const seabedOptions: ScenerySeabed | null =
-    typeof seaOptions?.seabed === 'object' ? seaOptions.seabed : null;
-  const bedDefaults = seaDefaults.seabed;
+  const seabed = !!reliefGround && !(hollowOpenAsked && hollowLook !== null);
+  const seabedOpacity = MathUtils.clamp(reliefGround?.fieldOpacity ?? 1, 0, 1);
+  const seabedOptions: ReliefSeabed | null = reliefGround?.seabed ?? null;
+  const bedDefaults = sceneryDefaults.relief.seabed;
   const bedColor = toHex(seabedOptions?.color ?? bedDefaults.color);
   const bedSpecular = toHex(seabedOptions?.specular ?? bedDefaults.specular);
   const bedShininess = seabedOptions?.shininess ?? bedDefaults.shininess;
@@ -595,6 +605,8 @@ export const Scenery = ({
     seabedOptions?.detail === false
       ? undefined
       : (seabedOptions?.detail ?? bedDefaults.detail);
+  // The bakes take the seabed whole, its detail too.
+  const bedDetailKey = JSON.stringify(bedDetail ?? null);
   // Its look, or the deprecated deep colour and opacity where it gives none.
   const seaOptics = waterOpticsOf(seaOptions?.optics, seaOptions ?? {});
   const seaOpticsColor = seaOptics.color;
@@ -637,7 +649,8 @@ export const Scenery = ({
   const [standIn] = useState(() => createSceneryStandInMaterial(material));
   const [geometry] = useState(createSceneryGeometry);
   const [baker] = useState(() => new SceneryBaker(material));
-  // The hollow under the seabed: on with the void, unless turned off.
+  // The hollow under the seabed: on with the void, unless turned off. Open where there is no
+  // seabed, or it is peeled (`SceneryHollow.open`).
   const hollowOn = (hasVoid || hasSea) && hollowLook !== null;
   const hollowOpen = hollowOn && hasSea && !seabed;
   const [hollow] = useState(() => new SceneryHollowParts(material));
@@ -1375,6 +1388,7 @@ export const Scenery = ({
     seaWater,
     seabed,
     seabedOpacity,
+    bedDetailKey,
   ]);
 
   // Its own wind and swells where given, the enclosing Weather's for what it leaves out: in
@@ -1411,14 +1425,12 @@ export const Scenery = ({
     });
   });
 
-  // The bakes see the water too, but an inline object is new every render. Not the seabed's
-  // opacity: the bakes take the seabed whole.
+  // The bakes see the water too, but an inline object is new every render.
   const waterKey = seaOptions
     ? JSON.stringify({
         ...seaOptions,
         windSpeed: seaWindSpeed,
         windDirection: seaWindDirection,
-        seabedOpacity: undefined,
       })
     : '';
   useEffect(() => {

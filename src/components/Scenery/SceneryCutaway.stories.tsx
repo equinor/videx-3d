@@ -2,6 +2,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import {
   reportSceneryProgress,
   sceneryDecorators,
+  sceneryGlobalReliefArgs,
+  SceneryGlobalReliefArgs,
+  sceneryGlobalReliefArgTypes,
   sceneryHiddenArgTypes,
   sceneryProgressArgs,
 } from '../../storybook/components/scenery-controls';
@@ -10,7 +13,10 @@ import {
   sceneryCutawayArgTypes,
   sceneryCutawayArgs,
 } from '../../storybook/components/scenery-cutaway-controls';
-import { SceneryDemoField } from '../../storybook/components/scenery-features';
+import {
+  SceneryDemoField,
+  SceneryGlobalRelief,
+} from '../../storybook/components/scenery-features';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
@@ -44,6 +50,7 @@ type CutawayArgs = Pick<
   | 'cutawayHandle'
   | 'onCutawayOffset'
 > &
+  SceneryGlobalReliefArgs &
   ProgressArgs;
 
 const CutawayStory = ({
@@ -54,6 +61,7 @@ const CutawayStory = ({
   cutawayOffset,
   cutawayHandle,
   onCutawayOffset,
+  relief,
 }: CutawayArgs) => (
   <World frame={demoFrame}>
     <Scenery onProgress={reportSceneryProgress}>
@@ -71,6 +79,7 @@ const CutawayStory = ({
         />
       )}
     </Scenery>
+    {relief && <SceneryGlobalRelief depth={DEPTH} />}
     <SceneryDemoField reservoir />
   </World>
 );
@@ -108,6 +117,7 @@ const meta = {
     cutawayReach: sceneryCutawayArgs.cutawayReach,
     cutawayOffset: sceneryCutawayArgs.cutawayOffset,
     cutawayHandle: sceneryCutawayArgs.cutawayHandle,
+    ...sceneryGlobalReliefArgs,
   },
   argTypes: {
     ...sceneryHiddenArgTypes(sceneryProgressArgs),
@@ -118,6 +128,7 @@ const meta = {
     cutawayOffset: cutawayArgTypes.cutawayOffset,
     cutawayHandle: cutawayArgTypes.cutawayHandle,
     onCutawayOffset: { table: { disable: true } },
+    ...sceneryGlobalReliefArgTypes,
   },
 } satisfies Meta<typeof CutawayStory>;
 

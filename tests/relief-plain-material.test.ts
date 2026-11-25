@@ -1,9 +1,11 @@
-import { Texture } from 'three';
+import { Color, Texture, Vector2 } from 'three';
 import { describe, expect, it } from 'vitest';
+import { sceneryDefaults } from '../src/components/Scenery/scenery-model';
 import {
   createReliefTilePlainMaterial,
   createSceneryReliefTileSeeThroughMaterial,
   SceneryReliefTileTextures,
+  setReliefPlainSeabed,
 } from '../src/components/Scenery/scenery-relief-tiles';
 import { Globe } from '../src/sdk/projection/globe';
 
@@ -53,17 +55,18 @@ describe('createReliefTilePlainMaterial', () => {
     expect(all.transparent).toBe(true);
   });
 
-  it('leaves out the land or the seabed by a define', () => {
+  it('takes its seabed look from the relief, the defaults where it gives none', () => {
     const plain = createReliefTilePlainMaterial(globe, textures, looks);
-    expect(plain.defines.RELIEF_NO_LAND).toBeUndefined();
-    expect(plain.defines.RELIEF_NO_SEABED).toBeUndefined();
-    const bedOnly = createReliefTilePlainMaterial(globe, textures, looks, {
-      land: false,
-    });
-    expect(bedOnly.defines.RELIEF_NO_LAND).toBe('');
-    const landOnly = createReliefTilePlainMaterial(globe, textures, looks, {
-      seabed: false,
-    });
-    expect(landOnly.defines.RELIEF_NO_SEABED).toBe('');
+    setReliefPlainSeabed(plain, { color: '#ff0000', ambient: false });
+    const u = plain.uniforms;
+    expect((u.uReliefBedColor.value as Color).getHexString()).toBe('ff0000');
+    expect((u.uReliefBedSpecular.value as Color).getHexString()).toBe(
+      new Color(sceneryDefaults.relief.seabed.specular).getHexString(),
+    );
+    expect((u.uReliefBedAmbient.value as Vector2).toArray()).toEqual([1, 1]);
+    setReliefPlainSeabed(plain);
+    expect((u.uReliefBedAmbient.value as Vector2).toArray()).toEqual(
+      sceneryDefaults.relief.seabed.ambient,
+    );
   });
 });

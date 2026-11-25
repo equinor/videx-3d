@@ -4,16 +4,18 @@ A `GeoRelief` puts land and seabed from your own elevation data on the Earth: me
 several data sets at once — global, regional, local — and drawn from tiles, as fine as the
 data where the camera is and no finer anywhere else. It is Earth data, as the geographic
 layers are: placed by latitude and longitude on the `World`'s globe, anywhere inside the
-`World`, beside the `Scenery` or in it. With a `Scenery` and its sea, below sea level it is
-the seabed, seen through the water as the stage's own seabed is; above sea level it is land,
-lit by the sky's sun and fading into the air as the far sea does. It covers everything out
-to the sea's horizon, the stage's own area and its occupants included, and on a curved
-globe falls away with the Earth's curve, so coasts and mountains stand on the horizon where
-they should. Without a `Scenery` it is drawn plainly, lit by the scene's lights, at an
-`opacity` of its own (and a `fieldOpacity` over the fields: the `World`'s `boundary` and each
-field loaded in it), its land and seabed
-each on or off ([Without a Scenery](#without-a-scenery)), and its tiles stay in as a
-`Scenery` comes and goes.
+`World`, beside the `Scenery` or in it. It is the `Scenery`'s seabed: with no data, or none
+of its layers covering a place, the seabed lies flat at its `depth` (by default the sea's),
+and a `<GeoRelief />` with no layers is that flat seabed alone; without a `GeoRelief` the
+sea has no seabed, and the void lies below the water. With a `Scenery` and its sea, below
+sea level it is the seabed, seen through the water as the stage's own seabed is; above sea
+level it is land, lit by the sky's sun and fading into the air as the far sea does. It
+covers everything out to the sea's horizon, the stage's own area and its occupants
+included, and on a curved globe falls away with the Earth's curve, so coasts and mountains
+stand on the horizon where they should. Without a `Scenery` it is drawn plainly, lit by the
+scene's lights, at an `opacity` of its own (and a `fieldOpacity` over the fields: the
+`World`'s `boundary` and each field loaded in it; see
+[Without a Scenery](#without-a-scenery)), and its tiles stay in as a `Scenery` comes and goes.
 
 ```tsx
 <World frame={geoFrameFromCrs(crs)} boundary={[minX, minZ, maxX, maxZ]}>
@@ -31,6 +33,8 @@ each on or off ([Without a Scenery](#without-a-scenery)), and its tiles stay in 
     ]}
     depth={100} // the flat seabed where no layer has data; default the sea's depth
     color={{ ramp: 'terrain', seabed: { ramp: 'bathymetry' } }}
+    seabed={{ color: '#8c8573' }} // the seabed's own look, where the colour gives it no ramp
+    fieldOpacity={0.6} // see-through over the fields: the data under the seabed shows
     contours={{ interval: 100, major: 5 }}
     layerLooks={{ 'my-survey': { color: { ramp: 'rainbow', min: -130, max: -60 } } }}
     onProgress={reportReliefProgress} // its tiles loading, for a progress display
@@ -38,11 +42,11 @@ each on or off ([Without a Scenery](#without-a-scenery)), and its tiles stay in 
 </World>
 ```
 
-Without one the stage draws a flat seabed at the sea's depth, and its occupants draw their
-own. With one, the relief is the ground over the occupants too: a `ZoneStack` builds its
-column's top on it, ends its faces where it is drawn and places what stands on it by its
-sampler. See [tiles.md](./tiles.md) for the design and the bridge to the zones. One
-`GeoRelief` with layers to a `World`.
+With no layers, the stage draws the flat seabed at the sea's depth itself, and its occupants
+draw their own. With layers, the relief is the ground over the occupants too: a `ZoneStack`
+builds its column's top on it, ends its faces where it is drawn and places what stands on it
+by its sampler. See [tiles.md](./tiles.md) for the design and the bridge to the zones. One
+`GeoRelief` to a `World`.
 
 ## Data
 
@@ -112,7 +116,7 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
 
 - With a `SceneryStage`, the relief is its seabed, everywhere. Over the stage's `boundary`, and
   over every field loaded in the `World` (each `UtmArea` with a `boundary`, in its own frame,
-  each of its own shape; `useWorldFields`), it is see-through at the sea's `seabedOpacity`, so a neighbour's wells
+  each of its own shape; `useWorldFields`), it is see-through at its `fieldOpacity`, so a neighbour's wells
   under its seabed show too; around them, always opaque. Up to eight such regions
   (`SCENERY_RELIEF_MAX_REGIONS`), the eight nearest the camera when there are more, each tested
   in its own field's frame, turned as it is (`reliefTileInRegion`). The stage hands the
@@ -195,17 +199,19 @@ topography under its data, nothing of the sky in the way (world.md, step 7d-2).
 <World frame={frame} boundary={boundary}>
   <ambientLight intensity={0.5} />
   <directionalLight position={[-1, 2, -3]} />
-  <GeoRelief layers={layers} color="ramp" fieldOpacity={0.3} land={false} />
+  <GeoRelief layers={layers} color="ramp" fieldOpacity={0.3} />
   {data}
 </World>
 ```
 
 - **Drawn plainly** (`relief-plain-fragment.glsl`): its looks as with a sky (the same table,
   `relief-look.glsl`), lit by the scene's lights — the host's: without any it is black. Where
-  the look gives the seabed no ramp it is the sea's default seabed (`sceneryDefaults.ocean.seabed`:
-  its colour, shine and ambient), darkening from the relief's `depth` down. No water over the
-  seabed, no air, no night side: nothing of the sky. Lines on it are a layer's
-  (`GeoGraticule`, draped), with a sky or without.
+  the look gives the seabed no ramp it is the relief's `seabed` (`ReliefSeabed`; defaults
+  `sceneryDefaults.relief.seabed`: its colour, shine and ambient), darkening from the
+  relief's `depth` down. No water over the seabed, no air, no night side: nothing of the sky.
+  Lines on it are a layer's (`GeoGraticule`, draped), with a sky or without. With no layers
+  it is a flat seabed at its `depth`, out to the far plane (its tiles flat, nothing read from
+  the store, never split).
 - **To the far plane only:** no overview past it (that is the sky's; see
   [The far plane](#the-far-plane)).
 - **Nothing from under the ground:** with the camera below the relief nothing of it is
@@ -222,17 +228,18 @@ topography under its data, nothing of the sky in the way (world.md, step 7d-2).
   - Without a `boundary` or a field loaded, `fieldOpacity` has nowhere to apply. Its skirts are
     left out of a see-through draw (two over each other would show as a line), so a crack
     between tiles of different detail may show as a hairline.
-  - With a `Scenery` the sky decides instead: the sea's `seabedOpacity`, over the same fields.
-- **Its land and its seabed** (`land`, `seabed`, default true): either left out, by the
-  ground's height against the sea's level — on a skirt, the tile's edge it hangs from — so
-  the seabed alone shows the bathymetry with the coast cut clean. A define each: a change
-  recompiles. With a `Scenery` the sky decides.
+  - With a `Scenery`, `fieldOpacity` holds over the same fields, and the sky's seabed takes it
+    too; `opacity` is the sky's to decide.
+- **Hidden** (`visible={false}`; with a `Scenery`, also while the sky is not drawn, its
+  `background` off), nothing of it is drawn and it chooses and loads no tiles: it costs next
+  to nothing. Its tiles stay in, so it shows again at once, and what lies on it keeps the
+  ground it last drew. With a `Scenery` the sea then has no seabed, as without a relief.
 - **Its tiles stay in** as a `Scenery` comes and goes, and through a `Suspense` (an HDR
   environment loading, say), which tears down layout effects while what suspended loads —
-  the `World`'s knowing it is there among them: it stays mounted whenever it has layers in a
+  the `World`'s knowing it is there among them: it stays mounted whenever it draws tiles in a
   `World`, drawn once the `World` knows. Only its materials are made again (compiled once each
   way), its tiles, its sampler, its ground handed out and what lies on it (`drape`) carry on.
-  Its `depth` defaults to the sea's, as a `Scenery` last gave it (`sceneryDefaults.ocean.depth`
+  Its `depth` defaults to the sea's, as a `Scenery` last gave it (`sceneryDefaults.sea.depth`
   until one does): a `Scenery` with another depth coming in loads the tiles again, so give
   `depth` to keep them.
 - What a `SceneryStage` takes from it — its occupants' ground, their outlines and cut — needs
@@ -244,17 +251,21 @@ How the relief looks is data, not shader code: changing any of it uploads a smal
 (`SceneryReliefLooks`) and compiles nothing.
 
 - **`color`**, one of:
-  - a colour: the land flat, the seabed the sea's seabed colour. Default `#34433b`.
+  - a colour: the land flat, the seabed in its own colour (`seabed.color`). Default `#34433b`.
   - `{ ramp, min?, max?, reverse?, seabed? }`: the ground by height, in metres from the
     sea's level, through a colour ramp from the shared ramps (below), by name, row or a
     `ColorRamp` of your own. `min` and `max` set the heights at its ends: by default a
     terrain ramp's own range, else 0 to 2000 m (−3000 to 2000 m with the seabed on it). A
     value ramp with no range of its own (`rainbow`, `jet`, …) runs as it does on a
     `Surface`, which takes depths: from its start at the top, so a ground looks the same
-    either way. `seabed` is `'sea'` (default: the sea's seabed colour, darker with depth,
-    to half 600 m below the stage's seabed), `'ramp'` (the same ramp across land and
-    seabed alike) or a ramp of its own (`{ ramp: 'bathymetry' }`).
+    either way. `seabed` is `'plain'` (default: the seabed's own colour, `seabed.color`,
+    darker with depth, to half 600 m below the stage's seabed), `'ramp'` (the same ramp
+    across land and seabed alike) or a ramp of its own (`{ ramp: 'bathymetry' }`).
   - `'ramp'`: short for `{ ramp: 'terrain' }`.
+- **`seabed`**: the seabed's look (`ReliefSeabed`), as a `ZoneMaterial` lights it, so a zone
+  layer given the same values continues it without a seam: `color` (default `#8c8573`),
+  `specular`, `shininess`, `ambient`, and `detail`, a procedural relief over the flat seabed
+  where no layer has data, as a `Scenery` draws it (default `'seabed'`; `false` for none).
 - **`contours`**: `true`, or `{ interval?, major?, thickness?, colorMode?, factor?, color?, seabed?, labels? }`.
   Lines every `interval` metres from the sea's level (default 100), a major one twice as
   wide every `major`-th (default 5; 0 for none), shading the ground as a `Surface`'s do

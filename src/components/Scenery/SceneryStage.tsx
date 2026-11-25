@@ -103,11 +103,11 @@ const WIRE_COLORS: Record<SceneryStageLayer, string> = {
 export type SceneryStageOccupantState = {
   /**
    * the stage draws the occupant's seabed: the sea has one, the sky is drawn and compiled,
-   * and the stage has a relief, which is the ground over the occupant then. While false,
-   * draw your own
+   * and the `World`'s relief draws tiles, which are the ground over the occupant then. While
+   * false, draw your own
    */
   seabed: boolean;
-  /** the opacity the stage draws it at, the sea's (`ScenerySeaProps.seabedOpacity`): below 1, cull nothing under it */
+  /** the opacity the stage draws it at, the relief's (`GeoRelief`'s `fieldOpacity`): below 1, cull nothing under it */
   seabedOpacity: number;
   /** the stage owns the water over the occupant: it is under a drawn sky with a sea, with water or not. While true, draw none of your own */
   water: boolean;
@@ -205,11 +205,11 @@ export type SceneryStageProps = {
 };
 
 /**
- * Real geometry between the scene and the endless sea of a {@link Scenery} with `ocean`: the
+ * Real geometry between the scene and the endless sea of a {@link Scenery} with a sea: the
  * same sea and seabed, drawn with the sky's own shading so it has no seam with the
  * background. Being geometry, it puts the water in front of the scene — what lies under
  * the surface is seen through it — and the seabed hides what is below it (all of it at
- * the sea's `seabedOpacity` of 1), unless the camera is below it too.
+ * the relief's `fieldOpacity` of 1), unless the camera is below it too.
  *
  * It reaches the camera's far plane beyond its `boundary`, so every view ray that can reach
  * the scene crosses it rather than the sky's background. With the sky's `globe` its
@@ -218,10 +218,11 @@ export type SceneryStageProps = {
  *
  * Its `occupants` claim parts of the stage: field columns, say, each by its footprint.
  *
- * A `GeoRelief` in the `World` is its seabed, everywhere: the ground over the occupants
- * too, kept whole under their cuts unless one's `keepBed` is off, and handed out to each as
- * drawn (`onGround`). Without one, the stage draws a flat seabed at the sea's depth, and the
- * occupants draw their own.
+ * A `GeoRelief` in the `World` is its seabed, everywhere. With layers, its tiles are the
+ * ground over the occupants too, kept whole under their cuts unless one's `keepBed` is off,
+ * and handed out to each as drawn (`onGround`). With none, the stage draws the flat seabed at
+ * the sea's depth, and the occupants draw their own. Without a `GeoRelief`, there is no seabed:
+ * the void lies below the water.
  *
  * ⚠️ Assumes the default `up` (+Y). Renders nothing without a sky ocean.
  *

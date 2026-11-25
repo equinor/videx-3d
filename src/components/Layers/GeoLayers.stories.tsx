@@ -166,12 +166,15 @@ const DiscoveriesStory = ({
             <SceneryStage boundary={STAGE_BOUNDS} />
           </Scenery>
         )}
-        <GeoRelief
-          layers={layers}
-          depth={DEPTH}
-          color={{ ramp: 'terrain' }}
-          onProgress={reportReliefProgress}
-        />
+        {/* The seabed: the demo reliefs, or under the Scenery flat at the sea's depth. */}
+        {(relief || scenery) && (
+          <GeoRelief
+            layers={layers}
+            depth={DEPTH}
+            color={{ ramp: 'terrain' }}
+            onProgress={reportReliefProgress}
+          />
+        )}
         <GeoPolygons
           {...polygons}
           height={height}

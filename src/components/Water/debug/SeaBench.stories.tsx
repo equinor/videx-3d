@@ -11,7 +11,10 @@ import {
   type WeatherState,
 } from '../../../sdk/weather/weather';
 import type { WeatherGusts } from '../../../sdk/weather/wind-field';
-import { SceneryArgsFeatures } from '../../../storybook/components/scenery-features';
+import {
+  SceneryArgsFeatures,
+  SceneryGlobalRelief,
+} from '../../../storybook/components/scenery-features';
 import {
   foamLifeOf,
   sceneryArgs,
@@ -43,6 +46,8 @@ import {
 } from '../../../storybook/debug/sea-bench';
 import { setStoryArgs } from '../../../storybook/debug/videx3d';
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
 import { RenderStats } from '../../Html/RenderStats/RenderStats';
 import { Scenery } from '../../Scenery/Scenery';
 import { SceneryClouds } from '../../Scenery/SceneryClouds';
@@ -159,6 +164,8 @@ type SeaBenchArgs = {
   /** the stand-alone sea's scene lit by the studio HDR too (`scene.environment`), which it then reflects */
   studioEnvironment: boolean;
   stage: boolean;
+  /** the global relief: the Scenery's seabed (off: none, the void below the water) */
+  relief: boolean;
   /** the waves (and clouds) held still: the enclosing `Weather`'s clock paused */
   paused: boolean;
   /** the waves' (and clouds') pace: the `Weather`'s `timeScale` */
@@ -391,6 +398,7 @@ const SceneryScene = ({
       >
         {element}
       </Weather>
+      {args.relief && <SceneryGlobalRelief depth={DEPTH} />}
     </World>
   );
 };
@@ -573,7 +581,13 @@ const viewportDecorator: Decorator = (Story, { args }) => {
 const meta = {
   title: 'Debug/Water/Sea Bench',
   component: SeaBenchStory,
-  decorators: [Canvas3dDecorator, viewportDecorator],
+  decorators: [
+    Canvas3dDecorator,
+    // The relief's tiles, read from the store by a generator.
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+    viewportDecorator,
+  ],
   parameters: {
     layout: 'fullscreen',
     scale: 1000,
@@ -851,6 +865,13 @@ const meta = {
         'A `SceneryStage` over the field (10 km square), which draws the sea there and out to its reach.',
       if: { arg: 'scene', eq: 'scenery' },
     },
+    relief: {
+      table: { category: 'Bench' },
+      control: { type: 'boolean' },
+      description:
+        'The global demo relief (`GeoRelief`), the sea\u2019s seabed: land and seabed the world over, flat at the sea\u2019s depth where it has no data. Off, no seabed: the void lies below the water.',
+      if: { arg: 'scene', eq: 'scenery' },
+    },
     paused: {
       table: { category: 'Bench' },
       control: { type: 'boolean' },
@@ -930,6 +951,7 @@ const meta = {
     fresnelPower: 0,
     studioEnvironment: false,
     stage: true,
+    relief: true,
     paused: false,
     timeScale: 1,
     clouds: 'none',

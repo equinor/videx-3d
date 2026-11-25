@@ -44,9 +44,9 @@ export type ScenerySeaState = {
   renderOrder: number;
   /** the sea has water; without it the seabed lies dry */
   water: boolean;
-  /** the sea has a seabed; without it the void lies below the water */
+  /** the sea has a seabed (the `World`'s shown `GeoRelief`, not peeled); without it the void lies below the water */
   seabed: boolean;
-  /** how much of what lies beyond the seabed it hides, 0 to 1 (see `ScenerySeaProps.seabedOpacity`) */
+  /** how much of what lies beyond the seabed it hides, 0 to 1 (the relief's `fieldOpacity`) */
   seabedOpacity: number;
   /**
    * the void is a hollow under the field (`SceneryVoidProps.hollow`): with the seabed peeled,

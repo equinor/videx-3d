@@ -62,6 +62,7 @@ import plainFragmentShader from './shaders/relief-plain-fragment.glsl';
 import vertexShader from './shaders/relief-tiles-vertex.glsl';
 import type { SceneryMaterial } from './scenery-material';
 import { sceneryDefaults } from './scenery-model';
+import type { ReliefSeabed } from './scenery-relief-look';
 import { scenerySeaDefines } from './scenery-stage';
 
 /** The most relief tiles drawn at once. */
@@ -486,15 +487,14 @@ export function createSceneryReliefTileMaterial(
 /**
  * A material for the relief drawn from tiles without a sky (a `GeoRelief` with no `Scenery`):
  * its looks lit by the scene's lights, on `globe` (its uniform objects bound), and nothing of
- * the sea, the air or the void (`relief-plain-fragment.glsl`). Its seabed is the sea's by
- * default (`sceneryDefaults.ocean.seabed`), darkening from `uReliefBedDepth` metres down; its
- * see-through copies ({@link createSceneryReliefTileSeeThroughMaterial}) are drawn at
- * `uReliefOpacity`. Nothing is drawn from below without a sky.
+ * the sea, the air or the void (`relief-plain-fragment.glsl`). Its seabed's look is its own
+ * (`uReliefBed*`; `sceneryDefaults.relief.seabed` until set, see {@link setReliefPlainSeabed}),
+ * darkening from `uReliefBedDepth` metres down; its see-through copies
+ * ({@link createSceneryReliefTileSeeThroughMaterial}) are drawn at `uReliefOpacity`. Nothing
+ * is drawn from below without a sky.
  *
  * @param options.stage `'around'` leaves the see-through regions (`setReliefRegions`) to its
  *   see-through copy; omitted, the tiles are drawn everywhere
- * @param options.land `false` leaves out the ground at or above the sea's level
- * @param options.seabed `false` leaves out the ground below it
  */
 export function createReliefTilePlainMaterial(
   globe: Globe,
@@ -503,20 +503,14 @@ export function createReliefTilePlainMaterial(
   {
     stage,
     debug,
-    land = true,
-    seabed = true,
   }: {
     stage?: 'around';
     debug?: SceneryReliefTileDebug;
-    land?: boolean;
-    seabed?: boolean;
   } = {},
 ) {
   const defines: Record<string, unknown> = {};
   reliefTileDefines(defines, stage, debug);
-  if (!land) defines.RELIEF_NO_LAND = '';
-  if (!seabed) defines.RELIEF_NO_SEABED = '';
-  const { seabed: bed, depth } = sceneryDefaults.sea;
+  const bed = sceneryDefaults.relief.seabed;
   const uniforms: Record<string, IUniform> = {
     ...UniformsUtils.clone(UniformsLib.lights),
     ...globe.uniforms,
@@ -525,7 +519,7 @@ export function createReliefTilePlainMaterial(
     uReliefBedSpecular: new Uniform(new Color(bed.specular)),
     uReliefBedShininess: new Uniform(bed.shininess),
     uReliefBedAmbient: new Uniform(new Vector2(...bed.ambient)),
-    uReliefBedDepth: new Uniform(depth),
+    uReliefBedDepth: new Uniform(sceneryDefaults.sea.depth),
     // Everywhere, and over the see-through area.
     uReliefOpacity: new Uniform(new Vector2(1, 1)),
   };
@@ -539,6 +533,25 @@ export function createReliefTilePlainMaterial(
       dithering: true,
     }),
   );
+}
+
+/**
+ * Give a relief's plain material ({@link createReliefTilePlainMaterial}) its seabed's look:
+ * what `seabed` leaves out from `sceneryDefaults.relief.seabed`. A no-op for a sky's.
+ */
+export function setReliefPlainSeabed(
+  material: ShaderMaterial,
+  seabed: ReliefSeabed = {},
+) {
+  const u = material.uniforms;
+  if (!u.uReliefBedColor) return;
+  const bed = sceneryDefaults.relief.seabed;
+  (u.uReliefBedColor.value as Color).set(seabed.color ?? bed.color);
+  (u.uReliefBedSpecular.value as Color).set(seabed.specular ?? bed.specular);
+  u.uReliefBedShininess.value = seabed.shininess ?? bed.shininess;
+  const ambient = seabed.ambient ?? bed.ambient;
+  const [up, down] = ambient || [1, 1];
+  (u.uReliefBedAmbient.value as Vector2).set(up, down);
 }
 
 // What every relief tile material compiles with: its tiles, the area it leaves to a

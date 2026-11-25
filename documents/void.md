@@ -8,10 +8,13 @@ you are under the seabed, and the hollow should frame the data without competing
 dark, dull rock that gives scale and depth.
 
 ```tsx
-<Scenery>
-  <ScenerySea seabed={false} />
-  <SceneryVoid hollow={{ radius: 400000, pulse: 0.1 }} />
-</Scenery>
+<World frame={frame}>
+  <Scenery>
+    <ScenerySea />
+    <SceneryVoid hollow={{ open: true, radius: 400000, pulse: 0.1 }} />
+  </Scenery>
+  <GeoRelief layers={layers} />
+</World>
 ```
 
 `hollow={false}` keeps the plain void: the endless lid and the void's gradient
@@ -24,9 +27,10 @@ dark, dull rock that gives scale and depth.
   cooled top. From the sea over the field its rim lies at the horizon. Its size never follows
   the camera.
 - **The seabed is its lid.** With the seabed on, the hollow is shut and nothing changes from
-  above. Peeling it (`ScenerySea`'s `seabed={false}`) opens it: the relief and the sea's
-  seabed are cut away inside the rim and kept whole around it, so the opening is a hole in the
-  ground, not a missing ground.
+  above. Opening it (`hollow.open`) peels the seabed over it: the relief is cut away inside the
+  rim and kept whole around it, so the opening is a hole in the ground, not a missing ground.
+  Without a seabed at all (no `GeoRelief` in the `World`, or it hidden) the hollow lies open
+  under the water.
 - **Real geometry with baked textures**, no ray marching: walls and floor are meshes, shaded
   from two textures baked once on the GPU. Until both are baked and the sky's programs compiled
   the hollow is not drawn, and the void is the plain void: its even lid overhead and the void's
@@ -209,5 +213,3 @@ interleaved before/after (the per-group profiler swung up to 2×):
 
 - Water over an open hollow: the sea's surface seen from below the opening.
 - Faint ember motes rising when the camera is under the floor (parked).
-- Whether a peeled seabed should keep the land with the hollow off (today the relief is hidden
-  everywhere, the plain void's old rule, `GeoRelief.tsx`).

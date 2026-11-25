@@ -13,6 +13,8 @@ import {
   resolveColorRamp,
 } from '../../common/color-ramps';
 import { ContourColorMode } from '../../common/types';
+import type { SurfaceDetail } from '../../sdk/materials/surface-detail';
+import type { Vec2 } from '../../sdk/types/common';
 import type { LabelBaseline } from '../Labels/types';
 
 /**
@@ -35,11 +37,11 @@ export type ReliefColorRamp = {
   /** run it the other way: from high to low, or for a value ramp (no `domain`), low to high */
   reverse?: boolean;
   /**
-   * the seabed: `'sea'` the sea's seabed colour, darker with depth; `'ramp'` this ramp too,
-   * across land and seabed alike; or a ramp of its own (`'bathymetry'`, say), over its
-   * own range (default its `domain`, without one -3000 to 0). Default `'sea'`
+   * the seabed: `'plain'` its own colour (the relief's `seabed`), darker with depth; `'ramp'`
+   * this ramp too, across land and seabed alike; or a ramp of its own (`'bathymetry'`, say),
+   * over its own range (default its `domain`, without one -3000 to 0). Default `'plain'`
    */
-  seabed?: 'sea' | 'ramp' | ReliefSeabedRamp;
+  seabed?: 'plain' | 'ramp' | ReliefSeabedRamp;
 };
 
 /**
@@ -50,12 +52,40 @@ export type ReliefColorRamp = {
 export type ReliefSeabedRamp = Omit<ReliefColorRamp, 'seabed'>;
 
 /**
- * How a relief is coloured: one colour for the land (the seabed taking the sea's), a ramp
- * by height ({@link ReliefColorRamp}), or `'ramp'` for `{ ramp: 'terrain' }`.
+ * How a relief is coloured: one colour for the land (the seabed in its own,
+ * {@link ReliefSeabed}), a ramp by height ({@link ReliefColorRamp}), or `'ramp'` for
+ * `{ ramp: 'terrain' }`.
  *
  * @group Components
  */
 export type ReliefColor = 'ramp' | ColorRepresentation | ReliefColorRamp;
+
+/**
+ * The look of a relief's seabed (`GeoRelief`'s `seabed`): the ground below the sea's level,
+ * where the relief has data and, flat at its `depth`, where it has none. Lit by the scene's
+ * lights with the model and options of a `ZoneMaterial`, so a zone layer given the same
+ * values continues it without a seam. Defaults in `sceneryDefaults.relief.seabed`.
+ *
+ * @group Components
+ */
+export type ReliefSeabed = {
+  /**
+   * its colour, darker with depth, where the relief's `color` gives the seabed no ramp
+   * (`'plain'`, the default). Default `#8c8573`
+   */
+  color?: ColorRepresentation;
+  /** specular highlight colour. Default `#1a1a1a`, as on `ZoneMaterial` */
+  specular?: ColorRepresentation;
+  /** specular exponent. Default 24, as on `ZoneMaterial` */
+  shininess?: number;
+  /** ambient multipliers facing up / facing down, or `false` for none. Default `[1.35, 0.5]`, as on `ZoneMaterial` */
+  ambient?: Vec2 | false;
+  /**
+   * procedural relief over the flat seabed, where the relief has no data, as a `Scenery`
+   * draws it; `false` for none. Default `'seabed'`
+   */
+  detail?: SurfaceDetail | false;
+};
 
 /**
  * Contour lines over a relief: every `interval` metres from the sea's level, a heavier
@@ -193,10 +223,10 @@ export const RELIEF_LOOKS = 32;
 // A relief's flat land by default, a dark green-grey, which keeps its colour through the air.
 const RELIEF_LAND_COLOR = '#34433b';
 const ROWS = 5;
-// Row 0 (and 2) with no ramp: the land a flat colour; the seabed the sea's darkened with
-// depth, or plain.
+// Row 0 (and 2) with no ramp: the land a flat colour; the seabed its own (ReliefSeabed)
+// darkened with depth, or even at every depth.
 const NO_RAMP = -1;
-const SEA_PLAIN = -2;
+const BED_EVEN = -2;
 
 const DEFAULT_CONTOURS: Required<ReliefContours> = {
   interval: 100,
@@ -360,13 +390,13 @@ export class SceneryReliefLooks {
     const paint = look.color === 'ramp' ? { ramp: 'terrain' } : look.color;
 
     if (isRamp(paint)) {
-      const seabed = paint.seabed ?? 'sea';
+      const seabed = paint.seabed ?? 'plain';
       const across = seabed === 'ramp';
       const land = rampRow(paint, across ? [-3000, 2000] : [0, 2000]);
       this.set(column, 0, ...land);
       color.set(0, 0, 0);
       const bed: [number, number, number, number] =
-        seabed === 'sea'
+        seabed === 'plain'
           ? [NO_RAMP, 0, 0, 0]
           : across
             ? land
@@ -375,7 +405,7 @@ export class SceneryReliefLooks {
     } else {
       color.set(paint ?? RELIEF_LAND_COLOR);
       this.set(column, 0, NO_RAMP, 0, 0, 0);
-      this.set(column, 2, SEA_PLAIN, 0, 0, 0);
+      this.set(column, 2, BED_EVEN, 0, 0, 0);
     }
     this.set(column, 1, color.r, color.g, color.b, lines?.colorMode ?? 0);
 

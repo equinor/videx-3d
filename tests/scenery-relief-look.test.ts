@@ -21,7 +21,7 @@ describe('relief looks', () => {
     looks.update({ color: 'ramp' });
     const terrain = colorRampRow(colorRampIndex('terrain'));
     expect(row(looks, 0, 0)).toEqual([terrain, 0, 6000, 0]);
-    // The sea's seabed colour, darkened with depth.
+    // The seabed's own colour (`'plain'`, the default), darkened with depth.
     expect(row(looks, 0, 2)[0]).toBe(-1);
 
     looks.update({

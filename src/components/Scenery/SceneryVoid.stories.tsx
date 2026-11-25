@@ -25,9 +25,9 @@ import type { SceneryStageBounds } from './scenery-stage';
 
 // The void under a `Scenery`'s seabed (`<SceneryVoid>`, documents/void.md): by default a hollow
 // in the crust about the field, crater walls down to a floor some 35 km under the seabed.
-// Peeling the seabed (`ScenerySea`'s `seabed={false}`) opens it: the field's wellbores and its
-// reservoir are seen against it, the relief cut away inside its rim. With `hollow={false}`, the
-// plain void: an endless lid overhead and a bottomless gradient below the horizon.
+// Opening it (`hollow.open`) peels the seabed over it: the field's wellbores and its reservoir
+// are seen against it, the relief cut away inside its rim. With `hollow={false}`, the plain
+// void: an endless lid overhead and a bottomless gradient below the horizon.
 
 // The field's water depth: the sea's seabed, the void's lid.
 const DEPTH = storyArgs.waterDepth;
@@ -36,9 +36,9 @@ const FIELD_BOUNDS: SceneryStageBounds = [-10000, -10000, 10000, 10000];
 
 type VoidArgs = {
   water: boolean;
-  seabed: boolean;
   relief: boolean;
   hollow: boolean;
+  open: boolean;
   hollowStyle: SceneryHollowStyle;
   hollowRadius: number;
   hollowFloorDepth: number;
@@ -46,19 +46,20 @@ type VoidArgs = {
 
 const VoidStory = ({
   water,
-  seabed,
   relief,
   hollow,
+  open,
   hollowStyle,
   hollowRadius,
   hollowFloorDepth,
 }: VoidArgs) => (
   <World frame={demoFrame}>
     <Scenery onProgress={reportSceneryProgress}>
-      <ScenerySea level={0} depth={DEPTH} water={water} seabed={seabed} />
+      <ScenerySea level={0} depth={DEPTH} water={water} />
       <SceneryVoid
         hollow={
           hollow && {
+            open,
             style: hollowStyle,
             radius: hollowRadius,
             floorDepth: hollowFloorDepth,
@@ -98,8 +99,8 @@ const range = (
 
 /**
  * The void under the seabed (`<SceneryVoid>`): by default a hollow in the crust about the
- * field, which peeling the sea's seabed opens. Changing any of it recompiles nothing and bakes
- * nothing.
+ * field, which opening it (`hollow.open`) peels the seabed over. Changing any of it recompiles
+ * nothing and bakes nothing.
  */
 const meta = {
   title: 'Components/Scenery/SceneryVoid',
@@ -122,11 +123,11 @@ const meta = {
   },
   args: {
     ...sceneryProgressArgs,
-    // Peeled: no water, no seabed.
+    // Peeled: no water, the seabed open over the hollow.
     water: false,
-    seabed: false,
     relief: true,
     hollow: true,
+    open: true,
     hollowStyle: sceneryDefaults.void.hollow.style,
     hollowRadius: sceneryDefaults.void.hollow.radius,
     hollowFloorDepth: sceneryDefaults.void.hollow.floorDepth,
@@ -137,18 +138,21 @@ const meta = {
       'Sea',
       'The sea\u2019s water (`ScenerySea` `water`): on, the void is seen through it.',
     ),
-    seabed: toggle(
-      'Sea',
-      'The sea\u2019s seabed (`ScenerySea` `seabed`): off, it is peeled and the hollow opens, the relief and the seabed cut away inside its rim. On, it is the void\u2019s lid: fly under it to see the void closed.',
-    ),
     relief: toggle(
-      'Scene',
-      'The demo reliefs about the field (`GeoRelief`): land and seabed, cut away over the open hollow. Made on demand by `npm run generate-relief`.',
+      'Relief',
+      'The relief (`GeoRelief`), the sea\u2019s seabed: the demo reliefs about the field, land and seabed, cut away over the open hollow. Off, there is no seabed, and the hollow lies open under the water. Made on demand by `npm run generate-relief`.',
     ),
     hollow: toggle(
       'Void',
-      'The void as a hollow in the crust under the field (`hollow`). Off, the plain void: an endless lid and a bottomless gradient, and a peeled seabed gone everywhere.',
+      'The void as a hollow in the crust under the field (`hollow`). Off, the plain void: an endless lid and a bottomless gradient.',
     ),
+    open: {
+      ...toggle(
+        'Void',
+        'Peel the seabed over the hollow (`hollow.open`): the relief is cut away inside its rim and stays whole around it. Off, the seabed is the void\u2019s lid: fly under it to see the void closed.',
+      ),
+      if: { arg: 'hollow' },
+    },
     hollowStyle: {
       control: { type: 'inline-radio' },
       options: ['calm', 'molten', 'simple'],

@@ -170,7 +170,7 @@ const FieldMarks = ({ field }: { field: Field }) => {
 type SceneArgs = {
   globe: boolean;
   relief: boolean;
-  seabedOpacity: number;
+  fieldOpacity: number;
 };
 
 type SceneProps = SceneArgs & {
@@ -185,7 +185,7 @@ const FieldsScene = ({
   fields,
   globe,
   relief,
-  seabedOpacity,
+  fieldOpacity,
   onFrameChange,
 }: SceneProps) => (
   <World
@@ -196,14 +196,16 @@ const FieldsScene = ({
   >
     <SceneryGenerators>
       <Scenery>
-        <ScenerySea level={LEVEL} depth={DEPTH} seabedOpacity={seabedOpacity} />
+        <ScenerySea level={LEVEL} depth={DEPTH} />
         {/* Its area is the World's `boundary`: the anchored field's stage. */}
         <SceneryStage />
       </Scenery>
+      {/* The seabed: the demo reliefs, or without them flat at the sea's depth. */}
       <GeoRelief
         layers={relief ? SCENERY_DEMO_RELIEF_LAYERS : NO_LAYERS}
         depth={DEPTH}
         color={RELIEF_COLOR}
+        fieldOpacity={fieldOpacity}
       />
     </SceneryGenerators>
     {fields.map(field => (
@@ -266,7 +268,7 @@ const SCENE = 'Scene';
 const sceneArgs: SceneArgs = {
   globe: true,
   relief: true,
-  seabedOpacity: 0.6,
+  fieldOpacity: 0.6,
 };
 
 const sceneArgTypes = {
@@ -279,13 +281,13 @@ const sceneArgTypes = {
   relief: {
     control: { type: 'boolean' },
     description:
-      'Land and seabed (`GeoRelief`), read in the World\u2019s frame: see-through over each field\u2019s stage, its shape followed.',
+      'The demo reliefs\u2019 land and seabed (`GeoRelief` `layers`), read in the World\u2019s frame: see-through over each field\u2019s stage, its shape followed. Off, the relief has no layers: the seabed lies flat at the sea\u2019s depth.',
     table: { category: SCENE },
   },
-  seabedOpacity: {
+  fieldOpacity: {
     control: { type: 'range', min: 0, max: 1, step: 0.05 },
     description:
-      'How much of what lies under the seabed it hides (`ScenerySea`\u2019s `seabedOpacity`): below 1 the spheres at the reservoir\u2019s depth show through.',
+      'How much of what lies under the seabed it hides over the fields (`GeoRelief`\u2019s `fieldOpacity`): below 1 the spheres at the reservoir\u2019s depth show through.',
     table: { category: SCENE },
   },
 } as const;

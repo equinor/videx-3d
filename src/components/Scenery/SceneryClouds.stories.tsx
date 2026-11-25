@@ -10,11 +10,17 @@ import {
 import {
   reportSceneryProgress,
   sceneryDecorators,
+  sceneryGlobalReliefArgs,
+  SceneryGlobalReliefArgs,
+  sceneryGlobalReliefArgTypes,
   sceneryHiddenArgTypes,
   sceneryProgressArgs,
 } from '../../storybook/components/scenery-controls';
+import { SceneryGlobalRelief } from '../../storybook/components/scenery-features';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
+import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
+import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
 import type { ProgressArgs } from '../../storybook/decorators/progress-decorator';
 import { Weather } from '../Weather/Weather';
 import { World } from '../World/World';
@@ -42,7 +48,7 @@ type ClockArgs = {
   quality: SceneryCloudsQuality;
   minutes: number;
   timeScale: number;
-};
+} & SceneryGlobalReliefArgs;
 
 // The clouds a `weather` lays, under its clock, over the sea.
 const CloudsScene = ({
@@ -51,6 +57,7 @@ const CloudsScene = ({
   quality,
   minutes,
   timeScale,
+  relief,
 }: ClockArgs & { weather: WeatherState; sun?: ScenerySun }) => (
   <World frame={demoFrame}>
     <Weather weather={weather} time={minutes * 60} timeScale={timeScale}>
@@ -59,6 +66,7 @@ const CloudsScene = ({
         <SceneryClouds quality={quality} />
       </Scenery>
     </Weather>
+    {relief && <SceneryGlobalRelief depth={DEPTH} />}
   </World>
 );
 
@@ -75,6 +83,7 @@ const LocalClouds = ({
   quality,
   minutes,
   timeScale,
+  relief,
 }: LocalArgs) => {
   // A new weather only for another sky: the `Weather` takes a new object as a new weather.
   const weather = useMemo(() => weatherPresetOf(sky), [sky]);
@@ -85,6 +94,7 @@ const LocalClouds = ({
       quality={quality}
       minutes={minutes}
       timeScale={timeScale}
+      relief={relief}
     />
   );
 };
@@ -102,6 +112,7 @@ const GlobalClouds = ({
   quality,
   minutes,
   timeScale,
+  relief,
 }: GlobalArgs) => {
   const weather = useMemo<WeatherState>(
     () => ({ wind: GLOBAL_WIND, systems: { seed, cover, decks } }),
@@ -113,6 +124,7 @@ const GlobalClouds = ({
       quality={quality}
       minutes={minutes}
       timeScale={timeScale}
+      relief={relief}
     />
   );
 };
@@ -151,12 +163,14 @@ const clockArgTypes: ArgTypes<ClockArgs> = {
       'Weather seconds a second (`Weather` `timeScale`): 1 is real time, 3600 an hour a second.',
     table: { category: 'Weather' },
   },
+  ...sceneryGlobalReliefArgTypes,
 };
 
 const clockArgs: ClockArgs = {
   quality: sceneryDefaults.clouds.quality,
   minutes: 0,
   timeScale: 1,
+  ...sceneryGlobalReliefArgs,
 };
 
 /**
@@ -165,7 +179,13 @@ const clockArgs: ClockArgs = {
  */
 const meta = {
   title: 'Components/Scenery/Clouds',
-  decorators: [Canvas3dDecorator, ...sceneryDecorators],
+  decorators: [
+    Canvas3dDecorator,
+    // The relief's tiles, read from the store by a generator.
+    GeneratorsProviderDecorator,
+    DataProviderDecorator,
+    ...sceneryDecorators,
+  ],
   parameters: {
     scale: 1000,
     // From sea level to the whole Earth.

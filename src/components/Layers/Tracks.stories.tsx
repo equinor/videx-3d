@@ -4,11 +4,17 @@ import { advanceTrack, knots, type Track } from '../../sdk/layers/tracks';
 import { geoFrameLocation } from '../../sdk/projection/geo-frame';
 import { demoFrame } from '../../storybook/data/demo-crs';
 import {
+  sceneryGlobalReliefArgs,
+  SceneryGlobalReliefArgs,
+  sceneryGlobalReliefArgTypes,
   sceneryMinimapArgs,
   SceneryMinimapArgs,
   sceneryMinimapArgTypes,
 } from '../../storybook/components/scenery-controls';
-import { SceneryArgsMinimap } from '../../storybook/components/scenery-features';
+import {
+  SceneryArgsMinimap,
+  SceneryGlobalRelief,
+} from '../../storybook/components/scenery-features';
 import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
 import { DataProviderDecorator } from '../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../storybook/decorators/generators-provider-decorator';
@@ -159,7 +165,8 @@ type ShipsArgs = {
   labels: boolean;
   buoyancy: boolean;
   maxHeight: number;
-} & SceneryMinimapArgs;
+} & SceneryMinimapArgs &
+  SceneryGlobalReliefArgs;
 
 const ShipsStory = ({
   count,
@@ -173,6 +180,7 @@ const ShipsStory = ({
   buoyancy,
   maxHeight,
   minimap,
+  relief,
 }: ShipsArgs) => {
   const [ships, setShips] = useState(() => createShips(count, far));
   useEffect(() => setShips(createShips(count, far)), [count, far]);
@@ -232,6 +240,7 @@ const ShipsStory = ({
             </GeoTracks>
           </Scenery>
         </Annotations>
+        {relief && <SceneryGlobalRelief depth={DEPTH} />}
         {minimap && (
           <SceneryArgsMinimap frame={demoFrame}>
             {/* The same ships, and their annotations' text, on the map. */}
@@ -275,6 +284,7 @@ const meta = {
     labels: true,
     buoyancy: true,
     maxHeight: 60000,
+    ...sceneryGlobalReliefArgs,
     ...sceneryMinimapArgs,
   },
   argTypes: {
@@ -326,6 +336,7 @@ const meta = {
         'Above this camera height over the sea the ships are hidden (0: never).',
       table: { category: 'Visibility' },
     },
+    ...sceneryGlobalReliefArgTypes,
     ...sceneryMinimapArgTypes,
   },
 } satisfies Meta<typeof ShipsStory>;

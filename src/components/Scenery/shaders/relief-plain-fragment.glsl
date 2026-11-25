@@ -1,11 +1,10 @@
 // The relief drawn from tiles without a sky (a GeoRelief with no Scenery in its World): land
 // and seabed coloured as its looks say (relief-look.glsl), lit by the scene's lights, and
 // nothing of the sea, the air or the void — no water over the seabed, no haze, no lid from
-// below. The seabed's own colour and shine are uniforms of its own (the sea's defaults).
+// below. The seabed's own colour and shine are uniforms of its own (the relief's `seabed`).
 // The tiles are relief-fragment.glsl's (relief-tiles-vertex.glsl, relief-tiles.glsl); with a
 // see-through area, RELIEF_STAGE_AROUND leaves it out and RELIEF_SEE_THROUGH draws it alone;
-// RELIEF_SEE_THROUGH_ALL draws every tile see-through (uReliefOpacity). RELIEF_NO_LAND and
-// RELIEF_NO_SEABED leave out the ground at or above the sea's level, and below it.
+// RELIEF_SEE_THROUGH_ALL draws every tile see-through (uReliefOpacity).
 
 #include <common>
 #include <logdepthbuf_pars_fragment>
@@ -70,19 +69,8 @@ void main() {
   #include <colorspace_fragment>
   #include <dithering_fragment>
 
-  // Once the derivatives above are taken: past the far plane, the other draw's, cut away,
-  // or a part left out — judged by the ground, on a skirt the tile's edge it hangs from: a
-  // land tile's skirt dropping below the sea's level is not seabed.
+  // Once the derivatives above are taken: past the far plane, the other draw's, or cut away.
   bool left = length(world - cameraPosition) > uReliefReach || reliefTileLeftToOther(world) || reliefCutAway();
-  #if defined(RELIEF_NO_LAND) || defined(RELIEF_NO_SEABED)
-  float ground = reliefTileHeight();
-  #endif
-  #ifdef RELIEF_NO_LAND
-  left = left || ground >= 0.0;
-  #endif
-  #ifdef RELIEF_NO_SEABED
-  left = left || ground < 0.0;
-  #endif
   if(left)
     discard;
   #if defined(RELIEF_SEE_THROUGH_ALL)

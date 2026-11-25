@@ -429,9 +429,9 @@ const meta = {
         },
         ground: {
           description:
-            'Synthetic ground under the stage, drawn as the relief\u2019s finest layer (the demo store makes it, `functionRelief`): rolling seabed and a channel about the sea\u2019s 100 m depth, rising and dipping through it, and hills well above it, stretched with the stage and fading in over 2 km of its edge. Over the demo reliefs with `relief` on; alone, the flat seabed around it. Off, and without `relief`, the stage\u2019s seabed is flat.',
+            'Synthetic ground under the stage, drawn as the relief\u2019s finest layer (the demo store makes it, `functionRelief`): rolling seabed and a channel about the sea\u2019s 100 m depth, rising and dipping through it, and hills well above it, stretched with the stage and fading in over 2 km of its edge, over the demo reliefs ticked. Off, the relief has only those; with none ticked, the stage\u2019s seabed is flat.',
           table: { category: 'Stage' },
-          if: { arg: 'stage' },
+          if: { arg: 'relief' },
         },
         occupant: {
           description:

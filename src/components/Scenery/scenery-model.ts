@@ -1,5 +1,4 @@
 import { Color, ColorRepresentation, MathUtils, type Texture } from 'three';
-import type { SurfaceDetail } from '../../sdk/materials/surface-detail';
 import {
   VOID_GRADIENT_DEFAULTS,
   type VoidGradient,
@@ -298,11 +297,12 @@ export type SceneryVoidProps = {
   falloff?: VoidGradient['falloff'];
   /**
    * The void as a hollow in the crust under the field (see {@link SceneryHollow}): a floor
-   * deep under the seabed and walls about it, which the seabed is the lid of. Peeling the
-   * seabed (`ScenerySea`'s `seabed: false`) opens it: the relief and the sea's seabed are
-   * cut away inside its rim and stay whole around it. Past its walls and under its floor the
-   * void is black, with the lid overhead. `false` for the plain void, a plain lid over the
-   * gradient, and a peeled seabed gone everywhere. See documents/void.md. Default on
+   * deep under the seabed and walls about it, which the seabed is the lid of. Opening it
+   * (`SceneryHollow.open`) peels the seabed over it: the relief is cut away inside its rim and
+   * stays whole around it. Without a seabed (no `GeoRelief` in the `World`) it lies open under
+   * the water. Past its walls and under its floor the void is black, with the lid overhead.
+   * `false` for the plain void, a plain lid over the gradient, which never opens. See
+   * documents/void.md. Default on
    */
   hollow?: boolean | SceneryHollow;
 };
@@ -328,6 +328,11 @@ export type SceneryHollowStyle = 'calm' | 'molten' | 'simple';
 export type SceneryHollow = {
   /** how it looks, and what its colours, `embers` and `pulse` default to. Default `'calm'` */
   style?: SceneryHollowStyle;
+  /**
+   * peel the seabed over it: the relief is cut away inside its rim, and the field's data
+   * shows down to its floor. Changing it recompiles nothing and bakes nothing. Default false
+   */
+  open?: boolean;
   /** its rim's radius along the sea, in world units. Default 500 000 */
   radius?: number;
   /** depth of its floor under the seabed, in world units. Default 35 000 */
@@ -402,48 +407,22 @@ export type ScenerySeaWater = Omit<
 >;
 
 /**
- * The look of a {@link ScenerySeaProps}'s seabed. It is lit by the scene's lights with the
- * model and options of a `ZoneMaterial`, so a zone layer given the same values
- * continues it without a seam.
- */
-export type ScenerySeabed = {
-  /**
-   * Default `#8c8573`. Under a `GeoRelief` in the `World`, whose tiles are the seabed, the
-   * background's own (where none is drawn yet, or past their edge) takes the relief's look
-   * instead: its seabed's ramp, or this colour where the look gives it none
-   */
-  color?: ColorRepresentation;
-  /** specular highlight colour. Default `#1a1a1a`, as on `ZoneMaterial` */
-  specular?: ColorRepresentation;
-  /** specular exponent. Default 24, as on `ZoneMaterial` */
-  shininess?: number;
-  /** ambient multipliers facing up / facing down, or `false` for none. Default `[1.35, 0.5]`, as on `ZoneMaterial` */
-  ambient?: Vec2 | false;
-  /** procedural relief, or `false` for none; not drawn under a `GeoRelief`, whose tiles are the seabed. Default `'seabed'` */
-  detail?: SurfaceDetail | false;
-};
-
-/**
- * An endless sea: a wavy surface at `level` over a flat seabed `depth` below it, seen
- * from above, from inside the water and, below the seabed, as the abyss (which the
- * ocean turns on, at the seabed). The water takes the `Water` component's props, so
- * one object can drive both. It is part of the background, so it never hides anything
- * in the scene.
+ * An endless sea: a wavy surface at `level` over its seabed, seen from above, from inside the
+ * water and, below the seabed, as the void. The seabed is the ground of the `World`'s
+ * `GeoRelief`, flat `depth` below the surface where the relief has no data; without one the
+ * void lies below the water. The water takes the `Water` component's props, so one object can
+ * drive both. It is part of the background, so it never hides anything in the scene.
  */
 export type ScenerySeaProps = ScenerySeaWater & {
   /** the water; off leaves the seabed dry, with no surface or fog. Default true */
   water?: boolean;
-  /** the seabed, and its look; off leaves the void below the water, seen through it from above, its lid still a roof from below. Default true */
-  seabed?: boolean | ScenerySeabed;
-  /**
-   * How much of what lies beyond the seabed it hides, 0 to 1, as `waterOpacity` is the
-   * water's: below 1 the data under it shows through, and so does a `SceneryStage`'s
-   * relief over the stage's own area. Default 1
-   */
-  seabedOpacity?: number;
   /** height of the sea surface along `up`, in world units. Default 0 */
   level?: number;
-  /** depth of the seabed below the surface, in world units. Default 100 */
+  /**
+   * depth of the water below the surface, in world units: where the seabed lies flat where the
+   * `GeoRelief` has no data (and its tiles' base, unless it gives a `depth` of its own); without
+   * one, the void's lid. Default 100
+   */
   depth?: number;
   /**
    * How much of the sea it draws, as `Water`'s `quality` (`WATER_QUALITY`,
@@ -743,6 +722,9 @@ export const sceneryDefaults = {
   sea: {
     level: 0,
     depth: 100,
+  },
+  /** a `GeoRelief`'s seabed look (`ReliefSeabed`) */
+  relief: {
     seabed: {
       color: '#8c8573',
       specular: '#1a1a1a',
@@ -750,7 +732,6 @@ export const sceneryDefaults = {
       ambient: [1.35, 0.5],
       detail: 'seabed',
     },
-    seabedOpacity: 1,
   },
   subsurface: {
     intensity: 1,

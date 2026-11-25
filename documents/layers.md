@@ -233,8 +233,8 @@ needed — the same past the far plane:
 - the seabed, from anywhere above it, with the water on or off, over what lies below it, as
   much as it hides: from the air over water as deep as the ground map has it there, give or
   take half its texel (so data on the true seabed is never taken for under it where the map
-  is coarse), else below the sea's `depth` (`seabedOpacity`, the cutaway; nothing without a
-  seabed). Not where a relief's tiles draw the seabed — out to the far plane from in the water
+  is coarse), else below the sea's `depth` (the relief's `fieldOpacity`, the cutaway; nothing
+  without a seabed). Not where a relief's tiles draw the seabed — out to the far plane from in the water
   and over a dry sea, where they hide what lies below by depth;
 - either over what lies past the Earth's curve: nothing shows through the globe.
 

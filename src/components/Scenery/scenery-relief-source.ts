@@ -12,7 +12,7 @@ import { sceneryDefaults, ScenerySeaProps } from './scenery-model';
  * @param relief the `GeoRelief`'s props, with its `World`'s `frame`
  * @param sea the sky's `ocean`
  * @param margin how far above the relief what is built on it lies, in scene units
- * @returns undefined without layers: no relief is drawn then
+ * @returns undefined without layers: the relief draws only its flat seabed then
  *
  * @group Components
  */
@@ -21,7 +21,7 @@ export function reliefSource(
   sea: Pick<ScenerySeaProps, 'level' | 'depth'> = {},
   margin?: number,
 ): ReliefSource | undefined {
-  if (!relief.layers.length) return undefined;
+  if (!relief.layers?.length) return undefined;
   const plain = {
     frame: relief.frame,
     layers: relief.layers.map(({ id, feather }) =>

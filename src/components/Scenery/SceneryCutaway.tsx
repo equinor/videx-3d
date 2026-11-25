@@ -45,7 +45,7 @@ export type SceneryCutawayWave = {
 export type SceneryCutawayProps = {
   /** how much of the water it cuts: 1 all, 0 none, 0.5 half of it. Default 1 */
   water?: number;
-  /** cut the seabed too; for a see-through seabed, set the sea's `seabedOpacity` instead. Default true */
+  /** cut the seabed too; for a see-through seabed, set the relief's `fieldOpacity` instead. Default true */
   seabed?: boolean;
   /** the frame row whose sight line sets the edge looking level: 0 the bottom, 1 the top. Tilting down raises it to the top, looking straight down. Default 0.5 */
   reach?: number;

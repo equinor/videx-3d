@@ -219,6 +219,7 @@ export class SceneryMaterial extends ShaderMaterial {
       colors,
       void: voidDefaults,
       sea: seaDefaults,
+      relief: { seabed: bedDefaults },
     } = sceneryDefaults;
     const seaOptics = waterOpticsOf();
     super({
@@ -352,14 +353,10 @@ export class SceneryMaterial extends ShaderMaterial {
         uSceneryStageFlat: new Uniform(new Vector4()),
         uScenerySeaLevel: new Uniform(seaDefaults.level),
         uScenerySeaDepth: new Uniform(seaDefaults.depth),
-        uScenerySeabedColor: new Uniform(new Color(seaDefaults.seabed.color)),
-        uScenerySeabedSpecular: new Uniform(
-          new Color(seaDefaults.seabed.specular),
-        ),
-        uScenerySeabedShininess: new Uniform(seaDefaults.seabed.shininess),
-        uScenerySeabedAmbient: new Uniform(
-          new Vector2(...seaDefaults.seabed.ambient),
-        ),
+        uScenerySeabedColor: new Uniform(new Color(bedDefaults.color)),
+        uScenerySeabedSpecular: new Uniform(new Color(bedDefaults.specular)),
+        uScenerySeabedShininess: new Uniform(bedDefaults.shininess),
+        uScenerySeabedAmbient: new Uniform(new Vector2(...bedDefaults.ambient)),
         uScenerySeaExtinction: new Uniform(
           new Vector3(...waterExtinctionOf(seaOptics)),
         ),
@@ -418,7 +415,7 @@ export class SceneryMaterial extends ShaderMaterial {
     });
 
     this.setSun(sun.azimuth, sun.elevation);
-    this.seabedDetail = seaDefaults.seabed.detail;
+    this.seabedDetail = bedDefaults.detail;
     this.globe = globe ?? new Globe();
     this.ownsGlobe = !globe;
     this.seaCharts = new WaterCharts(this.globe);
@@ -1275,7 +1272,7 @@ export class SceneryMaterial extends ShaderMaterial {
     this.uniforms.uScenerySeaWater.value = value ? 1 : 0;
   }
 
-  /** the sea has a seabed; without it the void lies below the water */
+  /** the sea has a seabed (the `World`'s `GeoRelief`), not peeled; without it the void lies below the water */
   get seabed(): boolean {
     return this.uniforms.uScenerySeabed.value > 0;
   }
@@ -1384,7 +1381,7 @@ export class SceneryMaterial extends ShaderMaterial {
     (u.uSkyCloudShadowLight.value as Vector2).set(dimmed, strength);
   }
 
-  /** how much of what lies beyond the seabed it hides, 0 to 1 */
+  /** how much of what lies beyond the seabed it hides, 0 to 1 (the relief's `fieldOpacity`) */
   get seabedOpacity(): number {
     return this.uniforms.uScenerySeabedOpacity.value;
   }
