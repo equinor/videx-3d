@@ -15,7 +15,10 @@ import {
   Vector3,
 } from 'three';
 import { useGenerator } from '../../hooks/useGenerator';
-import { releaseMaterial } from '../../rendering/precompile';
+import {
+  releaseMaterial,
+  type PrecompileOptions,
+} from '../../rendering/precompile';
 import {
   geoReliefTileHeightAt,
   RELIEF_TILE_CELLS,
@@ -232,6 +235,8 @@ type SceneryStageReliefTilesProps = {
   onStats?: (stats: SceneryReliefTileStats) => void;
   /** told of the tiles as they load (see `SceneryReliefLoading`) whenever that changes, and null once gone */
   onLoading?: (loading: SceneryReliefLoading | null) => void;
+  /** a compile count's tracker (`createPrecompileCount`'s `track`): its overview's compile is reported through it */
+  trackCompile?: () => NonNullable<PrecompileOptions['onProgress']>;
   /**
    * Whether this relief tells the camera site its ground under the camera (`CameraSite.ground`,
    * `underground`), on the finest tile in there: while the relief is shown.
@@ -307,6 +312,7 @@ export const SceneryStageReliefTiles = ({
   visible,
   onStats,
   onLoading,
+  trackCompile,
   cameraGround,
   stage,
   fields,
@@ -1531,6 +1537,7 @@ export const SceneryStageReliefTiles = ({
           definesKey={definesKey}
           sceneryOrder={sceneryOrder}
           visible={visible}
+          trackCompile={trackCompile}
         />
       )}
       <mesh

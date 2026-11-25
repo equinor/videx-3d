@@ -104,4 +104,22 @@ describe('createReliefProgress', () => {
     progress.close();
     expect(reports[reports.length - 1]).toEqual({ items: [] });
   });
+
+  it('reports its shaders only once a compile is tracked, as it goes', () => {
+    const { reports, progress } = listenRelief();
+    const shaders = () =>
+      reports[reports.length - 1]?.items.find(i => i.key === 'shaders');
+    progress.loading({ settled: 1, loading: 0, queued: 0 });
+    expect(shaders()).toBeUndefined();
+
+    const overview = progress.compiles.track();
+    overview(0, 1);
+    expect(shaders()).toMatchObject({
+      name: RELIEF_PROGRESS_LABELS.shaders,
+      state: 'working',
+      step: { label: RELIEF_PROGRESS_LABELS.compiling, done: 0, total: 1 },
+    });
+    overview(1, 1);
+    expect(shaders()).toMatchObject({ state: 'ready', estimate: 1 });
+  });
 });

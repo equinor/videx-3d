@@ -33,6 +33,10 @@ export type ReliefProgressLabels = {
   relief: string;
   /** what they are doing while they load */
   loading: string;
+  /** its overview's shaders past the tiles' reach (under a `Scenery`), as an item */
+  shaders: string;
+  /** what they are doing while they compile */
+  compiling: string;
 };
 
 /**
@@ -43,6 +47,8 @@ export type ReliefProgressLabels = {
 export const RELIEF_PROGRESS_LABELS: ReliefProgressLabels = {
   relief: 'Relief',
   loading: 'Loading relief tiles',
+  shaders: 'Relief shaders',
+  compiling: 'Compiling relief shaders',
 };
 
 /**
@@ -104,8 +110,9 @@ export function createSceneryProgress(
  * @internal
  * What a relief reports: its tiles as they load (`loading`), a run of loading from when one
  * with nothing drawn in its place is waited for to when none is, counted from what had come
- * in when it began. Reports only when something it shows changed; no items while nothing is
- * known yet.
+ * in when it began; and its shaders as their `precompile` calls go (`compiles.track()` for
+ * each: its overview's, under a `Scenery`), once any is tracked. Reports only when something
+ * it shows changed; no items while nothing is known yet, nor once it is gone.
  */
 export function createReliefProgress(
   report: (report: ProgressReport) => void,
@@ -129,6 +136,15 @@ export function createReliefProgress(
         estimate: all > 0 ? settled / all : 1,
         step: { label: labels.loading, done: settled, total: all },
       });
+      const { done, total } = compiles.count();
+      if (total > 0)
+        items.push({
+          key: 'shaders',
+          name: labels.shaders,
+          state: done < total ? 'working' : 'ready',
+          estimate: done / total,
+          step: { label: labels.compiling, done, total },
+        });
     }
     const key = JSON.stringify(items);
     if (key === last) return;
@@ -136,7 +152,10 @@ export function createReliefProgress(
     report({ items });
   };
 
+  const compiles = createPrecompileCount(emit);
+
   return {
+    compiles,
     /** how the tiles load now; `null` once the relief is gone */
     loading: (loading: SceneryReliefLoading | null) => {
       const before = current;

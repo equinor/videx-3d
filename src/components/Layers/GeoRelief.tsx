@@ -138,8 +138,9 @@ export type GeoReliefProps = {
   /**
    * Told how its tiles load whenever that changes, for a progress display (see
    * `ProgressStore.source`): a run from when a tile with nothing drawn in its place is waited
-   * for until none is (tiles that only sharpen what is drawn are not waited for); once more
-   * with no items when it goes away.
+   * for until none is (tiles that only sharpen what is drawn are not waited for); under a
+   * `Scenery`, also its overview's shaders past the tiles, compiled once the background is
+   * drawn; once more with no items when it goes away.
    */
   onProgress?: (report: ProgressReport) => void;
   /** the texts of its progress (see {@link RELIEF_PROGRESS_LABELS}) */
@@ -371,6 +372,7 @@ export const GeoRelief = ({
         visible={visible && shown && (!scenery || scenery.visible)}
         onStats={onStats}
         onLoading={progress.loading}
+        trackCompile={progress.compiles.track}
         cameraGround={shown}
         stage={stage?.boundary ?? world.boundary}
         fields={fields}

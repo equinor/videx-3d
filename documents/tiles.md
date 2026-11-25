@@ -471,9 +471,11 @@ the first layer onto longitude and latitude over all of it (`resampleReliefGeogr
 at most 4096 texels a side, all the way round for a world relief), and the far layer reads
 it where each view meets the globe's sea (`globeGeographic`): from anywhere, the far side
 of the Earth included, with any far plane. It was resampled in the map around the scene
-over 2000 km, so it ended there. It is made the first time the ground in view reaches past
-the far plane (a far plane that always reaches it costs nothing; the world's at 10′ is
-about 12 MB on the GPU), and compiled in the background before it shows. With a world
+over 2000 km, so it ended there. It is made once the relief is drawn under a drawn background
+(the world's at 10′ is about 12 MB on the GPU), and compiled in the background after the sky's
+own programs, so it is ready before the far ground first comes into view: made the first time
+the ground in view reached past the far plane, as until 2026-11-25, its program took some 6 s,
+and the Earth past the tiles was bare sea meanwhile. With a world
 layer first, the overview is the world's 10′ (18 km), coarser near the field than the
 Nordic layer's 2′ was.
 

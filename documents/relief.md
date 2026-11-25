@@ -188,7 +188,8 @@ stories add them over the demo reliefs as their own finest layers (`reliefLayers
 - `visible={false}` hides it, its tiles kept in; `debug` shows its tiles by depth
   (`'tiles'`) or which layer gave each node (`'layers'`).
 - Its tiles loading reports through its own `onProgress` (`ProgressStore.source`), not the
-  `Scenery`'s.
+  `Scenery`'s; under a `Scenery`, so does its overview's compile past the tiles' reach,
+  started as soon as the background is drawn, so the far ground is ready when first in view.
 
 ## Without a Scenery
 
@@ -451,7 +452,8 @@ The overview is the sky's: without a `Scenery` the relief ends at the far plane.
 
 For mountains on the horizon, set the far plane past it from the highest the camera goes:
 about 360 km from 10 km up, 760 km from 45 km and 1130 km from 100 km (the sky stories
-use 3000 km, so no overview is made). With a logarithmic depth buffer that costs almost
+use 3000 km, so the overview is drawn only from far out in space; it is compiled all the same,
+after the sky's own programs). With a logarithmic depth buffer that costs almost
 nothing (about 1 m of depth resolution at 1000 km); with a standard one, a far plane that
 far from a near plane of centimetres has no resolution left, so use a logarithmic depth
 buffer, or a reversed one drawn into a float depth texture (a reversed fixed-point one, as

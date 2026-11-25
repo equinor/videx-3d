@@ -88,17 +88,20 @@ each `videx-progress-popup__card` in its `__stack`. The bar is decorative
 - **`ZoneStack.onProgress`** reports its own detailed `ZoneStackProgress`;
   `zoneProgressReport(progress, labels?)` turns it into a report, a zone an item (see
   [zone-stack/coordination.md](./zone-stack/coordination.md#showing-progress-in-the-host)).
-- **`Scenery.onProgress`** reports two items: `shaders`, its programs compiled of those it
-  waits for (the stand-in, its own, its stages', its bakes' and the cliffs'), and with a
-  tiled relief `relief`, its stages' tiles loaded of those wanted. The relief runs from
+- **`Scenery.onProgress`** reports `shaders`, its programs compiled of those it waits for (the
+  stand-in, its own, its stages', its bakes' and the cliffs'). Its texts are
+  `SCENERY_PROGRESS_LABELS`, overridable through `progressLabels`. See
+  [scenery.md](./scenery.md#performance) for why its shaders take long the first time.
+- **`GeoRelief.onProgress`** reports `relief`, its tiles loaded of those wanted, and under a
+  `Scenery` `shaders`, its overview's program past the tiles' reach, compiled once the
+  background is drawn. The relief runs from
   when a tile with nothing drawn in its place (neither it nor a tile above it in) is waited
   for to when none is: tiles that only sharpen ground already drawn are not waited for, so
   moving the camera about loaded ground starts no run, and the first load's run ends once
   every part of the view has a tile, however coarse, the detail sharpening after it. Until
   2026-11-18 every tile counted and each move started a short run, which a popup's `delay`
-  only partly hid. Its texts are `SCENERY_PROGRESS_LABELS`,
-  overridable through `progressLabels`. See [scenery.md](./scenery.md#performance) for why its
-  shaders take long the first time.
+  only partly hid. Its texts are `RELIEF_PROGRESS_LABELS`, overridable through
+  `progressLabels`.
 - Anything of the host's own can report through a source as well.
 
 ## In Storybook

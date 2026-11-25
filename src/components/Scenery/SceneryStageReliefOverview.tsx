@@ -5,6 +5,7 @@ import {
   precompile,
   PRECOMPILE_PRIORITY,
   releaseMaterial,
+  type PrecompileOptions,
 } from '../../rendering/precompile';
 import { createSceneryReliefFarMaterial } from './scenery-relief';
 import type { SceneryReliefAtlas } from './scenery-relief-atlas';
@@ -40,6 +41,8 @@ type SceneryStageReliefOverviewProps = {
   /** the sky's sea surface layer's `renderOrder`: the overview draws after it */
   sceneryOrder: number;
   visible: boolean;
+  /** a count's tracker (`createPrecompileCount`'s `track`): its compile is reported through it */
+  trackCompile?: () => NonNullable<PrecompileOptions['onProgress']>;
 };
 
 /**
@@ -48,8 +51,10 @@ type SceneryStageReliefOverviewProps = {
  * globe's sea, from the relief's own tiles — chosen for it by the tiles' frame loop, coarser
  * than theirs, and read per pixel through `atlas` — looked as the tiles look them, wherever
  * on the Earth. However many layers, and however large, only the tiles in view are read. Its
- * material is made the first time it is wanted, so a far plane that always reaches the
- * ground in view costs nothing.
+ * material is made once it is shown (`visible`: the relief drawn, under a sky drawn), and
+ * compiled in the background after the sky's own programs, so it is ready before the far
+ * ground first comes into view: made then, its program took some 6 s, the Earth past the
+ * tiles bare sea meanwhile (2026-11-25). Nothing while the sky's background is off.
  */
 export const SceneryStageReliefOverview = ({
   scenery,
@@ -61,6 +66,7 @@ export const SceneryStageReliefOverview = ({
   definesKey,
   sceneryOrder,
   visible,
+  trackCompile,
 }: SceneryStageReliefOverviewProps) => {
   const [wanted, setWanted] = useState(false);
   const gl = useThree(state => state.gl);
@@ -89,17 +95,23 @@ export const SceneryStageReliefOverview = ({
   const geometry = useMemo(() => createSceneryGeometry(), []);
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  // Compiled in the background, as the sky's own are, and shown once compiled: made late,
-  // it would otherwise stall the frame that first draws it.
+  // Compiled in the background, after the sky's own programs, and shown once compiled: made
+  // late, it would otherwise stall the frame that first draws it.
   const mesh = useRef<Mesh>(null);
   const [compiled, setCompiled] = useState<object | null>(null);
   const scene = useThree(state => state.scene);
   const sceneCamera = useThree(state => state.camera);
+  // Read when its compile is asked for: a new tracker asks for none.
+  const trackRef = useRef(trackCompile);
+  useLayoutEffect(() => {
+    trackRef.current = trackCompile;
+  });
   useLayoutEffect(() => {
     if (!material || !mesh.current) return;
     let current = true;
     const pending = precompile(gl, mesh.current, sceneCamera, scene, 'scene', {
-      priority: PRECOMPILE_PRIORITY.background,
+      priority: PRECOMPILE_PRIORITY.later,
+      onProgress: trackRef.current?.(),
     });
     if (!pending) setCompiled(material);
     else
@@ -113,7 +125,8 @@ export const SceneryStageReliefOverview = ({
 
   useFrame(() => {
     const beyond = told.beyond;
-    if (visible && beyond && !wanted) setWanted(true);
+    // Made once shown, before it is wanted: compiled by the time the far ground is in view.
+    if (visible && !wanted) setWanted(true);
     if (material) {
       material.uniforms.uReliefLowest.value = told.lowest;
       material.uniforms.uReliefHandoverMin.value = told.handover;
