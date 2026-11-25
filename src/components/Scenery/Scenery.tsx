@@ -244,9 +244,11 @@ export type SceneryProps = {
    */
   globe?: boolean;
   /**
-   * Draw the background behind the scene: the sky, its sea, void and `SceneryStage`.
-   * Switched instantly: nothing is rebuilt or baked again, and the environment and the light
-   * probe stay on, lit by the `subsurface`. Default true
+   * Draw the background behind the scene: the sky, its sea, void and `SceneryStage`, and the
+   * `World`'s relief. Switched instantly: nothing is rebuilt or baked again, and the
+   * environment and the light probe stay on, lit by the `subsurface`. Off, the relief's tiles
+   * and the sky's ground map are neither chosen nor loaded: a hidden background costs next to
+   * nothing. Default true
    */
   background?: boolean;
   /**
@@ -1678,8 +1680,11 @@ export const Scenery = ({
       sceneWater.owner = material;
     }
     // Its ground: drawn as it comes in and asked for about the camera as it moves; the sea's
-    // seabed where it covers.
-    if (groundReady) sceneryGround.update(gl, material.globe, camera.position);
+    // seabed where it covers. While the background is not drawn it holds where it was, nothing
+    // asked for: a hidden sky costs no relief tiles (an endless `Water` beside it, which takes
+    // the scene's ground, shoals by it as it was).
+    if (groundReady && drawn)
+      sceneryGround.update(gl, material.globe, camera.position);
     sceneWater.setGround(sceneryGround.map, 1, material.seaLevel);
     // The waves at the enclosing Weather's pace.
     const waveStep = step(delta);
