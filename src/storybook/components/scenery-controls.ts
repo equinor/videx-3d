@@ -199,7 +199,6 @@ export type SceneryArgs = {
   voidHorizon: string;
   voidDepth: string;
   voidTransition: number;
-  voidDarkening: number;
   voidDetail: number;
   voidDetailScale: number;
   voidFalloff: number;
@@ -313,7 +312,6 @@ export const sceneryArgs: SceneryArgs = {
   voidHorizon: sceneryDefaults.void.colors.horizon,
   voidDepth: sceneryDefaults.void.colors.depth,
   voidTransition: sceneryDefaults.void.transition,
-  voidDarkening: sceneryDefaults.void.darkening,
   voidDetail: sceneryDefaults.void.detail,
   voidDetailScale: sceneryDefaults.void.detailScale,
   voidFalloff: sceneryDefaults.void.falloff,
@@ -649,7 +647,6 @@ export const sceneryVoidFromArgs = (args: SceneryArgs): SceneryVoidProps => ({
     depth: args.voidDepth,
   },
   transition: args.voidTransition,
-  darkening: args.voidDarkening,
   detail: args.voidDetail,
   detailScale: args.voidDetailScale,
   falloff: args.voidFalloff,
@@ -805,7 +802,6 @@ const ADVANCED = new Set<string>([
   'voidHorizon',
   'voidDepth',
   'voidTransition',
-  'voidDarkening',
   'voidDetail',
   'voidDetailScale',
   'voidFalloff',
@@ -1318,13 +1314,6 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
     1,
     VOID,
     'Depth below the level over which the void fades in, in metres. Without a sea only: under one, it begins at the seabed.',
-  ),
-  voidDarkening: range(
-    0,
-    20000,
-    100,
-    VOID,
-    'Depth of the camera below the level over which the whole void dims toward black, in metres; 0 for none.',
   ),
   voidDetail: range(
     0,

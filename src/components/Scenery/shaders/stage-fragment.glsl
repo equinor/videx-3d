@@ -173,8 +173,6 @@ void main() {
   } else {
     // From the void: the lid, as the background draws it.
     color = sceneryVoidCeiling(world, distance(cameraPosition, world));
-    if(uSceneryVoidDarkening > 0.0)
-      color *= exp((altitude + bedDepth) / uSceneryVoidDarkening);
   }
   // Bitten through, what lies behind shows, with the background's void beyond. Only here,
   // once the derivatives above are taken.

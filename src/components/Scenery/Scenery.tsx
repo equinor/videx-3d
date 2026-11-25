@@ -543,7 +543,6 @@ export const Scenery = ({
     voidOptions?.colors?.depth ?? voidDefaults.colors.depth,
   );
   const voidTransition = voidOptions?.transition ?? voidDefaults.transition;
-  const voidDarkening = voidOptions?.darkening ?? voidDefaults.darkening;
   const voidDetail = voidOptions?.detail ?? voidDefaults.detail;
   const voidDetailScale = voidOptions?.detailScale ?? voidDefaults.detailScale;
   const voidFalloff = voidOptions?.falloff ?? voidDefaults.falloff;
@@ -1323,7 +1322,6 @@ export const Scenery = ({
     material.voidHorizonColor = voidHorizon;
     material.voidDepthColor = voidDepth;
     material.voidTransition = voidTransition;
-    material.voidDarkening = voidDarkening;
     material.voidDetail = voidDetail;
     material.voidDetailScale = voidDetailScale;
     material.voidFalloff = voidFalloff;
@@ -1339,7 +1337,6 @@ export const Scenery = ({
     voidHorizon,
     voidDepth,
     voidTransition,
-    voidDarkening,
     voidDetail,
     voidDetailScale,
     voidFalloff,

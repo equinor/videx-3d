@@ -136,9 +136,9 @@ vec3 reliefVoidPlain(vec3 world, float dist, vec3 dir, float footprint, vec3 sur
 // underside, and nothing above it — not the water, the land, nor a trench's floor deeper
 // than the camera, which its walls' undersides stand in front of. Shaded as the lid the
 // background and a stage's flat seabed draw from below, facing the way it faces, so its
-// shape shows in the subsurface's raking light, and darkened with the camera's depth as they
-// are: where it lies level, the relief and the flat lid past it meet in one colour. A skirt
-// is shaded as the lid it hangs from, so a crack between tiles shows none.
+// shape shows in the subsurface's raking light: where it lies level, the relief and the flat
+// lid past it meet in one colour. A skirt is shaded as the lid it hangs from, so a crack
+// between tiles shows none.
 void main() {
   #include <logdepthbuf_fragment>
   vec3 world = vReliefWorld;
@@ -167,8 +167,6 @@ void main() {
   if(seabed < 1e-3 || curvedAway || reliefTileLeftToOther(vReliefWorld) || reliefCutAway())
     discard;
   vec3 color = reliefVoidPlain(world, dist, dir, lidFootprint, surface, up);
-  if(uSceneryVoidDarkening > 0.0)
-    color *= exp(min(scenerySeaCameraAltitude() + uScenerySeaDepth, 0.0) / uSceneryVoidDarkening);
   #if defined(RELIEF_DEBUG_TILES) || defined(RELIEF_DEBUG_LAYERS)
   color = reliefTileDebug(color);
   #endif

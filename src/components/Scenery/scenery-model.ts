@@ -287,8 +287,6 @@ export type SceneryVoidProps = {
   };
   /** depth below `level` over which the void fades in, in world units; without a sea only, as under one it begins at the seabed. Default 200 */
   transition?: number;
-  /** depth of the camera below `level` over which the whole void dims toward black, in world units; 0 for none. Default 0 */
-  darkening?: number;
   /** strength of a noise relief on the lid (not the simple hollow's); 0 for none. Default 0 */
   detail?: number;
   /** size of that noise relief, in world units. Default 1000 */
@@ -681,7 +679,6 @@ export const sceneryDefaults = {
       depth: VOID_GRADIENT_DEFAULTS.depth,
     },
     transition: 200,
-    darkening: 0,
     detail: 0,
     detailScale: 1000,
     falloff: VOID_GRADIENT_DEFAULTS.falloff,

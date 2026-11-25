@@ -287,7 +287,6 @@ export class SceneryMaterial extends ShaderMaterial {
           new Color(voidDefaults.colors.depth),
         ),
         uSceneryVoidTransition: new Uniform(voidDefaults.transition),
-        uSceneryVoidDarkening: new Uniform(voidDefaults.darkening),
         uSceneryVoidDetail: new Uniform(voidDefaults.detail),
         uSceneryVoidDetailScale: new Uniform(voidDefaults.detailScale),
         uSceneryVoidFalloff: new Uniform(voidDefaults.falloff),
@@ -1019,14 +1018,6 @@ export class SceneryMaterial extends ShaderMaterial {
   }
   set voidTransition(value: number) {
     this.uniforms.uSceneryVoidTransition.value = Math.max(value, 1e-3);
-  }
-
-  /** depth below the level over which the void dims toward black; 0 = off */
-  get voidDarkening(): number {
-    return this.uniforms.uSceneryVoidDarkening.value;
-  }
-  set voidDarkening(value: number) {
-    this.uniforms.uSceneryVoidDarkening.value = Math.max(value, 0);
   }
 
   /** strength of the noise relief on the lid */

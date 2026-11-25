@@ -411,7 +411,6 @@ uniform vec2 uScenerySeaCutawayCuts; // how much of the water it cuts (1 all, 0 
 #include ./hollow-look.glsl
 uniform float uSceneryVoidLevel; // height of the lid along uSceneryUp, world units
 uniform float uSceneryVoidTransition;
-uniform float uSceneryVoidDarkening; // depth over which the void dims; 0 = off
 uniform float uSceneryVoidDetail; // the lid's noise relief: strength, 0 for none
 uniform float uSceneryVoidDetailScale; // world units
 // Toward the light raking the lid (world): the subsurface light's bearing
@@ -514,9 +513,6 @@ vec4 sceneryVoid(vec3 dir, vec3 origin, vec3 depths) {
   vec3 ceiling = sceneryVoidCeiling(origin + dir * reach, reach);
 
   vec3 voidColor = y > 0.0 || curved ? ceiling : depths;
-  if(uSceneryVoidDarkening > 0.0)
-    voidColor *= exp(-depth / uSceneryVoidDarkening);
-
   return vec4(voidColor * under, under);
 }
 #endif
