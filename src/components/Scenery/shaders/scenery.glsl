@@ -655,6 +655,15 @@ vec4 scenerySeaStagedOver(vec4 layer, ScenerySeaStagedView staged, vec3 dir, vec
 vec4 scenerySeaLayer(vec3 dir, vec3 origin, float blend) {
   // How far apart two pixels look (radians): taken before anything branches.
   float pixel = length(fwidth(dir));
+  float dy = fwidth(dot(dir, globeCameraLook()));
+  float altitude = scenerySeaViewAltitude(origin);
+  // From the camera over the sea, nothing over its horizon (scenerySeaOverHorizon), left before
+  // anything is worked out: clear of it by a few pixels, so a quad's pixels that go on lie over
+  // it too and draw nothing either, the derivatives they take across those that left never
+  // shown. Else all the sky worked out the seabed for nothing: ~1.5 ms of a frame at
+  // 2440 × 2050 from 300 m (2026-11-25).
+  if(altitude > 0.0 && scenerySeaOverHorizon(dir, altitude) >= 4.0 * dy)
+    return vec4(0.0);
   ScenerySeaStagedView staged = scenerySeaStagedView(dir, origin);
   bool water = scenerySeaNeedsWaterView(origin);
   vec4 sea = vec4(0.0);
@@ -671,7 +680,6 @@ vec4 scenerySeaLayer(vec3 dir, vec3 origin, float blend) {
     // this one meets them. On the sea's own depth, near a shore the water let a bed through
     // that was lit as that deep: with clear water bright, the shallows reading as deep; with
     // realistic water black, a dark rim along every coast.
-    float altitude = scenerySeaViewAltitude(origin);
     if(uScenerySeaWater > 0.5 && altitude > 0.0) {
       vec3 at = origin + dir * scenerySeaReach(origin, dir, altitude).x;
       bedUp = globeUpAt(at);

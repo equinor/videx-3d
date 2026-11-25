@@ -460,8 +460,13 @@ sampled as a grid are its heights exactly (tested).
 Built (2026-10-25) as the single-texture relief's own machinery, reused rather than a new
 generator: when the camera's far plane falls short of the farthest horizon, the stage
 draws the relief's FIRST, coarsest layer on a fullscreen far layer
-(`SceneryStageReliefOverview`): land flat on the curved sea, at the far plane, past where
-the tiles end. The first layer stands for the merge out there: past a few hundred
+(`SceneryStageReliefOverview`): land flat on the curved sea, just inside the far plane, past
+where the tiles end. Drawn before the sky's layers and writing its depth, it leaves them only
+where it is not drawn (until 2026-11-25 it drew after them, and from space the sky and the
+sea's layer were shaded under all of it: ~7 ms of a 19 ms frame at 2440 × 2050). One step of
+the depth buffer drawn into inside it (`sceneryReliefFarStep`): a reversed float buffer's is
+near 0, as one 24-bit step would put everything past 2^24 near planes behind it. The first
+layer stands for the merge out there: past a few hundred
 kilometres the finer layers are regional and lie nearer. The `ShortFarPlane` story (a
 200 km far plane) shows it.
 

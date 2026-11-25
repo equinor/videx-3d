@@ -276,7 +276,7 @@ type SceneryStageReliefTilesProps = {
   occupants?: SceneryReliefTileOccupants;
   /** told the relief's sampler (see `ReliefSampler`): a new one whenever pinned tiles come in, and null once gone */
   onSampler?: (sampler: ReliefSampler | null) => void;
-  /** the sky's sea surface layer's `renderOrder`: the overview past the tiles draws after it */
+  /** the sky's `renderOrder`: the overview past the tiles draws before its background */
   sceneryOrder: number;
   /** told the tiles drawn, each time they are chosen, for what lies on them (`ScenerySeaState.reliefTiles`) */
   hub?: SceneryReliefHub;

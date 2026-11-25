@@ -814,6 +814,15 @@ bool scenerySeaShowsVoid(vec3 dir, vec3 origin, ScenerySeaStagedView staged) {
 }
 
 
+// How far a view along `dir` from the camera, `altitude` metres over the sea (above it), passes
+// over the sea's horizon: the sine of its elevation over the horizon's, from the level the
+// camera sees the sky by (globeCameraLook): its own far off, where the field's is not up. Where
+// positive it meets neither the sea's surface nor anything under it, which lies lower
+// (scenerySeaReach): a layer of the sea draws nothing there.
+float scenerySeaOverHorizon(vec3 dir, float altitude) {
+  return dot(dir, globeCameraLook()) - skyHorizonAt(dir, altitude);
+}
+
 // The background's sea surface, as its own layer: colour, and the opacity to blend it
 // with. Nothing where the ray misses it or a stage draws it. ⚠️ Derivatives.
 vec4 scenerySeaSurfaceLayer(vec3 dir, vec3 origin, float blend) {
@@ -821,9 +830,15 @@ vec4 scenerySeaSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   if(altitude <= 0.0)
     return vec4(0.0);
 
-  float y = dot(dir, globeCameraLook());
+  float dy = fwidth(dot(dir, globeCameraLook()));
   // How far apart two pixels look (radians), for easing the horizon.
   float pixel = length(fwidth(dir));
+  // Over the horizon, where there is none of it, left before anything is worked out: clear of
+  // it by more than the test below, so a quad's pixels that go on are left there too, and the
+  // derivatives they take across those that left never show.
+  float over = scenerySeaOverHorizon(dir, altitude);
+  if(over >= 4.0 * dy)
+    return vec4(0.0);
   vec3 reach = scenerySeaReach(origin, dir, altitude);
   float t = reach.x;
   vec2 p = scenerySeaPlane(origin + dir * t);
@@ -832,10 +847,8 @@ vec4 scenerySeaSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   float waveTexel = scenerySeaTexel(delta);
   vec2 rimAt = scenerySeaCutawayRimAt(origin + dir * t, origin);
   // Skipped where hidden with a margin, so a quad's pixels that still shade are hidden too
-  // and the derivatives they take across the skipped ones never show. From the level the
-  // camera sees the sky by (globeCameraLook): its own far off, where the field's is not up.
-  float over = y - skyHorizonAt(dir, altitude);
-  if(over >= 2.0 * fwidth(y) || scenerySeaOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
+  // and the derivatives they take across the skipped ones never show.
+  if(over >= 2.0 * dy || scenerySeaOnStage(p, t + 2.0 * fwidth(t), 4.0 * texel))
     return vec4(0.0);
   ScenerySeaWave wave = scenerySeaWave(delta, globeUpAt(origin + dir * t), waveTexel, t);
   vec4 surface = scenerySeaSurfaceOf(wave, p, waveTexel, dir, blend, origin + dir * t);

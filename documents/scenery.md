@@ -892,7 +892,9 @@ default):
 | `water` | `<ScenerySea>` | the view from in the water |
 | `surface` | `<ScenerySea>` | the sea's surface, at the next `renderOrder` |
 
-The relief's overview draws after them, and the clouds (`<SceneryClouds>`) after the sea's
+A relief's overview (`<GeoRelief>` past its tiles) draws before them, just inside the far plane
+and writing its depth, so they are shaded only where it is not drawn: from space, most of the
+view. The clouds (`<SceneryClouds>`) draw after the sea's
 surface layer, drawing themselves. Transparent parts draw after everything. It works with R3F's own render and with a
 `RenderingPipeline` of `OITRenderPass` + `OutputPass`.
 
@@ -904,6 +906,9 @@ surface layer, drawing themselves. Transparent parts draw after everything. It w
   below the seabed only the void; from the air the void only while something opens the
   seabed onto it. Each shader still finds where it draws itself, so near a level both
   sides are drawn and nothing is missed.
+- Over the sea's horizon the sea's and the surface layers leave before any work
+  (`scenerySeaOverHorizon`): the view meets neither the sea nor anything under it. The
+  surface layer discards where it adds nothing, so no blend is spent there.
 - The air's colours (`SkyAirColors`) are drawn before what reads them, at most once a render
   for each place a camera draws from: `SceneryMaterial.prepareDraw`, from every layer's
   `onBeforeDraw`, a stage's view and the clouds' march and bake. A second view, or a bake from
@@ -917,10 +922,11 @@ surface layer, drawing themselves. Transparent parts draw after everything. It w
   fading in without a sea. The sea's surface layer has always been drawn that way.
 
 ⚠️ An opaque object that writes no depth (`depthWrite: false` without `transparent`) is
-drawn over by the background: make it transparent. The far plane assumes a standard depth
-buffer, not a reversed one. Each layer rebuilds its view ray from a point at NDC depth 0,
-not on the far plane: with a far plane far enough from the near one (50 000 km over
-0.1 m), the far plane's point rounds to infinity in 32-bit floats and the ray flips.
+drawn over by the background: make it transparent. The far plane is `DEPTH_FAR_NDC`
+(depth.glsl), for a standard and a reversed depth buffer alike. Each layer rebuilds its
+view ray from a point at NDC depth 0, not on the far plane: with a far plane far enough
+from the near one (50 000 km over 0.1 m), the far plane's point rounds to infinity in
+32-bit floats and the ray flips.
 
 ⚠️ Drawn on the far plane, the background hides nothing by depth: what lies under its sea
 or its seabed — past a stage's reach (the far plane, at most 3000 km), off its area, or past

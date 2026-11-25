@@ -18,6 +18,21 @@
 #define DEPTH_FAR_NDC 1.0
 #endif
 
+// `step` of window depth inside the far plane, in normalized device coordinates: in front of
+// what is drawn on it (DEPTH_FAR_NDC), behind everything else. A layer drawn there first,
+// writing its depth, leaves those on the far plane to the depth test where it is drawn. The
+// step must be the depth buffer's own (see the relief overview's, scenery-relief.ts): finer,
+// it rounds to the far plane and they pass; coarser, what lies just short of the far plane
+// falls behind it. A 24-bit step (2^-24) lies behind the clouds' and the layers' depths held
+// inside the far plane (depthInsideFar, 1e-7 and more).
+float depthInsideFarNdc(float step) {
+  #ifdef USE_REVERSED_DEPTH_BUFFER
+  return step;
+  #else
+  return 1.0 - 2.0 * step;
+  #endif
+}
+
 // `clip` held `margin` of its w inside the far plane: far off, clip z rounds past it in fp32,
 // and vertices there are clipped at random. A logarithmic buffer writes its depth from w, so
 // there only the clipping changes.

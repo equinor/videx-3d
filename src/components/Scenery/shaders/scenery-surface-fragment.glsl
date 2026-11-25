@@ -10,6 +10,9 @@ void main() {
   vec3 dir = normalize(vSceneryDirection);
   float blend = max(uSkyHorizonBlend, fwidth(dot(dir, globeCameraLook())));
   vec4 surface = scenerySeaSurfaceLayer(dir, cameraPosition, blend);
+  // Where it adds nothing, nothing is blended.
+  if(surface.a <= 0.0)
+    discard;
   gl_FragColor = vec4(sceneryDebugTint(surface.rgb, SCENERY_DEBUG_LAYER) * uSceneryIntensity, surface.a);
 
   #include <tonemapping_fragment>

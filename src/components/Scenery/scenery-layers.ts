@@ -44,6 +44,13 @@ export const SCENERY_LAYER_ORDER: Record<SceneryBackgroundLayer, number> = {
   surface: 1,
 };
 
+/**
+ * A relief's overview's `renderOrder` after the scenery's (`SceneryStageReliefOverview`): before
+ * the hollow and the background's layers. Just inside the far plane, writing its depth, it
+ * leaves those on the far plane to the depth test where it is drawn.
+ */
+export const SCENERY_RELIEF_OVERVIEW_ORDER = -0.5;
+
 /** The layers a scenery with `sky`'s switches draws, in order. */
 export function sceneryLayers(
   scenery: SceneryMaterial,

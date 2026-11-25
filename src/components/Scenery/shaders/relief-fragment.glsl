@@ -9,9 +9,10 @@
 // area out and RELIEF_SEE_THROUGH draws it alone, at the sea's seabed opacity
 // (relief-tiles.glsl). RELIEF_OCCUPANTS keeps the cutaway off the ground over the stage's
 // occupants, and RELIEF_CUT_OCCUPANT cuts it with one of them, inside its outline.
-// RELIEF_FAR draws the overview past the tiles' reach instead, on a fullscreen layer: the
-// relief's own tiles read per pixel through an index of those chosen for it
-// (relief-atlas.glsl), above the sea, flat on the globe's sea, wherever on the Earth.
+// RELIEF_FAR draws the overview past the tiles' reach instead, on a fullscreen layer just
+// inside the far plane, drawn before the sky's (scenery-relief.ts): the relief's own tiles
+// read per pixel through an index of those chosen for it (relief-atlas.glsl), above the sea,
+// flat on the globe's sea, wherever on the Earth.
 // RELIEF_FROM_BELOW draws the tiles' undersides alone (their back faces), while the camera
 // is under the ground: the void's lid, shaded as the void draws its own (its main, below).
 // Without a sky, relief-plain-fragment.glsl draws the tiles instead; the looks are both's

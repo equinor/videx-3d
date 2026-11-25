@@ -385,7 +385,7 @@ export const GeoRelief = ({
         groundLive={stage?.groundLive ?? false}
         occupants={stage?.occupants}
         onSampler={onSampler}
-        sceneryOrder={scenery ? scenery.renderOrder + 1 : 0}
+        sceneryOrder={scenery ? scenery.renderOrder : 0}
         hub={relief.tiles}
       />
       {labelled && (

@@ -123,6 +123,7 @@ depth by hand must handle all three:
 | What | Shader side (`sdk/materials/shaderLib/depth.glsl`) | CPU side (`sdk/utils/depth-buffer.ts`) |
 |--|--|--|
 | Something drawn on the far plane (the sky's background) | `DEPTH_FAR_NDC` | |
+| Something drawn just inside the far plane, writing its depth, so what is drawn on it after is left to the depth test (the relief's overview) | `depthInsideFarNdc` | one step of the buffer drawn into: a fixed-point one's 2^-24, a reversed float one's near 0 (the overview's `sceneryReliefFarStep`) |
 | Vertices held inside the far plane (fp32 rounds far-off clip z past it) | `depthInsideFarClip` | |
 | A depth written (`gl_FragDepth`) for a point other than the fragment's own | `depthOfView`, `depthInsideFar` | |
 | A depth read from the depth buffer and compared or converted | `depthToStandard` (reversed: `1 - depth` is the linear depth of the same point) | |

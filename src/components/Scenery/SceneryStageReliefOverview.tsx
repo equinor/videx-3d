@@ -9,6 +9,7 @@ import {
 } from '../../rendering/precompile';
 import { createSceneryReliefFarMaterial } from './scenery-relief';
 import type { SceneryReliefAtlas } from './scenery-relief-atlas';
+import { SCENERY_RELIEF_OVERVIEW_ORDER } from './scenery-layers';
 import {
   createSceneryGeometry,
   type SceneryMaterial,
@@ -38,7 +39,7 @@ type SceneryStageReliefOverviewProps = {
   reach: number;
   /** what it compiles with from the sky, as a key (`ScenerySeaState.definesKey`): a new one needs a new material */
   definesKey?: string;
-  /** the sky's sea surface layer's `renderOrder`: the overview draws after it */
+  /** the sky's `renderOrder`: the overview draws before its background (`SCENERY_RELIEF_OVERVIEW_ORDER`) */
   sceneryOrder: number;
   visible: boolean;
   /** a count's tracker (`createPrecompileCount`'s `track`): its compile is reported through it */
@@ -143,7 +144,7 @@ export const SceneryStageReliefOverview = ({
       geometry={geometry}
       material={material}
       frustumCulled={false}
-      renderOrder={sceneryOrder + 1}
+      renderOrder={sceneryOrder + SCENERY_RELIEF_OVERVIEW_ORDER}
       visible={false}
       onBeforeRender={scenery.onBeforeDraw}
     />

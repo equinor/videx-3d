@@ -8,6 +8,10 @@
 #include ../../../sdk/materials/shaderLib/depth.glsl
 
 varying vec3 vSceneryDirection;
+#ifdef SCENERY_INSIDE_FAR
+// How far inside the far plane, in window depth: one step of the depth buffer drawn into.
+uniform float uSceneryInsideFar;
+#endif
 
 void main() {
   // A point of NDC depth 0 on each corner's ray: at a fixed depth, view positions are affine
@@ -22,7 +26,11 @@ void main() {
     vFogDepth = 1e5;
   #endif
 
-  #ifdef SCENERY_AT_FAR
+  #if defined(SCENERY_INSIDE_FAR)
+  // Just inside the far plane (depthInsideFarNdc): drawn before the layers on it, writing its
+  // depth, it leaves them only where it is not drawn.
+  gl_Position = vec4(position.xy, depthInsideFarNdc(uSceneryInsideFar), 1.0);
+  #elif defined(SCENERY_AT_FAR)
   // On the far plane, so a depth test leaves it only where nothing nearer is drawn: z = w, or
   // z = 0 with a reversed depth buffer.
   gl_Position = vec4(position.xy, DEPTH_FAR_NDC, 1.0);
