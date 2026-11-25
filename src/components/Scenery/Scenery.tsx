@@ -95,6 +95,7 @@ import {
   sceneryHollowInside,
   sceneryHollowRadiusRange,
   sceneryHollowLook,
+  sceneryHollowWaterAt,
 } from './scenery-hollow';
 import { SceneryHollowGrip } from './scenery-hollow-grip';
 import { SceneryReliefHub } from './scenery-relief-hub';
@@ -716,6 +717,12 @@ export const Scenery = ({
     material.hollowRimWander = hollowLook.rimWander;
     hollow.setLook(hollowLook);
   }, [material, hollow, hollowOpen, hollowLook]);
+  // Whether a camera `inside` the hollow's rim (sceneryHollowInside) is over its open opening,
+  // where less than half of the sea is left (sceneryHollowWaterAt, as the shaders'
+  // scenerySeaWaterAt): there it is in no water, at any height.
+  const overOpening = (inside: number) =>
+    material.hollowOpen &&
+    sceneryHollowWaterAt(inside, material.hollowRadius) < 0.5;
   const [probe] = useState(() => new LightProbe());
   const [lightTarget] = useState(() => new Object3D());
   // The sea's water: never drawn, the sky's sea shares its uniforms.
@@ -773,13 +780,17 @@ export const Scenery = ({
   // Where the camera is, for which layers can show there (sceneryLayersShown).
   const cutawayWater = cutaway?.water ?? 0;
   const layerView = useCallback(
-    (height: number, voidOpen: boolean): SceneryLayerView => ({
+    (
+      height: number,
+      voidOpen: boolean,
+      wet = material.seaWater,
+    ): SceneryLayerView => ({
       height,
       sea: material.sea
         ? {
             level: material.seaLevel,
             depth: material.seaDepth,
-            water: material.seaWater,
+            water: wet,
             buried: material.seaBuried,
             trench: material.seaTrench,
           }
@@ -1025,9 +1036,10 @@ export const Scenery = ({
 
   // The waves floating children ride (wavePlane above) shoal and break by the depth there, as
   // the drawn ones do by the scene's ground (its map is the GPU's alone): the relief's ground
-  // under them where its tiles are in, else the sea's own depth.
+  // under them where its tiles are in, else the sea's own depth. None over the hollow's open
+  // opening, where the scene lies and there is no sea.
   const sampler = useMemo(() => {
-    if (!water || !seaWater) return null;
+    if (!water || !seaWater || hollowOpen) return null;
     const point = new Vector3();
     const at = { latitude: 0, longitude: 0 };
     // The still water's depth under a world point on the sea.
@@ -1052,7 +1064,16 @@ export const Scenery = ({
         depthAt: depthUnder,
       }),
     );
-  }, [water, seaWater, seaLevel, seaDepth, wavePlane, material, reliefHub]);
+  }, [
+    water,
+    seaWater,
+    hollowOpen,
+    seaLevel,
+    seaDepth,
+    wavePlane,
+    material,
+    reliefHub,
+  ]);
 
   const seaContext = useMemo<ScenerySeaState | null>(
     () =>
@@ -1066,6 +1087,7 @@ export const Scenery = ({
             seabed: seabed,
             seabedOpacity: seabedOpacity,
             hollow: hollowOn,
+            hollowOpen,
             definesKey,
             visible: drawn,
             ready,
@@ -1083,6 +1105,7 @@ export const Scenery = ({
       seabed,
       seabedOpacity,
       hollowOn,
+      hollowOpen,
       definesKey,
       drawn,
       ready,
@@ -1370,8 +1393,6 @@ export const Scenery = ({
       ? { color: seaOpticsColor, clarity: seaClarity }
       : null;
     material.seaWater = seaWater;
-    material.seabed = seabed;
-    material.seabedOpacity = seabedOpacity;
     dirty.current = true;
   }, [
     material,
@@ -1386,10 +1407,14 @@ export const Scenery = ({
     seaOpticsColor,
     seaClarity,
     seaWater,
-    seabed,
-    seabedOpacity,
     bedDetailKey,
   ]);
+  // Uniforms the bakes never read (scenery-bake-fragment.glsl takes the seabed whole): the
+  // seabed peeled over the open hollow, or a see-through one, bakes nothing again.
+  useLayoutEffect(() => {
+    material.seabed = seabed;
+    material.seabedOpacity = seabedOpacity;
+  }, [material, seabed, seabedOpacity]);
 
   // Its own wind and swells where given, the enclosing Weather's for what it leaves out: in
   // the wave plane, true east and south, as the default compass frame's X and Z.
@@ -1636,8 +1661,9 @@ export const Scenery = ({
               hollowLook.rimWander,
             )
           : -Infinity;
-      // Its sea has no edge: under it, over the ground (or the seabed) under it, is in it.
-      if (material.sea && material.seaWater) {
+      // Its sea has no edge: under it, over the ground (or the seabed) under it, is in it; but
+      // not over the hollow's open opening, where there is none.
+      if (material.sea && material.seaWater && !overOpening(site.hollow)) {
         const floor = under ?? bed;
         reportCameraWater(site, {
           depth: level - height,
@@ -1670,8 +1696,11 @@ export const Scenery = ({
     sceneWater.depth = material.seaDepth;
     sceneWater.daylight = material.daylight;
     sceneWater.extent = null;
+    // None over the hollow's open opening, where all of the scene lies.
     sceneWater.optics =
-      water && seaWater ? { color: seaOpticsColor, clarity: seaClarity } : null;
+      water && seaWater && !hollowOpen
+        ? { color: seaOpticsColor, clarity: seaClarity }
+        : null;
     if (sceneWater.owner !== material) {
       sceneWater.setBed(null);
       sceneWater.owner = material;
@@ -1775,6 +1804,8 @@ export const Scenery = ({
     material.seaTrench = site.trench;
     const cameraInside = site.hollow;
     const inHollow = !!hollowLook && cameraInside > 0;
+    // The camera in its sea's water where there is water: not over the hollow's open opening.
+    const cameraWet = material.seaWater && !overOpening(cameraInside);
     // From the sea surface down the layer is clear everywhere (scenerySeaSurfaceLayer), and
     // in rock there is no sea to see.
     if (surfaceMesh.current)
@@ -1805,7 +1836,7 @@ export const Scenery = ({
       sea: material.sea,
       seaLevel: material.seaLevel,
       seaDepth: material.seaDepth,
-      seaWater: material.seaWater,
+      seaWater: cameraWet,
       seaGround: material.seaGround,
       cutaway: cutawayWater > 0,
       void: material.void,
@@ -1863,7 +1894,7 @@ export const Scenery = ({
     const voidOpen = material.voidOpenFromAbove(cutsSeabed);
 
     // The background's layers where they can show from here; each draws nothing elsewhere.
-    const shown = sceneryLayersShown(layerView(height, voidOpen));
+    const shown = sceneryLayersShown(layerView(height, voidOpen, cameraWet));
     // The sea's waves, while a layer that reads them can show: the sky's sea surface (from the
     // air, with water) or its water, and with them a stage's surface, which shows only where
     // those do. Over a dry sea nothing reads them: the sky's sea layer is its seabed alone, and

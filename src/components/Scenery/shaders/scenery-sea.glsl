@@ -58,6 +58,13 @@ float scenerySeaCameraAltitude() {
   return globeCameraHeight() - uScenerySeaLevel;
 }
 
+// Whether the sea has water at a view's `origin`, along up: none over the open hollow's
+// opening, nor where less than half of it is left about it (hollowWater). How high the origin
+// lies is the caller's to test. The same for every pixel.
+bool scenerySeaWaterAt(vec3 origin) {
+  return uScenerySeaWater > 0.5 && hollowWater(origin) >= 0.5;
+}
+
 WaterFogCutaway scenerySeaCutawayParams() {
   return WaterFogCutaway(uScenerySeaCutawayAnchor, uScenerySeaCutawayHeading, uScenerySeaCutawayShape, uScenerySeaCutawayWaveA, uScenerySeaCutawayWaveB);
 }
@@ -364,7 +371,8 @@ vec4 scenerySeaOverVoid(vec4 layer, vec3 dir) {
 }
 
 // The seabed at `world`, `depth` under the surface, facing `up` (its up there, globeUpAt):
-// lit by the scene's lights, and dimmed by the water over it. The lights are the field's:
+// lit by the scene's lights, and dimmed by the water over it, as much as there is of it
+// (hollowWater: none over the open hollow's opening). The lights are the field's:
 // far round the Earth, where the sun has set, it is dark as by night, as the relief's ground
 // is (skyDayFrom). Its colour scenerySeabedAlbedo's; under a relief without the seabed's detail,
 // which no one would see. ⚠️ Derivatives.
@@ -377,7 +385,7 @@ vec3 scenerySeabed(vec3 world, vec3 up, float depth) {
   #endif
   vec3 lit = sceneBlinnPhong(albedo, uScenerySeabedSpecular, uScenerySeabedShininess, uScenerySeabedAmbient, position, normal) * skyDayFrom(uSceneryUp, up);
   // The sky's own scale is applied to everything it draws, last; a lit surface keeps the scene's.
-  return lit * scenerySeaDim(depth) / max(uSceneryIntensity, 1e-4);
+  return lit * scenerySeaDim(depth * hollowWater(world)) / max(uSceneryIntensity, 1e-4);
 }
 
 // How far the segment from a view's origin `a` to `b` runs through the water.
@@ -478,11 +486,11 @@ float scenerySeaTexel(vec3 delta) {
 
 // Whether the surface, seen from above the water, hides all that lies under it: the water
 // down to the seabed lets almost nothing through even straight down, the shortest way (it
-// bends steeper as it enters); and no cutaway takes the water. The water's own light then
-// stands for the seabed, which needs no shading.
+// bends steeper as it enters); and no cutaway takes the water, nor the open hollow's opening
+// (hollowWater). The water's own light then stands for the seabed, which needs no shading.
 bool scenerySeaSurfaceHides() {
   vec3 e = uScenerySeaExtinction;
-  return uScenerySeaWater > 0.5 && uScenerySeaBuried < 0.5 && uScenerySeaCutawayShape.y <= 0.0 && scenerySeaCameraAltitude() > 0.0 && uScenerySeaDepth * min(e.x, min(e.y, e.z)) >= SCENERY_SEA_HIDDEN;
+  return uScenerySeaWater > 0.5 && uScenerySeaBuried < 0.5 && uScenerySeaCutawayShape.y <= 0.0 && uSceneryHollow.y < 0.5 && scenerySeaCameraAltitude() > 0.0 && uScenerySeaDepth * min(e.x, min(e.y, e.z)) >= SCENERY_SEA_HIDDEN;
 }
 
 // The clouds' bake's (uScenerySeaClouds) coarsest level: its side, BAKE_SIZE in scenery-clouds.ts, is 128.
@@ -668,10 +676,11 @@ vec4 scenerySeaInWaterOver(vec3 origin, vec3 dir, float blend, float tBed, vec3 
 }
 
 // Whether the background needs its view in the water from a camera at `origin`: in the
-// water. From the void below, seabed or not, its lid hides the water (sceneryVoid).
+// water, where there is water (scenerySeaWaterAt). From the void below, seabed or not, its lid
+// hides the water (sceneryVoid).
 bool scenerySeaNeedsWaterView(vec3 origin) {
   float altitude = scenerySeaViewAltitude(origin);
-  return uScenerySeaWater > 0.5 && altitude <= 0.0 && altitude + uScenerySeaDepth > 0.0;
+  return scenerySeaWaterAt(origin) && altitude <= 0.0 && altitude + uScenerySeaDepth > 0.0;
 }
 
 // Whether the background sees the seabed from `origin`: from anywhere above it.
@@ -838,8 +847,8 @@ vec4 scenerySeaSurfaceLayer(vec3 dir, vec3 origin, float blend) {
   if(fringe <= 0.0 || scenerySeaOnStage(p, t, texel))
     return vec4(0.0);
   vec4 seen = scenerySeaCutawayMark(scenerySeaThroughAir(surface, origin, dir, t), origin + dir * t, rimAt);
-  // Straight colour: only its alpha.
-  seen.a *= fringe;
+  // Straight colour: only its alpha. None over the open hollow's opening (hollowWater).
+  seen.a *= fringe * hollowWater(origin + dir * t);
   return seen;
 }
 
@@ -890,11 +899,11 @@ float scenerySeaCover(vec3 world, float height) {
       float reflection = waterFresnelAt(facing);
       float water = scenerySeaWaterUnder(scenerySeaDepthAt(at), up, dir, waterFlatness(reach.x)).a;
       float opacity = 1.0 - (1.0 - reflection) * (1.0 - water);
-      surface = opacity * scenerySeaCutawayWater(cutaway);
+      surface = opacity * scenerySeaCutawayWater(cutaway) * hollowWater(at);
     }
   }
   // From in the water, the seabed straight below the camera's level, as the water's layer has it.
-  bool inWater = uScenerySeaWater > 0.5 && altitude <= 0.0;
+  bool inWater = scenerySeaWaterAt(cameraPosition) && altitude <= 0.0;
   // From the air over water, and over a dry sea, the background's seabed lies as deep as the
   // ground map has it under the point (scenerySeaLayer), give or take half a texel of it on a slope:
   // only what lies deeper than that is below it. Coarse far out, so data on the true seabed is

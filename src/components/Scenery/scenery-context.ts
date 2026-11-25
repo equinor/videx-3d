@@ -54,6 +54,11 @@ export type ScenerySeaState = {
    */
   hollow: boolean;
   /**
+   * the hollow's opening is open (`SceneryHollow.open`, or no seabed): there is no sea over it,
+   * so a stage leaves its occupants their own water there
+   */
+  hollowOpen: boolean;
+  /**
    * what a stage and its relief compile with from the sky (`scenerySeaDefines`: the
    * seabed's detail, the waves), as a key: a new one recompiles them
    */

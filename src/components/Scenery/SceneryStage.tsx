@@ -472,10 +472,10 @@ export const SceneryStage = ({
   });
 
   // Told on every change: the occupant draws its own seabed whenever the stage does not,
-  // and its own water only while the stage does not own it. The relief is the occupant's
-  // seabed.
+  // and its own water only while the stage does not own it: nor over the hollow's open
+  // opening, where the sky's sea has none. The relief is the occupant's seabed.
   const seabedDrawn = tiled && !!scenerySea?.visible && !!scenerySea.ready;
-  const ownsWater = !!scenerySea?.visible;
+  const ownsWater = !!scenerySea?.visible && !scenerySea.hollowOpen;
   const listeners = useStableList(claims.map(claim => claim.onStage ?? null));
   const onStage = useRef(listeners);
   useLayoutEffect(() => {

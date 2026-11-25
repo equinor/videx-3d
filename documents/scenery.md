@@ -813,8 +813,9 @@ By default the void is a hollow in the crust about the field (`SceneryVoid`'s `h
 crater 100 km in radius at the rim, its walls of rock down to a floor 35 km under the seabed, the
 seabed its lid. Opening it (`<SceneryVoid hollow={{ open: true }} />`) peels the seabed over
 it: the relief is cut away inside its rim and kept whole around it, and the data under the
-field is seen against the crater. Without a seabed (no `GeoRelief`) it lies open under the
-water. Past its walls and under its floor the void is black, with
+field is seen against the crater. Without a seabed (no `GeoRelief`) it lies open. Either way
+there is no sea over the opening: it comes back over a band outside the rim. Past its walls and
+under its floor the void is black, with
 the lid overhead. It is real geometry with baked textures, drawn with the background, and
 opening, moving or flying into it re-bakes and recompiles nothing. `hollow={false}` keeps the
 plain void above: the plain lid over the gradient. Its design, look, light and cost:

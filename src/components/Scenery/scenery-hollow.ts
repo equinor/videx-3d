@@ -316,6 +316,17 @@ const HOLLOW_TILE_MARGIN = 2000;
 const tileOffset = new Vector2();
 const tilePoint = new Vector3();
 
+/** The band outside the rim, as a share of its radius, over which the sea comes back about the open hollow (HOLLOW_WATER_BAND). */
+const SCENERY_HOLLOW_WATER_BAND = 0.1;
+
+/**
+ * How much of the sea is left `inside` the open hollow's rim (sceneryHollowInside) of `radius`:
+ * none over the opening, all beyond the band outside its rim (as `hollowWaterAt`, hollow.glsl).
+ */
+export function sceneryHollowWaterAt(inside: number, radius: number) {
+  return MathUtils.smoothstep(-inside, 0, SCENERY_HOLLOW_WATER_BAND * radius);
+}
+
 /** The band outside the rim, as a share of its radius, over which its air thins (HOLLOW_AIR_BAND). */
 const SCENERY_HOLLOW_AIR_BAND = 0.4;
 /** The camera's altitudes over which the sky's drained air fades out: above, the sky is space. */

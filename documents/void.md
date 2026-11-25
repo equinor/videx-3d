@@ -29,8 +29,8 @@ dark, dull rock that gives scale and depth.
 - **The seabed is its lid.** With the seabed on, the hollow is shut and nothing changes from
   above. Opening it (`hollow.open`) peels the seabed over it: the relief is cut away inside the
   rim and kept whole around it, so the opening is a hole in the ground, not a missing ground.
-  Without a seabed at all (no `GeoRelief` in the `World`, or it hidden) the hollow lies open
-  under the water.
+  Without a seabed at all (no `GeoRelief` in the `World`, or it hidden) the hollow lies open.
+  Either way there is no sea over the opening (see [Over the opening](#over-the-opening)).
 - **Real geometry with baked textures**, no ray marching: walls and floor are meshes, shaded
   from two textures baked once on the GPU. Until both are baked and the sky's programs compiled
   the hollow is not drawn, and the void is the plain void: its even lid overhead and the void's
@@ -194,6 +194,17 @@ seabed changes nothing overhead. The relief draws it near the field, the backgro
 - Views down into the opening see the sky mirrored about the horizon (`skyAir`), not the ground
   the sky paints below it. From at or below the sea's level, inside the rim, every view down is
   into the opening.
+- **No sea over it:** the sea is masked over the opening and comes back over a band 0.1 of the
+  radius wide outside the rim (`HOLLOW_WATER_BAND`, `hollowWater`). A mask, not a shore: the
+  water is not shaped by it. The sea's surface (the background's and a stage's) fades out over
+  the band; the seabed there is dimmed by as much water as is left and seen more and more as
+  land is, through the air (`relief-fragment.glsl`). A camera over the opening is in no water,
+  at any height: no view in the water, no water fog, the bakes' air zone
+  (`sceneryHollowWaterAt`, the camera probe). The scene's water (`sceneWaterBody`) has no
+  optics, floating children get no waves, and a stage leaves its occupants their own water
+  (`ScenerySeaState.hollowOpen`): a zone stack draws its own sea over its column. Opening or
+  shutting it re-bakes nothing. Its cost with the hollow open is within the GPU's noise at the
+  field view (the frame 10.06 against 10.04 ms, interleaved, 1280×720); shut, a uniform test.
 
 ## From outside and below
 
@@ -220,5 +231,4 @@ interleaved before/after (the per-group profiler swung up to 2×):
 
 ## Open
 
-- Water over an open hollow: the sea's surface seen from below the opening.
 - Faint ember motes rising when the camera is under the floor (parked).

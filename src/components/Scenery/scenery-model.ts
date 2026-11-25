@@ -297,8 +297,9 @@ export type SceneryVoidProps = {
    * The void as a hollow in the crust under the field (see {@link SceneryHollow}): a floor
    * deep under the seabed and walls about it, which the seabed is the lid of. Opening it
    * (`SceneryHollow.open`) peels the seabed over it: the relief is cut away inside its rim and
-   * stays whole around it. Without a seabed (no `GeoRelief` in the `World`) it lies open under
-   * the water. Past its walls and under its floor the void is black, with the lid overhead.
+   * stays whole around it. Without a seabed (no `GeoRelief` in the `World`) it lies open.
+   * Open, there is no sea over it, the sea coming back over a band outside its rim. Past its
+   * walls and under its floor the void is black, with the lid overhead.
    * `false` for the plain void, a plain lid over the gradient, which never opens. See
    * documents/void.md. Default on
    */
@@ -328,7 +329,8 @@ export type SceneryHollow = {
   style?: SceneryHollowStyle;
   /**
    * peel the seabed over it: the relief is cut away inside its rim, and the field's data
-   * shows down to its floor. Changing it recompiles nothing and bakes nothing. Default false
+   * shows down to its floor. There is no sea over the opening, the sea coming back over a band
+   * outside its rim. Changing it recompiles nothing and bakes nothing. Default false
    */
   open?: boolean;
   /** its rim's radius along the sea, in world units. Default 100 000 */

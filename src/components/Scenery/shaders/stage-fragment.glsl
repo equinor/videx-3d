@@ -124,11 +124,13 @@ void main() {
   vec3 delta = dir * reach.x;
   float texel = scenerySeaTexel(delta);
   ScenerySeaWave wave = scenerySeaWave(delta, globeUpAt(world), texel, dist);
+  // None over the open hollow's opening, coming back about it (hollowWater).
+  float seaLeft = hollowWater(world);
   bool cutThrough = false;
   if(altitude > 0.0) {
     vec4 surface = scenerySeaThroughAir(scenerySeaSurfaceOf(wave, p, texel, dir, blend, world), cameraPosition, dir, dist);
     gl_FragColor = scenerySeaCutawayMark(surface, world, rimAt);
-    gl_FragColor.a *= fringe;
+    gl_FragColor.a *= fringe * seaLeft;
   } else {
     vec3 underside = scenerySeaUndersideOf(-wave.normal, dir, blend, -altitude);
     float wall = scenerySeaCutawayWall(cameraPosition, dir);
@@ -137,9 +139,9 @@ void main() {
     cutThrough = kept < 1e-3;
     float path = scenerySeaCutawayPath(scenerySeaWaterPath(cameraPosition, world), wall, 1.0);
     vec3 seen = scenerySeaFog(underside, path, scenerySeaLightAlong(-altitude, 0.0, path), dir);
-    gl_FragColor = vec4(seen, kept);
+    gl_FragColor = vec4(seen, kept * seaLeft);
   }
-  if(backgroundDraws || underLid || cutThrough || overCurve || fromBehind)
+  if(backgroundDraws || underLid || cutThrough || overCurve || fromBehind || seaLeft <= 0.0)
     discard;
   #else
   // Beyond the disc the seabed lies on the globe, as the background's does.

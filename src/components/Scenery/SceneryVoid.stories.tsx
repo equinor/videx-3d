@@ -148,7 +148,7 @@ const meta = {
     ),
     relief: toggle(
       'Relief',
-      'The relief (`GeoRelief`), the sea\u2019s seabed: the demo reliefs about the field, land and seabed, cut away over the open hollow. Off, there is no seabed, and the hollow lies open under the water. Made on demand by `npm run generate-relief`.',
+      'The relief (`GeoRelief`), the sea\u2019s seabed: the demo reliefs about the field, land and seabed, cut away over the open hollow. Off, there is no seabed, and the hollow lies open, with no sea over it. Made on demand by `npm run generate-relief`.',
     ),
     hollow: toggle(
       'Void',

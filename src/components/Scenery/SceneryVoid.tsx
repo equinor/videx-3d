@@ -7,7 +7,7 @@ import type { SceneryVoidProps } from './scenery-model';
  * walls down to a floor some 35 km under the seabed, the seabed its lid. Opening it
  * (`hollow={{ open: true }}`) peels the seabed over it: the relief is cut away inside its
  * rim, and the data under the field is seen against the crater. Without a seabed (no
- * `GeoRelief` in the `World`) it lies open under the water. Past its walls and under its floor
+ * `GeoRelief` in the `World`) it lies open. Open, it has no sea over it. Past its walls and under its floor
  * the void is solid rock: black, with the lid overhead. With `hollow={false}`, the plain void:
  * an endless lid overhead and a bottomless gradient below the horizon. A layer of its own,
  * compiled on its own; nothing it changes re-bakes. Anywhere under the `Scenery`.

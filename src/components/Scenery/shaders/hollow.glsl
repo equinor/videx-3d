@@ -100,6 +100,40 @@ float hollowAir(vec3 p) {
   return uSceneryHollow.y < 0.5 ? 1.0 : hollowAirAt(hollowInside(p));
 }
 
+// While the hollow is open there is no sea over its opening: none inside the rim, coming back
+// over a band outside it this share of its radius wide, whole beyond. A mask, not a shore: the
+// water is not shaped by it. Not in the bakes, which take the hollow off.
+#define HOLLOW_WATER_BAND 0.1
+
+// How much of the sea is left `inside` the rim (hollowInside, negative outside): 0 over the
+// opening, 1 beyond the band, and 1 while the hollow is shut.
+float hollowWaterAt(float inside) {
+  if(uSceneryHollow.y < 0.5)
+    return 1.0;
+  return smoothstep(0.0, HOLLOW_WATER_BAND * uSceneryHollow.w, -inside);
+}
+
+// How much of the sea is left at `p` (hollowWaterAt). Well inside the rim's furthest reach in,
+// or past the band beyond its furthest reach out (its waves' shares together, the wander), it
+// is known from the distance to the axis alone: only between are the rim's waves read.
+float hollowWater(vec3 p) {
+  if(uSceneryHollow.y < 0.5)
+    return 1.0;
+  vec3 v = p - uGlobeDisc.xyz;
+  float h = dot(v, uGlobeUp);
+  float across = length(v - uGlobeUp * h);
+  float wander = 0.0;
+  for(int i = 0; i < HOLLOW_RIM_WAVES; i++)
+    wander += abs(uSceneryHollowRim[i].y);
+  float least = globeOn() ? tan(uSceneryHollow.z * (1.0 - wander)) * (h + uGlobe.y) : uSceneryHollow.w * (1.0 - wander);
+  float most = globeOn() ? tan(uSceneryHollow.z * (1.0 + wander)) * (h + uGlobe.y) : uSceneryHollow.w * (1.0 + wander);
+  if(across <= least)
+    return 0.0;
+  if(across >= most + HOLLOW_WATER_BAND * uSceneryHollow.w)
+    return 1.0;
+  return hollowWaterAt(hollowInside(p));
+}
+
 // How much of the air the sky's view finds gone: about the camera, low enough to be in it
 // (uHollowView.z, sceneryHollowAirGone), the same for every pixel.
 float hollowAirGone() {

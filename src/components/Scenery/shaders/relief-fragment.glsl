@@ -281,8 +281,10 @@ void main() {
   bool under = height < 0.0;
   bool water = uScenerySeaWater > 0.5;
   #ifndef RELIEF_FAR
+  // The camera in the water, where there is water: not over the open hollow's opening.
+  bool cameraWet = scenerySeaWaterAt(cameraPosition);
   // Seen through the water: the seabed, and from in the water everything, land included.
-  bool seenInWater = water && (under || altitude <= 0.0);
+  bool seenInWater = water && (under || (altitude <= 0.0 && cameraWet));
   #endif
   #ifdef RELIEF_FAR
   // The look of the layer that gave it, as the tiles' (reliefTileLayer).
@@ -344,11 +346,17 @@ void main() {
     // Dimmed by the daylight its depth leaves it. From the air the sea's surface carries the
     // water in front of it (scenerySeaWaterUnder); from in the water, through the water between,
     // and land through the water the view crosses before it leaves the sea.
+    vec3 inAir = color;
     color *= scenerySeaDim(-height);
-    if(altitude <= 0.0) {
+    if(altitude <= 0.0 && cameraWet) {
       float path = scenerySeaCutawayPath(scenerySeaPathBelowSurface(cameraPosition, world), scenerySeaCutawayWall(cameraPosition, dir), scenerySeaCutawayWater(cutaway));
       color = scenerySeaFog(color, path, scenerySeaLightAlong(-altitude, max(-height, 0.0), path), dir);
     }
+    // About the open hollow the sea thins out to none over its band (hollowWaterAt): there the
+    // seabed is seen more and more as the land is, through the air, which drains into it.
+    float waterLeft = hollowWaterAt(hollowIn);
+    if(altitude > 0.0 && waterLeft < 1.0)
+      color = mix(skyFromSpaceOver(reliefThroughAir(inAir, dir, dist, hollowAirAt(hollowIn)), lit, world), color, waterLeft);
     // Seabed met in front of the sea, or behind it by less than 1e-4 of the distance (shallow
     // water at the coast), writes the depth of the point 1e-4 behind where the view meets the
     // sea: only its depth, not where it is drawn nor its colour. Behind it by less than the

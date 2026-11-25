@@ -2,7 +2,8 @@
 // relief-fragment.glsl): include after scenery.glsl, compiled with the sky's defines.
 
 // `color` (linear, the layer's own) at `world`, `height` metres over the sea, seen from the
-// camera: dimmed by the daylight its depth leaves it; from above, the sea's surface carries the
+// camera: dimmed by the daylight its depth leaves it, as much water as there is over it
+// (hollowWater: none over the open hollow's opening); from above, the sea's surface carries the
 // water in front of it (scenerySeaWaterUnder); from in the water, through the water between. Where the cutaway takes the seabed it takes this too: `alpha` with it. And under
 // what the background draws of the sea — its surface, its seabed, or either past the Earth's
 // curve — `alpha` takes its cover (scenerySeaCover): the background lies on the far plane and
@@ -20,8 +21,8 @@ vec3 geoThroughWater(vec3 color, inout float alpha, vec3 world, float height) {
     alpha *= scenerySeaCutawaySeabed(cutaway);
   // In the sky's own scale, as the relief's colour is.
   color /= max(uSceneryIntensity, 1e-4);
-  color *= scenerySeaDim(-height);
-  if(altitude <= 0.0) {
+  color *= scenerySeaDim(-height * hollowWater(world));
+  if(altitude <= 0.0 && scenerySeaWaterAt(cameraPosition)) {
     float path = scenerySeaCutawayPath(scenerySeaPathBelowSurface(cameraPosition, world), scenerySeaCutawayWall(cameraPosition, dir), scenerySeaCutawayWater(cutaway));
     color = scenerySeaFog(color, path, scenerySeaLightAlong(-altitude, max(-height, 0.0), path), dir);
   }
