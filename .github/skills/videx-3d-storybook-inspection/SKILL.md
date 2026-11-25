@@ -85,7 +85,7 @@ coordinates yourself.
 - ⚠️ Surface colour depends heavily on angle, because you may be seeing an
   interior layer through a cut. Do not identify a surface by its colour alone.
 - Turn distracting geometry off while debugging: the sea's water in particular
-  (`scenerySea: false` in the field model) hides the seabed entirely.
+  (`sea: false` in the field model) hides the seabed entirely.
 - Zoom in further than feels necessary. Misalignments of a metre or two are
   invisible at 300 m and obvious at 60 m.
 

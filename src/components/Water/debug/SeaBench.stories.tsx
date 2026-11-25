@@ -217,16 +217,16 @@ const benchSceneryArgs = (args: SeaBenchArgs): SceneryArgs => ({
   swellPeriod: args.swellPeriod,
   swellFrom: args.swellFrom,
   foamAmount: args.foamAmount,
-  scenerySeaSteepness: args.steepness,
-  scenerySeaWaveTuning: tuningOf(args),
-  scenerySeaFoamTuning: foamTuningOf(args),
+  seaSteepness: args.steepness,
+  seaWaveTuning: tuningOf(args),
+  seaFoamTuning: foamTuningOf(args),
   scenerySeaQuality: args.quality,
-  scenerySeaColor: args.opticsColor,
-  scenerySeaClarity: args.opticsClarity,
-  scenerySeaSparkle: args.sparkle,
-  scenerySeaCrestLight: args.crestLight,
-  scenerySeaFoamLife: args.foamLife,
-  scenerySeaFresnelPower: args.fresnelPower,
+  seaColor: args.opticsColor,
+  seaClarity: args.opticsClarity,
+  seaSparkle: args.sparkle,
+  seaCrestLight: args.crestLight,
+  seaFoamLife: args.foamLife,
+  seaFresnelPower: args.fresnelPower,
 });
 
 // The camera to the pose, once the controls are there, and again as it changes.
@@ -297,13 +297,11 @@ const StandAlone = ({
         skyColor="#465a6a"
         // The old Fresnel where the sea args ask for it, as the Scenery's sea.
         fresnelPower={
-          scenery.scenerySeaFresnelPower > 0
-            ? scenery.scenerySeaFresnelPower
-            : undefined
+          scenery.seaFresnelPower > 0 ? scenery.seaFresnelPower : undefined
         }
-        sparkle={scenery.scenerySeaSparkle}
-        crestLight={scenery.scenerySeaCrestLight}
-        foamLife={foamLifeOf(scenery.scenerySeaFoamLife)}
+        sparkle={scenery.seaSparkle}
+        crestLight={scenery.seaCrestLight}
+        foamLife={foamLifeOf(scenery.seaFoamLife)}
       />
     </>
   );

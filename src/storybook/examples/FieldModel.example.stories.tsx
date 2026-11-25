@@ -60,7 +60,7 @@ import {
   sceneryReliefArgTypes,
   sceneryBakedReliefLayer,
   sceneryReliefFromArgs,
-  scenerySeaWaterFromArgs,
+  seaWaterFromArgs,
 } from '../../storybook/components/scenery-controls';
 import { orderControls } from '../../storybook/components/order-controls';
 import type { ScenerySeaWater } from '../../components/Scenery/scenery-model';
@@ -1119,10 +1119,10 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
 
   // The sea belongs to the COLUMN, not to a zone: one lid over the whole stack. Its water is
   // the Scenery's sea's (the shared `sea*` args), so the two look alike as they hand over.
-  const seaKey = JSON.stringify(scenerySeaWaterFromArgs(props));
+  const seaKey = JSON.stringify(seaWaterFromArgs(props));
   const sea = useMemo<ZoneStackSea | undefined>(
     () =>
-      props.scenerySea
+      props.sea
         ? {
             ...(JSON.parse(seaKey) as ScenerySeaWater),
             depth: props.seaLevel,
@@ -1132,7 +1132,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
           }
         : undefined,
     [
-      props.scenerySea,
+      props.sea,
       seaKey,
       props.seaLevel,
       props.seaLayerOpacity,
@@ -1276,7 +1276,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   // What a fly-to has to frame: the drawn column's own depth range, in scene Y.
   // ⚠️ A surface's meta is a positive DEPTH and scene Y is up, so they invert.
   const blockRange = useMemo(() => {
-    let top = props.scenerySea ? -props.seaLevel : 0;
+    let top = props.sea ? -props.seaLevel : 0;
     let bottom = 0;
     for (const meta of selected) {
       top = Math.max(top, -meta.min);
@@ -1284,13 +1284,7 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
     }
     if (props.floor) bottom -= props.floorClearance;
     return { top, bottom: Math.min(bottom, top - 1) };
-  }, [
-    selected,
-    props.scenerySea,
-    props.seaLevel,
-    props.floor,
-    props.floorClearance,
-  ]);
+  }, [selected, props.sea, props.seaLevel, props.floor, props.floorClearance]);
 
   // ⭐ The ceiling on the pull-back: "far enough to see the whole block". Without a
   // bound tied to the SCENE, a retreat factor compounds — every click zooms out
@@ -1913,7 +1907,7 @@ export const Default: Story = {
           if: { arg: 'scenery' },
           table: { category: 'Scenery' },
         },
-        scenerySea: {
+        sea: {
           description:
             'The sea\u2019s water: the column\u2019s (`ZoneStack.sea`), and with the Scenery its sea\u2019s everywhere, the two alike. Off, there is none, and the sea bed lies dry. With the cutaway, it cuts the seabed.',
           table: { category: 'Sea' },
@@ -1930,14 +1924,14 @@ export const Default: Story = {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
           description:
             'The column\u2019s sea as a layer of the stack (`ZoneStackSea.opacity`): fades the lid, the walls and the body together.',
-          if: { arg: 'scenerySea' },
+          if: { arg: 'sea' },
           table: { category: 'Sea' },
         },
         bodyShimmer: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
           description:
             'Animated caustic light play in the column\u2019s water body, concentrated just under the surface. Fades out at field scale rather than shimmering.',
-          if: { arg: 'scenerySea' },
+          if: { arg: 'sea' },
           table: { category: 'Sea' },
         },
         scenerySeabed: {
@@ -2659,10 +2653,10 @@ export const Default: Story = {
     ],
     {
       Sea: [
-        'scenerySea',
+        'sea',
         'seaLevel',
-        'scenerySeaColor',
-        'scenerySeaClarity',
+        'seaColor',
+        'seaClarity',
         'seaLayerOpacity',
         'windSpeed',
         'foamAmount',

@@ -145,13 +145,13 @@ export type SceneryArgs = {
   /** the sun's and the moon's discs, this many times their real size */
   discScale: number;
   // Sea
-  scenerySea: boolean;
+  sea: boolean;
   scenerySeabed: boolean;
   scenerySeabedOpacity: number;
   windSpeed: number;
   foamAmount: number;
   /** surf where the waves break on a coast of the scene's ground (`shoreFoam`) */
-  scenerySeaShoreFoam: number;
+  seaShoreFoam: number;
   /** compass bearing the wind blows toward */
   windDirection: number;
   /** a swell's significant height, metres: 0 none */
@@ -160,29 +160,29 @@ export type SceneryArgs = {
   swellPeriod: number;
   /** compass bearing it comes from */
   swellFrom: number;
-  scenerySeaSteepness: number;
+  seaSteepness: number;
   /** ⚠️ Tuning, to be settled: the wave model's open choices (the sea bench sets them) */
-  scenerySeaWaveTuning?: WaterWaveTuning;
+  seaWaveTuning?: WaterWaveTuning;
   /** ⚠️ Tuning, to be settled: the foam's shaping (the sea bench sets it) */
-  scenerySeaFoamTuning?: WaterFoamTuning;
+  seaFoamTuning?: WaterFoamTuning;
   /** the sea's `quality` (`WATER_QUALITY`); default medium */
   scenerySeaQuality?: WaterQuality;
   /** the sea's look (`optics`): the colour of water too deep to see through */
-  scenerySeaColor: string;
+  seaColor: string;
   /** and how far one sees through it, metres */
-  scenerySeaClarity: number;
+  seaClarity: number;
   scenerySeabedColor: string;
-  scenerySeaDetailScale: number;
+  seaDetailScale: number;
   /** 0 for water's own Fresnel; above, the old Schlick exponent (`fresnelPower`) */
-  scenerySeaFresnelPower: number;
+  seaFresnelPower: number;
   /** how much of the sun's glitter is drawn (`sparkle`): 0 none */
-  scenerySeaSparkle: number;
+  seaSparkle: number;
   /** how much light through the crests is drawn (`crestLight`): 0 none, 1 as modelled */
-  scenerySeaCrestLight: number;
+  seaCrestLight: number;
   /** the whitecaps' life (`foamLife`): by the quality, or on or off */
-  scenerySeaFoamLife: 'auto' | 'on' | 'off';
-  scenerySeaDetailFadeStart: number;
-  scenerySeaDetailFadeEnd: number;
+  seaFoamLife: 'auto' | 'on' | 'off';
+  seaDetailFadeStart: number;
+  seaDetailFadeEnd: number;
   // Subsurface
   subsurfaceFollowSun: boolean;
   subsurfaceLightAzimuth: number;
@@ -279,25 +279,25 @@ export const sceneryArgs: SceneryArgs = {
   skyHorizonBlend: sceneryDefaults.horizonBlend,
   clouds: 'clear',
   cloudsQuality: sceneryDefaults.clouds.quality,
-  scenerySea: true,
+  sea: true,
   // As `WaterMaterial`'s own defaults.
   windSpeed: DEFAULT_WATER_WIND_SPEED,
   foamAmount: 0.5,
-  scenerySeaShoreFoam: 0,
+  seaShoreFoam: 0,
   windDirection: 90,
   swellHeight: 0,
   swellPeriod: 12,
   swellFrom: 270,
-  scenerySeaSteepness: 1,
-  scenerySeaColor: waterOpticsArgsOf('realistic').color,
-  scenerySeaClarity: waterOpticsArgsOf('realistic').clarity,
-  scenerySeaDetailScale: 0.05,
-  scenerySeaFresnelPower: 0,
-  scenerySeaSparkle: 0,
-  scenerySeaCrestLight: 1,
-  scenerySeaFoamLife: 'auto',
-  scenerySeaDetailFadeStart: 15000,
-  scenerySeaDetailFadeEnd: 60000,
+  seaSteepness: 1,
+  seaColor: waterOpticsArgsOf('realistic').color,
+  seaClarity: waterOpticsArgsOf('realistic').clarity,
+  seaDetailScale: 0.05,
+  seaFresnelPower: 0,
+  seaSparkle: 0,
+  seaCrestLight: 1,
+  seaFoamLife: 'auto',
+  seaDetailFadeStart: 15000,
+  seaDetailFadeEnd: 60000,
   scenerySeabed: true,
   scenerySeabedOpacity: sceneryDefaults.sea.seabedOpacity,
   scenerySeabedColor: sceneryDefaults.sea.seabed.color,
@@ -593,10 +593,10 @@ export const sceneryCloudsFromArgs = (
 
 /**
  * The water of {@link SceneryArgs} as any sea takes it: a `ScenerySea`'s, and a
- * `ZoneStack`'s `water` under the same Scenery, so the two look alike. With `weather`, no wind
+ * `ZoneStack`'s `sea`, Scenery or not, so the two look alike. With `weather`, no wind
  * or swell of its own: the enclosing `Weather`'s ({@link sceneryWeatherFromArgs}).
  */
-export const scenerySeaWaterFromArgs = (
+export const seaWaterFromArgs = (
   args: SceneryArgs,
   weather = false,
 ): ScenerySeaWater => ({
@@ -611,38 +611,35 @@ export const scenerySeaWaterFromArgs = (
         ] as Vec2,
         swells: weatherSeaSwells(swellFromArgs(args)),
       }),
-  steepness: args.scenerySeaSteepness,
-  waveTuning: args.scenerySeaWaveTuning,
-  foamTuning: args.scenerySeaFoamTuning,
+  steepness: args.seaSteepness,
+  waveTuning: args.seaWaveTuning,
+  foamTuning: args.seaFoamTuning,
   foamAmount: args.foamAmount,
-  shoreFoam: args.scenerySeaShoreFoam,
-  optics: waterOpticsFromArgs(args.scenerySeaColor, args.scenerySeaClarity),
+  shoreFoam: args.seaShoreFoam,
+  optics: waterOpticsFromArgs(args.seaColor, args.seaClarity),
+  detailScale: args.seaDetailScale,
+  fresnelPower: args.seaFresnelPower > 0 ? args.seaFresnelPower : undefined,
+  sparkle: args.seaSparkle,
+  crestLight: args.seaCrestLight,
+  foamLife: foamLifeOf(args.seaFoamLife),
+  detailFadeDistance: [args.seaDetailFadeStart, args.seaDetailFadeEnd],
 });
 
 /**
  * A `ScenerySea`'s props from {@link SceneryArgs}, but for its level and depth, which are the
- * story's. With `weather`, no wind or swell of its own: it draws the enclosing `Weather`'s sea
+ * story's: its water ({@link seaWaterFromArgs}), and its own seabed and quality. With
+ * `weather`, no wind or swell of its own: it draws the enclosing `Weather`'s sea
  * ({@link sceneryWeatherFromArgs}).
  */
 export const scenerySeaFromArgs = (
   args: SceneryArgs,
   weather = false,
 ): ScenerySeaProps => ({
-  water: args.scenerySea,
+  water: args.sea,
   seabed: args.scenerySeabed && { color: args.scenerySeabedColor },
   seabedOpacity: args.scenerySeabedOpacity,
-  ...scenerySeaWaterFromArgs(args, weather),
+  ...seaWaterFromArgs(args, weather),
   quality: args.scenerySeaQuality,
-  detailScale: args.scenerySeaDetailScale,
-  fresnelPower:
-    args.scenerySeaFresnelPower > 0 ? args.scenerySeaFresnelPower : undefined,
-  sparkle: args.scenerySeaSparkle,
-  crestLight: args.scenerySeaCrestLight,
-  foamLife: foamLifeOf(args.scenerySeaFoamLife),
-  detailFadeDistance: [
-    args.scenerySeaDetailFadeStart,
-    args.scenerySeaDetailFadeEnd,
-  ],
 });
 
 /** A `SceneryVoid`' props from {@link SceneryArgs}, but for its level, which is the story's. */
@@ -794,15 +791,15 @@ const ADVANCED = new Set<string>([
   'windDirection',
   'swellPeriod',
   'swellFrom',
-  'scenerySeaSteepness',
+  'seaSteepness',
   'scenerySeabedColor',
-  'scenerySeaDetailScale',
-  'scenerySeaFresnelPower',
-  'scenerySeaSparkle',
-  'scenerySeaCrestLight',
-  'scenerySeaFoamLife',
-  'scenerySeaDetailFadeStart',
-  'scenerySeaDetailFadeEnd',
+  'seaDetailScale',
+  'seaFresnelPower',
+  'seaSparkle',
+  'seaCrestLight',
+  'seaFoamLife',
+  'seaDetailFadeStart',
+  'seaDetailFadeEnd',
   'voidCeiling',
   'voidHorizon',
   'voidDepth',
@@ -1044,19 +1041,19 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
     if: { arg: 'sky' },
     table: { category: CLOUDS },
   },
-  scenerySea: toggle(
+  sea: toggle(
     SEA,
     'The sea\u2019s water, everywhere. Off, the seabed lies dry, and the cutaway cuts it.',
   ),
   windSpeed: {
     ...range(0, 25, 0.5, SEA, 'Drives the waves, in m/s.'),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
   foamAmount: {
     ...range(0, 1, 0.01, SEA, 'Whitecaps on the waves.'),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaShoreFoam: {
+  seaShoreFoam: {
     ...range(
       0,
       1,
@@ -1064,11 +1061,11 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       SEA,
       'Surf where the waves break on a coast (`shoreFoam`): where the depth of the scene\u2019s ground under the sea falls to 1.3 times their height. The waves shoal and die out toward the shore by the same depth, whatever this is.',
     ),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
   windDirection: {
     ...range(0, 360, 1, SEA, 'Compass bearing the wind blows toward.'),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
   swellHeight: {
     ...range(
@@ -1078,7 +1075,7 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       SEA,
       'A swell from weather far away: its significant height in metres, running on whatever the wind here does. 0 none.',
     ),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
   swellPeriod: {
     ...range(4, 20, 0.5, SEA, 'The swell\u2019s peak period, in seconds.'),
@@ -1088,7 +1085,7 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
     ...range(0, 360, 1, SEA, 'Compass bearing the swell comes from.'),
     if: { arg: 'swellHeight', truthy: true },
   },
-  scenerySeaSteepness: {
+  seaSteepness: {
     ...range(
       0,
       2,
@@ -1096,18 +1093,18 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       SEA,
       'The waves\u2019 slopes scaled for show: 1 as the spectrum gives them.',
     ),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaColor: { ...waterColorArgType(SEA), if: { arg: 'scenerySea' } },
-  scenerySeaClarity: {
+  seaColor: { ...waterColorArgType(SEA), if: { arg: 'sea' } },
+  seaClarity: {
     ...waterClarityArgType(SEA),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaDetailScale: {
+  seaDetailScale: {
     ...range(0.005, 0.5, 0.005, SEA, 'The foam\u2019s feature frequency.'),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaFresnelPower: {
+  seaFresnelPower: {
     ...range(
       0,
       8,
@@ -1115,9 +1112,9 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       SEA,
       '0: the reflection water has (Fresnel, IOR 1.333). Above: the old look, Schlick’s curve with this exponent (4 was the default; higher keeps the reflections nearer the horizon). Recompiles as it turns on or off.',
     ),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaSparkle: {
+  seaSparkle: {
     ...range(
       0,
       2,
@@ -1125,9 +1122,9 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       SEA,
       'The sun’s glitter (`sparkle`): the glint broken into the glints of ripples too small to draw, where a pixel holds few of them, the same mean. 0 none (compiled out; the component’s default on low and medium), 1 as modelled (its default on high and ultra), more for more. About 5 % of the sea. Recompiles as it turns on or off.',
     ),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaCrestLight: {
+  seaCrestLight: {
     ...range(
       0,
       3,
@@ -1135,17 +1132,17 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       SEA,
       'The sun’s light through the waves’ crests (`crestLight`), with the sun behind them: a turquoise glow high on the waves, from the water’s own colour and clarity. 0 none, 1 as modelled (the default), more for more.',
     ),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaFoamLife: {
+  seaFoamLife: {
     control: { type: 'inline-radio' },
     options: ['auto', 'on', 'off'],
     table: { category: SEA },
     description:
       'The whitecaps’ life (`foamLife`): the foam a breaking crest leaves trails behind it, drifts downwind, fades, and is gathered by the wind into streaks, about the camera. AUTO: as the quality (high and ultra). Recompiles as it turns on or off.',
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaDetailFadeStart: {
+  seaDetailFadeStart: {
     ...range(
       0,
       200000,
@@ -1153,11 +1150,11 @@ const allSceneryArgTypes = (): ArgTypes<SceneryArgs> => ({
       SEA,
       'Distance at which the waves, foam and patches start fading to a flat mirror.',
     ),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
-  scenerySeaDetailFadeEnd: {
+  seaDetailFadeEnd: {
     ...range(1000, 400000, 1000, SEA, 'Distance at which they are gone.'),
-    if: { arg: 'scenerySea' },
+    if: { arg: 'sea' },
   },
   scenerySeabed: toggle(
     SEA,
