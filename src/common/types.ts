@@ -6,21 +6,21 @@ import { Vec3 } from '../sdk';
  * Common props for 3d components
  */
 export type CommonComponentProps = {
-  // will be added to the name property of the THREE.js Object3D instance
+  /** The `name` of its three.js object. */
   name?: string;
-  // set the visible flag on the THREE.js Object3D instance
+  /** Whether it is drawn (`visible`). */
   visible?: boolean;
-  // set the userData object on the THREE.js Object3D instance
+  /** The `userData` of its three.js object. */
   userData?: Record<string, any>;
-  // set the position in parent's local coordinates
+  /** Its position, in its parent's coordinates. */
   position?: Vec3;
-  // set the castShadow property on the THREE.js Object3D instance.
+  /** Whether it casts shadows (`castShadow`). */
   castShadow?: boolean;
-  // set the receiveShadow property on the THREE.js Object3D instance.
+  /** Whether it receives shadows (`receiveShadow`). */
   receiveShadow?: boolean;
-  // set the renderOrder property on the THREE.js Object3D instance.
+  /** The `renderOrder` of its three.js object. */
   renderOrder?: number;
-  // set the layers property on the THREE.js Object3D instance.
+  /** The `layers` of its three.js object. */
   layers?: Layers;
 };
 
@@ -28,13 +28,13 @@ export type CommonComponentProps = {
  * Common props for 3d components that allow overriding shader materials
  */
 export type CustomMaterialProps = {
-  // custom material or array of materials for overriding default component material(s)
+  /** A material, or one per part, to draw with instead of the component's own. */
   customMaterial?: Material | Material[];
-  // set a custom depth material if required
+  /** A custom depth material, for shadows. */
   customDepthMaterial?: Material;
-  // set a custom distance material if required
+  /** A custom distance material, for point-light shadows. */
   customDistanceMaterial?: Material;
-  // callback to invoke when component is updated. Use this for setting/uppdaing uniforms in your custom material(s)
+  /** Called with the component's look (its colour, opacity …) and its material(s) as they change, in place of its own update: set your uniforms here. */
   onMaterialPropertiesChange?: (
     props: Record<string, any>,
     material: Material | Material[],

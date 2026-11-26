@@ -1930,10 +1930,11 @@ export const Default: Story = {
         ...sceneryArgTypes({ shownIf: 'scenery' }),
         ...sceneryReliefArgTypes('scenery'),
         ...sceneryMinimapArgTypes,
+        // The demo relief's tiles are made on demand: `npm run generate-relief`.
         relief: {
           ...sceneryReliefArgTypes('scenery').relief,
           description:
-            'The relief drawn from tiles, the sea\u2019s seabed \u2014 the demo reliefs ticked, and the column\u2019s own sea bed baked in finest (`bakeSeabed`) \u2014 and the column\u2019s sea bed built on it (`ZoneStack.relief`), so its top is the ground the stage draws, and the stage draws it as the sea\u2019s. Off, there is no seabed: the column draws its own, and the void lies below the water about it. Rebuilds the column. Made on demand: `npm run generate-relief`.',
+            'The seabed relief (`GeoRelief`), drawn from tiles: the demo reliefs ticked in `reliefLayers`, plus the column\u2019s own sea bed while `bakeSeabed` is on. The column\u2019s sea bed is built on it (`ZoneStack.relief`), so the ground over the field is the column\u2019s top; off, the column draws its own sea bed, and around it the void lies below the water. Rebuilds the column.',
         },
         pipeline: {
           control: { type: 'inline-radio' },
@@ -1944,19 +1945,19 @@ export const Default: Story = {
         },
         scenery: {
           description:
-            'Put the field under the videx `<Scenery>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The Scenery owns the water then: the column\u2019s own is hidden while its stage draws the sea (`ZoneStack.drawSea`). The column sits in `<SceneryBelowGround>` and the seabed facilities in `<SceneryAboveGround>`: each is left out while the seabed hides it.',
+            'Place the field in a `<Scenery>`, which lights the scene instead of the default lights and takes the column as its stage\u2019s occupant. The stage then draws the sea, and the column\u2019s own water is hidden (`ZoneStack.drawSea`). The column sits in `<SceneryBelowGround>` and the seabed facilities in `<SceneryAboveGround>`, so each is skipped while the seabed hides it.',
           table: { category: 'Scenery' },
         },
         background: {
           control: { type: 'boolean' },
           description:
-            'Draw the Scenery\u2019s background behind the scene (`Scenery.background`): its sky, sea, void and stage. Off, nothing, switched instantly with nothing rebuilt or baked: the Scenery still lights the scene, and the column draws its own water and sea bed again.',
+            'Draw the Scenery\u2019s background behind the scene (`Scenery.background`): its sky, sea, void and stage. Off, the Scenery still lights the scene, and the column draws its own water and sea bed again. Switches instantly, with nothing rebuilt.',
           if: { arg: 'scenery' },
           table: { category: 'Scenery' },
         },
         sea: {
           description:
-            'The sea\u2019s water: the column\u2019s (`ZoneStack.sea`), and with the Scenery its sea\u2019s everywhere, the two alike. Off, there is none, and the sea bed lies dry. With the cutaway, it cuts the seabed.',
+            'The sea\u2019s water: the column\u2019s own (`ZoneStack.sea`) and, with the Scenery, its sea everywhere, the two drawn alike. Off, there is no water: the sea bed lies dry, and the Scenery\u2019s cutaway cuts it.',
           table: { category: 'Sea' },
         },
         // Never hidden: the Scenery's level (its dry seabed, the void) takes it with the water
@@ -1964,13 +1965,13 @@ export const Default: Story = {
         seaLevel: {
           control: { type: 'select' },
           options: [-200, -100, -50, 0, 50, 100, 200],
-          description: 'Depth of the sea surface, positive DOWN.',
+          description: 'Depth of the sea surface in metres, positive down.',
           table: { category: 'Sea' },
         },
         seaLayerOpacity: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
           description:
-            'The column\u2019s sea as a layer of the stack (`ZoneStackSea.opacity`): fades the lid, the walls and the body together.',
+            'Opacity of the column\u2019s sea (`ZoneStackSea.opacity`): fades its surface, walls and water body together.',
           if: { arg: 'sea' },
           table: { category: 'Sea' },
         },
@@ -1984,12 +1985,12 @@ export const Default: Story = {
         seabedOpacity: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
           description:
-            'Opacity of the column\u2019s first drawn layer\u2019s CAP alone (`ZoneLayer.capOpacity`) \u2014 the sea bed, while the column draws it; the rock below stays solid. Pair with `keepBed` to leave a see-through bed over a cut. \u26a0\ufe0f Below 1 it switches hidden-cap culling off, as any transparent cap does. While the stage draws it, the relief\u2019s `reliefFieldOpacity` instead.',
+            'Opacity of the top surface of the column\u2019s first drawn layer only (`ZoneLayer.capOpacity`), which is the sea bed when the column draws it; the rock below stays solid. Below 1 it turns hidden-cap culling off; pair it with `keepBed` for a see-through bed over a cut. While the Scenery\u2019s stage draws the sea bed, the relief\u2019s `reliefFieldOpacity` sets it instead.',
           table: { category: 'Sea' },
         },
         stageMatchBed: {
           description:
-            'The relief\u2019s seabed takes the look of the column\u2019s sea bed (`GeoRelief.seabed`): its unit\u2019s colour, even while the column starts below it, and `detail`. So does the column\u2019s sea bed while the stage draws it, as the sea\u2019s. Off, `reliefSeabedColor`.',
+            'Give the relief\u2019s seabed the look of the column\u2019s sea bed (`GeoRelief.seabed`): its unit\u2019s colour, even when the column starts below it, and its `detail`. The same goes for the column\u2019s sea bed while the stage draws it. Off, the relief uses `reliefSeabedColor`.',
           if: { arg: 'relief' },
           table: { category: 'Relief' },
         },
@@ -1997,7 +1998,7 @@ export const Default: Story = {
           control: { type: 'inline-radio' },
           options: ['top', 'median', 'bottom'],
           description:
-            'The sea\u2019s depth: at the shallowest, median or deepest point of the column\u2019s top surface along its boundary. The relief\u2019s flat seabed lies there where no layer has data; without the relief, the void\u2019s lid.',
+            'Sets the Scenery sea\u2019s depth to the shallowest, median or deepest point of the column\u2019s top surface along its boundary. The relief\u2019s flat seabed lies at that depth where no relief layer has data; without the relief, the top of the void does.',
           if: { arg: 'scenery' },
           table: { category: 'Stage' },
         },
@@ -2010,28 +2011,29 @@ export const Default: Story = {
         },
         bakeSeabed: {
           description:
-            'The column\u2019s own sea bed baked into the relief as its finest layer (the demo store\u2019s `surface:<id>`, `surfaceToRelief`), faded in over 0.5 km from the survey\u2019s edge. The ground over the field is then the column\u2019s top, and no unit is cut away where the demo bathymetry lies deeper than the column\u2019s horizons. Rebuilds the column.',
+            'Bake the column\u2019s own sea bed into the relief as its finest layer (the demo store\u2019s `surface:<id>`, made with `surfaceToRelief`), faded in over 0.5 km from the survey\u2019s edge. The ground over the field is then the column\u2019s top, so no unit is cut away where the demo bathymetry lies deeper than the column\u2019s horizons. Rebuilds the column.',
           if: { arg: 'relief' },
           table: { category: 'Relief' },
         },
         reliefCut: {
           description:
-            'The column\u2019s section or fence cuts the relief over it too, inside the boundary (the occupant\u2019s `keepBed` off), so the opening goes down from the ground. Off (the default), the relief stays whole over the column as its floor.',
+            'Let the column\u2019s section or fence cut the relief over it too, inside the boundary (the stage occupant\u2019s `keepBed` off), so the opening reaches down from the ground. Off (the default), the relief stays whole over the column.',
           if: { arg: 'relief' },
           table: { category: 'Relief' },
         },
         reliefMarkers: {
           description:
-            'Subsea facilities placed from UTM positions by sampling. Two inside the boundary, through the stack\u2019s sampler (`ZoneStack.reliefSampler`), which answers the column\u2019s top from the relief; two past it, through the relief\u2019s own (`GeoRelief.onSampler`). Of each pair, one stands on a levelled base, one on the slope. Their footprints pin the finest tiles under them, so they settle on the ground as it is drawn close up.',
+            'Place four subsea facilities from UTM positions by sampling the ground: two inside the boundary through the stack\u2019s sampler, which answers the column\u2019s top from the relief (`ZoneStack.reliefSampler`), and two outside it through the relief\u2019s own (`GeoRelief.onSampler`). Of each pair, one stands on a levelled base and one on the slope. Their footprints pin the finest relief tiles under them, so they sit on the ground as it is drawn close up.',
           if: { arg: 'relief' },
           table: { category: 'Relief' },
         },
+        // `boundary` is also what makes `maxNodes` matter: watch `referenceNodes` in the report.
         boundary: {
           control: { type: 'inline-radio' },
           options: ['grid', 'field', 'crop', 'nested'],
           description:
-            '`grid` crops nothing — the whole survey rectangle of the widest surface (~1050 km² here). `field` uses the footprint buffered from the WELLS, which is where the field actually is (~10× smaller) and is the default. `crop` is a square about the scene origin, sized to match the generated column so the two can be compared like for like. ⚠️ A footprint reaching past a survey buys INFERENCE — watch `coverage` per layer. ⭐ It is also the control that makes `maxNodes` matter: watch `referenceNodes`.\n\n' +
-            '⭐⭐ `nested` gives every stratigraphic group its OWN footprint, buffered around the wells, with the sea bed and the basement left on the full `grid` — the case where the block is made of several footprints. Implies `zoning: groups`. ⚠️ Built on `grid`, so it is the slow one — the survey rectangle is what the shared column has to cover.',
+            'Outline of the column. `grid` crops nothing: the whole survey rectangle of the widest surface (about 1050 km² here). `field` (the default) is a footprint buffered around the wells, where the field actually is, about a tenth of that. `crop` is a square about the scene origin, `cropSize` km across. Where a footprint reaches past a survey, surfaces are inferred there: watch `coverage` per layer in the build report.\n\n' +
+            '`nested` gives each stratigraphic group its own footprint around the wells, with the sea bed and the basement on the full `grid`. It implies `zoning: groups`, and is slow: it builds over the whole survey.',
           table: { category: 'Surfaces' },
         },
         cropSize: {
@@ -2041,18 +2043,20 @@ export const Default: Story = {
             'Side of the `crop` boundary, in km. 7 is the generated column’s own size.',
           table: { category: 'Surfaces' },
         },
+        // `footprintRadius` is resolved in `above` mode, so the footprints stay nested, which keeps
+        // them all inside the stack boundary the fence is built from.
         footprintRadius: {
           control: { type: 'range', min: 200, max: 3000, step: 100 },
           if: { arg: 'boundary', eq: 'nested' },
           description:
-            'Metres buffered around the wells for a `nested` group’s footprint. ⭐ Resolved in `above` mode, so each zone accumulates the trajectory down to its own base and the footprints stay NESTED — which is what keeps them all inside the stack boundary the fence is built from.',
+            'Distance in metres buffered around the wells for each `nested` group’s footprint. A footprint covers the trajectories down to its group’s base, so each contains the one above it.',
           table: { category: 'Surfaces' },
         },
         zoning: {
           control: { type: 'inline-radio' },
           options: ['single', 'groups'],
           description:
-            '`single` draws the column as one zone. `groups` draws one zone per level-1 stratigraphic group, connected through the horizon consecutive groups share (the stack decides which of the two draws it). On a shared boundary the picture is the same, at one build per zone. ⚠️ `boundary: nested` always uses `groups`.',
+            '`single` draws the column as one zone. `groups` draws one zone per level-1 stratigraphic group, joined at the horizon consecutive groups share; on a shared boundary the picture is the same, at the cost of one build per zone. `boundary: nested` always uses `groups`.',
           table: { category: 'Surfaces' },
         },
         groupGaps: {
@@ -2062,7 +2066,7 @@ export const Default: Story = {
         },
         seabed: {
           description:
-            'Put a sea BED under the sea. Most fields map none — bathymetry is not stratigraphy — so one is GENERATED when the dataset has no `seabedSurface`. ⚠️ Off, the sea stands on the shallowest HORIZON instead (Volve: `Utsira Fm. Top` at ~820 m), which draws the whole overburden as water.',
+            'Put a sea bed under the sea. Most fields map none, as bathymetry is not stratigraphy, so one is generated when the dataset has no `seabedSurface`. Off, the sea stands on the shallowest horizon instead (here `Utsira Fm. Top`, at about 820 m), and the whole overburden is drawn as water.',
           table: { category: 'Surfaces' },
         },
         surfaceFrom: {
@@ -2075,7 +2079,7 @@ export const Default: Story = {
           control: { type: 'select' },
           options: [1, 2, 4, 6, 8, 12, 16, 20, 30, 40],
           description:
-            'How many surfaces to draw, CLAMPED to what the dataset has (19 on Volve). ⚠️ The whole column over the whole field is a LOT of geometry — one shared tessellation, copied per layer — so the default draws the shallowest 12. Raising it is exactly where `maxNodes` earns its keep.',
+            'How many surfaces to draw, limited to what the dataset has. Each layer carries its own copy of the shared tessellation, so the whole column is a lot of geometry: the default draws 12. With more, `maxNodes` is the control that keeps the cost down.',
           table: { category: 'Surfaces' },
         },
         rimSpacing: {
@@ -2090,11 +2094,12 @@ export const Default: Story = {
             'Greedy TIN simplification error, in metres of height. Bounds how far the drawn surface may sit from the grid.',
           table: { category: 'Surfaces' },
         },
+        // Resample, seal, depth-order resolve and refinement are all linear in the node count.
         maxNodes: {
           control: { type: 'select' },
           options: [250000, 500000, 1000000, 2000000, 4000000],
           description:
-            '⭐ QUALITY vs SPEED. Node budget for the stack’s common grid; beyond it the grid is decimated by an integer step. Resample, seal, depth-order resolve and refinement are all linear in it, so halving the budget quarters the work — at the cost of resolving every layer’s data edges and holes on a coarser cell. Check `referenceStep` in the report.',
+            'Trades quality for speed: the node budget for the stack’s shared grid, past which the grid is decimated by a whole-number step. Fewer nodes build faster, but every layer’s data edges and holes are then resolved on a coarser cell. Matters most on large boundaries; `referenceStep` in the build report shows the step used.',
           table: { category: 'Surfaces' },
         },
         preview: {
@@ -2111,7 +2116,7 @@ export const Default: Story = {
         },
         wellbores: {
           description:
-            'Draw every wellbore the dataset carries (all 35 here — no count filter), straight through the block. Click one to select it and fly the camera to the hit point; ctrl+click selects without moving. The selected well drives the WELL MAP on the left, and is the input for the planned wellbore fence section.',
+            'Draw every wellbore in the dataset through the block. Click one to select it and fly the camera to it; ctrl+click selects without moving the camera. The well map on the left follows the selected wellbore, and it is the one the fence follows.',
           table: { category: 'Wellbores' },
         },
         wellboreColor: {
@@ -2126,14 +2131,14 @@ export const Default: Story = {
           control: { type: 'select' },
           options: [1, 2, 4, 8, 16],
           description:
-            'Tube radius in metres. ⚠️ A real 12¾" casing is well under a pixel across a 20 km field, so this is deliberately exaggerated. ⭐ ALSO the fence clearance: the cut is held this far off the trajectory so it does not slice the tube in half.',
+            'Tube radius in metres, exaggerated on purpose: a real casing is well under a pixel across a 20 km field. Also the fence’s clearance: the cut is held this far off the trajectory so it does not slice through the tube.',
           table: { category: 'Wellbores' },
         },
         wellboreLodPixelError: {
           control: { type: 'select' },
           options: [0, 0.25, 0.5, 1, 2],
           description:
-            'CSS pixels a trajectory may stray from full detail (sides and curve). `0` = no LOD — the reference to compare against.',
+            'How far, in CSS pixels, a trajectory may stray from full detail (tube sides and curve). `0` turns level of detail off.',
           table: { category: 'Wellbores' },
         },
         wellbore: {
@@ -2143,52 +2148,62 @@ export const Default: Story = {
           ],
           control: { type: 'select', labels: storyArgs.wellboreOptions },
           description:
-            'Which wellbore the fence follows. ⭐ The 3D view and the well map still select by event and will override this; picking here is for reaching a NAMED well directly, which is what an A/B needs. Ones worth trying: `NO 15/9-F-12`, `NO 15/9-F-11 A/B`, `NO 15/9-F-15 D` all misbehave, `NO 15/9-19 S` is clean.',
+            'Picks the wellbore the fence follows by name. Selecting one in the 3D view or the well map changes it too.',
           table: { category: 'Wellbores' },
         },
+        // Changing which well is cut costs a resample and an upload, not a build, which is why it
+        // can happen inside a fly-to.
         fence: {
           description:
-            'Open the block along the SELECTED wellbore, instead of with a plane. ⚠️ Needs a wellbore selected (turn `wellbores` on and click one) — nothing is cut until then. ⭐ Changing which well is cut costs a resample and an upload, not a build, which is why it can happen inside a fly-to. Turning this on disables the plane section.',
+            'Open the block along the selected wellbore instead of with a plane; turning it on disables the plane section. Needs a wellbore selected (`wellbore`, or click one in the 3D view or the well map): nothing is cut until then. Switching to another wellbore does not rebuild the block.',
           table: { category: 'Fence' },
         },
+        // Both halves are built up front, so `fenceSide` swaps a texture and a curve rather than
+        // rebuilding. They are flip sides of one cut: the run-outs are agreed between them, and
+        // only the repairs a particular side needs differ.
         fenceSide: {
           control: { type: 'inline-radio' },
           options: ['left', 'right', 'auto'],
           description:
-            'Which half is taken AWAY, named for where the cut curve lies walking the well from head to TD in a plan view from above. ⭐ Free to flip: both halves are built up front, so this swaps a texture and a curve rather than rebuilding. The two are flip sides of ONE cut — the run-outs are agreed between them, and only the repairs a particular side needs differ. ⭐⭐ `auto` keeps the CAMERA in the open half, which is the only half the cut face can be seen from: orbit past the fence and the block changes sides so the section stays readable.',
+            'Which half is taken away, named for the side of the cut it lies on, walking the well from head to TD in plan view. `auto` keeps the camera in the open half, the only one the cut face can be seen from, so the block changes sides as you orbit past the fence. Switches instantly, with nothing rebuilt.',
           table: { category: 'Fence' },
         },
+        // Measured against the cut curve, not the sign field: the field's magnitude saturates a few
+        // cells out at a constant, so a deadband compared against it is either always or never met.
         fenceAutoDeadband: {
           control: { type: 'range', min: 0, max: 500, step: 10 },
           description:
-            'Metres the camera must clear the cut by before `auto` flips. ⭐ Anti-flicker only — an orbit crosses the fence exactly where the two halves are equally good, and a plan view looks straight down it, so a little slack stops a jitter there toggling the whole block. ⚠️ Measured against the CURVE, not the sign field: the field’s magnitude saturates a few cells out at a constant, so a deadband compared against that is either always or never satisfied. Never less than the fence clearance (`wellboreRadius`).',
+            'How far, in metres, the camera must be past the cut before `auto` changes sides, so small movements near the fence do not flip the block back and forth. Never less than the fence clearance (`wellboreRadius`).',
           table: { category: 'Fence' },
         },
         fenceAutoSettle: {
           control: { type: 'range', min: 0, max: 2, step: 0.05 },
           description:
-            'Seconds the camera must stay clear before `auto` acts on it. ⭐ Time as well as distance, because the deadband alone is crossed in a frame or two at speed — this is what keeps a fly-through from flipping the block twice on its way past.',
+            'Seconds the camera must stay past the cut before `auto` changes sides, so a fast fly-through does not flip the block twice on its way past.',
           table: { category: 'Fence' },
         },
+        // A deviation, not a spacing: the face is simplified to it, spending vertices only where the
+        // cut turns. A fixed spacing put thousands along a long straight run-out and was still too
+        // coarse through a margin-scale turn.
         fenceTolerance: {
           control: { type: 'select' },
           options: [0.01, 0.05, 0.1, 0.25, 1, 5],
           description:
-            'Metres the drawn cut face may depart from the cut the shader tests — and that departure IS the seam gap, so this is the knob that decides whether the block meets the face. ⭐ A DEVIATION, not a spacing: the face is simplified to it, which spends vertices only where the cut actually turns. A fixed spacing put thousands of them along a kilometres-long straight run-out and was still too coarse through a margin-scale turn.',
+            'How far, in metres, the drawn cut face may depart from the cut itself. Any departure shows as a gap where the block meets the face, so smaller is tighter but costs more vertices.',
           table: { category: 'Fence' },
         },
         fenceMaxSpacing: {
           control: { type: 'select' },
           options: [10, 25, 50, 100],
           description:
-            'Metres between face samples at most. ⚠️ Nothing to do with the plan shape — the ribbon reads each layer’s HEIGHT once per sample, so this is what stops a long straight run chording across the surfaces it has to meet.',
+            'Longest distance, in metres, between samples along the cut face. Each sample reads the layers’ heights, so this keeps the face on the surfaces along long straight runs.',
           table: { category: 'Fence' },
         },
         fenceHeadBearing: {
           control: { type: 'inline-radio' },
           options: ['opposite-td', 'free'],
           description:
-            'Which way the head arm leaves. `opposite-td`: exactly opposite the TD arm — one straight-through cut. `free`: through the head — from where the well enters the head frame through its hull’s centroid — turned only as far as it takes to stay `fenceHeadMinTdAngle` off the TD arm. ⚠️ Rebuilds the fence.',
+            'Which way the cut leaves the wellhead. `opposite-td`: exactly opposite the arm beyond TD, for one straight cut. `free`: along the well’s own direction through the head, turned only as far as needed to stay `fenceHeadMinTdAngle` off the TD arm. Rebuilds the fence.',
           table: { category: 'Fence' },
         },
         fenceHeadMinTdAngle: {
@@ -2202,18 +2217,22 @@ export const Default: Story = {
           control: { type: 'inline-radio' },
           options: ['stack', 'touched'],
           description:
-            'What the cut reaches. `stack`: the whole boundary, as one split. `touched`: only the boundary’s islands the well passes through — the rest stay whole. Only differs where the boundary has several islands (`boundary: field`). ⚠️ Rebuilds the fence.',
+            'What the cut reaches. `stack`: the whole boundary, as one split. `touched`: only the boundary’s islands the well passes through; the rest stay whole. Only differs where the boundary has several islands (`boundary: field`). Rebuilds the fence.',
           table: { category: 'Fence' },
         },
+        // A small negative `fenceOffset` tells a seam from a geometry fault: if a seam closes at −2,
+        // it was never a geometry problem.
         fenceOffset: {
           control: { type: 'range', min: -20, max: 20, step: 0.5 },
           description:
-            'Metres to move the cut face toward the KEPT side. ⚠️ Normally 0 — the face is drawn with a material that is not itself cut, so it needs no nudge to escape its own test. A small NEGATIVE value pushes the face slightly proud instead, which is how to tell a SEAM apart from a geometry fault: if a seam closes at −2 it was never a geometry problem.',
+            'Moves the cut face toward the kept side, in metres. Normally 0: the face is drawn with a material the cut does not apply to, so it needs no nudge. A negative value pushes the face slightly out of the block instead.',
           table: { category: 'Fence' },
         },
+        // The face is built independently of the block, so `fenceDebug` is the only way to tell a
+        // geometry fault from a clipping one.
         fenceDebug: {
           description:
-            'Draw the cut face as a magenta wireframe instead of as rock — the ribbon the fence actually generated, on its own. ⭐ The face is built independently of the block, so this is the only way to tell a geometry fault from a clipping one.',
+            'Draw the cut face as a magenta wireframe instead of as rock: the geometry the fence generated, on its own.',
           table: { category: 'Fence' },
         },
         fenceColorTvd: {
@@ -2223,13 +2242,13 @@ export const Default: Story = {
         },
         fenceFlyTo: {
           description:
-            'Fly to a newly selected well the long way: pull back as the old cut is removed, swing across at that distance, then come in on the new one. ⭐⭐ The straight line between two close-up views runs THROUGH the block, and the fence would be rebuilt right in front of the lens on the way. Off flies straight to the point that was clicked. ⚠️ ctrl+click always swaps the cut without moving the camera.',
+            'Fly to a newly selected wellbore the long way: pull back as the old cut is removed, swing across at that distance, then come in on the new one, so the camera never passes through the block or watches the fence rebuild close up. Off, it flies straight to the point that was clicked. Ctrl+click always swaps the cut without moving the camera.',
           table: { category: 'Fly to' },
         },
         fenceFlyPadding: {
           control: { type: 'range', min: 1, max: 4, step: 0.1 },
           description:
-            'Slack around the framed cut, as a multiple of the distance that just fits it. ⭐ This is the “how much of the fence do I want to see” dial: 1 fills the view with the well’s own trace, higher takes in its surroundings.',
+            'Space around the framed cut, as a multiple of the distance that just fits it: 1 fills the view with the well’s own trace, higher takes in more of its surroundings.',
           table: { category: 'Fly to' },
         },
         fenceFlyPolar: {
@@ -2238,34 +2257,39 @@ export const Default: Story = {
             'Degrees from straight down to arrive at. 90 is dead level with the cut face; a little under looks slightly down on it, which keeps the block’s top surface in the frame for context.',
           table: { category: 'Fly to' },
         },
+        // A well angled across the field is only open near its run-outs, and those openings end
+        // exactly where `auto` flips the side, so the first heading that works would park the
+        // camera a nudge away from swapping the half it just removed.
         fenceFlyGuard: {
           control: { type: 'range', min: 0, max: 60, step: 1 },
           description:
-            'Degrees of heading to keep between the camera and the nearest one the cut closes at. ⭐⭐ A well angled across the field is only open near its RUN-OUTS, and those openings end exactly where `auto` flips the side — so arriving at the first heading that works parks the camera a nudge away from swapping the half it just removed. ⚠️ Spent only when it has to be: square-on is kept whenever the opening is wide enough for this much room either side of it.',
+            'Degrees of heading kept between the arrival view and the nearest heading at which the cut closes, so the camera does not arrive right where `auto` changes sides. A square-on view is kept whenever the opening is wide enough for this margin either side.',
           table: { category: 'Fly to' },
         },
         fenceFlyRetreat: {
           control: { type: 'range', min: 1, max: 6, step: 0.5 },
           description:
-            'How far to pull back before travelling, as a multiple of the distance the camera is at. ⚠️ 1 does not retreat at all, so the swing happens at close range — through the block. ⭐ Bounded by “far enough to see the whole block”, so an already-distant view does not pull back at all and repeated selections cannot compound the zoom-out.',
+            'How far to pull back before travelling, as a multiple of the camera’s current distance; at 1 there is no pull-back, and the swing passes through the block. It never pulls back further than needed to see the whole block, so repeated selections do not keep zooming out.',
           table: { category: 'Fly to' },
         },
+        // A budget, not a hint: `CameraControls` eases exponentially and never quite arrives, so each
+        // leg also hands over on time, and the next eases on from wherever it got to.
         fenceFlyDuration: {
           control: { type: 'range', min: 0.4, max: 4, step: 0.1 },
           description:
-            'Seconds for the WHOLE flight, split 30/40/30 across pulling back, swinging across and coming in. ⭐⭐ A budget, not a hint: `CameraControls` eases exponentially and never quite arrives, so each leg also hands over on time — the next one simply eases on from wherever it got to.',
+            'Seconds for the whole flight, split 30/40/30 across pulling back, swinging across and coming in.',
           table: { category: 'Fly to' },
         },
         seismic: {
           description:
-            'Draw seismic on the fence’s cut face, over the fence’s TVD window. ⚠️ Needs `fence` on and a wellbore selected. Queried from the store by the UTM positions along the cut — the demo store answers every well with the same slice. Each side loads the first time it is shown and is kept until the fence is rebuilt; until then the face shows the formations alone.',
+            'Draw seismic on the fence’s cut face, over the fence’s TVD window; needs `fence` on and a wellbore selected. It is queried from the store by the UTM positions along the cut (the demo store answers every wellbore with the same slice). Each side loads the first time it is shown and is kept until the fence is rebuilt; until then the face shows the formations only.',
           table: { category: 'Seismic' },
         },
         seismicMix: {
           control: { type: 'range', min: 0, max: 1, step: 0.05 },
           if: { arg: 'seismic' },
           description:
-            '0 shows the formations only, 1 the seismic only. Free to sweep.',
+            '0 shows the formations only, 1 the seismic only. Changes instantly.',
           table: { category: 'Seismic' },
         },
         seismicStep: {
@@ -2273,7 +2297,7 @@ export const Default: Story = {
           options: [2, 5, 10, 25],
           if: { arg: 'seismic' },
           description:
-            'Metres between seismic columns along the cut. ⚠️ Reloads both sides.',
+            'Metres between seismic columns along the cut. Reloads both sides.',
           table: { category: 'Seismic' },
         },
         seismicDelay: {
@@ -2315,19 +2339,19 @@ export const Default: Story = {
           options: ['lit', 'flat', 'facing'],
           if: { arg: 'seismic' },
           description:
-            '`lit`: lit by the scene like the rock. `flat`: the ramp colour as is. `facing`: the ramp colour darkened as the face turns from the view, as `WellboreSeismicSection` shades it. Free to switch.',
+            '`lit`: lit by the scene like the rock. `flat`: the ramp colour as is. `facing`: the ramp colour darkened as the face turns from the view, as `WellboreSeismicSection` shades it. Switches instantly.',
           table: { category: 'Seismic' },
         },
         seismicGaps: {
           if: { arg: 'seismic' },
           description:
-            'Draw the seismic across unfilled intervals too — the gaps `groupGaps` opens — where the cut face otherwise stops. At full strength, and only where there is data. Free to switch.',
+            'Draw the seismic across unfilled intervals too — the gaps `groupGaps` opens — where the cut face otherwise stops. At full strength, and only where there is data. Switches instantly.',
           table: { category: 'Seismic' },
         },
         seismicVoids: {
           if: { arg: 'seismic' },
           description:
-            'The same inside the cavities `sealMode: void` opens. Free to switch.',
+            'Draw the seismic inside the cavities `sealMode: void` opens too. Switches instantly.',
           table: { category: 'Seismic' },
         },
         seal: {
@@ -2339,21 +2363,21 @@ export const Default: Story = {
           control: { type: 'inline-radio' },
           options: ['proportional', 'void'],
           description:
-            '`proportional` carries the ratio between the surfaces above and below, so both units survive. `void` splits the surface in two and opens a lens-shaped cavity — the hole IS the statement that the units are not defined there.',
+            '`proportional` carries the ratio between the surfaces above and below, so both units survive. `void` splits the surface in two and opens a lens-shaped cavity, showing that the units are not defined there.',
           table: { category: 'Resolve' },
         },
         minThickness: {
           control: { type: 'select' },
           options: [0.5, 1, 2, 5, 10, 20],
           description:
-            'How much of each neighbouring unit a taper leaves standing, in metres. ⚠️ Must stay above `collapseThreshold` or the sliver is dropped and the hole comes back.',
+            'How much of each neighbouring unit a taper leaves standing, in metres. Keep it above `collapseThreshold`, or the sliver is dropped and the hole comes back.',
           table: { category: 'Resolve' },
         },
         maxFill: {
           control: { type: 'select' },
           options: [0, 100, 250, 500, 1000, 2000],
           description:
-            'How far a layer counts as covered past its own data, in metres. Behaves as an EROSION RADIUS: a hole of radius r vanishes at maxFill = r, and a larger one merely loses a rim of that width.',
+            'How far, in metres, a layer counts as covered past its own data. It works like an erosion radius: a hole of radius r closes at `maxFill` = r, and a larger one only loses a rim of that width.',
           table: { category: 'Resolve' },
         },
         collapseThreshold: {
@@ -2375,25 +2399,25 @@ export const Default: Story = {
         },
         section: {
           description:
-            'Cut the block with a plane. ⭐ Toggling is free — the stack is built ready for cuts (`prepareCuts`), so switching it off throws no geometry away.',
+            'Cut the block with a plane. Switches instantly: the stack is built ready for cuts (`prepareCuts`), so switching it off throws no geometry away.',
           table: { category: 'Section' },
         },
         sectionMode: {
           control: { type: 'inline-radio' },
           options: ['fixed', 'camera', 'target'],
           description:
-            '`camera` locks the plane in front of the camera, so orbiting chooses the angle and dollying drives the cut through the block — no gizmo to hit. `target` anchors it on the camera TARGET instead: orbiting still swings the cut, but zooming leaves it where it is, so you can come right up to the cut face to read it. `fixed` drives it from the azimuth/dip/distance controls below.',
+            '`camera` locks the plane in front of the camera, so orbiting chooses the angle and dollying moves the cut through the block, with no gizmo to grab. `target` anchors it on the camera target instead: orbiting still swings the cut, but zooming leaves it in place, so you can come right up to the cut face. `fixed` sets it from the azimuth, dip and distance controls below.',
           table: { category: 'Section' },
         },
         sectionCameraDistance: {
           control: { type: 'range', min: 0, max: 20000, step: 100 },
           description:
-            'Metres in front of the camera to put the plane (`camera` mode only — `target` has no distance to set). With `sectionVertical` on this is measured in PLAN.',
+            'Metres in front of the camera to put the plane (`camera` mode only; `target` has no distance to set). With `sectionVertical` on, this is measured in plan.',
           table: { category: 'Section' },
         },
         sectionVertical: {
           description:
-            'Keep a camera-locked plane VERTICAL — it takes the camera’s heading but never its dip. A cut that tilts as you orbit makes the block appear to shear, which is exactly what stops the geology being readable. Applies to `target` mode too, where the plane then stands vertically ON the pivot.',
+            'Keep a camera-locked plane vertical: it takes the camera’s heading but never its dip, so the block does not appear to shear as you orbit. Applies to `target` mode too, where the plane then stands vertically on the pivot.',
           table: { category: 'Section' },
         },
         sectionAzimuth: {
@@ -2421,14 +2445,16 @@ export const Default: Story = {
           control: { type: 'range', min: 0.1, max: 4, step: 0.1 },
           table: { category: 'Section' },
         },
+        // The water body is closed by a face of its own, built over the sea's level and bed the same
+        // way the block's face is built over its layers, so the two meet on the same curve.
         sectionSea: {
           description:
-            'Cut the sea too — with the plane or the fence, whichever is live. ⭐ The water body is CLOSED by a face of its own, built over the sea’s level and bed the same way the block’s face is built over its layers, so the two meet on the same curve. Off (the default) keeps the sea whole over a sliced block, which frames it. The sea then acts as a KEPT unit: its bed cap stays whole as its floor, and no water face is drawn. The interior fog still reports water where the block has been opened.',
+            'Cut the sea too, with the plane or the fence, whichever is live; the water gets a cut face of its own that meets the block’s. Off (the default), the sea stays whole over the sliced block, its bed included, and no water face is drawn. The interior fog still counts the opened part of the block as water.',
           table: { category: 'Section' },
         },
         keepBed: {
           description:
-            'Leave the sea bed CAP — the first layer’s — whole under the cut: the bed stays as a sheet over the removed half while the rock under it is cut (`ZoneLayer.keepCap`; for the column’s own sea also `ZoneStackSea.keepBed`, which only matters with `sectionSea` on — a sea kept whole keeps its bed anyway).',
+            'Keep the top surface of the first layer (the sea bed) whole under the cut, as a sheet over the removed half while the rock below it is cut (`ZoneLayer.keepCap`). For the column’s own sea it also sets `ZoneStackSea.keepBed`, which only matters with `sectionSea` on.',
           table: { category: 'Section' },
         },
         sectionCarrier: {
@@ -2439,7 +2465,7 @@ export const Default: Story = {
         sectionKeep: {
           control: { type: 'text' },
           description:
-            'Comma-separated indices into the DRAWN layers to leave uncut, so they stand whole over the section (empty = cut everything). The fence also leaves out the trajectory above and below the layers it does cut.',
+            'Comma-separated indices of the drawn layers to leave uncut, so they stand whole over the section (empty cuts everything). The fence also leaves out the trajectory above and below the layers it does cut.',
           table: { category: 'Section' },
         },
         sectionDebug: {
@@ -2448,19 +2474,19 @@ export const Default: Story = {
         },
         interiorFog: {
           description:
-            'Fog the view when the camera goes inside a medium — the sea, or the block itself — so being inside it reads as being inside it. ⚠️ Absent unless enabled: its presence is what installs `scene.fog`.',
+            'Fog the view when the camera goes inside a medium (the sea, or the block itself), so being inside it reads as such. Turning it on installs `scene.fog`.',
           table: { category: 'Interior fog' },
         },
         interiorFogRockColor: {
           control: { type: 'color' },
           description:
-            'Colour INSIDE THE BLOCK (the sea has its own). A near-black brown, not a water colour.',
+            'Fog colour inside the block (the sea has its own): a near-black brown rather than a water colour.',
           table: { category: 'Interior fog' },
         },
         interiorFogVisibility: {
           control: { type: 'range', min: 10, max: 3000, step: 10 },
           description:
-            'Roughly how far you can see inside the medium, in metres. ⚠️ `FogExp2` saturates quadratically: ~63% fogged at this distance, ~98% at twice it.',
+            'Roughly how far you can see inside the medium, in metres. The fog (`FogExp2`) thickens quickly: about 63% at this distance, 98% at twice it.',
           table: { category: 'Interior fog' },
         },
         interiorFogTransition: {
@@ -2472,7 +2498,7 @@ export const Default: Story = {
         interiorFogSettle: {
           control: { type: 'range', min: 0, max: 1, step: 0.02 },
           description:
-            'Seconds for the fog to catch up with a step change. ⚠️ Keep it short — leaving a medium SIDEWAYS has no distance to ramp over, and a slow settle reads as a bug.',
+            'Seconds for the fog to catch up with a sudden change. Keep it short: leaving a medium sideways has no distance to fade over, and a slow settle looks like a fault.',
           table: { category: 'Interior fog' },
         },
         interiorFogBackground: {
@@ -2489,7 +2515,7 @@ export const Default: Story = {
           control: { type: 'select' },
           options: [0, 100, 200, 400, 800, 1500, 2000],
           description:
-            'Metres below the column’s deepest MAPPED sample to put the floor.',
+            'Metres below the column’s deepest mapped sample to put the floor.',
           table: { category: 'Floor' },
         },
         floorColor: {
@@ -2521,14 +2547,16 @@ export const Default: Story = {
           control: { type: 'select' },
           options: [1e-7, 1e-6, 1e-5, 1e-4, 1e-3],
           description:
-            'OIT: how close to the nearest transparent fragment a fragment may be and still count as the FRONT layer, as a fraction of its view distance — so the slab is roughly `distance × tolerance` metres. ⭐ Only visible at `surfaceOpacity` < 1, and the thing to watch is where a horizon leaves the cut face: too large and the cap is composited exactly instead of averaged into the tail, which reads as a harder, more opaque band along every layer contact. ⚠️ Too small and the true front fragment fails its own test, so the pixel resolves entirely through the tail and shimmers.',
+            'OIT: how close to the nearest transparent fragment a fragment may be and still count as the front layer, as a fraction of its view distance (the slab is roughly `distance × tolerance` metres). Only visible with `surfaceOpacity` below 1, where a horizon meets the cut face: too large gives a harder, more opaque band along every layer contact, too small makes the pixel shimmer.',
           if: { arg: 'pipeline', eq: 'oit' },
           table: { category: 'Diagnostics' },
         },
+        // `skipFrontPeeling` is the A/B for any front-peel question: if an artefact survives it, the
+        // peel is not what made it.
         skipFrontPeeling: {
           control: { type: 'boolean' },
           description:
-            'OIT: drop the exact front layer and resolve every transparent fragment through the weighted-blended tail. ⭐ The A/B for any front-peel question — if an artefact survives this, the peel is not what made it.',
+            'OIT: drop the exact front layer and resolve every transparent fragment through the weighted-blended tail.',
           if: { arg: 'pipeline', eq: 'oit' },
           table: { category: 'Diagnostics' },
         },
@@ -2557,31 +2585,31 @@ export const Default: Story = {
         peel: {
           control: { type: 'number', min: 0, max: 40, step: 1 },
           description:
-            'Hide the first N UNITS, exposing what is under them — a COUNT, so whole units only. Pure appearance: no rebuild, free to sweep. Clamped to what is drawn.',
+            'Hide the first N units, whole units only, to expose what lies under them; limited to the number drawn. Appearance only: nothing is rebuilt.',
           table: { category: 'Zone stack' },
         },
         cullHiddenCaps: {
           description:
-            'Skip the cap triangles buried between two opaque units. ⭐ The A/B for the saving: compare `Tris` and `GPU` in `stats`. Switched off by itself at any opacity below 1, in wireframe, or with walls hidden.',
+            'Skip the cap triangles buried between two opaque units; compare `Tris` and `GPU` in `stats` to see the saving. Turned off automatically at any opacity below 1, in wireframe, or with walls hidden.',
           table: { category: 'Zone stack' },
         },
         cullOffscreen: {
           description:
-            'With `lodLevels`, skip each cap’s tiles that lie wholly outside the view. Saves vertex work only (off-screen triangles draw no pixels), so it pays with many triangles: close-ups and views inside the column. A/B with `GPU` in `stats`.',
+            'With `lodLevels`, skip each cap’s tiles that lie wholly outside the view. Saves vertex work only (off-screen triangles draw no pixels), so it pays with many triangles: close-ups and views inside the column. Compare `GPU` in `stats` to see the saving.',
           table: { category: 'Zone stack' },
         },
         inferredStyle: {
           control: { type: 'inline-radio' },
           options: ['none', 'hatched', 'checker', 'zigzag'],
           description:
-            'Mark the regions the seal INFERRED — where a surface has no data of its own and its height was carried in from its neighbours.',
+            'Mark the regions the seal inferred: where a surface has no data of its own and its height was carried in from its neighbours.',
           table: { category: 'Zone stack' },
         },
         detail: {
           control: { type: 'select' },
           options: ['none', ...ZONE_DETAIL_PRESET_NAMES],
           description:
-            'Procedural surface detail, applied uniformly. ⚠️ The strat column carries no lithology, so there is nothing to pick a per-unit preset from — that mapping would be the host’s, like the colour.',
+            'Procedural surface detail, the same preset on every unit. The stratigraphic column carries no lithology to pick a preset per unit from; that mapping, like the colours, is up to the host app.',
           table: { category: 'Zone stack' },
         },
         detailStrength: {
@@ -2590,7 +2618,7 @@ export const Default: Story = {
         },
         zonePicking: {
           description:
-            'Register the zones with the event emitter: ctrl+click flies to the picked point, on a cap, a wall or the cut face. Off by default because a registered block also hides what is behind it from picking — the wells inside it stop being clickable through it. ⭐ What the cut takes away is not picked.',
+            'Register the zones with the event emitter: ctrl+click on a cap, a wall or the cut face flies to the picked point. Off by default, because a registered block hides what is behind it from picking, so the wells inside it can no longer be clicked through it. What the cut removes is not picked.',
           table: { category: 'Interaction' },
         },
         stats: {
@@ -2599,16 +2627,17 @@ export const Default: Story = {
             'GPU time, frame time, draw calls and triangles summed over every pass of the frame.',
           table: { category: 'Diagnostics' },
         },
+        // `buildDiagnostics` costs about 0.9 s per build on this column.
         buildDiagnostics: {
           description:
-            'Measure `metrics.diagnostics` — the per-layer table and the `ZONEREPORT` fields in the console. ⚠️ Costs ~0.9 s per build on this column, and the per-phase timings are part of it: off, the report keeps only the total.',
+            'Measure `metrics.diagnostics`: the per-layer table and the `ZONEREPORT` fields in the console, with per-phase timings. Makes every build noticeably slower; off, the report keeps only the total time.',
           table: { category: 'Diagnostics' },
         },
         tileCells: {
           control: { type: 'select' },
           options: [0, 32, 64, 128, 256],
           description:
-            'Triangulate in square tiles of this many reference-grid cells, joined along their seams (0 = one triangulation). The unit LOD will switch detail by. Rebuilds the zone, not the shared column.',
+            'Triangulate in square tiles of this many reference-grid cells, joined along their seams (0 = one triangulation). Level of detail is chosen per tile. Rebuilds the zone, not the shared column.',
           table: { category: 'Diagnostics' },
         },
         debugTiles: {
@@ -2644,16 +2673,18 @@ export const Default: Story = {
             "Pick a level of detail per tile so its height error stays under this many pixels on screen (0 = full detail; needs `lodLevels`). With `debugTiles` the tint shows each tile's level. Appearance only.",
           table: { category: 'Diagnostics' },
         },
+        // `column` is what the generator keeps between builds. A `scope` id that changes means the
+        // generator worker was recreated (the old one was orphaned).
         resources: {
           description:
-            'Report memory and GPU resources in the output panel. ⭐ Watch the DELTAS across rebuilds: `geo` and the heap should return to about the same level each time, and `column` is what the generator keeps between builds. A `scope` id that changes means the generator worker was recreated (the old one was orphaned).',
+            'Report memory and GPU resources in the output panel. Across rebuilds, `geo` and the heap should return to about the same level each time; a steady climb points to a leak.',
           table: { category: 'Diagnostics' },
         },
         resourceInterval: {
           control: { type: 'range', min: 250, max: 5000, step: 250 },
           if: { arg: 'resources' },
           description:
-            'Sampling period in ms. ⚠️ The generator row is answered by the worker, so it stops updating while the worker is inside a long synchronous build phase.',
+            'Sampling period, in milliseconds. The generator row is answered by its worker, so it stops updating while the worker is busy with a long build step.',
           table: { category: 'Diagnostics' },
         },
         ...progressArgTypes,

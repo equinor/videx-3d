@@ -14,24 +14,38 @@ import './well-map-styles.scss';
  * @expand
  */
 export type WellMapProps = {
+  /** The well whose wellbores are shown: the `well` of their `WellboreHeader`s in the store. */
   wellIdentifier: string;
+  /** Ids of wellbores to leave out. */
   excluded?: string[];
+  /** The id of the selected wellbore: drawn at full opacity, its name underlined. Kept by the host (see `onSelect`). */
   selected?: string;
+  /** Called with a wellbore's id and the depth clicked, when a wellbore not yet selected is clicked. */
   onSelect?: (wellbore: string, depth: number) => void;
+  /** The measured depth of the depth cursor, in metres. Kept by the host (see `onDepthChanged`). */
   depth?: number;
+  /** Called with a new measured depth as the depth cursor is clicked, dragged or moved with the keys. */
   onDepthChanged?: (depth: number) => void;
+  /** Called with the wellbore and the measured depth under the pointer, and with `null` as it leaves. */
   onWellboreOver?: (
     wellbore: WellboreHeader | null,
     depth: number | undefined,
   ) => void;
+  /** The colour of the tracks `colors` has none for. Default silver. */
   color?: string;
+  /** The tracks' colours: by wellbore id, or a function of the wellbore and its slot (its column). */
   colors?:
     | Record<string, string>
     | ((wellbore: WellboreHeader, slot: number) => string);
+  /** Whether it answers the pointer and the keys, with a depth cursor and readout. Default true. */
   interactive?: boolean;
+  /** Leave out the header: the title, the well's name and the depth readout. Default false. */
   headless?: boolean;
+  /** Whether an interactive map shows the depth cursor. Default true. */
   depthCursor?: boolean;
+  /** Colours and sizes of everything but the tracks. Default `DarkTheme`. */
   theme?: WellMapStyles;
+  /** A label over the depth axis, its `description` shown on hover. */
   axisHeader?: { label: string; description?: string };
 };
 

@@ -14,13 +14,13 @@ import { DistanceContext } from './DistanceContext';
  * @expand
  */
 export type DistanceProps = {
-  // the minimal distance for which the child elements of this component is rendered
+  /** The nearest camera distance at which the children are drawn. */
   min?: number;
-  // the maximum distance for which the child elements of this component is rendered
+  /** The farthest camera distance at which the children are drawn. */
   max: number;
-  // if enabled, the child elements will only be loaded when within visible range, and will be unloaded/unmounted once it falls out of visible range
+  /** Mount the children only while in range, and unmount them out of it, instead of hiding them. */
   onDemand?: boolean;
-  // the elements that should be rendered when in visible range (min, max)
+  /** What is drawn while in range (`min` to `max`). */
   children: ReactNode;
 };
 

@@ -18,11 +18,15 @@ type Shoe = {
  * @expand
  */
 export type WellMapCasingShoesProps = {
+  /** The shoes' colour, and their depth lines'. Default `#ccc`. */
   color?: string;
 };
 
 /**
- * Casing shoes display addon for `WellMap`
+ * A `WellMap` addon: each wellbore's casing shoes on its track, at their measured depth, with a
+ * faint line across the map there; hover one for its size and type. Reads `casings` from the
+ * store. Give it as a child of the `WellMap`.
+ *
  * @group Components
  *
  * @see {@link WellMap}

@@ -9,11 +9,16 @@ import { useWellMapState } from '../well-map-context';
  * @expand
  */
 export type WellMapTvdProps = {
+  /** The text's colour. Default light blue. */
   color?: string;
 };
 
 /**
- * TVD depth display addon for `WellMap`
+ * A `WellMap` addon: under each track, the wellbore's true vertical depth below mean sea level
+ * at the map's measured `depth`, or `---` where the wellbore is not at that depth. Reads
+ * `position-logs` from the store, and is hidden while the tracks are narrow. Give it as a
+ * child of the `WellMap`.
+ *
  * @group Components
  *
  * @see {@link WellMap}

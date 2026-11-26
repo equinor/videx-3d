@@ -2007,7 +2007,7 @@ export function sceneryReliefArgTypes(
     relief: {
       ...toggle(
         RELIEF,
-        'The relief (`GeoRelief`), the sea\u2019s seabed: flat at the sea\u2019s depth where no layer has data, with the land and seabed of the demo reliefs ticked in `reliefLayers`, merged coarse to fine, drawn from tiles over everything, the stage included. Off, there is no seabed: the void lies below the water. Made on demand: `npm run generate-relief`.',
+        'The relief (`GeoRelief`), the sea\u2019s seabed: flat at the sea\u2019s depth where no layer has data, with the land and seabed of the demo reliefs ticked in `reliefLayers`, merged coarse to fine, drawn from tiles over everything, the stage included. Off, there is no seabed: the void lies below the water.',
       ),
       ...(shownIf ? { if: { arg: shownIf } } : {}),
     },

@@ -21,12 +21,17 @@ type Interval = {
  * @expand
  */
 export type WellMapCompletionIntervalsProps = {
+  /** The screens' colour. Default gray. */
   colorScreen?: string;
+  /** The perforations' colour. Default orange. */
   colorPerforation?: string;
 };
 
 /**
- * Completion intervals display addon for `WellMap`
+ * A `WellMap` addon: each wellbore's completion intervals along its track, its screens
+ * (`completion-tools` of the `screen` category) and its perforations (`perforations`), read
+ * from the store. Give it as a child of the `WellMap`.
+ *
  * @group Components
  *
  * @see {@link WellMap}

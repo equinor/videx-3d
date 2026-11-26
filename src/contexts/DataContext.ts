@@ -6,11 +6,11 @@ import { Store } from '../sdk';
  * @expand
  */
 export type DataContextProps = {
-  // indicates if the store is a direct instance or remote (proxy)
+  /** Indicates if the store is a direct instance or remote (proxy). */
   isRemote: boolean;
-  // connect directly to a non-remote store
+  /** Connect directly to a non-remote store. */
   connect: () => Store | null;
-  // connect to a remote store by opening a `MessagePort`
+  /** Connect to a remote store by opening a `MessagePort`. */
   connectByMessagePort: () => Promise<MessagePort>;
 };
 

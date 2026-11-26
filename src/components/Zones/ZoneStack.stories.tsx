@@ -1,18 +1,3 @@
-/**
- * `ZoneStack` and its `Zone`s on the demo field: mapped horizons built into a solid
- * block, one feature per story.
- *
- * - `Default`: horizons grouped into zones over the field's outline
- * - `WellboreBoundary`: each zone's footprint derived from the wells through it
- * - `Section`: a plane cutting the stack, its cut face filled per interval
- * - `Sea`: the sea over the stack, standing on its sea bed
- * - `Fence`: the stack opened along a wellbore
- *
- * Every story closes the block from below with the column's carrier (`CARRIER`).
- * The ORDER of the horizons and their COLOURS are the host's job: here the order
- * comes from the field's strat column (`sortByStratAge`), and the colours from the
- * library's palette or from the strat column's units.
- */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import {
   PropsWithChildren,

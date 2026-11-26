@@ -24,11 +24,16 @@ type Interval = {
  * @expand
  */
 export type WellMapFormationsProps = {
+  /** The stratigraphic column whose formations are drawn. */
   stratColumnId: string;
 };
 
 /**
- * Formations addon for `WellMap`
+ * A `WellMap` addon: the formations each wellbore passes through, as boxes along its track in
+ * their colours, a line marking each top; hover one for its name. Reads the wellbores'
+ * `formations` from the store, those of the column `stratColumnId`. Give it as a child of the
+ * `WellMap`.
+ *
  * @group Components
  *
  * @see {@link WellMap}

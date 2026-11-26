@@ -39,13 +39,19 @@ export type { SurfaceContours } from './surface-contours';
  */
 export type SurfaceProps = CommonComponentProps &
   PointerEvents & {
+    /** The surface's grid: its size, position and depth range, and the id its values are read by. */
     meta: SurfaceMeta;
+    /** The colour with `useColorRamp` off. */
     color?: string;
     /** the colour ramp: a row of `colorRampTexture`, a ramp's name (`builtInColorRamps`, or registered), or a `ColorRamp`. Default 0, `'rainbow'` */
     colorRamp?: ColorRampRef;
+    /** The depth at the ramp's start. Default the meta's `displayMin`. */
     rampMin?: number;
+    /** The depth at the ramp's end. Default the meta's `displayMax`. */
     rampMax?: number;
+    /** Run the ramp the other way. Default false. */
     reverseRamp?: boolean;
+    /** Colour by depth along `colorRamp`; off, in `color`. Default true. */
     useColorRamp?: boolean;
     /**
      * contour lines by depth, and with `labels` each line's depth written along it (see
@@ -65,8 +71,11 @@ export type SurfaceProps = CommonComponentProps &
     contoursThickness?: number;
     /** @deprecated use `contours.color` */
     contoursColor?: string;
+    /** Opacity (0..1). Below 1, composited with the scene's other transparent objects. Default 1. */
     opacity?: number;
+    /** The priority of its builds on the generators (see `useGenerator`). Default 0. */
     priority?: number;
+    /** How far the simplified mesh may depart from the grid, in metres. Default 5. */
     maxError?: number;
     /**
      * Cut no-data holes and the outer data extent with a clean traced rim
@@ -80,9 +89,13 @@ export type SurfaceProps = CommonComponentProps &
      * exact cell-edge rim. Trades boundary fidelity for smoothness.
      */
     edgeSmoothing?: number;
+    /** Draw its underside too. Default true while opaque, false below 1. */
     doubleSide?: boolean;
+    /** Draw its mesh as lines. */
     wireframe?: boolean;
+    /** A normal map over the surface. */
     normalMap?: Texture;
+    /** The strength of `normalMap`, in x and y. */
     normalScale?: Vec2;
     /**
      * Procedural relief up close, with the zone layers' presets: `'sand'`, `'silt'`,
@@ -102,13 +115,14 @@ export type SurfaceProps = CommonComponentProps &
   };
 
 /**
- * This component renderes a TIN model from an elevation map, according to the `SurfaceMeta` and `SurfaveValues` data types.
+ * A depth surface (a horizon) from a regular grid of depths: its `SurfaceMeta` and the values the
+ * data store holds for it (`SurfaceValues`). Its mesh is the grid simplified to within
+ * `maxError` metres, built by a generator; holes and the edge of the data are cut cleanly
+ * (`cutHoles`).
  *
- * It has several customization options for rendering the surfaces, including color ramps, contour lines (with their
- * depths written along them, as a relief's: `contours.labels`) and transparency.
- *
- * Surface values are expected to be in a regular grid. An optimized triangulation is used for the geometry, but color ramp
- * values and contour lines are always using the full resolution of the data for accuracy.
+ * Colour it by depth along a colour ramp (`colorRamp`, `rampMin`, `rampMax`) or in one `color`,
+ * draw contour lines with their depths written along them (`contours`), and make it see-through
+ * (`opacity`). The colours and contour lines read the full grid, however coarse the mesh.
  *
  * @example
  * <Surface meta={meta} />

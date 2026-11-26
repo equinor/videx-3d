@@ -20,7 +20,7 @@ type Story = StoryObj<typeof meta>;
 /**
  * A 10 km grid about the demo field's origin, 100 m cells that grow as you zoom out
  * (`dynamicCellSize`). Label it in metres from the origin instead (`relativeValues`), or stand
- * it up as a wall (`plane`).
+ * it up as a wall (`plane`); the other controls are a `Grid`'s.
  */
 export const Default: Story = {
   args: {
@@ -49,13 +49,7 @@ export const Default: Story = {
     return (
       <group>
         <UtmArea utmZone={utmZone} origin={origin}>
-          <UtmGrid
-            size={args.size}
-            cellSize={args.cellSize}
-            plane={args.plane}
-            relativeValues={args.relativeValues}
-            dynamicCellSize={args.dynamicCellSize}
-          />
+          <UtmGrid {...args} />
         </UtmArea>
         <axesHelper args={[args.cellSize]} />
       </group>

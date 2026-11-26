@@ -3,17 +3,10 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useMemo } from 'react';
 
 import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decorator';
-//import { PerformanceDecorator } from '../../../storybook/decorators/performance-decorator'
 import { VertexNormalsHelper } from 'three-stdlib';
 import { Vec3 } from '../../types/common';
 import { getSplineCurve } from './curve-3d';
 import { TubeGeometryOptions, createTubeGeometry } from './tube-geometry';
-
-// const points = [
-//   [1.2,-3,1],[2,-5,5],[10,-5,4.5],[12,-5,7.5],
-// ]
-
-//const points = [[-10, 0, 0], [0, 2, 0], [10, 0, 0]]
 
 const points = [
   [0, 0, 0],
@@ -32,6 +25,7 @@ type Props = {
   thickness: number;
   showWireframe: boolean;
   showNormals: boolean;
+  showUvMap: boolean;
   closed: boolean;
   radiusModificationType: 'none' | 'linear' | 'stepped';
   segmentsPerMeter: number;
@@ -47,6 +41,7 @@ const DemoComponent = ({
   thickness,
   showWireframe,
   showNormals,
+  showUvMap,
   closed,
   radiusModificationType,
   segmentsPerMeter,
@@ -81,8 +76,6 @@ const DemoComponent = ({
       if (radiusModificationType !== 'none') {
         options.radiusModifier = {
           type: radiusModificationType,
-          //steps: [[0.5, radius * 2], [0.65, radius * 0.75], [0.8, radius * 0.75], [0.9, radius * 1.5]]
-          //steps: [[0, radius], [0.25, radius * 0.8], [0.5, radius * 0.6], [0.75, radius * 0.4], [1, radius * 0.2]]
           steps: [
             [0, radius * 2],
             [0.05, radius * 2],
@@ -91,8 +84,6 @@ const DemoComponent = ({
             [0.95, radius * 2],
             [1, radius * 2],
           ],
-          //steps: [[0.25, radius * 0.8], [0.251, radius * 0.6], [0.7, radius * 3], [1, radius]]
-          //steps: [[0.5, radius * 5]]
         };
       }
 
@@ -112,15 +103,15 @@ const DemoComponent = ({
   ]);
 
   const uvMap = useTexture('uv_grid.jpg');
-  const showUvMap = false;
 
   if (!geometry) return null;
 
   return (
     <mesh geometry={geometry}>
       <meshStandardMaterial
+        key={showUvMap ? 'uv' : 'plain'}
         wireframe={showWireframe}
-        color="#999"
+        color={showUvMap ? '#fff' : '#999'}
         metalness={0.75}
         roughness={0.25}
         map={showUvMap ? uvMap : null}
@@ -153,7 +144,8 @@ type Story = StoryObj<typeof meta>;
  * `simplificationThreshold`) and the stretch of the curve it covers (`from`, `to`, 0 to 1).
  * `radiusModificationType` doubles the radius at both ends, tapering (`linear`) or in steps
  * (`stepped`); `innerRadius` or `thickness` makes the tube hollow, and `closed` joins the curve
- * into a loop. `showWireframe` and `showNormals` show how it is built.
+ * into a loop. `showWireframe` and `showNormals` show how it is built, and `showUvMap` its
+ * texture coordinates (`computeUvs`), with a test grid as its texture.
  */
 export const Default: Story = {
   args: {
@@ -169,6 +161,7 @@ export const Default: Story = {
     closed: false,
     showNormals: false,
     showWireframe: false,
+    showUvMap: false,
   },
   argTypes: {
     radius: {
@@ -200,10 +193,7 @@ export const Default: Story = {
       control: { type: 'range', min: 0, max: 1, step: 0.001 },
     },
   },
-  decorators: [
-    //PerformanceDecorator,
-    Canvas3dDecorator,
-  ],
+  decorators: [Canvas3dDecorator],
   parameters: {
     scale: 2,
     autoClear: true,

@@ -786,7 +786,7 @@ const meta: Meta<Props> = {
       options: ['custom', ...TRAJECTORY_PRESET_NAMES],
       table: { category: 'shape' },
       description:
-        'a named case; `custom` uses the individual controls below. A preset OVERRIDES them',
+        'a named case: picking one sets the shape controls it covers, which you can then change; `custom` sets nothing',
     },
     defect: {
       control: 'select',

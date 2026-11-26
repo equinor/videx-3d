@@ -144,11 +144,11 @@ const meta = {
     ...sceneryHiddenArgTypes(sceneryProgressArgs),
     water: toggle(
       'Sea',
-      'The sea\u2019s water (`ScenerySea` `water`): on, the void is seen through it.',
+      'The sea\u2019s water (`ScenerySea` `water`). There is none over the open hollow; elsewhere the seabed is seen through it, or the void where there is no seabed.',
     ),
     relief: toggle(
       'Relief',
-      'The relief (`GeoRelief`), the sea\u2019s seabed: the demo reliefs about the field, land and seabed, cut away over the open hollow. Off, there is no seabed, and the hollow lies open, with no sea over it. Made on demand by `npm run generate-relief`.',
+      'The relief (`GeoRelief`), the sea\u2019s seabed: the demo reliefs about the field, land and seabed, cut away over the open hollow. Off, there is no seabed, and the hollow lies open, with no sea over it.',
     ),
     hollow: toggle(
       'Void',
