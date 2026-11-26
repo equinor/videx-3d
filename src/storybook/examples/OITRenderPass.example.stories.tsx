@@ -857,40 +857,40 @@ const meta = {
       table: { category: 'Anti-aliasing' },
     },
 
-    // --- Advanced (Diagnostics) ---
+    // --- Diagnostics ---
     skipFrontPeeling: {
       control: { type: 'boolean' },
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
     mergeFront: {
       control: { type: 'boolean' },
       description:
         'Render the exact front layer in the same geometry pass as the tail instead of a separate front pass (the default). Off, every transparent fragment is shaded twice.',
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
     showDebugTargets: {
       control: { type: 'boolean' },
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
     profileTail: {
       control: { type: 'boolean' },
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
     occlusionDepthStamp: {
       control: { type: 'boolean' },
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
     occlusionDepthThreshold: {
       control: { type: 'range', min: 0, max: 1, step: 0.01 },
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
     emitterDepthStamp: {
       control: { type: 'boolean' },
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
     emitterDepthThreshold: {
       control: { type: 'range', min: 0, max: 1, step: 0.01 },
-      table: { category: 'Advanced (Diagnostics)' },
+      table: { category: 'Diagnostics' },
     },
 
     // --- Water ---

@@ -4,18 +4,23 @@ const categoryOf = (argType: unknown) =>
   (argType as { table?: { category?: string } } | undefined)?.table?.category ??
   '';
 
-// The groups A to Z: those in no group first, as Storybook shows them; Debug last.
+// Last of all, the groups a reader needs least: Storybook's panel to save or revert changed
+// args, once anything changes, covers the last group.
+const TRAILING = ['Debug', 'Diagnostics'];
+
+// The groups A to Z: those in no group first, as Storybook shows them; Debug and Diagnostics last.
 function alphabeticalGroups(argTypes: object): string[] {
   const groups = new Set(Object.values(argTypes).map(categoryOf));
   const named = [...groups]
-    .filter(group => group !== '' && group !== 'Debug')
+    .filter(group => group !== '' && !TRAILING.includes(group))
     .sort((x, y) => x.localeCompare(y));
-  return ['', ...named, 'Debug'];
+  return ['', ...named, ...TRAILING];
 }
 
 /**
  * A story's `args` and `argTypes` with the Controls panel's groups in the order of
- * `categories`, or A to Z (`'alphabetical'`: Debug last), for a story with many of them.
+ * `categories`, or A to Z (`'alphabetical'`: Debug and Diagnostics last), for a story with many
+ * of them.
  * Storybook lays the panel out by the order of the args (then of the argTypes), a group where
  * its first control comes, and no project-wide hook can change that: Storybook rebuilds the
  * argTypes in the args' order after them. So both are reordered here. Within a group, the keys
