@@ -233,11 +233,13 @@ void main() {
   #include <logdepthbuf_fragment>
   #include <color_fragment>
 
-  // The OIT min-depth pass writes nothing but linear depth, and the occlusion pass
-  // needs nothing but this fragment's alpha. `oitProcess` runs at the END of main,
-  // so without this guard both passes would shade the fragment - procedural detail
-  // and all - and then throw the colour away. This is what keeps the detail's cost
-  // at two of the four OIT passes rather than all four.
+  // The OIT min-depth pass writes nothing but linear depth (and, with the occlusion
+  // stamp folded in, OIT_DEPTH_OCCLUDERS, whether this fragment's alpha clears its
+  // threshold), and the occlusion pass needs nothing but this fragment's alpha.
+  // `oitProcess` runs at the END of main, so without this guard both passes would
+  // shade the fragment - procedural detail and all - and then throw the colour away.
+  // This is what keeps the detail's cost at two of the four OIT passes rather than all
+  // four.
   #if defined(OIT_DEPTH_PASS) || defined(OIT_OCCLUSION_PASS)
   gl_FragColor = oitProcess(diffuseColor);
   return;

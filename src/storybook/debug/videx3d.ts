@@ -1,4 +1,5 @@
 import { Box3, Object3D, Scene, Vector3 } from 'three';
+import type { OcclusionStampHandle } from '../../rendering/debug/occlusion-stamp-debug';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import { Vec3 } from '../../sdk';
 import type { CloudBench } from './cloud-bench';
@@ -36,6 +37,8 @@ export type Videx3dHandle = {
   cloudBench: CloudBench;
   /** the sea's GPU timings, in a story rendering `SeaBenchBridge` (see `sea-bench.ts`) */
   seaBench: SeaBench;
+  /** the OIT occlusion stamp's debug story: its pass, and each annotation's expected and measured state (see `occlusion-stamp-debug.tsx`) */
+  occlusionStamp: OcclusionStampHandle;
 };
 
 declare global {

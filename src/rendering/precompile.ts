@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { LAYERS } from '../layers/layers';
 import { renderAside } from '../sdk/utils/render-aside';
+import { setOitDepthOccluders } from './oit-depth-occluders';
 import { isOitCapable, OitCapableMaterial, OitPass } from './oit-material';
 import type { Pass } from './Pass';
 import { OITRenderPass } from './passes/OITRenderPass';
@@ -63,6 +64,8 @@ type Job = {
   camera: Camera;
   scene: Scene;
   passes: OitPass[];
+  // The min-depth variants carry the occlusion stamp (oitDepthOccluders).
+  occluders: boolean;
   offscreen: boolean;
   priority: number;
   order: number;
@@ -105,8 +108,15 @@ export function oitVariantPasses(pass: OITRenderPass): OitPass[] {
   // Merged only without MSAA, which the pipeline's own target is assumed not to have.
   const merged = pass.mergeFront && pass.opaqueSamples === 0;
   if (!pass.skipFront && !merged) passes.push('front');
-  if (pass.occlusionDepthStamp) passes.push('occlusion');
+  // The occlusion stamp has a pass of its own only without the min-depth pass, which
+  // otherwise carries it (oitDepthOccluders).
+  if (pass.occlusionDepthStamp && pass.skipFront) passes.push('occlusion');
   return passes;
+}
+
+/** Whether an `OITRenderPass`'s min-depth variants carry its occlusion stamp, as it draws them. */
+function oitDepthOccluders(pass: OITRenderPass) {
+  return pass.occlusionDepthStamp && !pass.skipFront;
 }
 
 function effectiveOpacity(material: Material) {
@@ -199,6 +209,7 @@ export function precompile(
     (pass): pass is OITRenderPass => pass instanceof OITRenderPass,
   );
   const variantPasses = oit ? oitVariantPasses(oit) : [];
+  const occluders = oit ? oitDepthOccluders(oit) : false;
   const offscreen = target === 'offscreen' || passes !== undefined;
 
   const queue = queueOf(renderer);
@@ -219,6 +230,7 @@ export function precompile(
       camera,
       scene,
       passes: variantPasses,
+      occluders,
       offscreen,
       priority,
       order: queue.order++,
@@ -381,7 +393,7 @@ function poll(renderer: WebGLRenderer, queue: Queue) {
 // Compile one object's programs as the scene draws it now: through the OIT pipeline's
 // variants when it is transparent, forced opaque when it is drawn so.
 function start(renderer: WebGLRenderer, job: Job): Set<Material> {
-  const { object, camera, scene, passes } = job;
+  const { object, camera, scene, passes, occluders } = job;
   const original = object.material!;
   const list = [original].flat();
   const materials = new Set<Material>();
@@ -418,8 +430,8 @@ function start(renderer: WebGLRenderer, job: Job): Set<Material> {
       if (route === 'variants') {
         for (const pass of passes) {
           object.material = Array.isArray(original)
-            ? original.map(m => variantOf(m, pass))
-            : variantOf(original, pass);
+            ? original.map(m => variantOf(m, pass, occluders))
+            : variantOf(original, pass, occluders);
           compile();
         }
       } else {
@@ -433,10 +445,12 @@ function start(renderer: WebGLRenderer, job: Job): Set<Material> {
   return materials;
 }
 
-function variantOf(material: Material, pass: OitPass) {
-  return isOitCapable(material) && material.transparent
-    ? (material as Material & OitCapableMaterial).getOitVariants()[pass]
-    : material;
+function variantOf(material: Material, pass: OitPass, occluders: boolean) {
+  if (!isOitCapable(material) || !material.transparent) return material;
+  const variants = (material as Material & OitCapableMaterial).getOitVariants();
+  // As the pass draws it, so it is not compiled again on its first frame.
+  if (pass === 'depthMin') setOitDepthOccluders(variants, occluders);
+  return variants[pass];
 }
 
 function isReady(renderer: WebGLRenderer, material: Material) {

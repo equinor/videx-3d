@@ -525,6 +525,11 @@ void main() {
         ...ALL_PASSES.map(
           pass => [pass, definesOf(pass)] as [string, string[]],
         ),
+        // The min-depth pass carrying the occlusion stamp (OITRenderPass).
+        [
+          'depthMin+occluders',
+          [...definesOf('depthMin'), 'OIT_DEPTH_OCCLUDERS'],
+        ],
       ];
       for (const [pass, defines] of cases) {
         const code = preprocessGlsl(glsl, defines);

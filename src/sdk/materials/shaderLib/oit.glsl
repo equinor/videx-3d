@@ -16,6 +16,8 @@
 // Pass selection is driven by defines set on the per-pass variant materials:
 //   USE_OIT            enables the whole block
 //   OIT_DEPTH_PASS     min-depth pre-pass (writes linear view-space depth)
+//     OIT_DEPTH_OCCLUDERS  with it, also the nearest fragment whose alpha clears
+//                          oitOcclusionThreshold (the occlusion stamp folded in)
 //   OIT_FRONT_PASS     exact front layer (alpha-over, discards tail fragments)
 //   OIT_OCCLUSION_PASS depth-only stamp where alpha clears oitOcclusionThreshold
 //   (none of the above, USE_OIT only) => single-buffer weighted-blended OIT tail
@@ -86,7 +88,15 @@ vec4 oitProcess(vec4 color) {
 
   // Written with MinEquation blending => per-pixel minimum of depth (r) and of -depth
   // (g, i.e. -farthest; dropped by a single-channel target).
+  #ifdef OIT_DEPTH_OCCLUDERS
+  // And the nearest fragment opaque enough to hide what lies behind it, 1 (the clear's
+  // far) where none is: in b beside the slices' -farthest, else in g. OITRenderPass
+  // writes it into the depth buffer once the transparent passes are drawn.
+  float occluder = color.a >= oitOcclusionThreshold ? linZ : 1.0;
+  return oitTailSlices > 1 ? vec4(linZ, -linZ, occluder, 1.0) : vec4(linZ, occluder, 0.0, 1.0);
+  #else
   return vec4(linZ, -linZ, 0.0, 1.0);
+  #endif
 
   #else
 

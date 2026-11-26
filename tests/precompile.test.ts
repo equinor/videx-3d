@@ -125,6 +125,25 @@ describe('precompile', () => {
     setPipelinePasses(scene, null);
   });
 
+  test('through an OIT pipeline with the occlusion stamp: the min-depth variant carrying it', () => {
+    const { renderer, compiled } = mockRenderer();
+    const scene = new Scene();
+    const pass = new OITRenderPass(scene, camera);
+    pass.occlusionDepthStamp = true;
+    setPipelinePasses(scene, [pass]);
+    const see = oitMaterial(0.5);
+    const root = new Group().add(new Mesh(new BufferGeometry(), see));
+
+    precompile(renderer, root, camera, scene);
+    const depthMin = see.getOitVariants().depthMin as {
+      defines?: Record<string, unknown>;
+    };
+    expect(compiled.some(c => c.material === depthMin)).toBe(true);
+    // As the pass draws it: else compiled again on its first frame.
+    expect(depthMin.defines).toHaveProperty('OIT_DEPTH_OCCLUDERS');
+    setPipelinePasses(scene, null);
+  });
+
   test('through an OIT pipeline: a transparent material at full opacity as forced opaque', () => {
     const { renderer, compiled } = mockRenderer();
     const scene = new Scene();
@@ -373,9 +392,11 @@ describe('oitVariantPasses', () => {
     expect(oitVariantPasses(skipped)).toEqual(['accum']);
   });
 
-  test('the occlusion stamp when it is on', () => {
+  test('the occlusion stamp in the min-depth variants, a pass of its own with skipFront', () => {
     const stamped = pass();
     stamped.occlusionDepthStamp = true;
-    expect(oitVariantPasses(stamped)).toContain('occlusion');
+    expect(oitVariantPasses(stamped)).toEqual(['depthMin', 'accum']);
+    stamped.skipFront = true;
+    expect(oitVariantPasses(stamped)).toEqual(['accum', 'occlusion']);
   });
 });

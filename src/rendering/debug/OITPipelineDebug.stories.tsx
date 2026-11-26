@@ -40,6 +40,12 @@ import { RenderingPipeline } from '../RenderingPipeline.tsx';
 import { registerVidex3d } from '../../storybook/debug/videx3d.ts';
 import { DebugBoxOutputPass } from './DebugBoxOutputPass.ts';
 import { DebugPattern, DebugPatternPass } from './DebugPatternPass.ts';
+import {
+  OCCLUSION_STAMP_ARG_TYPES,
+  OCCLUSION_STAMP_ARGS,
+  OcclusionStampStory,
+  type OcclusionStampArgs,
+} from './occlusion-stamp-debug.tsx';
 import { orderControls } from '../../storybook/components/order-controls';
 
 /**
@@ -1480,3 +1486,21 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+/**
+ * The OIT occlusion stamp (`OITRenderPass.occlusionDepthStamp`) on its own: two see-through
+ * panels, an opaque block and five annotations at known places among them. The readout gives
+ * each annotation's state, red where it is not what the controls as set should give. Scripts
+ * read the same through `window.videx3d.occlusionStamp.report()`.
+ */
+export const OcclusionStamp: StoryObj<OcclusionStampArgs> = {
+  render: args => <OcclusionStampStory {...args} />,
+  ...orderControls<OcclusionStampArgs>(
+    { args: OCCLUSION_STAMP_ARGS, argTypes: OCCLUSION_STAMP_ARG_TYPES },
+    ['Pipeline', 'Stamp', 'Scene', 'Debug'],
+  ),
+  // The meta's args are merged in too: only this story's own are shown.
+  parameters: {
+    controls: { include: Object.keys(OCCLUSION_STAMP_ARGS) },
+  },
+};

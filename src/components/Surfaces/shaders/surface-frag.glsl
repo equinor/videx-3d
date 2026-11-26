@@ -150,12 +150,13 @@ void main() {
   #include <logdepthbuf_fragment>
 
   // OIT auxiliary passes do not shade: the min-depth pre-pass only needs the
-  // view-space depth (written by oitProcess) and the occlusion stamp only needs
-  // the fragment alpha. Skip all the normal / lighting / colour / contour work
-  // below in those passes - the surface is rasterised up to three times per
-  // frame under the OITRenderPass, so this avoids two thirds of that cost.
+  // view-space depth (written by oitProcess), and the fragment alpha where it also
+  // keeps the occlusion stamp's occluders (OIT_DEPTH_OCCLUDERS); the occlusion stamp
+  // only needs the alpha. Skip all the normal / lighting / colour / contour work
+  // below in those passes. Without OIT_DEPTH_OCCLUDERS the alpha is unused there,
+  // and compiled out.
   #if defined(USE_OIT) && defined(OIT_DEPTH_PASS)
-  gl_FragColor = oitProcess(vec4(0.0));
+  gl_FragColor = oitProcess(vec4(diffuse, opacity));
   return;
   #endif
   #if defined(USE_OIT) && defined(OIT_OCCLUSION_PASS)

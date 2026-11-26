@@ -300,7 +300,11 @@ All default **off** with zero GPU cost when disabled:
   *transparent* surfaces occlude annotation labels. Transparent surfaces have
   `depthWrite=false`, so by default only opaque geometry occludes labels; this stamps a
   thresholded, log-encoded depth of qualifying transparent fragments into the shared
-  depth texture that `AnnotationsPass` reads.
+  depth texture that `AnnotationsPass` reads. The min-depth pre-pass carries it: its
+  variants (`OIT_DEPTH_OCCLUDERS`) also keep, per pixel, the nearest fragment whose alpha
+  clears the threshold, in one more channel of its target, and after the transparent
+  passes one fullscreen draw writes that into the depth in the buffer's encoding. With
+  `skipFront` (no pre-pass) it falls back to the stamp primitive below.
 - **`emitterDepthStamp`** (+ `emitterDepthThreshold`) — stops a *far* transparent surface
   from washing out an additive emitter core (e.g. perforation jets). The emitter opts in
   by exposing `userData.occlusionDepthMaterial` (a depth-only stamp material); the pass
@@ -313,10 +317,12 @@ All default **off** with zero GPU cost when disabled:
   (opaque / emissive / overlay / minDepth / tail / composite / front / total). Debug-only
   raw-GL measurement; no-op when the extension is missing.
 
-Both depth-stamp features build on a single primitive: a depth-only, alpha-thresholded
+Both depth-stamp features can use a single primitive: a depth-only, alpha-thresholded
 stamp (`colorWrite=false, depthWrite=true, NoBlending`) that renders the geometry's real
 shader and `discard`s below threshold, letting the hardware depth test merge the nearest
-qualifying fragment.
+qualifying fragment. The emitter stamp always does; the occlusion stamp only with
+`skipFront`, since the min-depth pre-pass otherwise carries it without a geometry pass
+of its own (2.5–3.5 ms less where transparent surfaces fill a 1860 × 1265 view).
 
 ---
 

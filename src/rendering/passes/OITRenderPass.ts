@@ -6,6 +6,7 @@ import {
   DepthTexture,
   FloatType,
   HalfFloatType,
+  LessEqualDepth,
   Material,
   Mesh,
   MeshBasicMaterial,
@@ -26,10 +27,12 @@ import {
   WebGLRenderTarget,
 } from 'three';
 import { LAYERS } from '../../layers/layers';
+import { logDepthFactor } from '../../sdk/utils/depth-buffer';
 import { FullscreenRenderer } from '../fullscreen-renderer';
 import { FxaaResolver } from '../fxaa-resolver';
 import { GpuTimer } from '../gpu-timer';
 import { hideIdleBranches } from '../idle-branches';
+import { setOitDepthOccluders } from '../oit-depth-occluders';
 import {
   DEFAULT_OIT_FRONT_TOLERANCE,
   isOitCapable,
@@ -42,6 +45,7 @@ import copyFragmentShader from '../shaders/copy-frag.glsl';
 import copyVertexShader from '../shaders/copy-vert.glsl';
 import compositeFragmentShader from '../shaders/oit-composite-frag.glsl';
 import debugFragmentShader from '../shaders/oit-debug-frag.glsl';
+import occluderDepthFragmentShader from '../shaders/oit-occluder-depth-frag.glsl';
 import { SMAAQuality, SmaaResolver } from '../smaa-resolver';
 import { TaaResolver } from '../taa-resolver';
 import { TemporalResolver } from '../temporal-resolver';
@@ -83,16 +87,24 @@ function createAccumTarget(width: number, height: number, count: number) {
   });
 }
 
-/** Min-depth target: nearest depth, plus -farthest depth when tail slicing needs it. */
+/**
+ * Min-depth target: nearest depth, plus -farthest depth when tail slicing needs it, plus
+ * the occlusion stamp's nearest occluder while it is folded in (2 or 4 channels: RGB32F
+ * is not renderable).
+ */
 function createMinDepthTarget(width: number, height: number, channels: number) {
   return new WebGLRenderTarget(width, height, {
-    format: channels > 1 ? RGFormat : RedFormat,
+    format: minDepthFormat(channels),
     type: FloatType,
     depthBuffer: true,
     magFilter: NearestFilter,
     minFilter: NearestFilter,
     generateMipmaps: false,
   });
+}
+
+function minDepthFormat(channels: number) {
+  return channels > 2 ? RGBAFormat : channels > 1 ? RGFormat : RedFormat;
 }
 
 /** Premultiplied alpha-over of the resolved transparent layers onto the main target. */
@@ -185,7 +197,7 @@ export type OITRenderPassTimings = {
   composite: number;
   /** Exact front-layer pass (step 5); not run with {@link OITRenderPass.mergeFront}. */
   front: number;
-  /** Optional occlusion depth-stamp pass (step 5b). */
+  /** Optional occlusion depth stamp (step 5b): its fullscreen depth write, or its own pass with {@link OITRenderPass.skipFront}. */
   occlusion: number;
   /** Optional emitter depth-stamp pass (step 1c). */
   emitterStamp: number;
@@ -439,8 +451,12 @@ export class OITRenderPass extends Pass {
    *
    * The test is per-fragment and per-surface (each surface judged on its own alpha,
    * not accumulated coverage), and the stamped depth uses the same encoding the
-   * {@link AnnotationsPass} already samples. Costs one extra transparent-geometry
-   * pass per frame when enabled; nothing (not even a shader compile) when off.
+   * {@link AnnotationsPass} already samples. With the front peel on (the default) it
+   * rides along with the min-depth pre-pass: that pass also keeps each pixel's nearest
+   * qualifying fragment (one more 32-bit channel in its target), written into the depth
+   * by one fullscreen draw once the transparent passes are done. With {@link skipFront},
+   * which skips that pre-pass, it costs a transparent-geometry pass of its own. Off,
+   * nothing: not a channel, nor a shader compile.
    */
   occlusionDepthStamp: boolean = false;
 
@@ -560,6 +576,11 @@ export class OITRenderPass extends Pass {
   /** Lazily-created material for the debug-target thumbnails. */
   private debugMaterial: RawShaderMaterial | null = null;
 
+  /** Lazily-created fullscreen draw writing the folded occlusion stamp into the depth. */
+  private occluderDepthMaterial: ShaderMaterial | null = null;
+  /** The min-depth target's channel holding the stamp's occluders this frame: 0 none, 1 g, 2 b. */
+  private occluderChannel = 0;
+
   /** Lazily-created GPU timer, only when {@link profile} is first enabled. */
   private gpuTimer: GpuTimer | null = null;
 
@@ -667,8 +688,7 @@ export class OITRenderPass extends Pass {
 
   /** Rebuild the min-depth target when its channel count must change. */
   private ensureMinDepthTarget(channels: number) {
-    const format = channels > 1 ? RGFormat : RedFormat;
-    if (this.minDepthTarget.texture.format === format) return;
+    if (this.minDepthTarget.texture.format === minDepthFormat(channels)) return;
     this.minDepthTarget.depthTexture = null;
     this.minDepthTarget.dispose();
     this.minDepthTarget = createMinDepthTarget(
@@ -730,6 +750,8 @@ export class OITRenderPass extends Pass {
     this.compositeMaterials.clear();
     this.opaqueBlitMaterial.dispose();
     this.debugMaterial?.dispose();
+    this.occluderDepthMaterial?.dispose();
+    this.occluderDepthMaterial = null;
     this.fullscreenRenderer.dispose();
     this.temporal?.dispose();
     this.temporal = null;
@@ -918,6 +940,7 @@ export class OITRenderPass extends Pass {
     oitList: RenderableEntry[],
     mergeFront: boolean,
     slices: number,
+    occluders: boolean,
   ) {
     for (const e of oitList) {
       const mats = Array.isArray(e.original) ? e.original : [e.original];
@@ -937,10 +960,49 @@ export class OITRenderPass extends Pass {
         // Re-sync the cached per-pass variants with the base material's current
         // program state (defines/wireframe/etc.). The cached pass-swap materials are
         // the same objects, mutated in place, so this keeps them up to date when the
-        // base appearance is toggled at runtime.
-        capable.getOitVariants();
+        // base appearance is toggled at runtime. A re-sync drops the min-depth
+        // variant's occluder define, so it is set after it.
+        setOitDepthOccluders(capable.getOitVariants(), occluders);
       }
     }
+  }
+
+  /**
+   * The occlusion stamp folded into the min-depth pass: each pixel's nearest qualifying
+   * occluder, as that pass kept it, written into `target`'s depth as the buffer holds
+   * depth (linear, logarithmic or reversed). Depth-tested, so it never lands behind the
+   * opaque depth already there; no colour.
+   */
+  private writeOccluderDepth(
+    renderer: WebGLRenderer,
+    target: WebGLRenderTarget,
+    camera: Camera,
+    slices: number,
+  ) {
+    const material = (this.occluderDepthMaterial ??= new ShaderMaterial({
+      vertexShader:
+        'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: occluderDepthFragmentShader,
+      uniforms: {
+        occluders: new Uniform<Texture | null>(null),
+        occluderChannel: new Uniform(1),
+        depthFar: new Uniform(1),
+        cameraProjection: new Uniform(camera.projectionMatrix),
+        cameraLogDepthFC: new Uniform(1),
+      },
+      depthTest: true,
+      depthWrite: true,
+      depthFunc: LessEqualDepth,
+      colorWrite: false,
+      blending: NoBlending,
+    }));
+    const u = material.uniforms;
+    u.occluders.value = this.minDepthTarget.texture;
+    u.occluderChannel.value = slices > 1 ? 2 : 1;
+    u.depthFar.value = this.depthFar;
+    u.cameraProjection.value = camera.projectionMatrix;
+    u.cameraLogDepthFC.value = logDepthFactor(this.depthFar);
+    this.fullscreenRenderer.renderMaterial(renderer, target, material);
   }
 
   private setVisible(objects: Renderable[], visible: boolean) {
@@ -1161,9 +1223,13 @@ export class OITRenderPass extends Pass {
     const slices = this.skipFront
       ? 1
       : Math.min(3, Math.max(1, Math.floor(this.tailSlices)));
+    // The occlusion stamp rides along with the min-depth pass while that runs: one more
+    // channel there (OIT_DEPTH_OCCLUDERS), written as depth at step 5b.
+    const occluders = this.occlusionDepthStamp && !this.skipFront;
+    this.occluderChannel = occluders ? (slices > 1 ? 2 : 1) : 0;
     // Attachments: 0 = (nearest) tail, 1 = merged front, 2-3 = farther slices.
     this.ensureAccumTarget(slices > 1 ? slices + 1 : mergeFront ? 2 : 1);
-    this.ensureMinDepthTarget(slices > 1 ? 2 : 1);
+    this.ensureMinDepthTarget((slices > 1 ? 2 : 1) + (occluders ? 1 : 0));
     if (sharedDepth) {
       this.minDepthTarget.depthTexture = sharedDepth;
       this.accumTarget.depthTexture = sharedDepth;
@@ -1278,7 +1344,7 @@ export class OITRenderPass extends Pass {
     scene.background = null;
 
     // Update OIT uniforms now that depthFar/size are known.
-    this.setOitUniforms(oitList, mergeFront, slices);
+    this.setOitUniforms(oitList, mergeFront, slices, occluders);
 
     // ---- step 1b: additive/glow emissive ----------------------------------
     // Drawn here (before the transparent layers) rather than last, so transparent
@@ -1411,11 +1477,17 @@ export class OITRenderPass extends Pass {
       // above, so without this annotation labels are never occluded by them. Runs
       // after the front/composite passes so the depth-peel partitioning is
       // undisturbed, writing into the shared buffer depth the AnnotationsPass reads.
+      // The min-depth pass kept each pixel's nearest such fragment (`occluders`): one
+      // fullscreen draw writes it. Without that pass (skipFront), a geometry pass.
       if (this.occlusionDepthStamp) {
-        this.applyPassSwap(oitList, 'occlusion');
-        renderer.setRenderTarget(dst);
         timer?.begin('occlusion');
-        renderer.render(scene, camera);
+        if (occluders) {
+          this.writeOccluderDepth(renderer, dst, camera, slices);
+        } else {
+          this.applyPassSwap(oitList, 'occlusion');
+          renderer.setRenderTarget(dst);
+          renderer.render(scene, camera);
+        }
         timer?.end();
       }
 
@@ -1524,8 +1596,9 @@ export class OITRenderPass extends Pass {
 
   /**
    * Draw small thumbnails of the auxiliary render targets along the bottom-left of
-   * the output buffer (min-depth, accumulation). Uses the buffer's viewport
-   * to scope each draw; GPU-only.
+   * the output buffer (min-depth, the occlusion stamp's occluders while that pass
+   * carries them, accumulation). Uses the buffer's viewport to scope each draw;
+   * GPU-only.
    */
   private renderDebugTargets(
     renderer: WebGLRenderer,
@@ -1546,9 +1619,18 @@ export class OITRenderPass extends Pass {
     }
     const mat = this.debugMaterial;
 
-    // mode: 0 = rgb, 1 = red as grayscale, 2 = normalized depth (near = bright).
+    // mode: 0 = rgb, 1 = red as grayscale, 2 = normalized depth (near = bright),
+    // 3 / 4 = the stamp's occluders in green / blue (while the min-depth pass carries them).
     const items: { texture: Texture; mode: number }[] = [
       { texture: this.minDepthTarget.texture, mode: 2 },
+      ...(this.occluderChannel
+        ? [
+            {
+              texture: this.minDepthTarget.texture,
+              mode: 2 + this.occluderChannel,
+            },
+          ]
+        : []),
       ...this.accumTarget.textures.map(texture => ({ texture, mode: 0 })),
     ];
 
