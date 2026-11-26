@@ -78,10 +78,12 @@ import {
 import {
   createSceneryLayerMaterial,
   SCENERY_LAYER_ORDER,
+  sceneryGroundShown,
   SceneryLayerView,
   sceneryLayersShown,
   useSceneryLayerMaterial,
 } from './scenery-layers';
+import { sceneryGroundSides } from './scenery-ground-sides';
 import {
   SceneryFeatures,
   SceneryRegistry,
@@ -849,6 +851,14 @@ export const Scenery = ({
     setSceneGroundMap(scene, sceneryGround.map, sceneryGround);
     return () => setSceneGroundMap(scene, null, sceneryGround);
   }, [scene, sceneryGround]);
+  // Gone, it hides nothing on either side of the ground (SceneryBelowGround).
+  useEffect(
+    () => () => {
+      for (const group of sceneryGroundSides(scene).keys())
+        group.visible = true;
+    },
+    [scene],
+  );
 
   // The stand-in is drawn while the sky compiles, so it compiles first, ahead of the sky's
   // own, and is drawn once it has: drawn before, Chrome's GPU process waits for it behind
@@ -1894,7 +1904,19 @@ export const Scenery = ({
     const voidOpen = material.voidOpenFromAbove(cutsSeabed);
 
     // The background's layers where they can show from here; each draws nothing elsewhere.
-    const shown = sceneryLayersShown(layerView(height, voidOpen, cameraWet));
+    const view = layerView(height, voidOpen, cameraWet);
+    const shown = sceneryLayersShown(view);
+    // What lies wholly on one side of the ground, where the ground hides it: the seabed drawn
+    // whole, opaque and unopened (`voidOpen`, the open hollow), with nothing hiding it in a
+    // debug view (SceneryBelowGround, SceneryAboveGround). In this frame, as it is drawn.
+    const sides = sceneryGroundSides(scene);
+    if (sides.size > 0) {
+      const groundShown = sceneryGroundShown(
+        view,
+        drawn && ready && !hollowOpen && !debug?.hide?.length,
+      );
+      for (const [group, side] of sides) group.visible = groundShown[side];
+    }
     // The sea's waves, while a layer that reads them can show: the sky's sea surface (from the
     // air, with water) or its water, and with them a stage's surface, which shows only where
     // those do. Over a dry sea nothing reads them: the sky's sea layer is its seabed alone, and

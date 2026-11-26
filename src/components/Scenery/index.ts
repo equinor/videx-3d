@@ -3,6 +3,7 @@ export * from './SceneryVoid';
 export * from './SceneryAnchor';
 export * from './SceneryClouds';
 export * from './SceneryCutaway';
+export * from './SceneryGroundSides';
 export * from './ScenerySea';
 export * from './SceneryStage';
 export * from './useLevelHorizon';

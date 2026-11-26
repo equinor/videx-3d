@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  sceneryGroundShown,
   sceneryLayerDefines,
   sceneryLayers,
   sceneryLayersShown,
@@ -185,5 +186,52 @@ describe('sceneryLayersShown', () => {
     expect(sceneryLayersShown(view({ sea: null, height: 50 })).void).toBe(
       false,
     );
+  });
+});
+
+describe('sceneryGroundShown', () => {
+  const sea = { level: 0, depth: 100, water: true, buried: false };
+  const view = (over: Partial<SceneryLayerView>): SceneryLayerView => ({
+    height: 40,
+    sea,
+    void: { level: -100, transition: 200 },
+    cutawayWater: 0,
+    voidOpen: false,
+    ...over,
+  });
+
+  it('hides what lies below the closed ground from above, and above it from below', () => {
+    expect(sceneryGroundShown(view({}), true)).toEqual({
+      below: false,
+      above: true,
+    });
+    expect(sceneryGroundShown(view({ height: -500 }), true)).toEqual({
+      below: true,
+      above: false,
+    });
+    // In rock under a stage's ground, below it whatever the height.
+    expect(
+      sceneryGroundShown(view({ sea: { ...sea, buried: true } }), true),
+    ).toEqual({ below: true, above: false });
+  });
+
+  it('shows both sides near the seabed, and in a trench above it', () => {
+    expect(sceneryGroundShown(view({ height: -100 }), true)).toEqual({
+      below: true,
+      above: true,
+    });
+    expect(
+      sceneryGroundShown(
+        view({ height: -150, sea: { ...sea, trench: true } }),
+        true,
+      ),
+    ).toEqual({ below: false, above: true });
+  });
+
+  it('shows both sides while the ground is open, or without a sea', () => {
+    const both = { below: true, above: true };
+    expect(sceneryGroundShown(view({}), false)).toEqual(both);
+    expect(sceneryGroundShown(view({ voidOpen: true }), true)).toEqual(both);
+    expect(sceneryGroundShown(view({ sea: null }), true)).toEqual(both);
   });
 });

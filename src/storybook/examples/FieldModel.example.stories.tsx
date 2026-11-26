@@ -110,6 +110,10 @@ import { Highlighter } from '../../components/Highlighter/Highlighter';
 import { RenderStats } from '../../components/Html/RenderStats/RenderStats';
 import { Scenery } from '../../components/Scenery/Scenery';
 import {
+  SceneryAboveGround,
+  SceneryBelowGround,
+} from '../../components/Scenery/SceneryGroundSides';
+import {
   SceneryStage,
   SceneryStageOccupantState,
 } from '../../components/Scenery/SceneryStage';
@@ -656,6 +660,20 @@ const ColumnRim = ({
   return null;
 };
 
+/**
+ * Tells the stack's sampler (its `SurfaceSamplerContext`) whenever it changes, so what is
+ * placed on the column's top can be drawn outside the stack. Must sit inside `ZoneStack`.
+ */
+const StackSampler = ({
+  onSampler,
+}: {
+  onSampler: (sampler: SurfaceSampler | null) => void;
+}) => {
+  const sampler = useSurfaceSampler();
+  useEffect(() => onSampler(sampler ?? null), [sampler, onSampler]);
+  return null;
+};
+
 /** Publishes `window.videx3d.locate('wellbore', id)`; must sit inside `UtmArea`. */
 const Videx3dLocate = () => {
   useVidex3dLocate();
@@ -938,6 +956,8 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
   const [reliefSampler, setReliefSampler] = useState<ReliefSampler | null>(
     null,
   );
+  // The stack's own, for what stands on the column's top (StackSampler).
+  const [stackSampler, setStackSampler] = useState<SurfaceSampler | null>(null);
   // The column's top along its boundary, ascending, where the Scenery's seabed lies: from the
   // column first built, so the relief's sampler coming in later moves nothing. A new column
   // marks it stale rather than dropping it, and the next column's replaces it: the Scenery,
@@ -1510,111 +1530,122 @@ const FieldColumnStory = (props: FieldColumnStoryProps) => {
         <UtmArea crsInstance={crs} origin={crs.originUtm}>
           <Videx3dLocate />
           <ViewOffset into={viewOffset} />
-          <ZoneStack
-            diagnostics={props.buildDiagnostics}
-            preview={props.preview}
-            previewSaturation={props.previewSaturation}
-            debugTiles={props.debugTiles}
-            lodLevel={props.lodLevel}
-            lodPixelError={props.lodPixelError}
-            boundary={boundary}
-            surfaces={column}
-            sea={sea}
-            seabed={seabedMeta?.id}
-            relief={columnRelief}
-            clip={ground}
-            reliefSampler={reliefSampler}
-            drawSea={!stage.water}
-            interiorFog={interiorFog}
-            section={section}
-            fence={fence}
-            onFence={onFence}
-            onFenceSide={setFenceSideInfo}
-            onCut={setStackCut}
-            onProgress={onProgress}
-            resolve={resolve}
-            rimSpacing={props.rimSpacing}
-            maxError={props.maxError}
-            carrier={
-              props.floor
-                ? {
-                    below: props.floorClearance,
-                    material: props.floorColor,
-                    detail:
-                      props.floorDetail === 'none'
-                        ? undefined
-                        : {
-                            preset: props.floorDetail,
-                            strength: props.detailStrength,
-                            scale: props.floorDetailScale,
-                          },
-                  }
-                : undefined
-            }
-          >
-            {props.sectionMode === 'fixed' && (
-              <SectionDriver
-                plane={sectionPlane}
-                azimuth={props.sectionAzimuth}
-                dip={props.sectionDip}
-                distance={props.sectionDistance}
-                flip={props.sectionFlip}
-                animate={props.sectionAnimate}
-                speed={props.sectionAnimateSpeed}
-              />
-            )}
-            {groupedLayers ? (
-              groupedLayers.map(({ name, layers: zoneLayers }, i) => (
+          {/* Under the seabed: not drawn while the ground hides it from the camera. */}
+          <SceneryBelowGround>
+            <ZoneStack
+              diagnostics={props.buildDiagnostics}
+              preview={props.preview}
+              previewSaturation={props.previewSaturation}
+              debugTiles={props.debugTiles}
+              lodLevel={props.lodLevel}
+              lodPixelError={props.lodPixelError}
+              boundary={boundary}
+              surfaces={column}
+              sea={sea}
+              seabed={seabedMeta?.id}
+              relief={columnRelief}
+              clip={ground}
+              reliefSampler={reliefSampler}
+              drawSea={!stage.water}
+              interiorFog={interiorFog}
+              section={section}
+              fence={fence}
+              onFence={onFence}
+              onFenceSide={setFenceSideInfo}
+              onCut={setStackCut}
+              onProgress={onProgress}
+              resolve={resolve}
+              rimSpacing={props.rimSpacing}
+              maxError={props.maxError}
+              carrier={
+                props.floor
+                  ? {
+                      below: props.floorClearance,
+                      material: props.floorColor,
+                      detail:
+                        props.floorDetail === 'none'
+                          ? undefined
+                          : {
+                              preset: props.floorDetail,
+                              strength: props.detailStrength,
+                              scale: props.floorDetailScale,
+                            },
+                    }
+                  : undefined
+              }
+            >
+              {props.sectionMode === 'fixed' && (
+                <SectionDriver
+                  plane={sectionPlane}
+                  azimuth={props.sectionAzimuth}
+                  dip={props.sectionDip}
+                  distance={props.sectionDistance}
+                  flip={props.sectionFlip}
+                  animate={props.sectionAnimate}
+                  speed={props.sectionAnimateSpeed}
+                />
+              )}
+              {groupedLayers ? (
+                groupedLayers.map(({ name, layers: zoneLayers }, i) => (
+                  <Zone
+                    key={i}
+                    name={name}
+                    boundary={groupBoundaries?.[i]}
+                    layers={zoneLayers}
+                    surfaceOpacity={props.surfaceOpacity}
+                    wallOpacity={props.wallOpacity}
+                    wireframe={props.wireframe}
+                    inferredStyle={props.inferredStyle}
+                    peel={peelOf(props.peel, zoneLayers.length)}
+                    cullHiddenCaps={props.cullHiddenCaps}
+                    cullOffscreen={props.cullOffscreen}
+                    onPointerClick={
+                      props.zonePicking ? focusOnCtrlClick : undefined
+                    }
+                    onBuild={m =>
+                      report(
+                        m,
+                        zoneLayers.map(l => l.surface?.name),
+                      )
+                    }
+                  />
+                ))
+              ) : (
                 <Zone
-                  key={i}
-                  name={name}
-                  boundary={groupBoundaries?.[i]}
-                  layers={zoneLayers}
+                  layers={layers}
                   surfaceOpacity={props.surfaceOpacity}
                   wallOpacity={props.wallOpacity}
                   wireframe={props.wireframe}
                   inferredStyle={props.inferredStyle}
-                  peel={peelOf(props.peel, zoneLayers.length)}
+                  peel={peelOf(props.peel, layers.length)}
                   cullHiddenCaps={props.cullHiddenCaps}
                   cullOffscreen={props.cullOffscreen}
                   onPointerClick={
                     props.zonePicking ? focusOnCtrlClick : undefined
                   }
-                  onBuild={m =>
-                    report(
-                      m,
-                      zoneLayers.map(l => l.surface?.name),
-                    )
-                  }
+                  onBuild={report}
                 />
-              ))
-            ) : (
-              <Zone
-                layers={layers}
-                surfaceOpacity={props.surfaceOpacity}
-                wallOpacity={props.wallOpacity}
-                wireframe={props.wireframe}
-                inferredStyle={props.inferredStyle}
-                peel={peelOf(props.peel, layers.length)}
-                cullHiddenCaps={props.cullHiddenCaps}
-                cullOffscreen={props.cullOffscreen}
-                onPointerClick={
-                  props.zonePicking ? focusOnCtrlClick : undefined
-                }
-                onBuild={report}
-              />
-            )}
-            {props.scenery && <ColumnRim boundary={boundary} onRim={onRim} />}
-            {markers?.inside.map((site, i) => (
-              <SeabedFacility key={site.name} site={site} base={i === 0} />
-            ))}
-          </ZoneStack>
+              )}
+              {props.scenery && <ColumnRim boundary={boundary} onRim={onRim} />}
+              {markers && <StackSampler onSampler={setStackSampler} />}
+            </ZoneStack>
+          </SceneryBelowGround>
+          {/* On the seabed: hidden from under the lid. Inside the boundary through the
+              stack's sampler, which answers the column's top from the relief; past it
+              through the relief's own. */}
           {markers && (
-            <SurfaceSamplerContext.Provider value={reliefSampler}>
-              {markers.outside.map((site, i) => (
-                <SeabedFacility key={site.name} site={site} base={i === 0} />
-              ))}
-            </SurfaceSamplerContext.Provider>
+            <SceneryAboveGround>
+              <SurfaceSamplerContext.Provider value={stackSampler}>
+                {markers.inside.map((site, i) => (
+                  <SeabedFacility key={site.name} site={site} base={i === 0} />
+                ))}
+              </SurfaceSamplerContext.Provider>
+              <SurfaceSamplerContext.Provider value={reliefSampler}>
+                {markers.outside.map((site, i) => (
+                  <SeabedFacility key={site.name} site={site} base={i === 0} />
+                ))}
+              </SurfaceSamplerContext.Provider>
+            </SceneryAboveGround>
           )}
           {props.wellbores && (
             <FieldWells
@@ -1905,7 +1936,7 @@ export const Default: Story = {
         },
         scenery: {
           description:
-            'Put the field under the videx `<Scenery>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The Scenery owns the water then: the column\u2019s own is hidden while its stage draws the sea (`ZoneStack.drawSea`).',
+            'Put the field under the videx `<Scenery>`, which lights the scene instead of the default lights, with the column as its stage\u2019s occupant. The Scenery owns the water then: the column\u2019s own is hidden while its stage draws the sea (`ZoneStack.drawSea`). The column sits in `<SceneryBelowGround>` and the seabed facilities in `<SceneryAboveGround>`: each is left out while the seabed hides it.',
           table: { category: 'Scenery' },
         },
         background: {

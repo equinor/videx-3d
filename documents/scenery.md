@@ -877,6 +877,40 @@ A cutaway also keeps the scene lit as from above the water.
   the frame, 0 fixed in the world. It has its frame size with the camera `reference`
   high (default half the width of a stage's occupant).
 
+## Content above and below the ground
+
+Wrap what lies wholly under the seabed in `<SceneryBelowGround>`, and what lies wholly over
+it in `<SceneryAboveGround>`. The `Scenery` then leaves out each side, so it is not drawn
+at all, while the ground hides it from the camera:
+
+```tsx
+<SceneryBelowGround>
+  <ZoneStack relief={...}>...</ZoneStack>
+</SceneryBelowGround>
+<SceneryAboveGround>
+  <SeabedFacility ... />
+</SceneryAboveGround>
+```
+
+- **When.** The ground hides a side while it is closed: the `Scenery` drawn and ready,
+  with a sea whose seabed is on and opaque (`seabedOpacity` 1), and nothing opening it: no
+  `SceneryCutaway` taking the seabed, no stage occupant's cut through it, no open hollow,
+  no `debug.hide`. Then from above the seabed what lies below it is left out, and from below
+  it (in the void, in rock) what lies above it. Near the seabed, through any opening, and
+  without a `Scenery`, both sides are drawn.
+- **Why.** The seabed hides what lies under it by depth, but with a logarithmic depth
+  buffer (the recommended one) every draw writes its own depth, so nothing is rejected
+  before it is shaded: a zone column under the seabed was shaded over up to 94% of the view
+  at sea level, for nothing (2026-11-25, ~0.8 ms at 2440 × 2050 on an RTX A1000).
+- **What goes in.** Only what lies wholly on one side: a wellbore runs from the surface
+  down through the seabed and belongs to neither. Either wrapper can sit anywhere in the
+  scene, inside the `Scenery` or not. Each frame the `Scenery` decides for the camera it
+  draws with, before it draws.
+- **Compiling.** What a hidden side holds is compiled in the background meanwhile, so it
+  shows without a stall.
+- ⚠️ A stage's own debug views that draw the ground see-through (its wireframe) are not
+  seen: the side under it stays hidden.
+
 ## Rendering
 
 The background is drawn in layers, each a fullscreen triangle on the far plane with a depth
@@ -1172,7 +1206,8 @@ the shared preset out.
 | `ScenerySea.tsx`, `SceneryVoid.tsx` | the features: each hands its props to the `Scenery` (`scenery-registry.ts`) |
 | `SceneryClouds.tsx`, `scenery-clouds.ts`, `shaders/cloud-*.glsl` | the 3D clouds, which draw themselves and read the scenery's material and `SceneryView` from its registry ([clouds.md](./clouds.md)) |
 | `SceneryCutaway.tsx` | the cutaway: its props, its grip, and its per-frame placement, which the `Scenery` runs |
-| `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`) |
+| `SceneryGroundSides.tsx`, `scenery-ground-sides.ts` | `SceneryBelowGround` and `SceneryAboveGround`, registered per scene; the `Scenery` shows or hides them each frame (`sceneryGroundShown`) |
+| `scenery-layers.ts` | the background's layers: their order, defines, materials, and where each can show (`sceneryLayersShown`); which side of the ground can (`sceneryGroundShown`) |
 | `scenery-model.ts` | option types, defaults, and the pure rules (`sceneryZone`, `skyDaylight`, `skyMoonlight`, `skySunColor`, …) |
 | `scenery-material.ts` | `SceneryMaterial`: the sky's own layer, the uniform objects every layer shares, and the switches they compile with |
 | `sky-star-catalogue.ts`, `sky-moon.ts`, `textures/moon.jpg` | the observer's stars as the shader's textures, and the moon's albedo map (each loaded in its own chunk) |

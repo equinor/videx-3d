@@ -185,6 +185,21 @@ export type SceneryLayerView = {
 // draws nothing on the wrong side of it itself, so only near it is anything drawn twice.
 const LEVEL_MARGIN = 0.01;
 
+// Where the camera is about the sea's seabed: the height each layer's view starts from, and
+// whether it is surely below the seabed, or may be (within the margin).
+function seabedSide(cameraHeight: number, sea: SceneryLayerView['sea']) {
+  const m = LEVEL_MARGIN;
+  const bed = sea ? sea.level - sea.depth : 0;
+  // In a trench, every layer's view starts just above the seabed (sceneryViewOrigin).
+  const height = sea?.trench
+    ? bed + Math.min(1, 0.5 * sea.depth)
+    : cameraHeight;
+  // Surely below the seabed, as every layer's view starts from there in rock (sceneryViewOrigin).
+  const belowBed = !!sea && (sea.buried || height < bed - m);
+  const maybeBelowBed = !!sea && (sea.buried || height < bed + m);
+  return { bed, height, belowBed, maybeBelowBed };
+}
+
 /**
  * Which of the layers before the sea's surface can show from where the camera is: the rest
  * draw nothing there, and are left out to spare their cost. Each shader finds where it
@@ -201,14 +216,10 @@ export function sceneryLayersShown({
   boolean
 > {
   const m = LEVEL_MARGIN;
-  const bed = sea ? sea.level - sea.depth : 0;
-  // In a trench, every layer's view starts just above the seabed (sceneryViewOrigin).
-  const height = sea?.trench
-    ? bed + Math.min(1, 0.5 * sea.depth)
-    : cameraHeight;
-  // Surely below the seabed, as every layer's view starts from there in rock (sceneryViewOrigin).
-  const belowBed = !!sea && (sea.buried || height < bed - m);
-  const maybeBelowBed = !!sea && (sea.buried || height < bed + m);
+  const { bed, height, belowBed, maybeBelowBed } = seabedSide(
+    cameraHeight,
+    sea,
+  );
   const inWater =
     !!sea &&
     sea.water &&
@@ -231,4 +242,20 @@ export function sceneryLayersShown({
     sea: !!sea && !belowBed && !inWater,
     water: maybeInWater,
   };
+}
+
+/**
+ * Which side of the ground can show from where the camera is (see `SceneryBelowGround` and
+ * `SceneryAboveGround`): while the ground is `closed` — the sea's seabed drawn whole and
+ * opaque, with nothing opening it (`voidOpen` false: no cutaway taking it, no stage's
+ * opening) — what lies below it cannot show from above it, nor what lies above it from below.
+ * Near the seabed, or while it is open, both show.
+ */
+export function sceneryGroundShown(
+  { height, sea, voidOpen }: SceneryLayerView,
+  closed: boolean,
+): { below: boolean; above: boolean } {
+  if (!sea || !closed || voidOpen) return { below: true, above: true };
+  const { belowBed, maybeBelowBed } = seabedSide(height, sea);
+  return { below: maybeBelowBed, above: !belowBed };
 }
