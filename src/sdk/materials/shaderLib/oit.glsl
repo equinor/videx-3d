@@ -17,6 +17,7 @@
 //   USE_OIT            enables the whole block
 //   OIT_DEPTH_PASS     min-depth pre-pass (writes linear view-space depth)
 //   OIT_FRONT_PASS     exact front layer (alpha-over, discards tail fragments)
+//   OIT_OCCLUSION_PASS depth-only stamp where alpha clears oitOcclusionThreshold
 //   (none of the above, USE_OIT only) => single-buffer weighted-blended OIT tail
 //
 // The WBOIT tail uses a single RGBA16F accumulation target with optical-depth
@@ -73,7 +74,9 @@ vec4 oitProcess(vec4 color) {
   if(color.a < oitOcclusionThreshold)
     discard;
   return color;
-  #endif
+  #else
+  // Everything below writes outputs this pass does not declare (oitFrontColor, the
+  // slices): left out of it, or its program does not compile.
 
   // View-space linear depth, normalised. Independent of the (logarithmic) depth
   // buffer encoding, so the partition is correct at any camera scale.
@@ -171,6 +174,7 @@ vec4 oitProcess(vec4 color) {
 
   #endif // OIT_FRONT_PASS
   #endif // OIT_DEPTH_PASS
+  #endif // OIT_OCCLUSION_PASS
 }
 
 // Whether this fragment is resolved in the weighted tail, i.e. only seen through the

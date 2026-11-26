@@ -76,6 +76,60 @@ function runOnBeforeCompile(
   return shader;
 }
 
+/**
+ * What a GLSL preprocessor keeps of `source` with `defines` set. Only the directives
+ * oit.glsl uses: `#ifdef`, `#ifndef`, `#if`/`#elif` over `defined(X)` joined by `!`,
+ * `&&` and `||` (no parentheses), `#else` and `#endif`. Anything else throws, so a new
+ * form is noticed rather than misread.
+ */
+function preprocessGlsl(source: string, defines: Iterable<string>): string {
+  const on = new Set(defines);
+  const test = (expr: string) =>
+    expr.split('||').some(any =>
+      any.split('&&').every(term => {
+        const m = /^\s*(!?)\s*defined\s*\(\s*(\w+)\s*\)\s*$/.exec(term);
+        if (!m) throw new Error(`unsupported #if term: ${term}`);
+        return on.has(m[2]) !== (m[1] === '!');
+      }),
+    );
+  // Per open block: whether the code around it is kept, and whether a branch was taken.
+  const stack: { outer: boolean; taken: boolean }[] = [];
+  let active = true;
+  const kept: string[] = [];
+  for (const line of source.split(/\r?\n/)) {
+    const d =
+      /^\s*#\s*(ifdef|ifndef|if|elif|else|endif)\b\s*(.*?)\s*(\/\/.*)?$/.exec(
+        line,
+      );
+    if (!d) {
+      if (active) kept.push(line);
+      continue;
+    }
+    const [, directive, rest] = d;
+    if (directive === 'endif' || directive === 'else' || directive === 'elif') {
+      const top = stack[stack.length - 1];
+      if (!top) throw new Error(`#${directive} without #if`);
+      if (directive === 'endif') {
+        stack.pop();
+        active = top.outer;
+      } else {
+        const value = !top.taken && (directive === 'else' || test(rest));
+        top.taken ||= value;
+        active = top.outer && value;
+      }
+    } else {
+      const value =
+        directive === 'if'
+          ? test(rest)
+          : on.has(rest) === (directive === 'ifdef');
+      stack.push({ outer: active, taken: value });
+      active &&= value;
+    }
+  }
+  if (stack.length) throw new Error('unterminated #if');
+  return kept.join('\n');
+}
+
 const FRAG_NO_VIEWPOS = `precision highp float;
 void main() {
   gl_FragColor = vec4(1.0);
@@ -446,6 +500,41 @@ void main() {
       ).defines;
       expect(accumDefines?.OIT_DEPTH_PASS).toBeUndefined();
       expect(accumDefines?.OIT_FRONT_PASS).toBeUndefined();
+    });
+
+    test('each pass writes only the outputs it declares (oit.glsl)', () => {
+      // The extra colour outputs exist in the tail pass alone. A pass whose code still
+      // writes one does not compile, and three then draws nothing of it: so it was for
+      // the occlusion stamp from 2026-10-14 to 2026-11-26.
+      const glsl = readFileSync(
+        'src/sdk/materials/shaderLib/oit.glsl',
+        'utf-8',
+      );
+      const outRe = /\bout\s+(?:\w+\s+)*?vec4\s+(\w+)\s*;/g;
+      const outputs = [...glsl.matchAll(outRe)].map(m => m[1]);
+      expect(outputs.length).toBeGreaterThan(0);
+      const variants = makeOitCompatible(
+        new MeshStandardMaterial(),
+      ).getOitVariants();
+      const definesOf = (pass: OitPass) =>
+        Object.keys(
+          (variants[pass] as { defines?: Record<string, unknown> }).defines ??
+            {},
+        );
+      const cases: [string, string[]][] = [
+        ...ALL_PASSES.map(
+          pass => [pass, definesOf(pass)] as [string, string[]],
+        ),
+      ];
+      for (const [pass, defines] of cases) {
+        const code = preprocessGlsl(glsl, defines);
+        const declared = new Set([...code.matchAll(outRe)].map(m => m[1]));
+        const undeclared = outputs.filter(
+          name =>
+            !declared.has(name) && new RegExp(`\\b${name}\\s*=`).test(code),
+        );
+        expect(undeclared, pass).toEqual([]);
+      }
     });
 
     test('configures blend/depth state per pass', () => {
