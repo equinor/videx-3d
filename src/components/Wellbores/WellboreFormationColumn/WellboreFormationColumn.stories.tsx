@@ -135,6 +135,12 @@ const DemoComponent = ({
   );
 };
 
+/**
+ * `WellboreFormationColumn` draws the formations a wellbore passes through as coloured tubes
+ * around its trajectory, one for each interval of a strat column. The story can show them as a
+ * `WellboreRibbon` instead: a flat band along the trajectory with formation stripes and a
+ * measured-depth stripe.
+ */
 const meta = {
   title: 'Components/Wellbores/WellboreFormationColumn',
   component: DemoComponent,
@@ -148,6 +154,12 @@ type Story = StoryObj<StoryArgs>;
 const wellboreId = storyArgs.defaultWellbore;
 const stratColumnId = storyArgs.defaultStratColumn;
 
+/**
+ * The demo wellbore's formations from the demo strat column, around its casings and completion
+ * tools (`scaleFactor` times their size). `showRibbon` draws them as a ribbon instead: one stripe
+ * per level of the column unless `merged`, beside a measured-depth stripe ticked every
+ * `stepSize` metres.
+ */
 export const Default: Story = {
   args: {
     showRibbon: false,

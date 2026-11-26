@@ -486,27 +486,14 @@ const range = (min: number, max: number, step: number) => ({
 });
 
 /**
- * Standalone showcase of the {@link Water} component using the default React
- * Three Fiber render loop. Each story builds the ocean geometry a different
- * way:
+ * An animated sea surface (`<Water>`) on a geometry of your own. Its waves come from the wind
+ * (`windSpeed`, `windDirection`); it is see-through looking down and reflective at grazing
+ * angles, and composites with other transparent geometry through the `OITRenderPass`. Children
+ * of a `Water` can float on its waves (`useBuoyancy`).
  *
- * - **Plane** — a flat `createWaterPlane` surface (no body / sea bed).
- * - **Circle** — a built-in Three.js `CircleGeometry` flipped onto the X/Z
- *   plane (normals up) used directly as the ocean surface.
- * - **Box** — `createWaterBox`: surface + water-body walls + a procedural sea
- *   bed.
- * - **Ellipse** — `createWaterEllipseBox`: a round box (circle when width and
- *   height match, oval otherwise) — a smooth outline for very large water bodies
- *   that avoids the hard corners of a rectangle.
- * - **Polygon** — `createWaterBoxFromPolygon`: a box whose footprint follows a
- *   polygon with holes — either the field outline derived from the wellbore
- *   trajectories, or a made-up multi-component footprint.
- * - **Surface** — `createWaterBoxFromSurface`: a box whose sea bed is the
- *   bathymetry of a selectable depth surface. (The surfaces bundled with this
- *   repo are subsurface sediment horizons rather than real sea beds; they are
- *   used only to demonstrate the feature.)
- *
- * @group Components
+ * The sdk builds the geometry: a surface alone, or a box of water with its walls and a sea bed.
+ * Each story builds it another way (`variant`). One more, `ellipse` (`createWaterEllipseBox`),
+ * is a round box with no corners, for very large water bodies.
  */
 const meta = {
   title: 'Components/Water/Water',
@@ -700,22 +687,37 @@ const commonArgs = orderArgs(
   meta.argTypes,
 );
 
-/** Flat ocean surface plane (`createWaterPlane`). */
+/**
+ * A flat water surface alone (`createWaterPlane`), 10 km across: no walls and no sea bed. Shape
+ * the waves with the wind (`windSpeed`, `windDirection`, `steepness`) and the water's look with
+ * `opticsColor`, `opticsClarity`, `reflectionIntensity` and the foam (`foamAmount`, `foamColor`).
+ */
 export const Plane: Story = {
   args: { ...commonArgs, variant: 'plane' },
 };
 
-/** Built-in Three.js `CircleGeometry`, flipped onto X/Z, as the ocean surface. */
+/**
+ * Any flat geometry can be the surface: here a Three.js `CircleGeometry`, laid on the X/Z plane
+ * with its normals up. `size` sets its diameter and `perimeterSegments` how round it is.
+ */
 export const Circle: Story = {
   args: { ...commonArgs, variant: 'circle' },
 };
 
-/** Full ocean box with procedural sea bed (`createWaterBox`). */
+/**
+ * A box of water (`createWaterBox`): the surface, the water body's walls and a sea bed
+ * `waterDepth` down, made uneven by `depthVariation`. Set the look of the walls and the bed, its
+ * sand dunes too, in the Body & sea bed group, and show or hide each part under Visibility.
+ */
 export const Box: Story = {
   args: { ...commonArgs, variant: 'box' },
 };
 
-/** Water box following a polygon footprint with holes (`createWaterBoxFromPolygon`). */
+/**
+ * A box of water whose footprint is a polygon with holes (`createWaterBoxFromPolygon`): the demo
+ * field's outline, worked out from its wellbores, or a made-up footprint of several parts with
+ * holes (`polygonId`).
+ */
 export const Polygon: Story = {
   args: {
     ...commonArgs,
@@ -726,24 +728,21 @@ export const Polygon: Story = {
 };
 
 /**
- * Water box whose sea bed is a selectable depth surface
- * (`createWaterBoxFromSurface`).
- *
- * NOTE: the surfaces available in this repo are subsurface sediment horizons,
- * not real sea-bed surfaces, so the resulting "sea bed" sits far below sea
- * level — this story only showcases the feature. Client applications typically
- * have genuine bathymetry / sea-bed surfaces to feed in instead.
+ * A box of water whose sea bed is a depth surface from the store (`createWaterBoxFromSurface`;
+ * pick one with `surfaceId`). The demo field has no sea-bed surface, so the bed here is a horizon
+ * far below the sea; an application would give it a bathymetry surface. `maxError` simplifies
+ * the bed and `edgeSmoothing` rounds the box's outline.
  */
 export const Surface: Story = {
   args: { ...commonArgs, variant: 'surface' },
 };
 
 /**
- * What floats on a North Sea field, at its own size, demonstrating `useBuoyancy`: a 90 m
- * supply vessel, a 25 m workboat and three buoys, each a child of `<Water>` sampling the live
- * wave field at its corners to heave/pitch/roll with the surface, and spreading contact foam.
- * The surface is displaced, so it moves with the waves they ride. A long hull spans the short
- * waves and follows only the long ones; a buoy rides every wave.
+ * Boxes the size of what floats on a North Sea field, a 90 m supply vessel, a 25 m workboat and
+ * three buoys, riding a displaced surface (`displacement`). Each, a child of the `<Water>`,
+ * samples the waves at its corners to heave, pitch and roll (`useBuoyancy`), and spreads foam
+ * where it meets the water (`contactFoam`). The long hull follows only the long waves, a buoy
+ * every wave; raise `windSpeed` for a rougher sea.
  */
 export const Buoyancy: Story = {
   args: {

@@ -13,8 +13,8 @@ import { WellboreSeismicSection } from './WellboreSeismicSection';
 
 const meta = {
   title: 'Components/Wellbores/SeismicSection',
-  component: Wellbore,
-} satisfies Meta<typeof Wellbore>;
+  component: WellboreSeismicSection,
+} satisfies Meta<typeof WellboreSeismicSection>;
 
 type StoryArgs = React.ComponentProps<typeof WellboreSeismicSection> & {
   id: string;
@@ -25,6 +25,11 @@ type Story = StoryObj<StoryArgs>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
+/**
+ * A seismic section along a wellbore of the demo field (`id`), with the trajectory drawn through
+ * it. Try the curtain's spacing (`stepSize`), how far it runs on (`extension`, `minSize`) and its
+ * colours (`colorRampIndex`, `rangeOffset`).
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

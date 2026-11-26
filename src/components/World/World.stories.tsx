@@ -292,6 +292,17 @@ const sceneArgTypes = {
   },
 } as const;
 
+/**
+ * `World` says where the scene lies on the Earth (`frame`) and places everything in it on the
+ * globe. Each field is a `UtmArea` in a map of its own, which the world places where its map
+ * has it; the sky and the sea (`Scenery`) and the relief (`GeoRelief`) lie on the same globe,
+ * cut flat over the anchored field's stage (`boundary`).
+ *
+ * Here a field is a few spheres: large ones at sea level in its middle and round the edge of
+ * its stage, and three smaller ones across its middle at a reservoir's depth, 2500 m down.
+ * Turn the Earth's curve off (`globe`), leave out the demo relief (`relief`), or see under the
+ * seabed over the fields (`fieldOpacity`).
+ */
 const meta = {
   title: 'Components/Georeferencing/World',
   decorators: [
@@ -315,8 +326,9 @@ const meta = {
 export default meta;
 
 /**
- * One field on the Earth: the demo field's frame is the `World`'s, and its stage, a circle,
- * the `boundary` the globe is cut flat over and the `SceneryStage` takes.
+ * The demo field alone: its map is the world's `frame`, and its stage, a circle of
+ * `stageRadius` km, is the `boundary` the globe is cut flat over and the `SceneryStage` is
+ * drawn in. Change the radius and the spheres along the edge follow.
  */
 export const Default: StoryObj<DefaultArgs> = {
   args: { ...sceneArgs, stageRadius: 9 },
@@ -333,10 +345,11 @@ export const Default: StoryObj<DefaultArgs> = {
 };
 
 /**
- * Three fields, each in a map of its own and a stage of its own shape. One is anchored: the
- * `World`'s frame and boundary are its. Switch it, and everything is placed anew in the new
- * frame before the next frame is drawn; `onFrameChange` tells the host how to carry the
- * camera.
+ * Three fields, each with a map and a stage shape of its own: the demo field (orange, a circle),
+ * one 123 km east in the next UTM zone (magenta, a turned box), and one overlapping the demo
+ * field in a map about its own middle (cyan, an L). Switch the field the world is anchored to
+ * (`anchor`) and everything is placed anew in its frame before the next frame is drawn; with
+ * `keepView` the camera is carried along (`onFrameChange`) and stays where it was on the Earth.
  */
 export const Fields: StoryObj<FieldsArgs> = {
   args: { ...sceneArgs, anchor: 'volve', keepView: false },

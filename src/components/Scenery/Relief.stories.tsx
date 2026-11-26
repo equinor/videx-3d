@@ -20,10 +20,8 @@ import { World } from '../World/World';
 import { Scenery } from './Scenery';
 import { ScenerySea } from './ScenerySea';
 
-// Land and seabed from Earth relief data (`<GeoRelief>`, documents/relief.md) with a `Scenery`'s
-// sky and sea, about the demo field at Volve: the demo reliefs, from the world's to a survey's
-// about the field, merged onto tiles as fine as the camera needs them. They are made on demand by
-// `npm run generate-relief` (`npm run build-static` runs it) into `public/relief`.
+// See documents/relief.md. The demo reliefs are made on demand by `npm run generate-relief`
+// (`npm run build-static` runs it) into `public/relief`.
 
 const DEPTH = 100;
 
@@ -71,9 +69,14 @@ const ReliefStory = ({
 };
 
 /**
- * Land and seabed from Earth relief data (`<GeoRelief>`), drawn from tiles merged coarse to
- * fine, with a `Scenery`'s sky and sea. The demo reliefs are made on demand by
- * `npm run generate-relief` (`npm run build-static` runs it).
+ * Land and seabed from Earth relief data (`<GeoRelief>`) under a `Scenery`'s sky and sea, about
+ * the demo field. The demo reliefs, from a world relief down to a survey about the field, are
+ * merged coarse to fine onto tiles only as fine as the view needs; where none has data, the
+ * seabed lies flat at the sea's depth.
+ *
+ * The reliefs are read from the store (`relief-meta`, `relief-values`; see
+ * [Data](/videx-3d/docs/documents/data.html)) and merged by the `sceneryReliefTile` generator
+ * (see [Generators](/videx-3d/docs/documents/generators.html)).
  */
 const meta = {
   title: 'Components/Scenery/Relief',
@@ -142,12 +145,17 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** The coast of south-western Norway and its fjords from 60 km up, over the Norwegian Trench. */
+/**
+ * The coast of south-western Norway and its fjords from 60 km up, over the Norwegian Trench.
+ * Untick reliefs in `layers` to see what each adds, colour the land by height or in one colour
+ * (`color`), draw `contours`, drain the sea (`water`) to see the seabed dry, and raise
+ * `pixelError` to draw coarser tiles.
+ */
 export const Default: Story = {};
 
 /**
- * The whole Earth from some 20 000 km: the world's relief under the finer ones about the
- * field. Fly down to the field from here.
+ * The whole Earth from some 20 000 km: the world relief, with the finer ones about the field.
+ * Zoom in to fly down to the field.
  */
 export const Earth: Story = {
   parameters: {

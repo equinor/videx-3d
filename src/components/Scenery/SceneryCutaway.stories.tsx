@@ -30,10 +30,7 @@ import { ScenerySea } from './ScenerySea';
 import { SceneryStage } from './SceneryStage';
 import type { SceneryStageBounds } from './scenery-stage';
 
-// A cut through the sea (`<SceneryCutaway>`, documents/scenery.md): the water and the seabed in
-// front of the view taken away, so the field under them, its wellbores and its reservoir, is seen
-// clearly; a rim marks the cut's edge and a shadow falls inside it. It follows the camera. Drag
-// the grip on the rim to move the edge; a double click puts it back.
+// See documents/scenery.md.
 
 // The field's water depth: the sea's seabed.
 const DEPTH = storyArgs.waterDepth;
@@ -87,8 +84,10 @@ const CutawayStory = ({
 const cutawayArgTypes = sceneryCutawayArgTypes();
 
 /**
- * A cut through a `Scenery`'s sea in front of the view (`<SceneryCutaway>`), so what lies
- * under the water and the seabed is seen clearly. The scene itself is never cut.
+ * A cut through a `Scenery`'s sea (`<SceneryCutaway>`): the water and the seabed in front of the
+ * view are taken away, so what lies under them is seen clearly. The cut follows the camera; a
+ * rim marks its edge and a shadow falls just inside it. Only the sea is cut: the data and a
+ * stage's occupants never are.
  */
 const meta = {
   title: 'Components/Scenery/SceneryCutaway',
@@ -135,5 +134,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Over the field from 2 km: the sea cut away in front of the view, the field under it. */
+/**
+ * Over the demo field from 2 km, its wellbores and reservoir seen through the cut. Drag the grip
+ * on the rim (`cutawayHandle`) to move the edge; a double click puts it back. Set how much of the
+ * water is cut (`cutawayWater`), whether the seabed is cut too (`cutawaySeabed`), and where the
+ * edge lies (`cutawayReach`, `cutawayOffset`).
+ */
 export const Default: Story = {};

@@ -19,9 +19,9 @@ import { WellboreBounds } from './WellboreBounds';
 
 const meta = {
   title: 'Components/Wellbores/WellboreBounds',
-  component: Wellbore,
+  component: WellboreBounds,
   loaders: [async () => useOutputPanelState.setState({ groups: {} })],
-} satisfies Meta<typeof Wellbore>;
+} satisfies Meta<typeof WellboreBounds>;
 
 type StoryArgs = React.ComponentProps<typeof WellboreBounds>;
 
@@ -59,6 +59,11 @@ const OutputLogger = () => {
   return null;
 };
 
+/**
+ * The distance from the camera to a wellbore of the demo field (`id`), as `WellboreBounds` gives
+ * it to the components inside it, shown in the output panel. Move the camera to watch it: exact
+ * within `exactWithin` metres, measured to the trajectory simplified within `boundsTolerance`.
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

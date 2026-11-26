@@ -37,7 +37,9 @@ export type FormationMarkerProps = CommonComponentProps & {
 };
 
 /**
- * Render formation markers along a wellbore trajectory. This uses the `Symbols` component internally.
+ * Formation tops along a wellbore: a marker where the trajectory enters each unit of the strat
+ * column (`stratColumnId`), and with `showAnnotations` its name as an annotation. Must be a
+ * child of the `Wellbore` component. This uses the `Symbols` component internally.
  *
  * @example
  * <Wellbore id={wellboreId}>

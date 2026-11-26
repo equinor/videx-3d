@@ -11,8 +11,8 @@ import { TubeTrajectory } from './TubeTrajectory';
 
 const meta = {
   title: 'Components/Wellbores/TubeTrajectory',
-  component: Wellbore,
-} satisfies Meta<typeof Wellbore>;
+  component: TubeTrajectory,
+} satisfies Meta<typeof TubeTrajectory>;
 
 type StoryArgs = React.ComponentProps<typeof TubeTrajectory> & { id: string };
 
@@ -21,6 +21,10 @@ type Story = StoryObj<StoryArgs>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
+/**
+ * Deprecated: use `Trajectory`. A wellbore of the demo field (`id`) as a tube `radius` metres
+ * thick; changing the radius builds the tube again.
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

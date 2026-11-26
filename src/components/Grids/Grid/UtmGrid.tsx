@@ -19,7 +19,10 @@ export type UtmGridProps = GridProps & {
 };
 
 /**
- * A convenience component for setting up a Grid component with Utm coordinates.
+ * A `Grid` in UTM coordinates, inside a `UtmArea`: its axes cross at the area's origin and are
+ * labelled with eastings and northings on the ground (`plane` `'xz'`), or with eastings or
+ * northings and heights on a wall (`'xy'`, `'zy'`). With `relativeValues`, in metres from the
+ * origin instead.
  *
  * @example
  * <UtmGrid

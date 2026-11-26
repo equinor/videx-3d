@@ -52,6 +52,10 @@ const HighlightBox = ({ position = [0, 0, 0], color = '#4f7b95' }: Props) => {
   );
 };
 
+/**
+ * Five boxes, each highlighted while the pointer is over it. Set the ghost's `color` and
+ * `opacity`, and how it blends (`blending`, a three.js blending mode; additive when left out).
+ */
 export const Default: Story = {
   args: {
     color: '#9797e3',

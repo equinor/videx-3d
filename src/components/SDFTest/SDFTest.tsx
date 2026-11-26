@@ -20,6 +20,11 @@ export type SDFTestProps = {
   horizontalAlign?: number;
 };
 
+/**
+ * A test of text drawn in a shader from signed distance field glyphs: a plane 800 by 600 units
+ * with `text` written on it line by line at `fontSize`, its first line again scaled to half the
+ * plane's width, and two numbers counting with time. Needs a `GlyphsProvider` above it.
+ */
 export const SDFTest = ({
   text,
   inBias = 0,

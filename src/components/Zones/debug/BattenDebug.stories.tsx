@@ -11,7 +11,11 @@ import {
   WellboreFenceOptions,
 } from '../../../sdk/geometries/wellbore-fence';
 import { CRS, getProjectionDefFromUtmZone } from '../../../sdk/projection/crs';
-import { buildFenceCut, HeadArmPlan, TdArmPlan } from '../../../sdk/utils/fence-run-out';
+import {
+  buildFenceCut,
+  HeadArmPlan,
+  TdArmPlan,
+} from '../../../sdk/utils/fence-run-out';
 import {
   FenceSideName,
   hullDiameter,
@@ -286,17 +290,35 @@ function wellboreScene(
   ];
   let inputs: ReturnType<typeof fenceCoreInputs>;
   try {
-    inputs = fenceCoreInputs(curve, block, well, margin, rings, { ...head, fuse });
+    inputs = fenceCoreInputs(curve, block, well, margin, rings, {
+      ...head,
+      fuse,
+    });
   } catch (e) {
     const failed = e instanceof Error ? e.message : String(e);
     notes.push(`✖ ${failed}`);
-    return { ...bare, trace: well, well, untrimmed, outside: false, failed, notes };
+    return {
+      ...bare,
+      trace: well,
+      well,
+      untrimmed,
+      outside: false,
+      failed,
+      notes,
+    };
   }
   const { headArm, reach, tdPlan } = inputs;
-  notes.push(`cores run on past the block: head ${reach[0].toFixed(0)} m · TD ${reach[1].toFixed(0)} m`);
-  if (fuse.length > 0) notes.push(`battens overlapped: re-planned with ${fuse.length} hull pair(s) fused`);
+  notes.push(
+    `cores run on past the block: head ${reach[0].toFixed(0)} m · TD ${reach[1].toFixed(0)} m`,
+  );
+  if (fuse.length > 0)
+    notes.push(
+      `battens overlapped: re-planned with ${fuse.length} hull pair(s) fused`,
+    );
   if (tdPlan?.divert) {
-    notes.push(`TD: diverted ${((tdPlan.divert * 180) / Math.PI).toFixed(0)}° so the head clears the well`);
+    notes.push(
+      `TD: diverted ${((tdPlan.divert * 180) / Math.PI).toFixed(0)}° so the head clears the well`,
+    );
   } else if (tdPlan) notes.push('TD: routed round the obstacle over it');
   if (!span.headArm) notes.push('head: outside the footprint — no head arm');
   if (headArm) {
@@ -374,8 +396,17 @@ function buildModel(
   const sides: Model['sides'] = { left: build('left'), right: build('right') };
   const overlap = sides.left.overlap ?? sides.right.overlap;
   const replanned = overlap && scene.replan ? scene.replan(overlap) : null;
-  if (replanned && (replanned.failed || replanned.obstacles.length < scene.obstacles.length)) {
-    return buildModel(replanned, margin, battenStiffness, anchorScale, anchorBalanced);
+  if (
+    replanned &&
+    (replanned.failed || replanned.obstacles.length < scene.obstacles.length)
+  ) {
+    return buildModel(
+      replanned,
+      margin,
+      battenStiffness,
+      anchorScale,
+      anchorBalanced,
+    );
   }
   for (const side of ['left', 'right'] as const) {
     const s = sides[side];
@@ -393,7 +424,9 @@ function buildModel(
           `anchor A ${t.anchor[0].toFixed(0)} m · B ${t.anchor[1].toFixed(0)} m`,
         );
         bits.push(`seed ${t.seed?.length ?? 0}v`);
-        bits.push(`batten ${shipped.length}v · ${t.contacts?.length ?? 0} contact(s)`);
+        bits.push(
+          `batten ${shipped.length}v · ${t.contacts?.length ?? 0} contact(s)`,
+        );
       }
       bits.push(`worst turn ${((turn * 180) / Math.PI).toFixed(0)}°`);
       return bits.join(' · ');
@@ -407,7 +440,11 @@ function buildModel(
   let cut: Model['cut'] = null;
   let cutFlags: string[] = [];
   let cutError: string | null = null;
-  if ((scene.headArm || scene.headOpen) && sides.left.core && sides.right.core) {
+  if (
+    (scene.headArm || scene.headOpen) &&
+    sides.left.core &&
+    sides.right.core
+  ) {
     try {
       const built = buildFenceCut(
         scene.well,
@@ -664,13 +701,20 @@ function BattenPlanView({
       // the well is drawn whole; the virtual guide of a planned head is the trace's extra stretch
       stroke(model.scene.well, COLOURS.well, 1.25);
       if (model.scene.headArm) {
-        stroke(model.scene.headArm.guide, COLOURS.degenerate, 1.25, false, [
-          4, 3,
-        ]);
+        stroke(
+          model.scene.headArm.guide,
+          COLOURS.degenerate,
+          1.25,
+          false,
+          [4, 3],
+        );
       }
       if (model.scene.tdPlan) {
         stroke(
-          [...(model.scene.tdPlan.lead ?? []), ...[...model.scene.tdPlan.guide].reverse()],
+          [
+            ...(model.scene.tdPlan.lead ?? []),
+            ...[...model.scene.tdPlan.guide].reverse(),
+          ],
           COLOURS.degenerate,
           1.25,
           false,
@@ -697,7 +741,12 @@ function BattenPlanView({
             if (t.seed[k]) dot(t.seed[k], COLOURS.clamp, 3.5);
           }
         }
-        if ((layers.showAnchors || layers.showAnchorLabels) && t.turn && t.seed && t.seed.length >= 4) {
+        if (
+          (layers.showAnchors || layers.showAnchorLabels) &&
+          t.turn &&
+          t.seed &&
+          t.seed.length >= 4
+        ) {
           for (const end of ['A', 'B'] as const) {
             const k = end === 'A' ? 0 : 1;
             const g = t.turn[k];
@@ -709,21 +758,39 @@ function BattenPlanView({
             const colour = end === 'A' ? COLOURS.runA : COLOURS.runB;
             // the anchor is measured along the seed from the run end, towards the clamp
             const arcs = polylineArcLengths(seed);
-            const atEnd = nearestOnPolyline(seed, g.runEnd[0], g.runEnd[1])?.along ?? 0;
+            const atEnd =
+              nearestOnPolyline(seed, g.runEnd[0], g.runEnd[1])?.along ?? 0;
             const sign = end === 'A' ? -1 : 1;
             const laid = end === 'A' ? atEnd : arcs[n - 1] - atEnd;
             const short = anchor - laid > 0.25 * atom;
             if (layers.showAnchors) {
-              const on = (d: number): Vec2 => pointAtArcLength(seed, arcs, atEnd + sign * Math.min(d, laid));
+              const on = (d: number): Vec2 =>
+                pointAtArcLength(seed, arcs, atEnd + sign * Math.min(d, laid));
               // past the seed's end, the stretch the rule wanted but the seed did not get
               const tip = end === 'A' ? seed[0] : seed[n - 1];
               const prev = end === 'A' ? seed[1] : seed[n - 2];
               const tl = Math.hypot(tip[0] - prev[0], tip[1] - prev[1]) || 1;
-              const out: Vec2 = [(tip[0] - prev[0]) / tl, (tip[1] - prev[1]) / tl];
+              const out: Vec2 = [
+                (tip[0] - prev[0]) / tl,
+                (tip[1] - prev[1]) / tl,
+              ];
               const at = (d: number): Vec2 =>
-                d <= laid ? on(d) : [tip[0] + out[0] * (d - laid), tip[1] + out[1] * (d - laid)];
+                d <= laid
+                  ? on(d)
+                  : [
+                      tip[0] + out[0] * (d - laid),
+                      tip[1] + out[1] * (d - laid),
+                    ];
               const steps = Math.max(2, Math.ceil((4 * laid) / atom));
-              stroke(Array.from({ length: steps + 1 }, (_, s) => on((laid * s) / steps)), colour, 1, false, [2, 4]);
+              stroke(
+                Array.from({ length: steps + 1 }, (_, s) =>
+                  on((laid * s) / steps),
+                ),
+                colour,
+                1,
+                false,
+                [2, 4],
+              );
               if (short) {
                 context.globalAlpha = 0.4;
                 stroke([tip, at(anchor)], colour, 1, false, [2, 4]);
@@ -750,17 +817,30 @@ function BattenPlanView({
                 context.moveTo(qx - nx * len, qy - ny * len);
                 context.lineTo(qx + nx * len, qy + ny * len);
                 context.stroke();
-                if (i % 5 === 0) context.fillText(String(i), qx + nx * 12 - 6, qy + ny * 12 + 4);
+                if (i % 5 === 0)
+                  context.fillText(
+                    String(i),
+                    qx + nx * 12 - 6,
+                    qy + ny * 12 + 4,
+                  );
               }
               context.globalAlpha = 1;
               stroke(
-                [g.runEnd, [g.runEnd[0] + g.flankDir[0] * atom, g.runEnd[1] + g.flankDir[1] * atom]],
+                [
+                  g.runEnd,
+                  [
+                    g.runEnd[0] + g.flankDir[0] * atom,
+                    g.runEnd[1] + g.flankDir[1] * atom,
+                  ],
+                ],
                 colour,
                 2,
               );
               dot(g.runEnd, colour, 4.5);
               context.lineWidth = 2;
-              for (const p of end === 'A' ? [seed[0], seed[1]] : [seed[n - 2], seed[n - 1]]) {
+              for (const p of end === 'A'
+                ? [seed[0], seed[1]]
+                : [seed[n - 2], seed[n - 1]]) {
                 context.beginPath();
                 context.arc(toX(p[0]), toY(p[1]), 5, 0, Math.PI * 2);
                 context.stroke();
@@ -781,11 +861,18 @@ function BattenPlanView({
             context.fillStyle = colour;
             const lx = toX(clamp[0]) + 10;
             const ly = toY(clamp[1]) + (end === 'A' ? -12 : 20);
-            const floor = g.atoms < anchor / atom - 1e-6 ? ` (floor: ${(anchor / atom).toFixed(0)} atoms)` : '';
+            const floor =
+              g.atoms < anchor / atom - 1e-6
+                ? ` (floor: ${(anchor / atom).toFixed(0)} atoms)`
+                : '';
             const size = short
               ? `anchor wanted ${(anchor / atom).toFixed(1)} · laid ${(laid / atom).toFixed(1)} atoms (run too short, extension refused)`
               : `anchor ${anchor.toFixed(0)} m = ${(anchor / atom).toFixed(1)} atoms${floor}`;
-            context.fillText(`clamp ${end} ${g.convex ? 'convex' : 'concave'}: ${size}`, lx, ly);
+            context.fillText(
+              `clamp ${end} ${g.convex ? 'convex' : 'concave'}: ${size}`,
+              lx,
+              ly,
+            );
             context.fillText(
               `φ ${((g.phi * 180) / Math.PI).toFixed(0)}° · φ/θ ${(g.atoms / (g.multiple || 1)).toFixed(1)} × c ${g.multiple}`,
               lx,
@@ -822,14 +909,28 @@ function BattenPlanView({
         context.fillRect(size - 14 - 220, bannerY - 16, 220, 22);
         context.fillStyle = '#ffffff';
         context.font = 'bold 13px monospace';
-        context.fillText(`✖ ${s.toUpperCase()} FAILED`, size - 14 - 212, bannerY);
+        context.fillText(
+          `✖ ${s.toUpperCase()} FAILED`,
+          size - 14 - 212,
+          bannerY,
+        );
         bannerY += 26;
       }
       for (const t of result.transitions) {
         let spots = t.failures ?? [];
-        if (result.error && spots.length === 0 && t.seam && t.seam.length >= 3) {
+        if (
+          result.error &&
+          spots.length === 0 &&
+          t.seam &&
+          t.seam.length >= 3
+        ) {
           const w = polylineWorstTurn(t.seam);
-          spots = [{ point: t.seam[w.index], reason: `worst turn ${((w.turn * 180) / Math.PI).toFixed(0)}°` }];
+          spots = [
+            {
+              point: t.seam[w.index],
+              reason: `worst turn ${((w.turn * 180) / Math.PI).toFixed(0)}°`,
+            },
+          ];
         }
         for (const { point: p, reason } of spots) {
           const cx = toX(p[0]);
@@ -936,7 +1037,14 @@ type ReportRow = {
   obstacles: number;
   /** TD diversion, degrees */
   divert?: number;
-  bucket: 'built' | 'batten' | 'runaway' | 'arms' | 'flags' | 'other' | 'outside';
+  bucket:
+    | 'built'
+    | 'batten'
+    | 'runaway'
+    | 'arms'
+    | 'flags'
+    | 'other'
+    | 'outside';
   detail: string;
   /** the args that reproduce this build */
   pick: Partial<Props>;
@@ -964,24 +1072,42 @@ const BUCKET_COLOURS: Record<ReportRow['bucket'], string> = {
 /** Bucket one model: the batten gates first, then the arms, then the cut's flags. */
 function bucketOf(m: Model | null): Pick<ReportRow, 'bucket' | 'detail'> {
   if (!m) return { bucket: 'other', detail: 'no scene' };
-  if (m.scene.outside) return { bucket: 'outside', detail: 'never enters the block' };
-  if (m.scene.failed) return { bucket: 'other', detail: m.scene.failed.slice(0, 90) };
+  if (m.scene.outside)
+    return { bucket: 'outside', detail: 'never enters the block' };
+  if (m.scene.failed)
+    return { bucket: 'other', detail: m.scene.failed.slice(0, 90) };
   const battenBits: string[] = [];
   for (const s of ['left', 'right'] as const) {
     const err = m.sides[s].error;
     if (!err) continue;
-    const short = err.replace('oneSidedOffset: ', '').replace(/^the (left|right) batten round a /, '');
+    const short = err
+      .replace('oneSidedOffset: ', '')
+      .replace(/^the (left|right) batten round a /, '');
     battenBits.push(`${s[0].toUpperCase()}: ${short.slice(0, 90)}`);
   }
-  if (battenBits.some(b => /ran away/.test(b))) return { bucket: 'runaway', detail: battenBits.join(' · ') };
+  if (battenBits.some(b => /ran away/.test(b)))
+    return { bucket: 'runaway', detail: battenBits.join(' · ') };
   if (battenBits.length > 0) {
-    return { bucket: battenBits.some(b => /batten/.test(b) || /obstacle ring fails/.test(b)) ? 'batten' : 'other', detail: battenBits.join(' · ') };
+    return {
+      bucket: battenBits.some(
+        b => /batten/.test(b) || /obstacle ring fails/.test(b),
+      )
+        ? 'batten'
+        : 'other',
+      detail: battenBits.join(' · '),
+    };
   }
   if (m.cutError) return { bucket: 'arms', detail: m.cutError.slice(0, 90) };
-  if (m.cutFlags.length > 0) return { bucket: 'flags', detail: m.cutFlags.join(', ') };
+  if (m.cutFlags.length > 0)
+    return { bucket: 'flags', detail: m.cutFlags.join(', ') };
   const turns = (['left', 'right'] as const).map(s => {
-    const battens = m.sides[s].transitions.filter(t => t.seam && t.seam.length >= 3);
-    const worst = battens.reduce((w, t) => Math.max(w, polylineWorstTurn(t.seam!).turn), 0);
+    const battens = m.sides[s].transitions.filter(
+      t => t.seam && t.seam.length >= 3,
+    );
+    const worst = battens.reduce(
+      (w, t) => Math.max(w, polylineWorstTurn(t.seam!).turn),
+      0,
+    );
     const contacts = battens.reduce((c, t) => c + (t.contacts?.length ?? 0), 0);
     return `${s[0].toUpperCase()} ${((worst * 180) / Math.PI).toFixed(0)}°/${contacts}c`;
   });
@@ -989,13 +1115,16 @@ function bucketOf(m: Model | null): Pick<ReportRow, 'bucket' | 'detail'> {
 }
 
 /** What a build's cost may follow, read off its model. */
-function costOf(m: Model | null): Pick<ReportRow, 'head' | 'battenVertices' | 'obstacles' | 'divert'> {
+function costOf(
+  m: Model | null,
+): Pick<ReportRow, 'head' | 'battenVertices' | 'obstacles' | 'divert'> {
   if (!m) return { battenVertices: 0, obstacles: 0 };
   const hull = m.scene.headArm?.wrap.hull;
   const divert = m.scene.tdPlan?.divert;
   let battenVertices = 0;
   for (const s of ['left', 'right'] as const) {
-    for (const t of m.sides[s].transitions) battenVertices += t.seed?.length ?? 0;
+    for (const t of m.sides[s].transitions)
+      battenVertices += t.seed?.length ?? 0;
   }
   return {
     head: hull && hull.length >= 3 ? hullDiameter(hull) : undefined,
@@ -1033,7 +1162,9 @@ function SlowestBuilds({
 }) {
   if (rows.length === 0) return null;
   const total = (r: ReportRow) => r.planMs + r.ms;
-  const slowest = [...rows].sort((a, b) => total(b) - total(a)).slice(0, SLOWEST_COUNT);
+  const slowest = [...rows]
+    .sort((a, b) => total(b) - total(a))
+    .slice(0, SLOWEST_COUNT);
   const built = rows.filter(r => r.bucket === 'built');
   const withHead = built.filter(r => r.head !== undefined);
   const r = (xs: number[], ys: number[]) => {
@@ -1045,16 +1176,28 @@ function SlowestBuilds({
     <div style={{ marginTop: 8, borderTop: '1px solid #333', paddingTop: 6 }}>
       <div style={{ fontWeight: 700 }}>slowest builds (plan + battens/cut)</div>
       <div style={{ opacity: 0.6, marginBottom: 4 }}>
-        r(time, head Ø) {r(withHead.map(total), withHead.map(row => row.head!))} over {withHead.length} · r(time, batten
-        vertices) {r(built.map(total), built.map(row => row.battenVertices))} over {built.length} built
+        r(time, head Ø){' '}
+        {r(
+          withHead.map(total),
+          withHead.map(row => row.head!),
+        )}{' '}
+        over {withHead.length} · r(time, batten vertices){' '}
+        {r(
+          built.map(total),
+          built.map(row => row.battenVertices),
+        )}{' '}
+        over {built.length} built
       </div>
       {slowest.map((row, i) => (
         <div key={i} style={{ marginLeft: 8 }}>
           {link(row, labelled ? row.label : row.margin)}
-          {labelled ? ` m${row.margin}` : ''} — {total(row).toFixed(0)} ms ({row.planMs.toFixed(0)} +{' '}
-          {row.ms.toFixed(0)}) · head Ø {row.head !== undefined ? `${row.head.toFixed(0)} m` : '—'} · batten{' '}
+          {labelled ? ` m${row.margin}` : ''} — {total(row).toFixed(0)} ms (
+          {row.planMs.toFixed(0)} + {row.ms.toFixed(0)}) · head Ø{' '}
+          {row.head !== undefined ? `${row.head.toFixed(0)} m` : '—'} · batten{' '}
           {row.battenVertices}v · {row.obstacles} obst
-          {row.divert !== undefined ? ` · divert ${row.divert.toFixed(0)}°` : ''}
+          {row.divert !== undefined
+            ? ` · divert ${row.divert.toFixed(0)}°`
+            : ''}
           {row.bucket !== 'built' ? ` · ${row.bucket}` : ''}
         </div>
       ))}
@@ -1090,7 +1233,12 @@ function ReportView({
 }) {
   const margins = [...new Set(rows.map(r => r.margin))];
   const link = (r: ReportRow, text: string | number = r.label) => (
-    <button type="button" style={linkStyle} onClick={() => onPick?.(r.pick)} title={JSON.stringify(r.pick)}>
+    <button
+      type="button"
+      style={linkStyle}
+      onClick={() => onPick?.(r.pick)}
+      title={JSON.stringify(r.pick)}
+    >
       {text}
     </button>
   );
@@ -1098,12 +1246,24 @@ function ReportView({
   const ms = rows.reduce((s, r) => s + r.planMs + r.ms, 0);
   if (subject) {
     return (
-      <div style={{ marginTop: 10, borderTop: '1px solid #333', paddingTop: 8, maxHeight: '50vh', overflowY: 'auto', scrollbarWidth: 'thin' }}>
+      <div
+        style={{
+          marginTop: 10,
+          borderTop: '1px solid #333',
+          paddingTop: 8,
+          maxHeight: '50vh',
+          overflowY: 'auto',
+          scrollbarWidth: 'thin',
+        }}
+      >
         <div style={{ fontWeight: 700 }}>
-          {subject}: built {rows.filter(r => r.bucket === 'built').length}/{rows.length}
+          {subject}: built {rows.filter(r => r.bucket === 'built').length}/
+          {rows.length}
         </div>
         <div style={{ opacity: 0.6, marginBottom: 4 }}>
-          {running ? `running… ${rows.length}/${total}` : `${(ms / 1000).toFixed(1)} s`}
+          {running
+            ? `running… ${rows.length}/${total}`
+            : `${(ms / 1000).toFixed(1)} s`}
         </div>
         {BUCKET_ORDER.map(b => {
           const in_ = rows.filter(r => r.bucket === b);
@@ -1138,16 +1298,28 @@ function ReportView({
     );
   }
   return (
-    <div style={{ marginTop: 10, borderTop: '1px solid #333', paddingTop: 8, maxHeight: '50vh', overflowY: 'auto', scrollbarWidth: 'thin' }}>
+    <div
+      style={{
+        marginTop: 10,
+        borderTop: '1px solid #333',
+        paddingTop: 8,
+        maxHeight: '50vh',
+        overflowY: 'auto',
+        scrollbarWidth: 'thin',
+      }}
+    >
       <div style={{ opacity: 0.6, marginBottom: 4 }}>
-        {running ? `running… ${rows.length}/${total}` : `${rows.length} builds · ${ms.toFixed(0)} ms`}
+        {running
+          ? `running… ${rows.length}/${total}`
+          : `${rows.length} builds · ${ms.toFixed(0)} ms`}
       </div>
       {margins.map(margin => {
         const at = rows.filter(r => r.margin === margin);
         return (
           <div key={margin} style={{ marginBottom: 8 }}>
             <div style={{ fontWeight: 700 }}>
-              margin {margin}: built {at.filter(r => r.bucket === 'built').length}/{at.length}
+              margin {margin}: built{' '}
+              {at.filter(r => r.bucket === 'built').length}/{at.length}
             </div>
             {BUCKET_ORDER.map(b => {
               const in_ = at.filter(r => r.bucket === b);
@@ -1186,10 +1358,15 @@ function ReportView({
 }
 
 /** Margins the sweep button runs, on top of the current settings. */
-const SWEEP_MARGINS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 4, 8, 10, 20];
+const SWEEP_MARGINS = [
+  0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 4, 8, 10, 20,
+];
 
 /** Margins the one-subject sweep runs: 0.1 to 20 by 0.1, from integers so there is no float drift. */
-const SUBJECT_SWEEP_MARGINS = Array.from({ length: 200 }, (_, k) => (k + 1) / 10);
+const SUBJECT_SWEEP_MARGINS = Array.from(
+  { length: 200 },
+  (_, k) => (k + 1) / 10,
+);
 
 const buttonStyle: React.CSSProperties = {
   background: '#263238',
@@ -1237,8 +1414,8 @@ const BattenDebug = (props: Props) => {
     () =>
       trajectories
         ? [...trajectories]
-          .filter(([id]) => !isExtraWellbore(id))
-          .map(([, t]) => t.map(p => [p[0], p[2]] as Vec2))
+            .filter(([id]) => !isExtraWellbore(id))
+            .map(([, t]) => t.map(p => [p[0], p[2]] as Vec2))
         : [],
     [trajectories],
   );
@@ -1258,7 +1435,9 @@ const BattenDebug = (props: Props) => {
       let hit = cache.get(id);
       if (!hit) {
         const plan = trajectory.map(p => [p[0], p[2]] as Vec2);
-        hit = debugOutlineRings(createWellboreOutline([...hostPlans, plan], OUTLINE));
+        hit = debugOutlineRings(
+          createWellboreOutline([...hostPlans, plan], OUTLINE),
+        );
         cache.set(id, hit);
       }
       return hit;
@@ -1292,14 +1471,17 @@ const BattenDebug = (props: Props) => {
     () =>
       props.tvdFrom > 0 || props.tvdTo > 0
         ? [
-          props.tvdTo > 0 ? -props.tvdTo : -Infinity,
-          props.tvdFrom > 0 ? -props.tvdFrom : Infinity,
-        ]
+            props.tvdTo > 0 ? -props.tvdTo : -Infinity,
+            props.tvdFrom > 0 ? -props.tvdFrom : Infinity,
+          ]
         : undefined,
     [props.tvdFrom, props.tvdTo],
   );
   const head = useMemo(
-    () => ({ headBearing: props.headBearing, headMinTdAngle: props.headMinTdAngle }),
+    () => ({
+      headBearing: props.headBearing,
+      headMinTdAngle: props.headMinTdAngle,
+    }),
     [props.headBearing, props.headMinTdAngle],
   );
 
@@ -1316,12 +1498,12 @@ const BattenDebug = (props: Props) => {
     }
     return selected
       ? wellboreScene(
-        selected.trajectory,
-        footprintFor(selected.id),
-        props.margin,
-        verticalRange,
-        head,
-      )
+          selected.trajectory,
+          footprintFor(selected.id),
+          props.margin,
+          verticalRange,
+          head,
+        )
       : null;
   }, [
     props.scene,
@@ -1339,8 +1521,21 @@ const BattenDebug = (props: Props) => {
   ]);
 
   const model = useMemo(
-    () => buildModel(scene, props.margin, props.battenStiffness, props.anchorScale, props.anchorBalanced),
-    [scene, props.margin, props.battenStiffness, props.anchorScale, props.anchorBalanced],
+    () =>
+      buildModel(
+        scene,
+        props.margin,
+        props.battenStiffness,
+        props.anchorScale,
+        props.anchorBalanced,
+      ),
+    [
+      scene,
+      props.margin,
+      props.battenStiffness,
+      props.anchorScale,
+      props.anchorBalanced,
+    ],
   );
 
   // ⭐ THE REPORT — on demand, never as a control: every subject of the current scene kind (all
@@ -1366,7 +1561,8 @@ const BattenDebug = (props: Props) => {
         const name = shortName(data.headers[id]?.name ?? id);
         subjects.push({
           label: name,
-          scene: m => wellboreScene(traj, footprintFor(id), m, verticalRange, head),
+          scene: m =>
+            wellboreScene(traj, footprintFor(id), m, verticalRange, head),
           pick: margin => ({ scene: 'wellbore', wellbore: name, margin }),
         });
       }
@@ -1375,26 +1571,47 @@ const BattenDebug = (props: Props) => {
         if (only && angle !== props.hullAngle) continue;
         subjects.push({
           label: `${angle}°`,
-          scene: () => syntheticScene(props.wellTurn, props.hull, props.diameter, props.width, angle, props.hullPivot),
+          scene: () =>
+            syntheticScene(
+              props.wellTurn,
+              props.hull,
+              props.diameter,
+              props.width,
+              angle,
+              props.hullPivot,
+            ),
           pick: margin => ({ hullAngle: angle, margin }),
         });
       }
     }
     if (subjects.length === 0) return;
-    const jobs = margins.flatMap(m => subjects.map(s => ({ margin: m, subject: s })));
+    const jobs = margins.flatMap(m =>
+      subjects.map(s => ({ margin: m, subject: s })),
+    );
     const rows: ReportRow[] = [];
     setReport({ rows: [], running: true, total: jobs.length, subject: only });
     let k = 0;
     const step = () => {
       if (k >= jobs.length) {
-        setReport({ rows: [...rows], running: false, total: jobs.length, subject: only });
+        setReport({
+          rows: [...rows],
+          running: false,
+          total: jobs.length,
+          subject: only,
+        });
         return;
       }
       const { margin, subject } = jobs[k++];
       const t0 = performance.now();
       const scene = subject.scene(margin);
       const planMs = performance.now() - t0;
-      const m = buildModel(scene, margin, props.battenStiffness, props.anchorScale, props.anchorBalanced);
+      const m = buildModel(
+        scene,
+        margin,
+        props.battenStiffness,
+        props.anchorScale,
+        props.anchorBalanced,
+      );
       rows.push({
         margin,
         label: subject.label,
@@ -1404,7 +1621,12 @@ const BattenDebug = (props: Props) => {
         ...bucketOf(m),
         ...costOf(m),
       });
-      setReport({ rows: [...rows], running: true, total: jobs.length, subject: only });
+      setReport({
+        rows: [...rows],
+        running: true,
+        total: jobs.length,
+        subject: only,
+      });
       setTimeout(step, 0);
     };
     setTimeout(step, 0);
@@ -1465,7 +1687,8 @@ const BattenDebug = (props: Props) => {
       />
       <div style={{ fontSize: 12, maxWidth: 400 }}>
         <div style={{ fontWeight: 700, marginBottom: 4 }}>
-          {subject} · margin {props.margin} m · stiffness ×{props.battenStiffness} · anchor ×{props.anchorScale}
+          {subject} · margin {props.margin} m · stiffness ×
+          {props.battenStiffness} · anchor ×{props.anchorScale}
           {props.anchorBalanced ? ' · balanced' : ''}
         </div>
         <div style={{ opacity: 0.6, marginBottom: 6 }}>
@@ -1501,13 +1724,18 @@ const BattenDebug = (props: Props) => {
             onClick={() =>
               runReport(
                 SUBJECT_SWEEP_MARGINS,
-                props.scene === 'wellbore' ? subject : `${subject} · angle ${props.hullAngle}°`,
+                props.scene === 'wellbore'
+                  ? subject
+                  : `${subject} · angle ${props.hullAngle}°`,
               )
             }
             style={buttonStyle}
             title={`${subject} only, at margins 0.1–20 by 0.1`}
           >
-            sweep {props.scene === 'wellbore' ? props.wellbore : `${props.hullAngle}°`}
+            sweep{' '}
+            {props.scene === 'wellbore'
+              ? props.wellbore
+              : `${props.hullAngle}°`}
           </button>
         </div>
         {report && (
@@ -1521,20 +1749,26 @@ const BattenDebug = (props: Props) => {
         )}
         <div style={{ marginTop: 10, opacity: 0.5 }}>
           white = well (dashed grey = the planned head's virtual guide) · yellow
-          hull = obstacle · dashed purple = the MARGIN BAND, the points within the margin of the
-          hull (drawn rounded, within 2% of the margin outside it): the ring path follows the
-          line, the runs stop at the margin band and the batten keeps out of it by distance ·
-          thick purple = the ring PATH (the flank the batten must pass on) · dashed
-          light blue = the anchored seed, white dots = the clamped vertices ·
-          red = the batten that ships, the least-bending shape that holds the margin — white rings
-          = contacts, where it presses on the margin of a hull or of the well · thin cyan/yellow
-          = the left/right cores, thick = the finished cut with arms
+          hull = obstacle · dashed purple = the MARGIN BAND, the points within
+          the margin of the hull (drawn rounded, within 2% of the margin outside
+          it): the ring path follows the line, the runs stop at the margin band
+          and the batten keeps out of it by distance · thick purple = the ring
+          PATH (the flank the batten must pass on) · dashed light blue = the
+          anchored seed, white dots = the clamped vertices · red = the batten
+          that ships, the least-bending shape that holds the margin — white
+          rings = contacts, where it presses on the margin of a hull or of the
+          well · thin cyan/yellow = the left/right cores, thick = the finished
+          cut with arms
         </div>
       </div>
     </div>
   );
 };
 
+/**
+ * The batten, how a fence cut gets round an obstacle ring, in plan: on a synthetic well turning
+ * at an obstacle of a chosen shape, or on a demo wellbore with its head planned.
+ */
 const meta: Meta<Props> = {
   title: 'Debug/Zones/Batten',
   component: BattenDebug,
@@ -1557,14 +1791,16 @@ const meta: Meta<Props> = {
       control: { type: 'select', labels: Object.fromEntries(FULL_NAME) },
       options: WELLBORES,
       table: { category: 'scene' },
-      description: 'the arg value is the short name — Storybook drops URL args containing `/`',
+      description:
+        'the arg value is the short name — Storybook drops URL args containing `/`',
       if: { arg: 'scene', eq: 'wellbore' },
     },
     onPick: { table: { disable: true } },
     wellTurn: {
       control: { type: 'range', min: 0, max: 135, step: 15 },
       table: { category: 'scene' },
-      description: 'the synthetic well’s turn at the obstacle, degrees: 0 straight through, 90 a right angle',
+      description:
+        'the synthetic well’s turn at the obstacle, degrees: 0 straight through, 90 a right angle',
       if: { arg: 'scene', neq: 'wellbore' },
     },
     diameter: {
@@ -1576,7 +1812,8 @@ const meta: Meta<Props> = {
     width: {
       control: { type: 'range', min: 5, max: 300, step: 5 },
       table: { category: 'scene' },
-      description: 'the synthetic obstacle’s width across its axis, metres — stretches the shape, not just its scale',
+      description:
+        'the synthetic obstacle’s width across its axis, metres — stretches the shape, not just its scale',
       if: { arg: 'scene', neq: 'wellbore' },
     },
     hull: {
@@ -1638,7 +1875,8 @@ const meta: Meta<Props> = {
     headMinTdAngle: {
       control: { type: 'range', min: 45, max: 180, step: 5 },
       table: { category: 'block' },
-      description: 'the least angle between a free head arm and the TD arm, degrees',
+      description:
+        'the least angle between a free head arm and the TD arm, degrees',
       if: { arg: 'headBearing', eq: 'free' },
     },
     side: {
@@ -1697,7 +1935,8 @@ const meta: Meta<Props> = {
     showAnchorLabels: {
       control: 'boolean',
       table: { category: 'view' },
-      description: 'per clamp: convexity, the anchor in metres and atoms, φ, φ/θ and the multiple',
+      description:
+        'per clamp: convexity, the anchor in metres and atoms, φ, φ/θ and the multiple',
     },
     showBatten: {
       control: 'boolean',
@@ -1750,4 +1989,5 @@ const meta: Meta<Props> = {
 };
 export default meta;
 
+/** A synthetic well turning 90° at a 100 × 60 m blob, 2 m margin; drag to zoom, double-click to frame. */
 export const Default: StoryObj<Props> = {};

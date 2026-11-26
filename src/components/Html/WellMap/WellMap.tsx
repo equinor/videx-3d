@@ -36,19 +36,24 @@ export type WellMapProps = {
 };
 
 /**
- * This HTML component visualizes the trajectories of a well side-by-side according to the measured depth. It shows
- * each wellbore from its kickoff depth to the terminal end point.
+ * The wellbores of one well side by side along measured depth, in HTML and SVG: each wellbore a
+ * track from where it leaves its parent (or the rotary table) to its total depth, solid where
+ * it is in use and dashed elsewhere, its kickoff depth marked on the axis and its name and
+ * depth under it.
  *
- * The well map supports various interactions, which can be used to control selection and camera position/focus.
- * You can customize colors by providing a color dictionary or color selection function via the `colors` prop.
- *
- * For other colors, use the `theme` prop.
+ * Interactive by default: click a wellbore to select it and set the depth where you clicked
+ * (`onSelect`, `onDepthChanged`), and drag the depth cursor, or move it with the arrow keys
+ * (Shift: 25 m at a time, Ctrl: 0.1 m), Home and End. The host keeps `selected` and `depth`,
+ * and can use them to select a wellbore in the 3D view or move the camera. Colour the tracks
+ * with `color` or `colors` (a dictionary, or a function of the wellbore and its slot), the rest
+ * with `theme`. Addons given as children draw more along the tracks.
  *
  * @example
  * <WellMap wellIdentifier="NO 16/2-D-1" />
  *
  * @remarks
- * The WellMap must be placed as a child of the `DataProvider` component, but outside of the R3F fiber `Canvas` component.
+ * The WellMap must be placed inside a `DataProvider`, and outside the R3F `Canvas` (or in an
+ * `Overlay` or a `CanvasHtml` over it).
  *
  * @see [Storybook](/videx-3d/?path=/docs/components-html-wellmap--docs)
  * @see {@link WellMapStyles}

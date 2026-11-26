@@ -25,7 +25,9 @@ export type DepthMarkersProps = {
 };
 
 /**
- * Adds depth markers as annotations for a wellbore
+ * Depth markers along a wellbore: an annotation every `interval` metres of measured depth,
+ * counted from mean sea level or from the rotary table (`depthReferencePoint`). Must be a child
+ * of the `Wellbore` component, with `Annotations` in the scene.
  *
  * @example
  * <Wellbore id={wellbore.id}>

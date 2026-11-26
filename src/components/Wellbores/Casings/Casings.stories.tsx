@@ -426,6 +426,12 @@ const DemoCasings = ({ args }: { args: StoryArgs }) => {
   );
 };
 
+/**
+ * The demo wellbore's casings at their real size (`sizeMultiplier` scales them). Slice them open
+ * to see inside (`sliceAngle`; `autoSlicePosition` keeps the cut facing the camera), draw them as
+ * a `schematic`, add the completion tools (`showCompletion`), and shape the steel's look in the
+ * Effect and Texture groups.
+ */
 export const Default: Story = {
   render: args => {
     useEffect(() => {
@@ -448,6 +454,10 @@ export const Default: Story = {
   },
 };
 
+/**
+ * Casings as pointer targets inside an `EventEmitter`: a casing turns red while the pointer is
+ * over it (`onPointerEnter`, `onPointerLeave`).
+ */
 export const WithPointerEvents: Story = {
   render: args => {
     useEffect(() => {

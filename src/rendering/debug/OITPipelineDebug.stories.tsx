@@ -1208,6 +1208,10 @@ const DebugCanvas = ({
   );
 };
 
+/**
+ * The rendering pipeline on its own canvas, with no data: OIT, anti-aliasing, supersampling, tone
+ * mapping, output colour space and the logarithmic depth buffer as controls.
+ */
 const meta = {
   title: 'Debug/OIT Pipeline',
   render: (args: DebugArgs) => (
@@ -1485,6 +1489,10 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
+/**
+ * A spinning torus knot through OIT with TAA and a logarithmic depth buffer; switch `geometry`
+ * and `aaMode`, and turn on `measureAA` for the anti-aliasing metrics.
+ */
 export const Default: Story = {};
 
 /**

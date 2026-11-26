@@ -224,6 +224,17 @@ const MinimapStory = ({
   );
 };
 
+/**
+ * A `Minimap` is an inlet map of the relief that follows the camera: a `GeoMap` in a resizable,
+ * closable panel, centred on the camera or what it looks at, zoomed by the camera's height or
+ * by level, north-up or heading-up, with layers of your own. Drop its camera or target marker
+ * on the map to fly the camera there. It is HTML, not a 3D object: render it in an `Overlay` or
+ * a `CanvasHtml`, inside a `World` and a `GeneratorsProvider` with the `sceneryReliefTile`
+ * generator.
+ *
+ * The stories put it bottom right over the demo reliefs about the demo field, with an
+ * `AltitudeControl` on the left edge of the view.
+ */
 const meta = {
   title: 'Components/Html/Minimap',
   component: MinimapStory,
@@ -510,6 +521,12 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The minimap following the camera over the demo field, with markers of its own and a yellow
+ * square about the field. Fly about and watch it follow; drag the camera's arrow or the target
+ * marker onto the map to move the camera (`draggable`), step through the `zoom` levels, and
+ * zoom out far enough to see the `projection` change.
+ */
 export const Default: Story = {};
 
 /** The coast and the contours as lines, heading-up: the map turns with the camera. */
@@ -517,7 +534,11 @@ export const OutlineHeadingUp: Story = {
   args: { mode: 'outline', orientation: 'heading-up', contours: true },
 };
 
-/** From 400 km up: the adaptive zoom is at its widest, 1000 km across. */
+/**
+ * From 400 km up: the adaptive zoom shows some 1600 km across, `autoZoomFactor` times the
+ * camera's height. Raise `autoZoomFactor` or lower `globalFrom` to see the map turn to the
+ * global projection.
+ */
 export const FromHigh: Story = {
   parameters: { cameraPosition: [0, 400000, 1], cameraTarget: [0, 0, 0] },
 };
@@ -527,7 +548,10 @@ export const CentredOnTarget: Story = {
   args: { center: 'target', shape: 'circle' },
 };
 
-/** The camera under the sea, 300 m down: the altitude gadget reaches below the sea's level. */
+/**
+ * The camera 300 m below the sea's level: the altitude readouts go below zero, and the altitude
+ * control climbs and descends from there as it does above the sea.
+ */
 export const Subsurface: Story = {
   parameters: {
     cameraPosition: [3000, -300, 3000],

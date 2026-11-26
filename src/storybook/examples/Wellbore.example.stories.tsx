@@ -21,6 +21,13 @@ import { CameraFocusAtPointEvent } from '../../events/camera-events';
 import { WellboreSelectedEvent } from '../../events/wellbore-events';
 import { DepthSelectorDecorator } from '../decorators/depth-selector-decorator';
 
+/**
+ * One wellbore of the demo field up close, with the components that draw its detail inside a
+ * `Wellbore`: its trajectory (`BasicTrajectory`), `Casings`, `CompletionTools` and
+ * `Perforations`, and optionally a `Perimeter`. The casings and completion tools are
+ * labelled (`CasingAnnotations`, `CompletionAnnotations`), each kind in its own
+ * `AnnotationsLayer`. A starting point for a view of a single wellbore.
+ */
 const meta = {
   title: 'Examples/Wellbore',
   component: Wellbore,
@@ -46,6 +53,12 @@ type Story = StoryObj<StoryArgs>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
+/**
+ * Pick the wellbore (`id`) and drag the slider on the left to move the camera along it; click a
+ * label to bring the camera to its casing or tool. `sizeMultiplier` scales the casings, tools and
+ * perforations, and `showPerimeter` adds a perimeter `perimeterRadius` metres out, from
+ * `perimeterFrom` to `perimeterTo` metres of measured depth.
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

@@ -38,7 +38,10 @@ export type WellboreFormationColumnProps = CommonComponentProps & {
 };
 
 /**
- * Renders colored tube geometeries for visualizing formations for a specific strat column.
+ * Formations along a wellbore: a coloured tube around the trajectory for each formation
+ * interval of the strat column (`stratColumnId`) it passes through, `startRadius +
+ * formationWidth` metres in radius. `units` and `unitTypes` pick which units are drawn. Must be
+ * a child of the `Wellbore` component.
  *
  * @example
  * <Wellbore id={wellboreId}>

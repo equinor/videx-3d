@@ -18,11 +18,11 @@ type StoryArgs = {
 };
 
 /**
- * `Distance` conditionally renders (or, with `onDemand`, mounts/unmounts) its children
- * based on the camera's distance to a bounds published by a parent — the generic
- * `Bounds` (used in these stories) or `WellboreBounds`. It is the building block for
- * distance-based level-of-detail. Drag to orbit and scroll to zoom, and watch the
- * geometry swap.
+ * Level of detail by distance: a `Distance` shows its children only while the camera is
+ * between `min` and `max` metres from the bounds a parent gives, the generic `Bounds` (a
+ * sphere, a box or a point, as here) or `WellboreBounds` for a wellbore. Give several their
+ * own ranges to swap one version of an object for another as the camera moves; with
+ * `onDemand` the children are mounted only while in range, instead of hidden.
  */
 const meta = {
   title: 'Components/Misc/Distance',
@@ -38,9 +38,9 @@ export default meta;
 type Story = StoryObj<StoryArgs>;
 
 /**
- * The simplest case: one `Bounds` sphere and two `Distance` bands that swap a torus knot
- * (within `distance`) for a box (beyond it). Toggle `onDemand` to mount/unmount the near
- * geometry instead of just hiding it.
+ * One `Bounds` sphere and two ranges: a torus knot within `distance` of it, a box beyond.
+ * Zoom in and out to watch them swap; turn on `onDemand` to mount and unmount the torus knot
+ * instead of hiding it.
  */
 export const Default: Story = {
   args: { distance: 20, onDemand: false },
@@ -77,9 +77,8 @@ export const Default: Story = {
 };
 
 /**
- * A composition of three `Distance` bands sharing one `Bounds`, giving multiple swaps as
- * the camera moves: torus knot (near) → icosahedron (mid) → wireframe box (far). The
- * bands are contiguous (`[0, near) [near, far) [far, ∞)`) so exactly one shows at a time.
+ * Three ranges under one `Bounds`, back to back so one shows at a time: a torus knot nearer
+ * than `near`, an icosahedron up to `far`, and a wireframe box beyond.
  */
 export const MultipleBands: Story = {
   args: { near: 12, far: 32 },
@@ -121,10 +120,9 @@ export const MultipleBands: Story = {
 };
 
 /**
- * A real-world use case: swap a full-detail `Tanker` for a low-poly version by camera
- * distance. Both share one `Bounds` sized to the hull; the high-detail hull +
- * superstructure shows within `lodDistance`, the cheap low-poly hull beyond it. Zoom out
- * to see the swap (rendered without a `<Water>`, so the vessel is static).
+ * A tanker in two versions under one `Bounds` the size of its hull: the detailed hull and
+ * superstructure within `lodDistance`, a low-poly hull beyond. Zoom out to see the swap (there
+ * is no sea here, so the vessel lies still).
  */
 export const TankerLOD: Story = {
   name: 'Tanker LOD (real-world)',

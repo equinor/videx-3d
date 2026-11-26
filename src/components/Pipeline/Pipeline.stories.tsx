@@ -162,6 +162,16 @@ const ROUTE = 'Route';
 const LINE = 'Line';
 const SCENE = 'Scene';
 
+/**
+ * `Pipeline` lays a pipeline, a cable or any line on the ground a `ZoneStack` draws: its route
+ * is a list of UTM positions, as one is planned, and its height is sampled along it from the
+ * stack's top surface as drawn. It is a tube of its diameter as built times `exaggeration`, and
+ * can bridge the hollows rather than follow every dip (`span`). Place it inside a `UtmArea` and
+ * a `ZoneStack`.
+ *
+ * For pipelines in longitude and latitude on the relief of a `Scenery`, use `GeoTubes` (Geo
+ * layers / Pipelines).
+ */
 const meta = {
   title: 'Components/Zones/Pipeline',
   component: PipelineStory,
@@ -223,4 +233,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * Three flowlines gathering to a subsea site and an export line leaving the field, on the
+ * seabed of a generated column (a basin, a coast and an island) under clear water. Lay one
+ * `route` alone, widen the lines (`exaggeration`: at 1 they are under a pixel), and let them
+ * bridge the hollows (`span`).
+ */
 export const Default: Story = {};

@@ -67,6 +67,12 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The demo wellbore, its casings and completion tools drawn 20 times their size, in a box grid
+ * fitted round it (`autoSize`, with `autoSizePadding` metres to spare). Each grid shows the
+ * wellbore's shade (`enableProjection`, `projectionColor`), and rulers follow the pointer over
+ * the grids (`showRulers`).
+ */
 export const Default: Story = {
   args: {
     size: [0, 0, 0],
@@ -89,6 +95,10 @@ export const Default: Story = {
   tags: ['autodocs'],
 };
 
+/**
+ * The same box grid in light colours on a light background (`background`, `gridColorMajor`,
+ * `gridColorMinor`, `axesColor`, `projectionColor`), without rulers.
+ */
 export const Light: Story = {
   args: {
     size: [0, 0, 0],

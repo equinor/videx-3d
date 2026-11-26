@@ -398,6 +398,17 @@ const LabelsStory = ({
   );
 };
 
+/**
+ * Text in the 3D scene, in layers (`LabelLayer`). A label lies in a plane of its own where it is
+ * put, read from the side its normal faces, and fades as it turns edge-on or grows too small to
+ * read. It is sized in world units (`sizing` `'world'`), in pixels on screen (`'screen'`), or in
+ * pixels near and smaller far off (`'auto'`); a preset `size` is a size on screen tuned to read
+ * well.
+ *
+ * Where labels meet on screen the less wanted give way (by `priority`, then those shown
+ * already, central and near), fading out and back in as room allows. A `Labels` keeps the
+ * layers under it apart among themselves alone; layers under none share the scene's.
+ */
 const meta = {
   title: 'Components/Labels/Labels',
   component: LabelsStory,
@@ -466,6 +477,14 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * A hill with labels on its contour lines (`contours`, `contourCount`, `labelsPerContour`),
+ * labels on the grid's lines that change with the view (`grid`), and three texts beside it
+ * wrapped to fit the boxes outlined round them (`wrap`, `wrapWidth`, `wrapHeight`, `maxLines`).
+ * Try the sizing (`sizing`, `size`, `preset`), the fades by pixel size, facing and distance, a
+ * pane of glass over the hill under the default or the OIT pipeline (`glass`, `pipeline`), and
+ * thousands more labels (`stressLabels`).
+ */
 export const Default: Story = {
   args: {
     pipeline: 'default',

@@ -218,6 +218,16 @@ const CameraDistance = () => {
   return <span ref={label} style={HUD_LABEL} />;
 };
 
+/**
+ * An `Overlay` is a layer of HTML over the 3D view where gadgets, panels, buttons and maps are
+ * organised: in a dock the full height of the view along its left or right edge, at the
+ * corners and the middles of the edges of the space between the docks (no two overlapping), or
+ * filling that space. Place it inside the `<Canvas>`: its children see every context the
+ * `Canvas` sees (`useThree`, `useFrame`, the `World`, the data), and a press or a wheel on them
+ * does not reach the scene.
+ *
+ * The overlay is optional: the gadgets render in a layout of your own just as well (`OwnLayout`).
+ */
 const meta = {
   title: 'Components/Html/Overlay',
   component: OverlayStory,
@@ -268,12 +278,19 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The gadgets in an `Overlay` over the demo field: a `WellMap` in a sidebar docked on the left,
+ * the altitude control beside it, a `Minimap` bottom right, and top right a button that opens a
+ * map filling the space between the docks, which shows, and can move, the camera. Switch the
+ * items on and off, and set the spacing (`inset`, `gap`).
+ */
 export const Default: Story = {};
 
 /**
- * No `Overlay`: the gadgets in a layout of your own on a `CanvasHtml`, placed with
- * `anchorStyle` and `anchorStack`, the minimap `inline`, a toolbar of `OverlayButton`s and a
- * readout with the HUD helpers.
+ * No `Overlay`: the same gadgets in a layout of your own on a `CanvasHtml`, placed with
+ * `anchorStyle` and `anchorStack`. Bottom left, the minimap `inline` in a row with the altitude
+ * control; top right, an `OverlayButton` that shows the graticule, and a readout of the
+ * camera's distance to its target written with the HUD helpers.
  */
 export const OwnLayout: Story = {
   render: args => <OwnLayoutStory {...args} />,

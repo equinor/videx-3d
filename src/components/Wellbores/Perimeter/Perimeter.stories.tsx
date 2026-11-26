@@ -13,8 +13,8 @@ import { Perimeter } from './Perimeter';
 
 const meta = {
   title: 'Components/Wellbores/Perimeter',
-  component: Wellbore,
-} satisfies Meta<typeof Wellbore>;
+  component: Perimeter,
+} satisfies Meta<typeof Perimeter>;
 
 type StoryArgs = React.ComponentProps<typeof Perimeter> & { id: string };
 
@@ -23,6 +23,10 @@ type Story = StoryObj<StoryArgs>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
+/**
+ * A perimeter around a wellbore of the demo field (`id`), `radius` metres out, from `from` to
+ * `to` metres of measured depth. The casings are drawn ten times their size, for scale.
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

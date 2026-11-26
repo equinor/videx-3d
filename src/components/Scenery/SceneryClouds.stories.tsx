@@ -33,10 +33,7 @@ import {
   type ScenerySun,
 } from './scenery-model';
 
-// 3D clouds (`<SceneryClouds>`, documents/clouds.md) over a `Scenery`'s sea at the demo field,
-// drawn from the weather of a `<Weather>` around it and lit by the sun: a local weather's layers
-// about the field, one at each level (low, middle, high), or a global weather's systems over the
-// whole Earth. The weather's clock moves them: they drift with its wind, form and fade.
+// See documents/clouds.md.
 
 const DEPTH = 100;
 // The clock's rates, in weather seconds a second: real time to an hour a second.
@@ -174,8 +171,13 @@ const clockArgs: ClockArgs = {
 };
 
 /**
- * 3D clouds (`<SceneryClouds>`) from a `<Weather>`, lit by the `Scenery`'s sun: a local
- * weather's layers about the field, or a global weather's systems over the whole Earth.
+ * 3D clouds (`<SceneryClouds>`) over a `Scenery`'s sea at the demo field, drawn from the
+ * weather of a `<Weather>` around it and lit by the sun. A local weather lays layers about the
+ * field, one at each level (low, middle, high); a global weather lays weather systems over the
+ * whole Earth.
+ *
+ * The weather's clock moves them: they drift with its wind, form and fade. In every story, jump
+ * the clock on (`minutes`), set its pace (`timeScale`) and choose the clouds' `quality`.
  */
 const meta = {
   title: 'Components/Scenery/Clouds',
@@ -197,9 +199,10 @@ const meta = {
 export default meta;
 
 /**
- * A local weather (`weatherPresetOf`): a sky's layers by name (`SKY_PRESETS`), one at each
- * level, about the field and none beyond, with its wind. From 3 km over the field, looking out
- * over the clouds.
+ * A local weather made from a named sky (`sky`, `weatherPresetOf`): its layers about the field,
+ * one at each level, none beyond, and its wind. From 3 km over the field, looking out over the
+ * clouds; try another `sky`, a low sun that lights them from the side (`sunElevation`), and a
+ * faster clock (`timeScale`) to watch them drift.
  */
 export const Local: StoryObj<LocalArgs> = {
   render: args => <LocalClouds {...args} />,
@@ -243,7 +246,8 @@ export const Local: StoryObj<LocalArgs> = {
 
 /**
  * A global weather (`systems`): fronts and cyclones, clear highs and fields of convection over
- * the whole Earth, from 200 km up over the field.
+ * the whole Earth, from 200 km up over the field. Set how much of the Earth lies under cloud
+ * (`cover`), how much of it lies in decks and sheets (`decks`), and which weather it is (`seed`).
  */
 export const Global: StoryObj<GlobalArgs> = {
   render: args => <GlobalClouds {...args} />,
@@ -284,7 +288,10 @@ export const Global: StoryObj<GlobalArgs> = {
   },
 };
 
-/** The whole Earth from some 20 000 km, a global weather: its systems. Fly down to the field. */
+/**
+ * The global weather from some 20 000 km: its systems over the whole Earth, with the same
+ * controls as Global. Zoom in to fly down to the field.
+ */
 export const FromSpace: StoryObj<GlobalArgs> = {
   ...Global,
   parameters: {

@@ -28,6 +28,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * A thousand annotations at random points in a 100 m cube, all in one layer. Orbit and zoom to
+ * watch the labels move aside, give way and come back as they meet; lower `maxVisible` to show
+ * fewer at a time.
+ */
 export const Default: Story = {
   args: {
     maxVisible: count,

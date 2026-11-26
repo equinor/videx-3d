@@ -17,6 +17,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * A 10 km grid about the demo field's origin, 100 m cells that grow as you zoom out
+ * (`dynamicCellSize`). Label it in metres from the origin instead (`relativeValues`), or stand
+ * it up as a wall (`plane`).
+ */
 export const Default: Story = {
   args: {
     size: [10000, 10000],

@@ -5,6 +5,7 @@ import { Canvas3dDecorator } from '../../../storybook/decorators/canvas-3d-decor
 import { DataProviderDecorator } from '../../../storybook/decorators/data-provider-decorator';
 import { GeneratorsProviderDecorator } from '../../../storybook/decorators/generators-provider-decorator';
 import storyArgs from '../../../storybook/story-args.json';
+import { BasicTrajectory } from '../BasicTrajectory/BasicTrajectory';
 import { Wellbore } from './Wellbore';
 
 const meta = {
@@ -19,6 +20,11 @@ type Story = StoryObj<StoryArgs>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
+/**
+ * A `Wellbore` draws nothing itself: it loads a wellbore (`id`) and hands it to the components
+ * inside it, here a `BasicTrajectory`. `segmentsPerMeter` sets how finely they follow the
+ * trajectory.
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,
@@ -42,7 +48,9 @@ export const Default: Story = {
 
     return (
       <>
-        <Wellbore {...args}></Wellbore>
+        <Wellbore {...args}>
+          <BasicTrajectory />
+        </Wellbore>
       </>
     );
   },

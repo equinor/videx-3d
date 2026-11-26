@@ -35,10 +35,11 @@ export type SymbolProps = {
   CommonComponentProps;
 
 /**
- * A generic component used for simplifying mesh instancing. Use this component if you need a large number of
- * meshes sharing the same base geometry and material, but that may be transformed or colored individually.
- *
- * Typical use case is for visualizations of data along a wellbore, such as in the `Shoes` and `FormationMarkers` component.
+ * Many copies of one mesh, drawn as a single instanced mesh: `Symbols` instances a `geometry`
+ * and `material`, each copy placed by a matrix of its own and, optionally, coloured by its own
+ * colour (`data`, a `SymbolsType`). Use it for a large number of meshes that share a shape and a
+ * look but are moved or coloured one by one, such as markers along a wellbore: the `Shoes` and
+ * `FormationMarkers` components use it.
  *
  * @remarks
  * Data, including colors, transformations and user defined data, must be mapped to the `SymbolsType` type.

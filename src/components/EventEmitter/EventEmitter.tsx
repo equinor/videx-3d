@@ -63,6 +63,31 @@ type EventState = {
   pickingHelper: PickingHelper;
 };
 
+/**
+ * Pointer events for objects in the scene, picked on the GPU: `enter`, `leave`, `move` and
+ * `click`, each with the object (and instance) under the pointer, the point hit and the keys
+ * held. Components inside it register an object and its handlers with the `useEventEmitter`
+ * hook; the components of this library that take `onPointerEnter`, `onPointerClick` and the
+ * like do so themselves.
+ *
+ * A pick draws the registered objects in a small patch round the pointer (`threshold` pixels
+ * each way, default 3) and reads it back without waiting on the GPU. Nothing is picked while
+ * no handler is registered or the pointer is off the canvas, and a pick runs only when the
+ * pointer or the handlers have changed, or the camera has moved and stopped (see `autoUpdate`).
+ * A click is a press released quickly where it began, so dragging the view clicks nothing.
+ *
+ * @example
+ * <EventEmitter>
+ *   <Wellbore id={id} onPointerClick={select}>
+ *     <BasicTrajectory />
+ *   </Wellbore>
+ * </EventEmitter>
+ *
+ * @see [Storybook](/videx-3d/?path=/docs/components-misc-eventemitter--docs)
+ * @see {@link useEventEmitter}
+ *
+ * @group Components
+ */
 export const EventEmitter = ({
   autoUpdate = true,
   autoUpdateRenderPriority,

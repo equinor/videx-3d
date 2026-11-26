@@ -29,7 +29,15 @@ export type HighlighterProps = {
 };
 
 /**
- * Adds highlighting to rendered objects by rendering a "ghost" object on top it.
+ * Highlights objects by drawing a "ghost" over each: its geometry in place, in a flat `color`
+ * blended additively by default (`blending`), so it brightens what it covers. Objects are
+ * highlighted and cleared with the `useHighlighter` hook, from a pointer handler, say; an
+ * instanced mesh is highlighted whole or one instance at a time. A component whose shape is
+ * made in its shader (the `Trajectory` tube) gives a ghost material of its own
+ * (`userData.highlightMaterial`).
+ *
+ * In an `OITRenderPass` the ghosts are drawn between the opaque and the transparent objects
+ * (`LAYERS.EMISSIVE`), so transparent surfaces in front dim them.
  *
  * @example
  * <Highlighter />

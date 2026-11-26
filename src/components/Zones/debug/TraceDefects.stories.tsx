@@ -731,6 +731,10 @@ const TraceDefects = (props: Props) => {
   );
 };
 
+/**
+ * The fence's fold and loop detectors on trajectories built to order, so what each should find
+ * is known, or on the demo field's wellbores (`source`).
+ */
 const meta: Meta<Props> = {
   title: 'Debug/Zones/Trace Defects',
   component: TraceDefects,
@@ -924,4 +928,8 @@ const meta: Meta<Props> = {
 
 export default meta;
 
+/**
+ * A narrow fold about halfway along a deviated well (`deviated fold (narrow)`): sweep `mouth` and
+ * `at` to find where the detectors' decisions change.
+ */
 export const Default: StoryObj<Props> = {};

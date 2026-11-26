@@ -112,6 +112,16 @@ const GraticuleStory = ({
   );
 };
 
+/**
+ * `GeoGraticule` draws lines on the Earth: latitude and longitude, the UTM zones and the
+ * nautical time zones, each a constant width on screen from the field out to the horizon and
+ * from space. Latitude and longitude follow the zoom unless given an `interval`; `labels` names
+ * the lines and the zones.
+ *
+ * It needs no `Scenery` and no relief. In a `World` alone it lies flat at the sea's level; with
+ * a `GeoRelief` it lies on the land and the seabed as drawn (`drape`); with a `Scenery`'s sea it
+ * lies on the sea's surface over the sea, and is hidden while the camera is under it.
+ */
 const meta = {
   title: 'Components/Geo layers/Graticule',
   component: GraticuleStory,
@@ -242,13 +252,27 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * Latitude and longitude, named along their lines, and the UTM zones' edges about the demo
+ * field, inside a `Scenery` with its sea and the relief. Zoom out and the lines space out to
+ * follow the zoom (`minSpacing`; `interval` fixes them); add the zones' names and the time zones
+ * in the Lines group, and turn off the `water` to see the lines lie on the seabed.
+ */
 export const Default: Story = {};
 
+/**
+ * The same lines in a `World` with no `Scenery`, on the demo relief: with no sea they lie on the
+ * land and the seabed as drawn (`drape`), or flat at `height` with `drape` off.
+ */
 export const WorldOnly: Story = {
   name: 'World only',
   args: { scenery: false },
 };
 
+/**
+ * In a `World` alone with no relief to lie on: the lines lie flat at `height` over the sea's
+ * level.
+ */
 export const NoRelief: Story = {
   name: 'World only, no relief',
   args: { scenery: false, relief: false },

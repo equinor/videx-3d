@@ -23,6 +23,9 @@ type Story = StoryObj<StoryArgs>;
 
 const wellboreId = 'ad215042-03eb-2b7e-e053-c818a488c79a';
 
+/**
+ * The casing shoes of a wellbore of the demo field (`id`): change their size, colour and detail.
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

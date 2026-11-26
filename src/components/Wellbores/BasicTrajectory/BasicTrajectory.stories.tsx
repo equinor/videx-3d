@@ -19,6 +19,10 @@ type Story = StoryObj<typeof meta>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
+/**
+ * The demo wellbore as a one-pixel line, as thin close up as from far off. Zoom in to compare it
+ * with `Trajectory`, which thickens into a tube.
+ */
 export const Default: Story = {
   render: args => {
     useEffect(() => {

@@ -21,6 +21,12 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The alphabet, the digits and a greeting from the Open Sans glyph atlas. Edit the `text` (a
+ * line per row), set its `fontSize`, `rotation`, letter `spacing` and alignment
+ * (`horizontalAlign`, `verticalAlign`), and move the glyphs' edges in or out (`inBias`,
+ * `outBias`) to make them thinner or bolder.
+ */
 export const Default: Story = {
   args: {
     text: 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz\n0123456789\nHello glyphs!',

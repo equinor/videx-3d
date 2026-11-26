@@ -36,6 +36,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * Twenty slabs in a row, drawn as one instanced mesh: each placed by a matrix of its own and
+ * coloured along the rainbow (`data`'s `transformations` and `colors`), sharing one `geometry`
+ * and `material`.
+ */
 export const Default: Story = {
   args: {
     data,

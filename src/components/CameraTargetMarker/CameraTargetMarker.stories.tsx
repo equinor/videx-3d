@@ -16,6 +16,11 @@ type StoryArgs = React.ComponentProps<typeof CameraTargetMarker>;
 export default meta;
 type Story = StoryObj<StoryArgs>;
 
+/**
+ * The marker over two boxes on a plane. Orbit, pan and zoom to watch it follow the camera's
+ * target; set its `radius`, `color` and `opacity`, and lock it on an axis (`fixedX`, `fixedY`,
+ * `fixedZ`).
+ */
 export const Default: Story = {
   args: {
     color: 'white',

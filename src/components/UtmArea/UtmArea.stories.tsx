@@ -28,6 +28,12 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The demo field's wellbores placed by their UTM coordinates (`UtmPosition`): a red sphere at
+ * each one's kick-off depth. An orange sphere 500 m up marks the demo wellbore, placed by its
+ * longitude and latitude (`Wgs84Position`), over a 30 km UTM grid (`UtmGrid`) at its kick-off.
+ * Move the area's origin (`origin`) or shift the area (`offset`), and all of it moves along.
+ */
 export const Default: Story = {
   args: {
     utmZone,

@@ -1752,18 +1752,20 @@ const meta = {
     ownLighting: (args: FieldColumnStoryProps) => args.scenery,
     // `interiorFogBackground` is a switch, not a colour.
     controls: { matchers: { color: /color$/i } },
+    // The generated column's counterpart (SyntheticColumn) on real surveys: layers mapped over
+    // different extents and with holes (`coverage` per layer), horizons coincident over most of
+    // the field, and pairs whose age and depth order disagree. Surfaces the strat column has no
+    // horizon for are left out, not placed by depth, and reported as an error (two on Volve).
     docs: {
       description: {
         component:
-          'The whole demo field as ONE zone: every mapped surface the dataset carries, in stratigraphic order, coloured from the field’s own stratigraphic column.\n\n' +
-          '⭐ This is `SyntheticColumn` run on REAL data. The generated column is exact by construction — every unit is a known function of the one above it — which makes it the right place to prove the pipeline. This story is the opposite check: real surveys, with everything the generated column does not have. Surfaces mapped over different extents and interior holes (see `coverage` per layer), horizons that are coincident over most of the field, and pairs whose stratigraphic order and depth order disagree.\n\n' +
-          '⭐⭐ **Order and colour both come from the strat column, and both are the HOST’s job.** The library takes the array order as the stratigraphic order and never assigns a colour. Here the story matches each surface NAME to the column’s `top`/`base` horizons: the age gives the order (`sortByStratAge`), and the unit’s own colour gives the layer its material. A colour belongs to the INTERVAL rather than to the horizon — what you see is the top of the unit underneath — so the same colour serves as the cap and as the wall below it.\n\n' +
-          '⚠️ Surfaces the column has no horizon for are EXCLUDED, not guessed at, and the exclusion is reported as an error: placing them by depth is exactly the mistake the age ordering exists to avoid. On this dataset two surfaces (an intra-formation top and an unconformity) drop out that way.\n\n' +
-          '⭐ **`maxNodes` is the quality/speed dial.** Every layer is resampled onto one common grid; almost all of the build cost is linear in that grid’s node count, so halving the budget quarters the work. What it costs is resolution of the coverage MASKS — data edges, holes and pinch-out contours — rather than of the heights, which stay bounded by `maxError`. Watch `referenceNodes` and `referenceStep` in the report: a step above 1 means the trade is active. The `boundary` control is the other end of the same lever — the survey rectangle is roughly ten times the area the wells occupy.\n\n' +
-          '⭐ The **section** cuts the block with a plane and closes it with a real face, and in `camera` mode the plane rides in front of the camera — so orbiting picks the angle and dollying drives the cut through the field, with nothing to grab. **Peel** is the non-destructive alternative: it lifts the layers apart instead of removing anything. **Interior fog** fogs the view while the camera is inside the sea or the block.\n\n' +
-          '⭐ **Wellbores** draws every wellbore the dataset carries, straight through the block. Click one to select it — plain click flies the camera to the hit point, ctrl+click selects without moving. Once a well is selected the **well map** on the left comes alive: dragging its depth handle drives the camera along the trajectory.\n\n' +
-          '⭐⭐ The **fence** opens the block along that selected well, instead of with a plane. It is the wellbore counterpart of the section: `split` halves the block so the well lies in the cut face, `slot` opens a corridor with the well in the gap, and the cut runs out past the wellhead and past TD so it reaches clear of the block at both ends. ⭐ A fence is VERTICAL, so what it removes depends on the map position alone — one number per vertex, which the shader reads as a varying and the CPU contours to build the cut face. That is why switching wells costs a resample rather than a build, and why the width is free to sweep.\n\n' +
-          'No ships and no facilities here: the import sets carry no such data, and inventing it would say something about the field that is not in it.',
+          'The demo field as a geological model: its mapped surfaces, from the sea bed down (`surfaceFrom`, `surfaceCount`), built into one solid block (`ZoneStack`, `Zone`), with every wellbore of the field drawn through it (`Wells`, `Trajectory`). Use it to see how the zone components, the wellbores and the `Scenery` work together on real data.\n\n' +
+          '- **Wellbores**: hover one to highlight it; click it to select it and fly to it (ctrl+click selects it without moving the camera). The `WellMap` on the left shows the selected well: drag its depth handle to move the camera along it.\n' +
+          '- **Section**: `section` cuts the block with a plane. In `camera` mode the plane stays in front of the camera, so orbiting picks the angle and dollying drives the cut through the field; `target` keeps it on the point the camera turns about, and `fixed` sets it from the azimuth, dip and distance controls.\n' +
+          '- **Fence**: `fence` opens the block along the selected wellbore instead, and follows each wellbore you select. `fenceSide` picks the half taken away (`auto` keeps the camera on the open side), and `seismic` draws seismic on the cut face.\n' +
+          '- **Peel**: `peel` hides the top units to show what lies under them, with nothing rebuilt.\n' +
+          '- **Scenery**: the `Scenery` lights the field. With its `background` on (the With Scenery story) it also draws the sky, the sea and the seabed relief around the field.\n\n' +
+          'The order of the surfaces and their colours come from the field’s stratigraphic column: the library takes the surfaces in the order it is given and leaves colour to the host. `maxNodes` trades detail for build time, and `boundary` sets the area built: the wells’ footprint (`field`, the default) or the whole survey (`grid`, many times larger and slower to build).',
       },
     },
   },
@@ -1773,6 +1775,12 @@ export default meta;
 type Story = StoryObj<typeof FieldColumnStory>;
 
 // The groups A to Z, each with its own leading controls first.
+/**
+ * The block and the wellbores, lit by the `Scenery` with nothing drawn around them (`background`
+ * off), the block's own sea on top. A coarse preview shows while the model builds (`preview`), and
+ * the panel at the top right says when it is built and how long it took. Then select a wellbore
+ * and try `fence`, `section` and `peel`.
+ */
 export const Default: Story = {
   ...orderControls<FieldColumnStoryProps>(
     {
@@ -2696,8 +2704,12 @@ export const Default: Story = {
   ],
 };
 
-// The field under the videx Scenery: its sea over the column, the seabed the demo reliefs with
-// the column's sea bed baked in, which the column is built on and the Scenery's stage draws.
+/**
+ * The field in its surroundings: the `Scenery` also draws the sky, the sea over the block and the
+ * seabed relief around it (`background` on). The field's own sea bed is baked into the relief
+ * (`bakeSeabed`), so the ground over the block is its top; `reliefMarkers` places four subsea
+ * facilities on that ground, two on the block and two beyond it.
+ */
 export const WithScenery: Story = {
   ...Default,
   args: { ...Default.args, scenery: true, background: true },

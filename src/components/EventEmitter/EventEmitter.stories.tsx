@@ -174,6 +174,11 @@ function Scene() {
   );
 }
 
+/**
+ * Three blue boxes that turn yellow under the pointer and green once clicked (click again to
+ * clear). Clicking the purple box above them makes the three larger, or back. Each box
+ * registers its own handlers with `useEventEmitter`.
+ */
 export const Default: Story = {
   render: () => (
     <EventEmitter>

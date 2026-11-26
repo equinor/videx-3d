@@ -32,10 +32,14 @@ export type CameraTargetMarkerProps = {
 const pos = new Vector3();
 
 /**
- * A simple component for indicating the current camera target.
+ * A marker at the camera's target: a see-through sphere that follows the target of the
+ * scene's camera controls (drei's `CameraControls`, set as the default controls) as the view
+ * moves, and is hidden without them. It is drawn over the scene, never hidden behind it,
+ * unless `depthTest` is on. Lock it on an axis (`fixedX`, `fixedY`, `fixedZ`) to keep it to
+ * a line or a plane, a level, say.
  *
- * NOTE: You may pass a child node to this component if you want to use a custom object representing the camera target. If you do, you'll have to
- * manage the material settings yourself, as depthTest and depthWrite only have an effect on the default object's material.
+ * Pass a child to draw an object of your own instead of the sphere. `radius`, `color`,
+ * `opacity`, `depthTest` and `depthWrite` then do nothing: its material is yours to set up.
  *
  * @example
  * <CameraTargetMarker />

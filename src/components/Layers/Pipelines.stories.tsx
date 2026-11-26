@@ -193,6 +193,21 @@ const PipelinesStory = ({
   );
 };
 
+/**
+ * Pipelines and facilities in longitude and latitude, lying on the seabed the relief draws:
+ * here those on the Norwegian continental shelf (Sodir, NLOD 2.0, with a made-up hub at the
+ * demo field).
+ *
+ * - `GeoTubes` draws the pipelines as tubes, each its diameter as built times `exaggeration`
+ *   and never thinner than `minPixels`, so it reads as a line from afar. Here they are coloured
+ *   by what they carry (green oil, red gas, orange condensate, blue CO2), faded out of service.
+ * - `GeoSymbols` draws the facilities as discs, never smaller on screen than its `minPixels`
+ *   (`facilityPixels` here).
+ * - `GeoLabels` writes the facilities' names.
+ *
+ * Inside a `Scenery` the tubes and discs are seen through the sea as the seabed is (`water`). A
+ * `Minimap` draws the same data from the same props (`GeoMapLines`, `GeoMapSymbols`).
+ */
 const meta = {
   title: 'Components/Geo layers/Pipelines',
   component: PipelinesStory,
@@ -251,7 +266,7 @@ const meta = {
           control: 'inline-radio',
           options: ['fog', 'clear'],
           description:
-            '`fog`: the pipelines and facilities are seen through the sea as the seabed is, gone where the sea turns opaque from a few kilometres up. `clear`: as they are.',
+            '`fog`: the pipelines and facilities are seen through the sea as the seabed is: gone under water too deep to see through, and far off, where the sea turns opaque. `clear`: as they are.',
           table: { category: 'Scene' },
         },
         exaggeration: {
@@ -328,10 +343,20 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The pipelines and facilities about the demo field on the seabed, seen through the sea. Turn
+ * off the `sea` to see them on a dry seabed, fly in close to see the pipes bridge the hollows
+ * (`span`), and keep only the pipelines in service (`inServiceOnly`).
+ */
 export const OnTheSeabed: Story = {
   name: 'On the seabed',
 };
 
+/**
+ * From 150 km up, the routes from the field toward the Norwegian coast and its terminals: from
+ * this far, `minPixels` keeps every pipeline a line on screen. Turn on `reveal` to draw them over
+ * the sea as a map.
+ */
 export const ToTheCoast: Story = {
   name: 'To the coast',
   parameters: {

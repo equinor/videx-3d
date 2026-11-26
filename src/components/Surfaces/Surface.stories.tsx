@@ -276,6 +276,17 @@ const ClippedSurfaceStory = ({
   );
 };
 
+/**
+ * Depth surfaces (horizons) of the demo field. A `Surface` is a mesh of a regular grid of depths
+ * (its `SurfaceMeta`, and its values from the data store: see
+ * [Data](/videx-3d/docs/documents/data.html)), simplified within `maxError` metres and built by
+ * a generator (see [Generators](/videx-3d/docs/documents/generators.html)). Its colour ramp and
+ * contour lines read the full grid, however coarse the mesh. Here it is placed in a `UtmArea`,
+ * with a `UtmPosition` at its grid's origin.
+ *
+ * `createClippedSurface` cuts a surface to a polygon instead: a mesh of what lies inside it,
+ * along its exact edge.
+ */
 const meta = {
   title: 'Components/Surfaces/Surface',
   component: SurfaceStory,
@@ -292,6 +303,13 @@ const lined = { if: { arg: 'contours' } };
 const labelled = { if: { arg: 'contourLabels' } };
 const detailed = { if: { arg: 'detailPreset', neq: 'none' } };
 
+/**
+ * A surface of the demo field (`surfaceId`) coloured by depth (`colorRamp`, `reverseRamp`;
+ * `rampMin` and `rampMax` move the ramp's ends, in metres; `useColorRamp` off for a plain
+ * `color`), with contour lines and their depths (the Contours group). Set how closely the mesh
+ * follows the grid (`maxError`), whether no-data holes are cut or filled (`cutHoles`, smoothed
+ * by `edgeSmoothing`), and add relief up close (the Detail group; zoom in).
+ */
 export const Default: Story = {
   args: {
     surfaceId: Object.keys(storyArgs.surfaceOptions)[0],
@@ -516,9 +534,11 @@ const MASK = 'Mask';
 const LOOK = 'Look';
 
 /**
- * A surface clipped to a polygon mask (`createClippedSurface`): only what lies inside the
- * mask is triangulated, along its exact rim rather than the grid's staircase, with its holes
- * and separate parts. The faint wireframe is the whole surface.
+ * A surface cut to a polygon (`createClippedSurface`): only what lies inside is triangulated,
+ * along the polygon's exact edge rather than the grid's staircase, holes and separate parts
+ * included. Switch the polygon (`mask`) between the outline of the field's wells and a demo
+ * shape of three parts; the yellow lines are the polygon (`outline`), the faint wireframe the
+ * whole surface (`reference`).
  */
 export const Clipped: StoryObj<ClippedArgs> = {
   args: {

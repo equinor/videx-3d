@@ -23,11 +23,7 @@ import { SceneryVoid } from './SceneryVoid';
 import { sceneryDefaults, type SceneryHollowStyle } from './scenery-model';
 import type { SceneryStageBounds } from './scenery-stage';
 
-// The void under a `Scenery`'s seabed (`<SceneryVoid>`, documents/void.md): by default a hollow
-// in the crust about the field, crater walls down to a floor some 35 km under the seabed.
-// Opening it (`hollow.open`) peels the seabed over it: the field's wellbores and its reservoir
-// are seen against it, the relief cut away inside its rim. With `hollow={false}`, the plain
-// void: an endless lid overhead and a bottomless gradient below the horizon.
+// See documents/void.md.
 
 // The field's water depth: the sea's seabed, the void's lid.
 const DEPTH = storyArgs.waterDepth;
@@ -104,9 +100,13 @@ const range = (
 });
 
 /**
- * The void under the seabed (`<SceneryVoid>`): by default a hollow in the crust about the
- * field, which opening it (`hollow.open`) peels the seabed over. Changing any of it recompiles
- * nothing and bakes nothing.
+ * The void under a `Scenery`'s seabed (`<SceneryVoid>`). By default it is a hollow in the crust
+ * about the field: crater walls down to a floor some 35 km under the seabed. Opening it
+ * (`hollow.open`) peels the seabed away inside its rim, with no sea over it, so the data under
+ * the field is seen against the crater.
+ *
+ * With `hollow={false}` it is the plain void: an endless lid overhead and a bottomless gradient
+ * below the horizon. Changing any of it recompiles and bakes nothing.
  */
 const meta = {
   title: 'Components/Scenery/SceneryVoid',
@@ -200,12 +200,17 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * Over the field from some 6 km, the sea peeled: its wellbores and its reservoir over the
- * hollow.
+ * Over the demo field from some 6 km, the hollow open and the sea drained: the field's
+ * wellbores and reservoir against the crater below. Try each `hollowStyle`, shape the hollow
+ * (`hollowRadius`, `hollowFloorDepth`, `hollowRimWander`, `hollowTerraces`), or close it
+ * (`open`) and fly under the seabed.
  */
 export const Default: Story = {};
 
-/** The whole hollow from 400 km up over the field, the land about it. */
+/**
+ * The whole hollow from 400 km up over the field, with the land about it: the place to judge
+ * its `hollowRadius` and the bays and headlands of its rim (`hollowRimWander`).
+ */
 export const Hollow: Story = {
   parameters: {
     cameraPosition: [0, 400000, 480000],

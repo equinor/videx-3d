@@ -148,6 +148,18 @@ const GeoMapStory = ({
   );
 };
 
+/**
+ * `GeoMap` is a 2D map of the Earth that needs no 3D view: the relief drawn top-down from the
+ * same tiles a `GeoRelief` uses, in the scene's own map or a projection of the whole world,
+ * with layers of its own over it (points, lines, polygons, symbols, labels, a graticule).
+ * Outside a `World`, give it a `frame` and a `GeneratorsProvider` with the `sceneryReliefTile`
+ * generator.
+ *
+ * The stories fill the page with one over the demo reliefs, the discoveries on the Norwegian
+ * continental shelf and the demo pipelines, each switched in the Data group. Drag to pan,
+ * wheel or pinch to zoom about the pointer, double-click to zoom in (Shift: out), or use the
+ * arrow keys and + / − once the map has focus.
+ */
 const meta = {
   title: 'Components/Html/GeoMap',
   component: GeoMapStory,
@@ -251,9 +263,17 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The map 400 km across about the demo field, in the scene's own map; zoom out past 2000 km and
+ * it turns to the `globalProjection`. Draw the relief as lines (`mode: outline`, `contours`),
+ * fix the `projection`, and try how the wheel zooms (`wheel`).
+ */
 export const Default: Story = {};
 
-/** The whole world in Equal Earth, the UTM zones over it: pan to the other side of the Earth. */
+/**
+ * The map in Equal Earth at every zoom, the UTM zones over it: zoom out to the whole world and
+ * pan to the other side of the Earth.
+ */
 export const World: Story = {
   args: { projection: 'equal-earth', utm: true },
 };

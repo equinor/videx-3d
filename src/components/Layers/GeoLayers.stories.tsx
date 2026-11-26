@@ -214,6 +214,18 @@ const DiscoveriesStory = ({
   );
 };
 
+/**
+ * Polygons and their names in longitude and latitude, laid over the Earth from GeoJSON: here the
+ * discoveries on the Norwegian continental shelf about the demo field (Sodir, NLOD 2.0).
+ *
+ * - `GeoPolygons` fills and outlines them at a height over the sea, or on the relief
+ *   (`drape`), their edges sharp at any zoom.
+ * - `GeoLabels` writes each name flat inside its polygon, where it fits best.
+ *
+ * Both are placed on the globe by latitude and longitude, and need neither a relief nor a
+ * `Scenery`. A `Minimap` draws the same data from the same props (`GeoMapPolygons`,
+ * `GeoMapLabels`).
+ */
 const meta = {
   title: 'Components/Geo layers/GeoLayers',
   component: DiscoveriesStory,
@@ -389,8 +401,18 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The discoveries about the demo field inside a `Scenery`, coloured by what they hold (green oil,
+ * red gas, orange oil and gas, purple gas and condensate), named, and on a `Minimap`. Zoom out
+ * to the shelf; try the `height`, the fill and outline (Style group), the names' size and
+ * sizing (Labels group), and only the discoveries in production (`producingOnly`).
+ */
 export const Discoveries: Story = {};
 
+/**
+ * The same layers in a `World` with no `Scenery`: no sea and no minimap, the relief drawn on
+ * its own (`relief`). The polygons and names lie where they did.
+ */
 export const WorldOnly: Story = {
   name: 'Discoveries (World only)',
   args: { scenery: false },

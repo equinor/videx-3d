@@ -111,13 +111,16 @@ const DemoComponent = ({ Example, ...props }: DemoProps) => {
 };
 
 /**
- * PlanarGeometry is a simple abstraction around coordinates describing 2D
- * point, line or polygon geometries. It was added as a simple internal structure
- * for geojson data.
+ * `PlanarGeometry` holds 2D points, lines or polygons, the geometry types of GeoJSON, in the
+ * scene's horizontal plane: a `PlanarPointGeometry`, `PlanarLineGeometry` or
+ * `PlanarPolygonGeometry`. Make one with `PlanarGeometry.fromPointCoordinates`,
+ * `fromLineCoordinates` or `fromPolygonCoordinates`, from coordinates of any kind and a function
+ * that maps them into the scene (these stories map WGS84 and UTM through a `CRS`). A polygon
+ * turns into Three.js shapes (`toShapes`) to fill or extrude.
  *
- * Currently, it's main use is for mapping geojson polygons to Three.js Shape instances.
- *
- * @see parseGeoJsonFeature
+ * Three.js shapes lie in the XY plane, so the stories map north to Y and then rotate what they
+ * draw onto the ground. `centralize` moves a story's geometry to the scene's origin
+ * (`centralize()`, which keeps the offset it moved by).
  */
 const meta = {
   title: 'SDK/planar-geometry',
@@ -388,12 +391,10 @@ const PointsDemo = ({ centralize }: ExampleProps) => {
 };
 
 /**
- * Describes a 2D polygon(s) corresponding to the geojson "Polygon" or "MultiPolygon" geometry types.
- *
- * The coordinates are an array of polygons, where each polygon is defined by 1 or more _rings_. The first ring
- * outlines the base shape of the polygon and the following rings defines holes.
- *
- * This example shows the outline of the Norwegian oil field "Volve", which is transformed from a geojson feature file.
+ * A GeoJSON polygon feature (a sample near the demo field, not its outline) read into a
+ * `PlanarPolygonGeometry` and drawn four ways: as a red outline, as a see-through magenta shape,
+ * as a shape with a UV grid texture and, highest, extruded with bevelled edges. A polygon is one
+ * or more rings: the first is its outline, the others are holes in it.
  */
 export const Polygon: Story = {
   args: {
@@ -403,11 +404,9 @@ export const Polygon: Story = {
 };
 
 /**
- * Describes 2D line segment(s) corresponding to the geojson "LineString" or "MultiLineString" geometry types.
- *
- * The coordinates are an array of lines, where each line element may contain multiple segments in 2D space.
- *
- * This example shows how the geographic trajectory of wellbores may be derrived and stored as an PlanarLineGeometry instance.
+ * The demo field's wellbore trajectories seen from above: their UTM eastings and northings read
+ * into one `PlanarLineGeometry` (GeoJSON's LineString and MultiLineString) and drawn as magenta
+ * lines, inside the field's outline (dashed, unless `centralize` is on).
  */
 export const Lines: Story = {
   args: {
@@ -417,13 +416,9 @@ export const Lines: Story = {
 };
 
 /**
- * Describes 2D point(s) corresponding to the geojson "Point" or "MultiPoint" geometry types.
- *
- * The coordinates are an array of points in 2D space.
- *
- * This example shows how point data may be transformed by creating a PlanarPointGeometry instance. The transformed data is
- * then simply used to add and position Three.js Sphere geometries and also for instanced rendering using
- * the videx-3d Symbols compponent.
+ * Six points given in WGS84, the first the scene's origin, read into a `PlanarPointGeometry`
+ * (GeoJSON's Point and MultiPoint) and placed twice: as spheres, and as rings drawn in one
+ * instanced draw by `Symbols`, each ring larger than the last.
  */
 export const Point: Story = {
   args: {

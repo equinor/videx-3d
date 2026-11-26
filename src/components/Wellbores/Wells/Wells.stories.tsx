@@ -168,6 +168,11 @@ const Wrapper = () => {
   );
 };
 
+/**
+ * `Wells` groups wellbores by their well: it works out where each wellbore of a well begins
+ * (`fromMsl`), from which of them are included, and renders each through `renderWellbore`. The
+ * story draws one well of the demo field at its UTM position, inside a `BoxGrid`.
+ */
 const meta = {
   title: 'Components/Wellbores/Wells',
   component: Wrapper,
@@ -176,6 +181,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * The wellbores of the demo field's default well. Click one to select it and fly to it
+ * (ctrl+click selects it without moving), hover to highlight it; space shows or hides the labels.
+ */
 export const Default: Story = {
   decorators: [
     EventEmitterDecorator,

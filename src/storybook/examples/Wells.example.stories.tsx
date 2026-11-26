@@ -481,6 +481,20 @@ const Example = (args: ExampleProps) => {
   );
 };
 
+/**
+ * Every wellbore of the demo field, laid out by `Wells`, with the components a field overview
+ * typically uses. Each `Wellbore` has a `Trajectory`, its casing `Shoes`, its `Perforations` and a
+ * `WellboreLabel`, and can add `FormationMarkers`, a `WellboreFormationColumn` and `DepthMarkers`.
+ * Close up, `Casings` and `CompletionTools` take over from the trajectory
+ * (`showCasingAndCompletion`): each part is shown only within its own range of distances
+ * (`Distance`).
+ *
+ * Hover a wellbore to highlight it and read the position under the pointer in the output panel;
+ * click it to select it and fly to it (ctrl+click selects it without moving). The output panel
+ * then lists the selected wellbore's details, and the `WellMap` on the left lays out its well.
+ * Space shows or hides the labels. A `BoxGrid` follows the wells (`ObservableGroup`) until you
+ * pick a depth surface to draw instead (`surfaceId`).
+ */
 const meta = {
   title: 'Examples/Wells',
   loaders: [
@@ -636,6 +650,12 @@ const commonArgs = {
   simplificationThreshold: 0,
 };
 
+/**
+ * The demo field on a dark background. Pick a surface (`surfaceId`) and try its colours
+ * (`useColorRamp`, `colorRamp`, `opacity`), contours (`showContours`) and close-up relief
+ * (`surfaceDetail`); ctrl+click the surface to fly to that point. `showSeismic` draws a seismic
+ * section along the selected wellbore.
+ */
 export const Default: Story = {
   args: {
     ...commonArgs,
@@ -653,6 +673,7 @@ export const Default: Story = {
   },
 };
 
+/** The Default story on a light background, with a light grid and darker axes. */
 export const Light: Story = {
   args: {
     ...commonArgs,

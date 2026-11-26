@@ -137,7 +137,12 @@ const defaultCellSizeDistanceFactors = [
 ];
 
 /**
- * Renders an axis aligned grid plane (xz, xy or zy).
+ * A grid on an axis-aligned plane (`plane`: `'xz'`, `'xy'` or `'zy'`): cells of `cellSize`
+ * with `subDivisions` minor lines each, and axes labelled with their values. Set where the
+ * axes cross (`gridOrigin`), their values there (`originValue`), and which way and how fast
+ * the values run (`gridScale`). The grid can also be radial (`radial`), change its cell size
+ * with the camera's distance (`dynamicCellSize`), show rulers at the pointer (`showRulers`),
+ * show a `texture` under its lines, and show a shade of what lies over it (`enableProjection`).
  *
  * @example
  * <Grid plane="xz" size={[1000, 1000]} cellSize={10} />

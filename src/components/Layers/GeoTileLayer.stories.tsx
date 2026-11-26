@@ -158,6 +158,14 @@ const GeoTileLayerStory = ({
 const LAYER = 'Layer';
 const PATTERN = 'Pattern';
 
+/**
+ * `GeoTileLayer` draws anything on the Earth from geographic tiles of its own, in longitude and
+ * latitude: tiles are chosen only where its `source` says there is something (`covers`), filled
+ * by the source's `load` and coloured per pixel by a GLSL `shader` of yours. It lies flat at a
+ * height over the sea, or on the relief as drawn (`drape`). `GeoPolygons` and `GeoGraticule`
+ * are built on it. Use it for other area data, such as a raster or a heat map; for lines and
+ * points from data, use `GeoTubes` and `GeoSymbols`.
+ */
 const meta = {
   title: 'Components/Geo layers/GeoTileLayer',
   component: GeoTileLayerStory,
@@ -232,5 +240,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** A checkerboard over a disc about the field, draped on the relief. */
+/**
+ * A checkerboard over a disc about the demo field, draped on the relief. Its source loads
+ * nothing (no `load`): the shader works the pattern out from where each pixel lies. Set the
+ * cells' size and colour and the disc's `radius` in the Pattern group, lay it flat at a
+ * `height` (`drape` off), and see it through the sea (`water: fog`).
+ */
 export const Default: Story = {};

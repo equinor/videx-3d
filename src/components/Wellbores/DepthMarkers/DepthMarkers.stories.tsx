@@ -26,6 +26,10 @@ type StoryArgs = React.ComponentProps<typeof DepthMarkers> & { id: string };
 export default meta;
 type Story = StoryObj<StoryArgs>;
 
+/**
+ * The depth markers of a wellbore of the demo field (`id`): set their spacing (`interval`) and
+ * whether depths count from mean sea level or the rotary table (`depthReferencePoint`).
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

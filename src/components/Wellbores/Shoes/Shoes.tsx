@@ -34,7 +34,9 @@ export type ShoesProps = CommonComponentProps & {
 };
 
 /**
- * Render shoe markers along a wellbore trajectory. This uses the `Symbols` component internally.
+ * Casing shoes along a wellbore: a marker at the foot of each casing, `sizeMultiplier` times
+ * its real size, with its name as an annotation. Must be a child of the `Wellbore` component.
+ * This uses the `Symbols` component internally.
  *
  * @example
  * <Wellbore id={wellboreId}>

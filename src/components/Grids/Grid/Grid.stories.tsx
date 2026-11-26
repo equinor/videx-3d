@@ -59,6 +59,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * A 1 km square grid on the ground (`plane` `'xz'`): 50 m cells (`cellSize`) of ten minor lines
+ * each (`subDivisions`), with a box, a sphere and the scene's axes for scale. Try the line
+ * widths (`gridLineWidth`, `axesLineWidth`), the colours, `opacity`, and another `plane`.
+ */
 export const Default: Story = {
   args: {
     plane: 'xz',
@@ -77,6 +82,10 @@ export const Default: Story = {
   ),
 };
 
+/**
+ * The axes cross, and count from zero, at `gridOrigin` (X -250, Z 300) instead of at the
+ * grid's centre.
+ */
 export const OriginOffset: Story = {
   args: {
     plane: 'xz',
@@ -115,6 +124,10 @@ export const OriginOffset: Story = {
 //   )
 // }
 
+/**
+ * The axes' values scaled (`gridScale`): X labelled 20 times its distance, Z counting the other
+ * way.
+ */
 export const ScaledAxes: Story = {
   args: {
     plane: 'xz',
@@ -134,6 +147,11 @@ export const ScaledAxes: Story = {
   ),
 };
 
+/**
+ * Cells that grow and shrink with the camera's distance to the grid (`dynamicCellSize`): at each
+ * distance, counted in cells, a factor on `cellSize` (`cellSizeDistanceFactors`). Zoom in and
+ * out to watch the cells and their labels change.
+ */
 export const Dynamic: Story = {
   args: {
     plane: 'xz',
@@ -163,6 +181,10 @@ export const Dynamic: Story = {
   ),
 };
 
+/**
+ * Rulers through the pointer along both axes while it is over the grid (`showRulers`); set
+ * their `rulerColor`, `rulerLineWidth` and `rulerOpacity`.
+ */
 export const Rulers: Story = {
   args: {
     plane: 'xz',
@@ -182,6 +204,10 @@ export const Rulers: Story = {
   ),
 };
 
+/**
+ * A radial grid (`radial`): rings every `cellSize` and sixteen spokes, with minor rings and
+ * spokes between them (`subDivisions`), centred on the scene's origin.
+ */
 export const Radial: Story = {
   args: {
     plane: 'xz',
@@ -223,6 +249,9 @@ export const Radial: Story = {
   ),
 };
 
+/**
+ * The radial grid centred on the sphere (`gridOrigin`) instead of the scene's origin.
+ */
 export const RadialOffset: Story = {
   args: {
     plane: 'xz',
@@ -264,6 +293,10 @@ export const RadialOffset: Story = {
   ),
 };
 
+/**
+ * The radial grid with more spokes further out (`dynamicSegments`): their number doubles as the
+ * distance from the centre does, so they stay about as far apart.
+ */
 export const RadialDynamicSegments: Story = {
   args: {
     plane: 'xz',
@@ -305,6 +338,10 @@ export const RadialDynamicSegments: Story = {
   ),
 };
 
+/**
+ * The grid on old paper: a `texture` under its lines (`textureMix`), brown lines
+ * (`gridColorMajor`, `gridColorMinor`), black axes and longer ticks (`axesTickSize`).
+ */
 export const Customized: Story = {
   args: {
     plane: 'xz',
@@ -329,6 +366,11 @@ export const Customized: Story = {
   ),
 };
 
+/**
+ * A shade of what lies over the grid, cast straight down onto it (`enableProjection`, in
+ * `projectionColor`) and redrawn every `projectionRefreshRate` milliseconds: watch the box's
+ * shade follow it as it floats.
+ */
 export const Projections: Story = {
   args: {
     plane: 'xz',

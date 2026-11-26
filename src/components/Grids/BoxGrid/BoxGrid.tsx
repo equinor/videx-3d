@@ -74,7 +74,12 @@ export type BoxGridProps = CommonComponentProps & {
 };
 
 /**
- * Renders 5 grid planes in a box form (bottom and sides). See `Grid` for more info.
+ * A box of grids round what it holds: a `Grid` on its floor and on each of its four walls,
+ * labelled along their axes. The walls are drawn from the inside only, so the near ones never
+ * hide what is in the box. With `autoSize` it fits itself to its children, with
+ * `autoSizePadding` to spare and snapped to `cellSize`, and follows them as they change. With
+ * `enableProjection` each grid shows a shade of what is in the box, cast straight onto it.
+ * See `Grid` for more.
  *
  * @example
  * <BoxGrid

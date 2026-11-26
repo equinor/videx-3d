@@ -18,29 +18,30 @@ export type AnnotationsProviderProps = {
 const id = `annotations_root`;
 
 /**
- * The Annotations component is special provider component responsible for managing
- * and updating annotation layers and instances.
+ * Labels for points in the scene, drawn as regular React HTML components over the 3D view,
+ * each tied to its point by an anchor and a connector line. Add a layer for each kind of
+ * annotation as a child (`AnnotationsLayer`), and the annotations themselves with the
+ * `useAnnotations` hook.
  *
- * It allow you to register layers, using the AnnotationLayer component, and set a
- * global max visible annotations.
+ * All annotations are ranked together: by priority, by how central and near they are, and by
+ * whether they show already. A label that would overlap another tries other places round its
+ * anchor, or gives way to those ranked higher; one whose anchor is hidden behind the scene
+ * fades out. At most `maxVisible` are considered at a time. Each layer sets its priority and
+ * the distances it shows within, and an annotation may add a priority of its own.
  *
- * Annotations adds point-feature labeling support, where labels are rendered as
- * regular React HTML components. Anchors and connector lines are drawn to the frame buffer
- * after the 3D scene frame is completed.
- *
- * Annotations are processed globally to support label collision, occlusion and
- * ordering tests. Priority and visibillity distances can be set in the AnnotationLayer
- * component and/or int the individual annotation elements.
+ * With `autoUpdate` (the default) it draws the scene itself, through a `RenderPass`, an
+ * `AnnotationsPass` and an `OutputPass`; turn it off to add an `AnnotationsPass` to a
+ * rendering pipeline of your own.
  *
  * @example
  * <Annotations>
- *  <AnnotationLayer id="casings_annotations" name="Casing Annotations" />
+ *  <AnnotationsLayer id="casings_annotations" name="Casing Annotations" />
  * </Annotations>
  *
  * @remarks
  * This component sets up a global state and takes control over the render loop!
  * It's therefore important that only a single instance of this component is mounted
- * at any time in your project. Using this compoent with an EffectsComposer may cause issues,
+ * at any time in your project. Using this component with an EffectsComposer may cause issues,
  * and we will likely convert it from being a component into being a post-processing pass at some point.
  *
  * @see [Storybook](/videx-3d/?path=/docs/components-misc-annotations--docs)

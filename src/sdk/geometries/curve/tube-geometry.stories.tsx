@@ -132,6 +132,14 @@ const DemoComponent = ({
   );
 };
 
+/**
+ * `createTubeGeometry` builds a tube along a 3D curve (`Curve3D`), the geometry behind
+ * `TubeTrajectory`, `Casings`, `CompletionTools`, `Perimeter` and `WellboreFormationColumn`. Its
+ * options set the tube's radius, how finely it follows the curve, how its radius changes along
+ * the curve, whether it is hollow, which part of the curve it covers and whether its ends are
+ * capped. Here the curve is a spline through eight points (`getSplineCurve`), capped at both
+ * ends.
+ */
 const meta = {
   title: 'SDK/tube-geometry',
   component: DemoComponent,
@@ -140,6 +148,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * Set the `radius`, how finely the tube follows the curve (`segmentsPerMeter`, `radialSegments`,
+ * `simplificationThreshold`) and the stretch of the curve it covers (`from`, `to`, 0 to 1).
+ * `radiusModificationType` doubles the radius at both ends, tapering (`linear`) or in steps
+ * (`stepped`); `innerRadius` or `thickness` makes the tube hollow, and `closed` joins the curve
+ * into a loop. `showWireframe` and `showNormals` show how it is built.
+ */
 export const Default: Story = {
   args: {
     radius: 0.25,

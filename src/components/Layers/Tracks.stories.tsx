@@ -257,6 +257,13 @@ const ShipsStory = ({
   );
 };
 
+/**
+ * `GeoTracks` moves things over the Earth, such as ships from a tracking feed (AIS) or a
+ * simulation. Each is drawn by your `children` and moved every frame without a React render:
+ * placed at its latitude and longitude, carried on along its speed and course between fixes,
+ * turned to its course, and eased into each new fix (`smoothing`). It works anywhere on the
+ * Earth: beyond the stage's flat disc each stands upright on the curved sea where it is.
+ */
 const meta = {
   title: 'Components/Geo layers/Tracks',
   component: ShipsStory,
@@ -344,4 +351,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * A dozen tankers about the demo field (`count`), fed a new fix every few seconds (`feed`,
+ * `feedSeconds`), each a little off where dead reckoning put them (`noise`), with a label giving
+ * its name and speed. With `far`, three more about each of four places far off, out to the
+ * mid-Atlantic; turn on the `minimap` to see the ships on a map too (`GeoMapTracks`).
+ */
 export const Ships: Story = {};

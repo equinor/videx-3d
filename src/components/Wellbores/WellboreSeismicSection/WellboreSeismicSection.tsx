@@ -46,7 +46,12 @@ export type WellboreSeismicSectionProps = CommonComponentProps &
   };
 
 /**
- * Renders a seismic fence along the trajectory of a wellbore.
+ * A seismic section along a wellbore: the seismic data sampled on a vertical curtain that
+ * follows the trajectory in plan, a column every `stepSize` metres. The curtain runs on
+ * `extension` metres past the trajectory's end, and in both directions to at least `minSize`
+ * metres in all (along `defaultExtensionAngle` where the trajectory is too straight to say
+ * which way). It is coloured by a colour ramp (`colorRampIndex`), `rangeOffset` widening or
+ * narrowing the range it spans. It takes the wellbore by `id` and needs no `Wellbore` around it.
  *
  * @example
  * <WellboreSeismicSection

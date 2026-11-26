@@ -23,6 +23,10 @@ type Story = StoryObj<StoryArgs>;
 
 const wellboreId = storyArgs.defaultWellbore;
 
+/**
+ * The name of a wellbore of the demo field (`id`) as an annotation at the top, middle or bottom
+ * of its trajectory (`position`).
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

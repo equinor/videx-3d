@@ -386,6 +386,10 @@ const viewportDecorator: Decorator = (Story, { args }) => {
   );
 };
 
+/**
+ * The 3D clouds alone, for timing them: a fixed canvas size and pixel ratio, named camera poses,
+ * and a panel (top right) that runs `window.videx3d.cloudBench` and shows what it measured.
+ */
 const meta = {
   title: 'Debug/Scenery/Cloud Bench',
   component: CloudBenchStory,

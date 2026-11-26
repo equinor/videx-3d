@@ -681,6 +681,19 @@ const Example = (args: ExampleProps) => {
   );
 };
 
+/**
+ * The demo field drawn through a rendering pipeline of its own: a `RenderingPipeline` of an
+ * `OITRenderPass`, an `AnnotationsPass` and an `OutputPass`. The `OITRenderPass` draws
+ * transparent objects without sorting them (order-independent transparency), so the field's
+ * stacked, see-through depth surfaces blend correctly with each other and with the wellbores
+ * inside them from any angle. It also anti-aliases the image.
+ *
+ * Use it to compare the pass with a plain `RenderPass` (`oitEnabled`), to try the anti-aliasing
+ * modes and to see what the pass costs: the output panel counts the objects it puts in each of
+ * its groups, and `profileTail` adds the GPU time of each step. The wellbores are drawn as in the
+ * Wells example: click one to select it and fly to it, hover to highlight it; space shows or
+ * hides the labels.
+ */
 const meta = {
   title: 'Examples/OIT Rendering Pipeline',
   loaders: [
@@ -945,6 +958,12 @@ const commonArgs = orderArgs(
   meta.argTypes,
 );
 
+/**
+ * Every wellbore of the demo field among its interval surfaces, all see-through (`opacity`),
+ * anti-aliased with TAA (`aaMode`; `supersample` renders at a higher or lower resolution on top of
+ * any mode). Add a sea (`showWater`) and a tanker on it (`showTanker`); `occlusionDepthStamp`
+ * lets the see-through surfaces hide the labels behind them.
+ */
 export const Default: Story = {
   args: {
     ...commonArgs,
@@ -963,6 +982,7 @@ export const Default: Story = {
   },
 };
 
+/** The Default story on a light background, with a light grid and darker axes. */
 export const Light: Story = {
   args: {
     ...commonArgs,

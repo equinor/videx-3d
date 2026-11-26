@@ -24,6 +24,10 @@ type Story = StoryObj<StoryArgs>;
 const wellboreId = storyArgs.defaultWellbore;
 const stratcolumnId = storyArgs.defaultStratColumn;
 
+/**
+ * The formation tops of a wellbore of the demo field (`id`), from the demo strat column, along
+ * its trajectory.
+ */
 export const Default: Story = {
   args: {
     id: wellboreId,

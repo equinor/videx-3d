@@ -605,8 +605,8 @@ const meta = {
     docs: {
       description: {
         component:
-          'A `ZoneStack` builds a solid block from depth surfaces. It holds what every `Zone` cut from it shares: the column (`surfaces`, **shallowest first** — the array order IS the stratigraphic order), the boundary, the floor (`carrier`), the sea, and the section or fence that opens it. Each `Zone` draws its own `layers`: a surface, the colour of its cap, and the `fill` of the volume down to the next surface.\n\n' +
-          'Zones are built in a worker, so they appear a moment after the story loads.',
+          'A `ZoneStack` builds a solid block from depth surfaces. It holds what every `Zone` in it shares: the column (`surfaces`, shallowest first: the order of the array is the stratigraphic order), the boundary, the floor (`carrier`), the sea, and the section or fence that opens it. Each `Zone` draws its own `layers`: a surface, the colour of its cap, and the `fill` of the volume down to the next surface.\n\n' +
+          'Zones are built on a worker (see [Generators](/videx-3d/docs/documents/generators.html)), so they appear a moment after the scene loads. The order of the horizons and their colours are the host’s to choose: in the stories, the order comes from the demo field’s stratigraphic column.',
       },
     },
   },
@@ -615,9 +615,9 @@ const meta = {
 export default meta;
 
 /**
- * The field's horizons, grouped into slabs with the interval between them left
- * open (`layersFromGroups`), over the outline of the field. Change the grouping to
- * build other horizons; the appearance controls change no geometry.
+ * The demo field's horizons grouped into slabs over the field's outline, the interval between
+ * two slabs left open (`layersFromGroups`). Change the `grouping` to build other horizons; the
+ * controls in the Zone stack group change no geometry.
  */
 export const Default: StoryObj<DefaultArgs> = {
   render: args => <DefaultStory {...args} />,
@@ -662,10 +662,10 @@ export const Default: StoryObj<DefaultArgs> = {
 };
 
 /**
- * Footprints derived from the field's wellbores instead of a polygon: one
- * `{ kind: 'wellbores' }` source on the stack, which each of the five zones
- * resolves from the wells through its own depth range. Switch `mode` to see the
- * footprints change from zone to zone.
+ * Each zone's footprint derived from the demo field's wellbores instead of a polygon: one
+ * wellbore source on the stack (`cutSource`), which each of the five zones resolves from the
+ * wells through its own depth range. Switch the `mode` to see the footprints change from zone to
+ * zone, and widen them with `radius`.
  */
 export const WellboreBoundary: StoryObj<WellboreBoundaryArgs> = {
   render: args => <WellboreBoundaryStory {...args} />,
@@ -697,8 +697,9 @@ export const WellboreBoundary: StoryObj<WellboreBoundaryArgs> = {
 };
 
 /**
- * A plane through the whole stack (`ZoneSection`), its cut face filled per
- * interval so the block reads as a geological section. Moving the plane rebuilds
+ * A plane through the whole stack (`ZoneSection`), its cut face filled per interval so the block
+ * reads as a geological section. Set the plane (`azimuth`, `dip`, `distance`, `flip`), or let
+ * it follow the camera's target (`mode: target`) and orbit to swing the cut; moving it rebuilds
  * nothing.
  */
 export const Section: StoryObj<SectionArgs> = {
@@ -756,10 +757,10 @@ export const Section: StoryObj<SectionArgs> = {
 };
 
 /**
- * Open water over the stack (`ZoneStackSea`), declared once on the stack and
- * standing on the column's sea bed. This field maps no sea bed, so one is
- * generated for it. Lower the sea toward the bed to bring its highs out of the
- * water.
+ * The sea over the stack (`ZoneStackSea`), declared once on the stack and standing on its
+ * seabed; the demo field maps none, so one is generated for it. Lower the sea toward the bed
+ * (`seaLevel`) to bring its highs out of the water, and set the water's look and the waves in
+ * the Sea group.
  */
 export const Sea: StoryObj<SeaArgs> = {
   render: args => <SeaStory {...args} />,
@@ -815,9 +816,10 @@ export const Sea: StoryObj<SeaArgs> = {
 };
 
 /**
- * The stack opened along a wellbore (`ZoneFence`) instead of with a plane: the
- * cut follows the trajectory, so the well lies in the cut face. The camera flies
- * to each new fence, framed with `fenceViewPose` from `onFence`.
+ * The stack opened along a wellbore of the demo field (`ZoneFence`) instead of with a plane: the
+ * cut follows the trajectory, so the well lies in the cut face. Pick another `wellbore` and the
+ * camera flies to its fence (`fenceViewPose`, from `onFence`); `side`, `margin` and `stiffness`
+ * shape the cut.
  */
 export const Fence: StoryObj<FenceArgs> = {
   render: args => <FenceStory {...args} />,

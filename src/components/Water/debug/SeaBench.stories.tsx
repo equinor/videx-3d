@@ -578,6 +578,10 @@ const viewportDecorator: Decorator = (Story, { args }) => {
   );
 };
 
+/**
+ * The sea alone, for timing it: a `Scenery`'s sea or the stand-alone `Water` under the same sun,
+ * wind and poses, with a panel (top right) that runs `window.videx3d.seaBench`.
+ */
 const meta = {
   title: 'Debug/Water/Sea Bench',
   component: SeaBenchStory,

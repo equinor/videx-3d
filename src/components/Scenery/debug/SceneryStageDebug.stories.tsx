@@ -347,6 +347,10 @@ const StageDebug = (storyArgs: StageDebugArgs) => {
   );
 };
 
+/**
+ * How a `Scenery`, its stage and an occupant fit together: a stage of any size and place on the
+ * Earth, synthetic ground under it, stand-in spheres for data, and debug views of what draws what.
+ */
 const meta = {
   title: 'Debug/Scenery/Stage',
   component: StageDebug,
@@ -493,4 +497,5 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/** A 16 × 16 km stage at the demo field, with synthetic ground, an occupant and the debug panel. */
 export const Default: Story = {};

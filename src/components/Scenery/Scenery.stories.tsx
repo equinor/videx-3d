@@ -56,12 +56,6 @@ import { sceneryDefaults } from './scenery-model';
 import type { SceneryStageBounds } from './scenery-stage';
 import { VoidBackground } from './VoidBackground';
 
-// The `<Scenery>`, the world around the data, over the demo field in a `World` placed there:
-// the sky and the light that comes from it (a sun, an environment and a light probe), and what
-// it holds, each a component of its own: clouds (`SceneryClouds`), an endless sea
-// (`ScenerySea`), the void below it (`SceneryVoid`) and a stage about the field
-// (`SceneryStage`). The clouds, the void, the relief and the cutaway have stories of their own.
-
 // The field's water depth: the sea's seabed.
 const DEPTH = storyArgs.waterDepth;
 // The stage's area, scene X/Z about the field's origin: wide enough to hold its wellbores.
@@ -241,9 +235,19 @@ const TimelapseStory = (args: TimelapseArgs) => {
 const sharedArgTypes = sceneryArgTypes();
 
 /**
- * The `<Scenery>`: a procedural sky and the light that comes from it, and the features it
- * holds — clouds, an endless sea, the void below it and a stage about the field — over the
- * demo field.
+ * The world around the data (`<Scenery>`): a procedural sky that shows where the horizon and
+ * the sun are, and the light that comes from it (a sun light, an environment map and a light
+ * probe). Everything else is a component of its own, placed under it:
+ *
+ * - `SceneryClouds`: 3D clouds.
+ * - `ScenerySea`: an endless sea, its seabed `depth` below the surface.
+ * - `SceneryVoid`: the void below the seabed.
+ * - `SceneryStage`: the sea and its seabed on real geometry about the field, so the water lies
+ *   in front of the data.
+ * - `SceneryCutaway`: a cut through the sea in front of the view.
+ *
+ * The seabed is the `World`'s `GeoRelief`. The clouds, the relief, the void and the cutaway
+ * have pages of their own.
  */
 const meta = {
   title: 'Components/Scenery/Scenery',
@@ -268,11 +272,11 @@ const meta = {
 export default meta;
 
 /**
- * The sky alone over the field: its sun, moon, stars and clouds, and below the sea's level
- * the void (`SceneryVoid`), where the field's wellbores and reservoir lie, lit from below
- * (`subsurface`). The sky lights the scene: a directional sun light, an environment map and a
- * light probe. With `sky` off, whatever is behind the scene shows in its place: here a
- * `VoidBackground`, the void's gradient, which the scene is then lit by.
+ * The sky over the demo field, with no sea: the sun, the moon, the stars and a sky of clouds
+ * (`clouds`), and below the sea's level the void (`SceneryVoid`), where the field's wellbores
+ * and reservoir lie. Move the sun (`sunAzimuth`, `sunElevation`; below the horizon it is night)
+ * and the light on the field follows. With `sky` off, what is behind the scene shows instead and
+ * lights it: here the void's gradient (`voidBackground`).
  */
 export const Default: StoryObj<BasicArgs> = {
   render: args => <BasicScenery {...args} />,
@@ -338,10 +342,11 @@ export const Default: StoryObj<BasicArgs> = {
 };
 
 /**
- * An endless sea (`ScenerySea`) and a stage about the field (`SceneryStage`): real geometry
- * drawing the same sea, so the water lies in front of the wellbores and the seabed over what
- * lies below it. The seabed is the `GeoRelief` in the `World`: the global relief, and here a
- * generated seabed of the field's own at its water depth over it.
+ * An endless sea (`ScenerySea`) and a stage about the field (`SceneryStage`), which draws the
+ * same sea on real geometry so the water lies in front of the wellbores. The seabed is the
+ * `World`'s `GeoRelief`: the global demo relief, with a generated seabed of the field's own over
+ * it (`generatedSeabed`). Set how much of the wellbores the seabed hides (`fieldOpacity`), the
+ * water's look (`opticsColor`, `opticsClarity`) and `windSpeed`, or drain the sea (`water`).
  */
 export const Stage: StoryObj<StageArgs> = {
   render: args => <StageStory {...args} />,
@@ -397,9 +402,11 @@ export const Stage: StoryObj<StageArgs> = {
 };
 
 /**
- * A day over the sea in a few seconds: the sun follows the clock from a date and a place
- * (the Scenery's `observer`), on into the next day past midnight, and the moon, the stars, the
- * light and a sky of clouds follow it.
+ * A day over the sea in a few seconds: the sun follows a clock from a date and a place (the
+ * Scenery's `observer`), and the moon, the stars, the light and the clouds follow it, on into
+ * the next day past midnight; the time and the sun's height show top left. Set the clock
+ * (`playing`, `speed`, `sunHour`, `sunDate`) and `sunLatitude`. A `tanker` rides the waves:
+ * inside a `Scenery`, floating components work as inside a `Water`.
  */
 export const Timelapse: StoryObj<TimelapseArgs> = {
   render: args => <TimelapseStory {...args} />,
