@@ -7,6 +7,19 @@ import {
   Vector3,
 } from 'three';
 import type { GlobeCarry } from '../projection/place-frame';
+import type { Vec3 } from '../types/common';
+
+/**
+ * A view to put the camera in: where it is, what it looks at, and optionally its up (the
+ * scene's, or the globe's where it is). What {@link setCameraPose} takes, with the up.
+ *
+ * @group Utils
+ */
+export type CameraView = {
+  position: Vec3;
+  target: Vec3;
+  up?: Vec3;
+};
 
 /**
  * Reading the installed camera controls without knowing which ones they are.

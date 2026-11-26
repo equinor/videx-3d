@@ -1,6 +1,8 @@
+import { context as fiberContext } from '@react-three/fiber';
 import {
   ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -33,6 +35,7 @@ import {
   WorldReliefStage,
   WorldReliefState,
 } from './world-relief';
+import { registerSceneWorld } from './world-scene';
 
 /**
  * What a {@link World} tells its host when its `frame` changes: how to carry the camera, and
@@ -233,6 +236,17 @@ export const World = ({
 
   // The relief's: what it shares (the tiles it draws), and the sky and the stage that join it.
   const [tiles] = useState(() => new SceneryReliefHub());
+
+  // The scene it is drawn in hears of it (`sceneWorld`), for what lies outside it there. None
+  // outside a canvas.
+  const fiber = useContext(fiberContext) as {
+    getState: () => { scene: object };
+  } | null;
+  useLayoutEffect(() => {
+    const scene = fiber?.getState().scene;
+    if (!scene) return;
+    return registerSceneWorld(scene, { globe, tiles });
+  }, [fiber, globe, tiles]);
   const [reliefs, setReliefs] = useState(0);
   const [ground, setGround] = useState<WorldReliefGround | null>(null);
   const [scenery, setScenery] = useState<ScenerySeaState | null>(null);

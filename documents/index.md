@@ -1,6 +1,7 @@
 # Documents
 This section provides further documentation and examples on how to use this library.
 - [Architecture](./architecture.md)
+- [Camera navigation: keys and the mouse for moving about](./camera-navigation.md)
 - [Clouds and weather](./clouds.md)
 - [Data](./data.md)
 - [Distance & bounds (level of detail)](./distance.md)

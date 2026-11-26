@@ -76,11 +76,30 @@ export {
   type CameraDestination,
   type CameraFlyPlan,
 } from './managers/CameraManager';
+export {
+  CameraNavigator,
+  navigableControls,
+  type CameraNavigationMode,
+  type CameraNavigatorOptions,
+  type CameraNavigatorState,
+  type NavigableControls,
+} from './managers/CameraNavigator';
+export {
+  DEFAULT_CAMERA_BINDINGS,
+  describeCameraKey,
+  resolveCameraBindings,
+  type CameraKey,
+  type CameraModifier,
+  type CameraNavigationBindings,
+  type CameraNavigationBindingsInput,
+  type CameraNavigationKeyAction,
+} from './managers/camera-bindings';
 export * from './managers/WellboreManager';
 
 export * from './projection/crs';
 export * from './projection/geo-frame';
 export * from './projection/globe';
+export * from './projection/globe-views';
 export {
   mapViewFromPixel,
   mapViewLonLatAt,

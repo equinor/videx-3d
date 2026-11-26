@@ -2,6 +2,7 @@
  * @module main
  */
 export * from './components/Annotations';
+export * from './components/CameraNavigation';
 export * from './components/CameraTargetMarker/CameraTargetMarker';
 export * from './components/Zones';
 export * from './components/Distance';
