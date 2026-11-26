@@ -62,12 +62,12 @@ export const Highlighter = ({
 
   const material = useMemo(() => {
     return new MeshBasicMaterial({
-      color: color || 0x404040,
+      color: color ?? 0x404040,
       depthTest: true,
       depthWrite: false,
       transparent: true,
       opacity: opacity ?? 1,
-      blending: blending || AdditiveBlending,
+      blending: blending ?? AdditiveBlending,
       side: DoubleSide,
     });
   }, [color, blending, opacity]);
