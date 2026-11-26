@@ -26,7 +26,7 @@ const preview: Preview = {
       },
     },
     // The sidebar's sections; within them, the stories as they are found. The examples first,
-    // the lightest of them opening Storybook; Debug (dev only) last.
+    // the lightest of them opening Storybook; Debug and Experiments (dev only) last.
     options: {
       storySort: {
         order: [
@@ -35,6 +35,7 @@ const preview: Preview = {
           'Components',
           'SDK',
           'Debug',
+          'Experiments',
         ],
       },
     },

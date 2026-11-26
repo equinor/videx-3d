@@ -63,24 +63,21 @@ export const SDFTest = ({
   }, [uniforms, glyphContext]);
 
   useEffect(() => {
-    if (glyphContext) {
-      if (uniforms.textTexture.value) {
-        uniforms.textTexture.value.dispose();
-      }
-      const { texture, textPointersOffset, textPointersCount } =
-        glyphContext.encodeTextTexture(text.split('\n'));
-      uniforms.textTexture.value = texture;
-      uniforms.textPointersOffset.value = textPointersOffset;
-      uniforms.textPointersCount.value = textPointersCount;
-      uniforms.digits.value = [
-        ...glyphContext.encodeText('0123456789.-').indices,
-      ];
-    }
+    if (!glyphContext) return;
+    const { texture, textPointersOffset, textPointersCount } =
+      glyphContext.encodeTextTexture(text.split('\n'));
+    uniforms.textTexture.value = texture;
+    uniforms.textPointersOffset.value = textPointersOffset;
+    uniforms.textPointersCount.value = textPointersCount;
+    uniforms.digits.value = [
+      ...glyphContext.encodeText('0123456789.-').indices,
+    ];
 
+    // The text's own texture only: the glyphs are the provider's, shared.
     return () => {
-      if (glyphContext) {
-        glyphContext.dispose();
-      }
+      texture.dispose();
+      if (uniforms.textTexture.value === texture)
+        uniforms.textTexture.value = null;
     };
   }, [uniforms, glyphContext, text]);
 

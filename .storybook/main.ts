@@ -9,13 +9,13 @@ const unwatched = ['coverage', 'import', 'private', 'static'].map(
   dir => `${root}${dir}/**`,
 );
 
-// Debug stories (benches, harnesses: any `debug/` folder) are for development: `npm run
-// storybook` lists them, the published build does not.
+// Debug stories (benches, harnesses: any `debug/` folder) and experiments (any `experiments/`
+// folder) are for development: `npm run storybook` lists them, the published build does not.
 const isBuild = process.argv.includes('build');
 
 const config: StorybookConfig = {
   stories: isBuild
-    ? ['../src/**/!(debug)/*.stories.@(js|jsx|mjs|ts|tsx)']
+    ? ['../src/**/!(debug|experiments)/*.stories.@(js|jsx|mjs|ts|tsx)']
     : ['../src/**/*.stories.@(js|jsx|mjs|ts|tsx)'],
   addons: ['@chromatic-com/storybook', '@storybook/addon-docs'],
 

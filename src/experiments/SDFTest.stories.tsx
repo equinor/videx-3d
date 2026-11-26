@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { Canvas3dDecorator } from '../../storybook/decorators/canvas-3d-decorator';
-import { GlyphsDecorator } from '../../storybook/decorators/glyphs-decorator';
-import { PerformanceDecorator } from '../../storybook/decorators/performance-decorator';
-import { SDFTest } from './SDFTest';
+import { Canvas3dDecorator } from '../storybook/decorators/canvas-3d-decorator';
+import { GlyphsDecorator } from '../storybook/decorators/glyphs-decorator';
+import { PerformanceDecorator } from '../storybook/decorators/performance-decorator';
+import { SDFTest } from './sdf-test/SDFTest';
 
 const meta = {
-  title: 'Components/Misc/SDFTest',
+  title: 'Experiments/SDF Test',
   component: SDFTest,
   decorators: [GlyphsDecorator, PerformanceDecorator, Canvas3dDecorator],
   parameters: {
@@ -13,7 +13,6 @@ const meta = {
     scale: 1000,
     cameraPosition: [0, 0, 2000],
     cameraTarget: [0, 0, 0],
-    //pixelRatio: 1
   },
   tags: ['autodocs'],
 } satisfies Meta<typeof SDFTest>;

@@ -15,7 +15,6 @@ export * from './components/ObservableGroup/ObservableGroup';
 export * from './components/Water';
 export * from './components/Pipeline';
 export * from './components/Progress';
-export * from './components/SDFTest/SDFTest';
 export * from './components/Scenery';
 export * from './components/Surfaces';
 export * from './components/Symbol';

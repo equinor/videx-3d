@@ -1,8 +1,11 @@
-import { parseGeoJsonFeature } from '../src/sdk/utils/geojson';
+import {
+  GeoJsonFeature,
+  parseGeoJsonFeature,
+} from '../src/sdk/layers/geo-features';
 
 describe('geojson', () => {
   test('should be able to transform point features to planar point geometry', () => {
-    const json1 = {
+    const json1: GeoJsonFeature = {
       type: 'Feature',
       geometry: {
         type: 'Point',
@@ -13,8 +16,9 @@ describe('geojson', () => {
       },
     };
 
-    const json2 = {
+    const json2: GeoJsonFeature = {
       type: 'Feature',
+      properties: {},
       geometry: {
         type: 'MultiPoint',
         coordinates: [
@@ -25,8 +29,9 @@ describe('geojson', () => {
       },
     };
 
-    const json3 = {
+    const json3: GeoJsonFeature = {
       type: 'Feature',
+      properties: {},
       geometry: {
         type: 'Point',
         coordinates: [1, 2],
@@ -62,8 +67,9 @@ describe('geojson', () => {
   });
 
   test('should be able to transform line string features to planar line geometry', () => {
-    const json1 = {
+    const json1: GeoJsonFeature = {
       type: 'Feature',
+      properties: {},
       geometry: {
         type: 'LineString',
         coordinates: [
@@ -74,8 +80,9 @@ describe('geojson', () => {
       },
     };
 
-    const json2 = {
+    const json2: GeoJsonFeature = {
       type: 'Feature',
+      properties: {},
       geometry: {
         type: 'MultiLineString',
         coordinates: [
@@ -113,8 +120,9 @@ describe('geojson', () => {
   });
 
   test('should be able to transform polygon features to planar polygon geometry', () => {
-    const json1 = {
+    const json1: GeoJsonFeature = {
       type: 'Feature',
+      properties: {},
       geometry: {
         type: 'Polygon',
         coordinates: [
@@ -128,8 +136,9 @@ describe('geojson', () => {
       },
     };
 
-    const json2 = {
+    const json2: GeoJsonFeature = {
       type: 'Feature',
+      properties: {},
       geometry: {
         type: 'MultiPolygon',
         coordinates: [

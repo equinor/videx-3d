@@ -22,9 +22,9 @@ import { get } from '../../storybook/dependencies/api';
 import { useFieldOutline } from '../../storybook/hooks/useFieldOutline';
 import storyArgs from '../../storybook/story-args.json';
 import { PositionLog, SymbolsType, WellboreHeader } from '../data/types';
+import { parseGeoJsonFeature, PlanarFeature } from '../layers/geo-features';
 import { CRS, getProjectionDefFromUtmZone } from '../projection/crs';
 import { Vec2 } from '../types/common';
-import { GeoJsonFeature, parseGeoJsonFeature } from '../utils/geojson';
 import {
   Coordinates2D,
   PlanarGeometry,
@@ -141,7 +141,7 @@ type Story = StoryObj<typeof meta>;
 
 const PolygonsDemo = ({ centralize }: ExampleProps) => {
   const uvMap = useTexture('uv_grid.jpg');
-  const [feature, setFeature] = useState<GeoJsonFeature | null>(null);
+  const [feature, setFeature] = useState<PlanarFeature | null>(null);
 
   useEffect(() => {
     get(SAMPLE_POLYGON_URL).then(json => {

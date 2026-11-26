@@ -122,6 +122,52 @@ export function geoFeaturesFromGeoJson<P>(
 }
 
 /**
+ * A feature with its geometry as a {@link PlanarGeometry}, in whatever frame
+ * {@link parseGeoJsonFeature} carried it to.
+ *
+ * @group Layers
+ */
+export type PlanarFeature<P = Record<string, unknown>> = {
+  properties: P;
+  geometry: PlanarGeometry;
+};
+
+/**
+ * One GeoJSON feature as a {@link PlanarFeature}: its geometry a `PlanarGeometry`, carried
+ * through `transform` if given (from WGS84 to the scene, say), and a copy of its properties.
+ * For a whole collection in longitude and latitude, see {@link geoFeaturesFromGeoJson}.
+ *
+ * @param feature a GeoJSON feature: a point, line or polygon, or one of their multi-part kinds
+ * @param transform maps each coordinate, `[x, y]` or `[lon, lat]`, to the frame wanted
+ * @throws when the feature has no geometry, or one of another kind
+ *
+ * @example
+ * const { geometry } = parseGeoJsonFeature(json, ([lon, lat]) => {
+ *   const p = crs.wgs84ToWorld(lon, lat);
+ *   return [p.x, -p.z];
+ * });
+ *
+ * @group Layers
+ */
+export function parseGeoJsonFeature<P = Record<string, unknown>>(
+  feature: GeoJsonFeature<P>,
+  transform?: CoordinatesTransformFunction,
+): PlanarFeature<P> {
+  if (!feature?.geometry?.coordinates?.length || !feature.geometry.type) {
+    throw Error('Invalid GeoJSON feature');
+  }
+  const geometry = toPlanarGeometry(feature.geometry);
+  if (!geometry) {
+    throw Error(
+      'Unsupported geometry type: ' +
+        (feature.geometry as { type: string }).type,
+    );
+  }
+  if (transform) geometry.transform(transform);
+  return { properties: { ...feature.properties }, geometry };
+}
+
+/**
  * Points added along each edge longer than `maxStep` (in the coordinates' units), so the
  * edge keeps its shape when projected: a straight edge in longitude and latitude is
  * curved on a map. Polygons' rings and lines are densified; points are copied.

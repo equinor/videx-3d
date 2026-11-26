@@ -10,11 +10,15 @@ type GridConfig = {
 };
 
 /**
- * UtmGrid props
+ * UtmGrid props: a `Grid`'s, less where its axes cross and what they read, which the
+ * `UtmArea` sets.
  * @expand
  */
-export type UtmGridProps = GridProps & {
-  // use relative values for axes labels instead of absolute values if enabled
+export type UtmGridProps = Omit<
+  GridProps,
+  'gridOrigin' | 'originValue' | 'gridScale'
+> & {
+  /** Label the axes in metres from the area's origin instead of in UTM coordinates. */
   relativeValues?: boolean;
 };
 
