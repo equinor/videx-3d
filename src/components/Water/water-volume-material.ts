@@ -14,6 +14,7 @@ import {
   FenceFieldUniforms,
 } from '../../sdk/materials/fence-field';
 import { WaterBody } from '../../sdk/materials/water-body';
+import { waterOpticsOf } from '../../sdk/weather/water-optics';
 import { SEA_BREAK_DEPTH } from '../../sdk/weather/sea-shallow';
 import { SEA_LAYER_UNIFORMS, type WaterMaterial } from './water-material';
 import fragmentShader from './shaders/volume-fragment.glsl';
@@ -114,8 +115,11 @@ export class WaterVolumeMaterial extends ShaderMaterial {
 
     if (fence) applyFenceField(this.uniforms, fence);
 
-    // Its own water until it is linked to a surface's (linkSea).
-    new WaterBody().bind(this.uniforms);
+    // Its own water until it is linked to a surface's (linkSea), in the default look: drawn
+    // before that, it is water, not white.
+    const own = new WaterBody();
+    own.optics = waterOpticsOf();
+    own.bind(this.uniforms);
 
     attachOitVariants(this);
   }

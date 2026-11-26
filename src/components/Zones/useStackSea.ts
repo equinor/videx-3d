@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useMemo } from 'react';
 import { IUniform, Vector3, Vector4 } from 'three';
 import { releaseMaterial } from '../../rendering/precompile';
 import {
@@ -134,7 +134,9 @@ export function useStackSea(
     };
   }, [gl, materials]);
 
-  useEffect(() => {
+  // Before the first frame draws them, as `Water` does: new materials (a section, the
+  // bathymetry) drawn a frame unlinked would show the walls in a water of their own.
+  useLayoutEffect(() => {
     if (!materials || !sea) return;
     const opacity = sea.opacity ?? 1;
     const props = {
