@@ -8,12 +8,13 @@ import {
   useState,
 } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { Camera, Plane, Ray, Sphere, Vector2, Vector3 } from 'three';
+import { Camera, Vector3 } from 'three';
+import { sceneCameraNavigator } from '../../components/CameraNavigation/scene-navigator';
 import { SCENERY_EARTH_RADIUS } from '../../components/Scenery/scenery-model';
-import { useWorldRelief } from '../../components/World/world-relief';
 import { CameraLookAtEvent } from '../../events/camera-events';
 import { Vec3 } from '../../sdk';
 import type { Globe } from '../../sdk/projection/globe';
+import { earthView } from '../../sdk/projection/globe-views';
 import { applyCameraUp } from '../../sdk/utils/camera';
 import { directionFromCompass } from '../../sdk/utils/vector-operations';
 import { findSceneGlobe } from '../debug/globe';
@@ -107,8 +108,6 @@ const ALTITUDES: [string, number][] = [
   ['100 km', 100000],
 ];
 const SPEEDS = [0.25, 1, 3];
-// The whole Earth's view: this high over the point under the camera.
-const EARTH_VIEW_HEIGHT = 4000000;
 
 const PANEL = {
   display: 'flex',
@@ -240,18 +239,6 @@ export type SceneryDebugTimelapse = {
   reset: () => void;
 };
 
-/**
- * Where a double-click on the ground or the sea takes the camera ({@link SceneryDebugPanelProps}):
- * `height` over the ground there (the highest within a kilometre, or the sea), looking along
- * the view's bearing at a point `ahead` on and `lookAt` over the sea, never below the
- * camera, its horizon level.
- */
-export type SceneryDebugFly = {
-  height: number;
-  lookAt: number;
-  ahead: number;
-};
-
 export type SceneryDebugPanelProps = {
   /** what the sky is drawn from: the sun, and whether its horizon is curved */
   args: SceneryArgs;
@@ -262,8 +249,6 @@ export type SceneryDebugPanelProps = {
   timelapse?: SceneryDebugTimelapse;
   /** the altitudes to move to, by name. Default 2 m to 100 km */
   altitudes?: [string, number][];
-  /** double-click the ground or the sea to go there (see {@link SceneryDebugFly}) */
-  fly?: SceneryDebugFly;
   /** the story's own rows of buttons, after the views */
   rows?: SceneryDebugRow[];
   /** the story's own views, at the end of the view row */
@@ -272,92 +257,11 @@ export type SceneryDebugPanelProps = {
   children?: ReactNode;
 };
 
-const ndc = new Vector2();
-const ray = new Ray();
-const sphere = new Sphere();
-const plane = new Plane();
-const hit = new Vector3();
-const probe = new Vector3();
-const geographic = { latitude: 0, longitude: 0 };
-
-// The ground's height over the sea (metres), by longitude and latitude; null where unknown.
-type HeightAt = (longitude: number, latitude: number) => number | null;
-
-// What a double-click lands on over the globe at scene point `p`: the relief's ground, or
-// the sea over it or where there is none.
-const surfaceUnder = (globe: Globe, heightAt: HeightAt, p: Vector3) => {
-  globe.geographic(p, geographic);
-  return Math.max(heightAt(geographic.longitude, geographic.latitude) ?? 0, 0);
-};
-
-// How far along `ray` it comes down to `height` over the sea: on the globe's sphere (beyond
-// the disc; over it the sea's plane lies lower, which the margins below take in), or its
-// plane while the globe is off. 0 from below it; where the ray never comes down to it,
-// where it comes closest (on the globe) or null.
-function reachAlong(globe: Globe, level: number, height: number) {
-  if (globe.enabled) {
-    const radius = globe.radius + height;
-    if (ray.origin.distanceTo(globe.centre) <= radius) return 0;
-    if (ray.intersectSphere(sphere.set(globe.centre, radius), hit))
-      return ray.origin.distanceTo(hit);
-    return Math.max(
-      probe.subVectors(globe.centre, ray.origin).dot(ray.direction),
-      0,
-    );
-  }
-  if (globe.altitude(ray.origin) <= height) return 0;
-  if (ray.intersectPlane(plane.set(SCENE_UP, -(level + height)), hit))
-    return ray.origin.distanceTo(hit);
-  return null;
-}
-
-// Where the view along `ray` first meets the relief's ground or the sea: stepped from where
-// it comes down to `highest` to just past where it meets the sea, then halved. Null where it
-// meets neither.
-function traceSurface(
-  globe: Globe,
-  heightAt: HeightAt,
-  level: number,
-  highest: number,
-): Vector3 | null {
-  const below = (t: number) => {
-    ray.at(t, probe);
-    return globe.altitude(probe) <= surfaceUnder(globe, heightAt, probe);
-  };
-  const start = reachAlong(globe, level, highest + FLY_SEA_MARGIN);
-  const end = reachAlong(globe, level, -FLY_SEA_MARGIN);
-  if (start === null || end === null || end <= start) return null;
-  const steps = 384;
-  let previous = start;
-  for (let i = 0; i <= steps; i++) {
-    const t = start + ((end - start) * i) / steps;
-    if (below(t)) {
-      if (i === 0) return ray.at(t, new Vector3());
-      let a = previous;
-      let b = t;
-      for (let k = 0; k < 24; k++) {
-        const m = 0.5 * (a + b);
-        if (below(m)) b = m;
-        else a = m;
-      }
-      return ray.at(b, new Vector3());
-    }
-    previous = t;
-  }
-  return null;
-}
-
-// Metres below the sea the trace goes on to: over the disc the sea's plane lies below the
-// globe's sphere (by under a kilometre for a disc of 100 km).
-const FLY_SEA_MARGIN = 2000;
-// Around a double-click's point, how far out the camera is kept clear of the ground.
-const FLY_CLEAR = [500, 1000];
-
 /**
  * Buttons over the canvas, top right, for a sky story: the camera's height, moves to set
  * altitudes, places and views, and a timelapse. A move keeps the view's angle to the horizon.
- * With `fly`, a double-click on the ground or the sea takes the camera there. H hides and shows
- * it (not while typing in a field).
+ * H hides and shows it (not while typing in a field). The camera's own keys are the story's
+ * `CameraNavigation`'s (? shows them).
  */
 export const SceneryDebugPanel = ({
   args,
@@ -365,7 +269,6 @@ export const SceneryDebugPanel = ({
   positions,
   timelapse,
   altitudes = ALTITUDES,
-  fly,
   rows: own,
   views: ownViews,
   children,
@@ -374,8 +277,6 @@ export const SceneryDebugPanel = ({
   const camera = useThree(state => state.camera);
   const scene = useThree(state => state.scene);
   const controls = useThree(state => state.controls);
-  // The World's relief, for a double-click to land on its ground.
-  const relief = useWorldRelief();
   const root = useRef<Root | null>(null);
   const host = useRef<HTMLDivElement | null>(null);
   const readout = useRef<HTMLDivElement>(null);
@@ -471,131 +372,22 @@ export const SceneryDebugPanel = ({
       );
   };
 
-  // A double-click: over the ground or the sea where the view meets it, `fly.height` up,
-  // looking along the view's bearing at a point `fly.ahead` on and `fly.lookAt` up, the up
-  // there first so the controls orbit level about it.
-  const flyTo = (event: MouseEvent) => {
-    if (!fly) return;
-    const rect = gl.domElement.getBoundingClientRect();
-    ndc.set(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1,
-    );
-    ray.origin.setFromMatrixPosition(camera.matrixWorld);
-    ray.direction
-      .set(ndc.x, ndc.y, 0.5)
-      .unproject(camera)
-      .sub(ray.origin)
-      .normalize();
-    const g = currentGlobe();
-    const ground = relief?.tiles.current ?? null;
-    const heightAt = g?.frame && ground ? ground.heightAt : null;
-    let found: Vector3 | null = null;
-    if (g && heightAt)
-      found = traceSurface(
-        g,
-        heightAt,
-        level,
-        Math.max(ground?.highest ?? 0, 0),
-      );
-    else if (
-      g && g.enabled
-        ? ray.intersectSphere(sphere.set(g.centre, g.radius), hit)
-        : ray.intersectPlane(plane.set(SCENE_UP, -level), hit)
-    )
-      found = hit.clone();
-    if (!found) return;
-    const foot = g ? g.foot(found, new Vector3()) : found.clone();
-    // Clear of the ground about it: the highest within FLY_CLEAR, or the sea.
-    let surface = 0;
-    if (g && heightAt) {
-      for (const radius of [0, ...FLY_CLEAR]) {
-        for (let k = 0; k < (radius ? 8 : 1); k++) {
-          const angle = (k * Math.PI) / 4;
-          g.place(
-            foot.x + radius * Math.cos(angle),
-            foot.z + radius * Math.sin(angle),
-            0,
-            probe,
-          );
-          surface = Math.max(surface, surfaceUnder(g, heightAt, probe));
-        }
-      }
-    }
-    const height = surface + fly.height;
-    const position = g
-      ? g.place(foot.x, foot.z, height, new Vector3())
-      : new Vector3(foot.x, level + height, foot.z);
-    const up = upAt(g, position);
-    const heading = ray.direction
-      .clone()
-      .addScaledVector(up, -ray.direction.dot(up));
-    if (heading.lengthSq() < 1e-8) heading.copy(cameraView(camera, up).heading);
-    heading.normalize();
-    const target = position
-      .clone()
-      .addScaledVector(heading, fly.ahead)
-      .addScaledVector(up, Math.max(fly.lookAt - height, 0));
-    applyCameraUp(
-      camera,
-      controls,
-      g ? g.lookUp(position, new Vector3()) : SCENE_UP.clone(),
-    );
-    dispatchEvent(
-      new CameraLookAtEvent({
-        position: position.toArray(),
-        target: target.toArray(),
-        transition: false,
-      }),
-    );
-  };
-  const onDoubleClick = useRef(flyTo);
-  useEffect(() => {
-    onDoubleClick.current = flyTo;
-  });
-  useEffect(() => {
-    const element = gl.domElement;
-    const listener = (event: MouseEvent) => onDoubleClick.current(event);
-    element.addEventListener('dblclick', listener);
-    return () => element.removeEventListener('dblclick', listener);
-  }, [gl]);
-
-  // The whole Earth: EARTH_VIEW_HEIGHT over the point under the camera, looking at the Earth's
-  // centre, its up along the Earth's axis, so the controls orbit the globe about its poles.
+  // The whole Earth, through the story's camera navigation where it has one (its Home), so
+  // Backspace comes back.
   const toEarth = () => {
+    const navigator = sceneCameraNavigator(scene);
+    if (navigator) {
+      navigator.home();
+      return;
+    }
     const g = currentGlobe();
-    if (!g || !g.enabled) return;
-    const centre = g.centre;
-    const conformal = g.uniforms.uGlobeSphere.value;
-    // The axis from the conformal sphere's latitude at the disc's centre: sin of it along the
-    // up there, cos along true north. Without a frame, the scene's up.
-    const axis =
-      conformal.w > 0.5
-        ? g.up
-            .clone()
-            .multiplyScalar(conformal.x)
-            .addScaledVector(g.north, conformal.y)
-        : g.up.clone();
-    axis.normalize();
-    const out = camera.position.clone().sub(centre);
-    if (out.lengthSq() < 1) out.copy(g.up);
-    out.normalize();
-    // Never straight down the axis, where the orbit has no bearing.
-    if (Math.abs(out.dot(axis)) > 0.995)
-      out
-        .addScaledVector(
-          new Vector3().crossVectors(axis, g.north).normalize(),
-          0.1,
-        )
-        .normalize();
-    const position = centre
-      .clone()
-      .addScaledVector(out, g.radius + EARTH_VIEW_HEIGHT);
-    applyCameraUp(camera, controls, axis);
+    const view = g ? earthView(g, camera.position) : null;
+    if (!view?.up) return;
+    applyCameraUp(camera, controls, new Vector3(...view.up));
     dispatchEvent(
       new CameraLookAtEvent({
-        position: position.toArray(),
-        target: centre.toArray(),
+        position: view.position,
+        target: view.target,
         transition: false,
       }),
     );
@@ -651,7 +443,7 @@ export const SceneryDebugPanel = ({
             {
               label: 'earth',
               title:
-                'The whole Earth from 4000 km, looking at its centre: orbit it about its poles',
+                'The whole Earth from 4000 km, looking at its centre: orbit it about its poles. The same as the Home key; Backspace comes back',
               click: toEarth,
             },
           ]
@@ -745,8 +537,7 @@ export const SceneryDebugPanel = ({
     const clock = args.sunFromTime ? `  ${formatSunHour(args.sunHour)}` : '';
     element.textContent =
       `height ${formatHeight(height)}  dip ${(dip(height) / RAD).toFixed(2)}°` +
-      `  sun ${sun.elevation.toFixed(1)}°${clock}` +
-      (fly ? '\ndouble-click the ground or the sea: fly there' : '');
+      `  sun ${sun.elevation.toFixed(1)}°${clock}`;
   });
 
   return null;

@@ -1,8 +1,9 @@
 import { CameraControls, Environment } from '@react-three/drei';
 import { Canvas, useThree } from '@react-three/fiber';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { Color } from 'three';
-import { PI2 } from '../../sdk';
+import { CameraNavigation } from '../../components/CameraNavigation';
+import { PI2, type Vec3 } from '../../sdk';
 import { CameraManager } from '../../sdk/managers/CameraManager';
 import { videx3dGlobe } from '../debug/globe';
 import { profileFrames } from '../debug/profile';
@@ -52,6 +53,19 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
   // Lazy initialiser, NOT `useRef(new CameraManager())` — that argument is
   // evaluated on every render and only the first result is ever kept.
   const [cameraManager] = useState(() => new CameraManager());
+  // Where the camera starts, and where Home goes back to without a curved globe.
+  const startPosition: Vec3 = parameters.cameraPosition || [
+    -1 * scale,
+    1 * scale,
+    -1 * scale,
+  ];
+  const startTarget: Vec3 = parameters.cameraTarget || [0, 0, 0];
+  const startKey = JSON.stringify([startPosition, startTarget]);
+  const home = useMemo(
+    () => ({ position: startPosition, target: startTarget }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by content
+    [startKey],
+  );
 
   const initControls = useCallback(
     (controls: CameraControls | null) => {
@@ -75,11 +89,7 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
       camera={{
         near: 0.1,
         far: parameters.far ?? 500 * scale,
-        position: parameters.cameraPosition || [
-          -1 * scale,
-          1 * scale,
-          -1 * scale,
-        ],
+        position: startPosition,
         fov: Number.isFinite(parameters.fov) ? parameters.fov : 60,
       }}
       dpr={Math.min(2, pixelRatio || devicePixelRatio)}
@@ -129,6 +139,10 @@ export const Canvas3dDecorator = (Story: any, { parameters, args }: any) => {
       {/* <axesHelper args={[1000]} /> */}
       <Videx3dBridge manager={cameraManager} />
       <CameraControls ref={initControls} makeDefault />
+      {/* `parameters.cameraNavigation: false` for a story that navigates its own way. */}
+      {parameters.cameraNavigation !== false && (
+        <CameraNavigation home={home} />
+      )}
     </Canvas>
   );
 };

@@ -182,6 +182,10 @@ const GettingStarted = ({
  *   contour lines if you turn them on.
  * - **A box grid** around the wells (`BoxGrid`), its axes in UTM coordinates and depth.
  *
+ * Besides orbiting with the mouse, every story here moves with keys (`CameraNavigation`): W/A/S/D
+ * to move, F to look around with the mouse, Home and Backspace to jump and come back. Click in
+ * the view and press ? for all of them.
+ *
  * Everything is placed in one UTM area (`UtmArea`, `UtmPosition`). The data comes from the
  * story's own store: see [Data](/videx-3d/docs/documents/data.html) for how to connect yours.
  * The Components section has a page for each of these pieces; the other examples show more of

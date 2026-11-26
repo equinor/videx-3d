@@ -15,14 +15,11 @@ import { Scenery, SceneryClouds, ScenerySea, Weather, weatherPresetOf } from '@e
 </Weather>
 ```
 
-The story is `Components/Misc/Clouds` (with an `Earth` variant from 20 000 km, global). Its
-panel moves the camera to set altitudes up to 4000 km, to the whole Earth (`earth`: 4000 km up,
-looking at its centre, the camera's up along the Earth's axis, so dragging spins the globe about
-its poles), runs a timelapse of the sun, and a double-click on the ground or the sea flies
-there: 300 m over the highest ground within a kilometre (the `World`'s relief, traced along the
-view; the sea where there is none), looking into the middle of the cloud layer some 6 km on, or
-level where the ground lifts the camera over it, its horizon level (`SceneryDebugPanel`'s
-`fly`). The flight keeps the scene's anchor. Its weather controls:
+The story is `Components/Scenery/Clouds` (`Local`, `Global`, and `FromSpace`, the whole Earth
+from far out). Like every story, its camera moves with keys too
+([camera navigation](./camera-navigation.md)): Home shows the whole Earth from 4000 km, orbiting
+about its poles; Alt+click on the ground or the sea goes there; Backspace comes back. Its
+weather controls:
 
 - **`weatherMode`**: `local` or `global` (see "The weather"); the panel's weather row adds `off`
   (`cloudsEnabled`): the clouds hidden, still compiled (`enabled`), so the frame shows what the
