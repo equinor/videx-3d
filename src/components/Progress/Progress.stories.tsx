@@ -325,15 +325,32 @@ const simulationArgTypes = {
   },
 } as const;
 
+/**
+ * Progress of the work done in the background, shown in the host's page outside the 3D view. A
+ * `ProgressStore` (`createProgressStore`) gathers it from any number of sources: each
+ * `store.source(key, options)` is a report function to pass to an `onProgress` (a `Scenery`'s,
+ * a `GeoRelief`'s, or a `ZoneStack`'s through `zoneProgressReport`). Two components show the
+ * store:
+ *
+ * - `ProgressPopup`: a card over the view while a run lasts;
+ * - `Progress`: plain HTML where it is placed, staying once the run is done.
+ *
+ * Neither ships any CSS: style them through their `videx-progress` classes and `data-state`
+ * attributes. The stories feed the store from two made-up sources, a model of three zones and
+ * the relief's tiles, and style it with a stylesheet of their own; Run again starts a new run.
+ */
 const meta = {
   title: 'Components/Html/Progress',
+  // Plain HTML: cheap enough to show live on the Docs page.
+  tags: ['docs-preview'],
 } satisfies Meta;
 
 export default meta;
 
 /**
- * `ProgressPopup`: a card over the view while a run lasts, entering and leaving with the
- * stories' CSS, one for every source or one per source (`split`).
+ * `ProgressPopup`: a card over the view while a run lasts, one for all the sources or one per
+ * source (`split`), entering and leaving with the stories' CSS. Move it (`position`), hold it
+ * back for a quick run (`delay`), and keep it up once the run is done (`stayOpen`).
  */
 export const Default: StoryObj<PopupArgs> = {
   args: {
@@ -393,8 +410,10 @@ export const Default: StoryObj<PopupArgs> = {
 };
 
 /**
- * `Progress`: plain HTML where it is placed, here docked bottom right. It stays once the run
- * is done, showing how it ended.
+ * `Progress`: plain HTML where it is placed, here docked bottom right. It stays once the run is
+ * done, showing how it ended (`fail` ends it with errors). Choose its details (`stage`,
+ * `rows`), put them behind a toggle (`expandable`), and add the run's time and size once done
+ * (`summary`).
  */
 export const Inline: StoryObj<InlineArgs> = {
   args: {

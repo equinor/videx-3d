@@ -99,7 +99,15 @@ const colorScale = scaleOrdinal([
   '#24ca85',
 ]);
 
+/**
+ * The wellbores of the demo field's default well (`wellIdentifier`), a colour each from
+ * `colors`, with a header over the depth axis (`axisHeader`; hover it for its description).
+ * Click a wellbore to select it, and drag the depth cursor on the left, or focus it and use the
+ * arrow keys, to move the depth.
+ */
 export const Default: Story = {
+  // HTML and SVG, no WebGL: shown live on the Docs page.
+  tags: ['docs-preview'],
   decorators: [darkThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
     return (
@@ -112,6 +120,10 @@ export const Default: Story = {
   },
 };
 
+/**
+ * Two addons along the tracks: `WellMapCompletionIntervals` draws the screens (grey) and the
+ * open perforations (orange), `WellMapCasingShoes` marks the casing shoes.
+ */
 export const WithCasingAndCompletionIntervals: Story = {
   decorators: [darkThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
@@ -124,6 +136,12 @@ export const WithCasingAndCompletionIntervals: Story = {
   },
 };
 
+/**
+ * The formations each wellbore passes through, from the demo field's stratigraphic column
+ * (`WellMapFormations`; hover one for its name), and along the bottom each wellbore's true
+ * vertical depth below mean sea level at the cursor's depth (`WellMapTvd`). Drag the depth
+ * cursor to see the depths change.
+ */
 export const WithFormationsAndTvdDepths: Story = {
   decorators: [darkThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
@@ -136,6 +154,10 @@ export const WithFormationsAndTvdDepths: Story = {
   },
 };
 
+/**
+ * For display only (`interactive={false}`): no selection, no depth cursor or readout, and every
+ * track drawn at full strength, here with the completion intervals and casing shoes.
+ */
 export const NonInteractive: Story = {
   decorators: [darkThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
@@ -148,6 +170,11 @@ export const NonInteractive: Story = {
   },
 };
 
+/**
+ * No header (`headless`: the title, the well's name and the depth readout) and no depth
+ * cursor (`depthCursor={false}`), for a host that shows these itself. Clicking a wellbore still
+ * selects it.
+ */
 export const Headless: Story = {
   decorators: [darkThemeDecorator],
   render: (args: ComponentProps<typeof WellMap>) => {
@@ -165,6 +192,10 @@ export const Headless: Story = {
   },
 };
 
+/**
+ * The `LightTheme` on a white page (`theme`), with the formations, the casing shoes in black
+ * and the axis header.
+ */
 export const LightThemed: Story = {
   args: {
     theme: LightTheme,
